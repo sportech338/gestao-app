@@ -227,7 +227,7 @@ if uploaded:
             df[col] = df[col].apply(_to_num)
 
     # =========================
-    # Filtros
+    # Filtros (APENAS UMA VEZ)
     # =========================
     st.markdown("### 🔎 Filtros")
     colf1, colf2, colf3 = st.columns(3)
@@ -251,270 +251,165 @@ if uploaded:
 
     dff = df.loc[filt].copy()
 
-        st.markdown("### 🔎 Filtros")
-        colf1, colf2, colf3 = st.columns(3)
-        with colf1:
-            campanhas = ["(Todas)"] + sorted(df["campanha"].astype(str).unique().tolist())
-            sel_campanha = st.selectbox("Campanha", campanhas)
-        with colf2:
-            status = ["(Todos)"] + sorted(df["Desativado/Ativado"].astype(str).unique().tolist())
-            sel_status = st.selectbox("Status", status)
-        with colf3:
-            veics = ["(Todas)"] + sorted(df["Veiculação"].astype(str).unique().tolist())
-            sel_veic = st.selectbox("Veiculação", veics)
+    # =========================
+    # KPIs principais (real)
+    # =========================
+    invest = dff["Valor usado"].sum() if "Valor usado" in dff.columns else 0.0
+    fatur = dff["Valor de conversão da compra"].sum() if "Valor de conversão da compra" in dff.columns else 0.0
+    compras = dff["Compras"].sum() if "Compras" in dff.columns else 0.0
+    roas = (fatur / invest) if invest > 0 else 0.0
+    cpa = (invest / compras) if compras > 0 else 0.0
+    cpc = dff["CPC (custo por clique no link)"].mean() if "CPC (custo por clique no link)" in dff.columns and len(dff)>0 else 0.0
+    ctr = (dff["CTR (taxa de cliques no link)"].mean() / 100.0) if "CTR (taxa de cliques no link)" in dff.columns and len(dff)>0 else 0.0
 
-        filt = pd.Series(True, index=df.index)
-        if sel_campanha != "(Todas)":
-            filt &= (df["campanha"].astype(str) == sel_campanha)
-        if sel_status != "(Todos)":
-            filt &= (df["Desativado/Ativado"].astype(str) == sel_status)
-        if sel_veic != "(Todas)":
-            filt &= (df["Veiculação"].astype(str) == sel_veic)
+    st.markdown("### 📌 KPIs — Performance Real")
+    kpi1, kpi2, kpi3, kpi4, kpi5, kpi6 = st.columns(6)
+    kpi1.metric("Investimento", f"R$ {invest:,.0f}".replace(",", "."))
+    kpi2.metric("Faturamento", f"R$ {fatur:,.0f}".replace(",", "."))
+    kpi3.metric("ROAS", f"{roas:,.2f}".replace(",", "."))
+    kpi4.metric("CPA", f"R$ {cpa:,.2f}".replace(",", "."))
+    kpi5.metric("CTR", f"{ctr*100:,.2f}%".replace(",", "."))
+    kpi6.metric("CPC", f"R$ {cpc:,.2f}".replace(",", "."))
 
-        dff = df.loc[filt].copy()
+    # Alertas
+    alerts = []
+    if roas < alert_roas_min: alerts.append(f"ROAS abaixo do mínimo ({roas:.2f} < {alert_roas_min:.2f})")
+    if cpa > alert_cpa_max: alerts.append(f"CPA acima do máximo (R$ {cpa:.2f} > R$ {alert_cpa_max:.2f})")
+    st.error("🚨 " + " | ".join(alerts)) if alerts else st.success("✅ Dentro dos limites definidos de ROAS/CPA.")
 
-        # =========================
-        # KPIs principais (real)
-        # =========================
-        # Corrige tipos numéricos comuns (troca vírgula por ponto se necessário)
-        def to_num(s):
-            if pd.isna(s): return 0.0
-            if isinstance(s, (int, float)): return float(s)
-            s = str(s).replace(".", "").replace(",", ".")  # ex: "1.234,56" -> "1234.56"
-            try:
-                return float(s)
-            except:
-                return 0.0
+    st.markdown("---")
 
-        num_cols = [
-            "Valor usado",
-            "Valor de conversão da compra",
-            "Compras",
-            "CPC (custo por clique no link)",
-            "CTR (taxa de cliques no link)",
-            "CPM (custo por 1.000 impressões)",
-            "Impressões",
-            "Alcance",
-            "Frequência",
-            "Cliques no link",
-            "Visualizações da página de destino",
-            "Adições ao carrinho",
-            "Finalizações de compra iniciadas",
-            "Inclusões de informações de pagamento",
-            "Custo por resultado",
-        ]
-        for c in num_cols:
-            if c in dff.columns:
-                dff[c] = dff[c].apply(to_num)
+    # =========================
+    # Funil de conversão
+    # =========================
+    st.markdown("### 🧭 Funil de Conversão")
+    def safe_sum(col): return dff[col].sum() if col in dff.columns else 0
+    clicks   = safe_sum("Cliques no link")
+    lpviews  = safe_sum("Visualizações da página de destino")
+    addcart  = safe_sum("Adições ao carrinho")
+    cko_init = safe_sum("Finalizações de compra iniciadas")
+    pay_info = safe_sum("Inclusões de informações de pagamento")
+    purchases= safe_sum("Compras")
 
-        invest = dff["Valor usado"].sum() if "Valor usado" in dff.columns else 0.0
-        fatur = dff["Valor de conversão da compra"].sum() if "Valor de conversão da compra" in dff.columns else 0.0
-        compras = dff["Compras"].sum() if "Compras" in dff.columns else 0.0
-        imp = dff["Impressões"].sum() if "Impressões" in dff.columns else 0.0
-        alc = dff["Alcance"].sum() if "Alcance" in dff.columns else 0.0
-        freq = (dff["Frequência"].mean() if "Frequência" in dff.columns and len(dff)>0 else 0.0)
+    funil = pd.DataFrame({"etapa": ["Cliques","LP Views","Add to Cart","Checkout Iniciado","Info. Pagamento","Compras"],
+                          "valor": [clicks, lpviews, addcart, cko_init, pay_info, purchases]})
+    st.plotly_chart(px.funnel(funil, x="valor", y="etapa", title="Funil — volume por etapa"), use_container_width=True)
 
-        roas = (fatur / invest) if invest > 0 else 0.0
-        cpa = (invest / compras) if compras > 0 else 0.0
-        ctr = (dff["CTR (taxa de cliques no link)"].mean() / 100.0) if "CTR (taxa de cliques no link)" in dff.columns and len(dff)>0 else 0.0
-        cpc = dff["CPC (custo por clique no link)"].mean() if "CPC (custo por clique no link)" in dff.columns and len(dff)>0 else 0.0
+    c1, c2, c3, c4, c5 = st.columns(5)
+    def pct(a,b): return (a/b) if b else 0.0
+    c1.metric("Cliques → LP", f"{pct(lpviews, clicks)*100:,.1f}%".replace(",", "."))
+    c2.metric("LP → AddCart", f"{pct(addcart, lpviews)*100:,.1f}%".replace(",", "."))
+    c3.metric("AddCart → Checkout", f"{pct(cko_init, addcart)*100:,.1f}%".replace(",", "."))
+    c4.metric("Checkout → Pagamento", f"{pct(pay_info, cko_init)*100:,.1f}%".replace(",", "."))
+    c5.metric("Pagamento → Compra", f"{pct(purchases, pay_info)*100:,.1f}%".replace(",", "."))
 
-        st.markdown("### 📌 KPIs — Performance Real")
-        kpi1, kpi2, kpi3, kpi4, kpi5, kpi6 = st.columns(6)
-        kpi1.metric("Investimento", f"R$ {invest:,.0f}".replace(",", "."))
-        kpi2.metric("Faturamento", f"R$ {fatur:,.0f}".replace(",", "."))
-        kpi3.metric("ROAS", f"{roas:,.2f}".replace(",", "."))
-        kpi4.metric("CPA", f"R$ {cpa:,.2f}".replace(",", "."))
-        kpi5.metric("CTR", f"{ctr*100:,.2f}%".replace(",", "."))
-        kpi6.metric("CPC", f"R$ {cpc:,.2f}".replace(",", "."))
+    st.markdown("---")
 
-        # Alertas
-        alerts = []
-        if roas < alert_roas_min:
-            alerts.append(f"ROAS abaixo do mínimo ({roas:.2f} < {alert_roas_min:.2f})")
-        if cpa > alert_cpa_max:
-            alerts.append(f"CPA acima do máximo (R$ {cpa:.2f} > R$ {alert_cpa_max:.2f})")
+    # =========================
+    # Eficiência de mídia (por campanha)
+    # =========================
+    st.markdown("### 📈 Eficiência de Mídia (por Campanha)")
+    if "campanha" in dff.columns:
+        grp = dff.groupby("campanha").agg({
+            "Valor usado":"sum",
+            "Valor de conversão da compra":"sum",
+            "Compras":"sum",
+            "Impressões":"sum",
+            "Cliques no link":"sum",
+            "CPM (custo por 1.000 impressões)":"mean",
+            "CPC (custo por clique no link)":"mean",
+            "CTR (taxa de cliques no link)":"mean",
+        }).reset_index()
+        grp["ROAS"] = grp["Valor de conversão da compra"] / grp["Valor usado"].replace(0, np.nan)
+        grp["CPA"]  = grp["Valor usado"] / grp["Compras"].replace(0, np.nan)
+        grp["CPC_calc"] = grp["Valor usado"] / grp["Cliques no link"].replace(0, np.nan)
+        grp["CPM_calc"] = (grp["Valor usado"] / grp["Impressões"].replace(0, np.nan)) * 1000.0
 
-        if alerts:
-            st.error("🚨 " + " | ".join(alerts))
-        else:
-            st.success("✅ Dentro dos limites definidos de ROAS/CPA.")
+        tabs = st.tabs(["CPA", "CPC", "CPM", "ROAS"])
+        with tabs[0]: st.plotly_chart(px.bar(grp, x="campanha", y="CPA", title="CPA por campanha"), use_container_width=True)
+        with tabs[1]: st.plotly_chart(px.bar(grp, x="campanha", y=grp["CPC (custo por clique no link)"].fillna(grp["CPC_calc"]), title="CPC por campanha"), use_container_width=True)
+        with tabs[2]: st.plotly_chart(px.bar(grp, x="campanha", y=grp["CPM (custo por 1.000 impressões)"].fillna(grp["CPM_calc"]), title="CPM por campanha"), use_container_width=True)
+        with tabs[3]: st.plotly_chart(px.bar(grp, x="campanha", y="ROAS", title="ROAS por campanha"), use_container_width=True)
+    else:
+        st.info("A coluna 'campanha' não foi encontrada para agrupar eficiência de mídia.")
 
-        st.markdown("---")
+    st.markdown("---")
 
-        # =========================
-        # Funil de conversão
-        # =========================
-        st.markdown("### 🧭 Funil de Conversão")
-        steps = []
-        def safe_sum(col):
-            return dff[col].sum() if col in dff.columns else 0
+    # =========================
+    # Engajamento de vídeo
+    # =========================
+    st.markdown("### 🎥 Engajamento de Vídeo")
+    vid_cols = ["Reproduções de 25% do vídeo","Reproduções de 50% do vídeo","Reproduções de 75% do vídeo","Reproduções de 95% do vídeo"]
+    has_video = all([c in dff.columns for c in vid_cols])
+    if has_video:
+        totals = dff[vid_cols].sum()
+        df_vid = pd.DataFrame({"etapa":["25%","50%","75%","95%"], "reproducoes":[totals[0], totals[1], totals[2], totals[3]]})
+        st.plotly_chart(px.line(df_vid, x="etapa", y="reproducoes", markers=True, title="Retenção de Vídeo (volume total)"), use_container_width=True)
+        if "Tempo médio de reprodução do vídeo" in dff.columns:
+            tempo_med = dff["Tempo médio de reprodução do vídeo"].apply(_to_num).mean()  # <- aqui troquei para _to_num
+            st.metric("⏱️ Tempo médio de reprodução", f"{tempo_med:,.1f} s".replace(",", "."))
+    else:
+        st.info("Para retenção, inclua no CSV as colunas de reprodução em 25/50/75/95%.")
 
-        clicks = safe_sum("Cliques no link")
-        lpviews = safe_sum("Visualizações da página de destino")
-        addcart = safe_sum("Adições ao carrinho")
-        cko_init = safe_sum("Finalizações de compra iniciadas")
-        pay_info = safe_sum("Inclusões de informações de pagamento")
-        purchases = safe_sum("Compras")
+    st.markdown("---")
 
-        funil = pd.DataFrame({
-            "etapa": ["Cliques", "LP Views", "Add to Cart", "Checkout Iniciado", "Info. Pagamento", "Compras"],
-            "valor": [clicks, lpviews, addcart, cko_init, pay_info, purchases]
-        })
+    # =========================
+    # Ranking de campanhas
+    # =========================
+    st.markdown("### 🏆 Ranking de Campanhas")
+    if "campanha" in dff.columns:
+        rank = dff.groupby("campanha").agg({
+            "Desativado/Ativado":"first",
+            "Veiculação":"first",
+            "Valor usado":"sum",
+            "Valor de conversão da compra":"sum",
+            "Compras":"sum",
+        }).reset_index()
+        rank["ROAS"] = rank["Valor de conversão da compra"] / rank["Valor usado"].replace(0, np.nan)
+        rank["CPA"]  = rank["Valor usado"] / rank["Compras"].replace(0, np.nan)
 
-        fig_funnel = px.funnel(funil, x="valor", y="etapa", title="Funil — volume por etapa")
-        st.plotly_chart(fig_funnel, use_container_width=True)
+        order_by = st.selectbox("Ordenar ranking por:", ["ROAS desc","CPA asc","Faturamento desc","Investimento desc"])
+        if order_by == "ROAS desc":              rank = rank.sort_values("ROAS", ascending=False)
+        elif order_by == "CPA asc":              rank = rank.sort_values("CPA",  ascending=True)
+        elif order_by == "Faturamento desc":     rank = rank.sort_values("Valor de conversão da compra", ascending=False)
+        else:                                    rank = rank.sort_values("Valor usado", ascending=False)
 
-        # Taxas entre etapas
-        conv_lp = pct(lpviews, clicks)
-        conv_cart = pct(addcart, lpviews)
-        conv_ck = pct(cko_init, addcart)
-        conv_pay = pct(pay_info, cko_init)
-        conv_buy = pct(purchases, pay_info)
+        st.dataframe(
+            rank.rename(columns={
+                "campanha":"Campanha",
+                "Desativado/Ativado":"Status",
+                "Veiculação":"Veiculação",
+                "Valor usado":"Investimento (R$)",
+                "Valor de conversão da compra":"Faturamento (R$)"
+            }),
+            use_container_width=True
+        )
+    else:
+        st.info("A coluna 'campanha' não foi encontrada para exibir o ranking.")
 
-        c1, c2, c3, c4, c5 = st.columns(5)
-        c1.metric("Cliques → LP", f"{conv_lp*100:,.1f}%".replace(",", "."))
-        c2.metric("LP → AddCart", f"{conv_cart*100:,.1f}%".replace(",", "."))
-        c3.metric("AddCart → Checkout", f"{conv_ck*100:,.1f}%".replace(",", "."))
-        c4.metric("Checkout → Pagamento", f"{conv_pay*100:,.1f}%".replace(",", "."))
-        c5.metric("Pagamento → Compra", f"{conv_buy*100:,.1f}%".replace(",", "."))
+    st.markdown("---")
 
-        st.markdown("---")
+    # =========================
+    # Visão Temporal (se houver coluna de Data)
+    # =========================
+    st.markdown("### 📅 Visão Temporal")
+    date_col = next((c for c in ["Data","data","date","Dia","dia"] if c in dff.columns), None)
+    if date_col:
+        dff["_date"] = pd.to_datetime(dff[date_col], errors="coerce", dayfirst=True)
+        t = dff.dropna(subset=["_date"]).groupby("_date").agg({
+            "Valor usado":"sum",
+            "Valor de conversão da compra":"sum",
+            "Compras":"sum"
+        }).reset_index().sort_values("_date")
+        t["ROAS"] = t["Valor de conversão da compra"] / t["Valor usado"].replace(0, np.nan)
 
-        # =========================
-        # Eficiência de mídia (CPM, CPC, CPA por campanha)
-        # =========================
-        st.markdown("### 📈 Eficiência de Mídia (por Campanha)")
-        # Agrupa por campanha
-        if "campanha" in dff.columns:
-            grp = dff.groupby("campanha").agg({
-                "Valor usado":"sum",
-                "Valor de conversão da compra":"sum",
-                "Compras":"sum",
-                "Impressões":"sum",
-                "Cliques no link":"sum",
-                "CPM (custo por 1.000 impressões)":"mean",
-                "CPC (custo por clique no link)":"mean",
-                "CTR (taxa de cliques no link)":"mean",
-            }).reset_index()
+        tabs_t = st.tabs(["ROAS diário","Investimento diário","Compras diárias"])
+        with tabs_t[0]: st.plotly_chart(px.line(t, x="_date", y="ROAS", title="ROAS diário"), use_container_width=True)
+        with tabs_t[1]: st.plotly_chart(px.line(t, x="_date", y="Valor usado", title="Investimento diário"), use_container_width=True)
+        with tabs_t[2]: st.plotly_chart(px.line(t, x="_date", y="Compras", title="Compras diárias"), use_container_width=True)
+    else:
+        st.info("Para visão temporal, inclua uma coluna de data no CSV (ex.: 'Data').")
 
-            grp["ROAS"] = grp["Valor de conversão da compra"] / grp["Valor usado"].replace(0, np.nan)
-            grp["CPA"] = grp["Valor usado"] / grp["Compras"].replace(0, np.nan)
-            # Se não veio CPC/CPM no CSV, calcula aproximado
-            grp["CPC_calc"] = grp["Valor usado"] / grp["Cliques no link"].replace(0, np.nan)
-            grp["CPM_calc"] = (grp["Valor usado"] / grp["Impressões"].replace(0, np.nan)) * 1000.0
-
-            # Barras CPM/CPC/CPA
-            tabs = st.tabs(["CPA", "CPC", "CPM", "ROAS"])
-            with tabs[0]:
-                fig_cpa = px.bar(grp, x="campanha", y="CPA", title="CPA por campanha")
-                st.plotly_chart(fig_cpa, use_container_width=True)
-            with tabs[1]:
-                fig_cpc = px.bar(grp, x="campanha", y=grp["CPC (custo por clique no link)"].fillna(grp["CPC_calc"]), title="CPC por campanha")
-                st.plotly_chart(fig_cpc, use_container_width=True)
-            with tabs[2]:
-                fig_cpm = px.bar(grp, x="campanha", y=grp["CPM (custo por 1.000 impressões)"].fillna(grp["CPM_calc"]), title="CPM por campanha")
-                st.plotly_chart(fig_cpm, use_container_width=True)
-            with tabs[3]:
-                fig_roas = px.bar(grp, x="campanha", y="ROAS", title="ROAS por campanha")
-                st.plotly_chart(fig_roas, use_container_width=True)
-        else:
-            st.info("A coluna 'campanha' não foi encontrada para agrupar eficiência de mídia.")
-
-        st.markdown("---")
-
-        # =========================
-        # Engajamento de vídeo
-        # =========================
-        st.markdown("### 🎥 Engajamento de Vídeo")
-        vid_cols = ["Reproduções de 25% do vídeo","Reproduções de 50% do vídeo","Reproduções de 75% do vídeo","Reproduções de 95% do vídeo"]
-        has_video = all([c in dff.columns for c in vid_cols])
-        if has_video:
-            totals = dff[vid_cols].sum()
-            df_vid = pd.DataFrame({"etapa":["25%","50%","75%","95%"], "reproducoes":[totals[0], totals[1], totals[2], totals[3]]})
-            fig_vid = px.line(df_vid, x="etapa", y="reproducoes", markers=True, title="Retenção de Vídeo (volume total)")
-            st.plotly_chart(fig_vid, use_container_width=True)
-            if "Tempo médio de reprodução do vídeo" in dff.columns:
-                tempo_med = dff["Tempo médio de reprodução do vídeo"].apply(to_num).mean()
-                st.metric("⏱️ Tempo médio de reprodução", f"{tempo_med:,.1f} s".replace(",", "."))
-        else:
-            st.info("Para retenção, inclua no CSV as colunas de reprodução em 25/50/75/95%.")
-
-        st.markdown("---")
-
-        # =========================
-        # Ranking de campanhas
-        # =========================
-        st.markdown("### 🏆 Ranking de Campanhas")
-        if "campanha" in dff.columns:
-            rank = dff.groupby("campanha").agg({
-                "Desativado/Ativado":"first",
-                "Veiculação":"first",
-                "Valor usado":"sum",
-                "Valor de conversão da compra":"sum",
-                "Compras":"sum",
-            }).reset_index()
-            rank["ROAS"] = rank["Valor de conversão da compra"] / rank["Valor usado"].replace(0, np.nan)
-            rank["CPA"] = rank["Valor usado"] / rank["Compras"].replace(0, np.nan)
-
-            order_by = st.selectbox("Ordenar ranking por:", ["ROAS desc","CPA asc","Faturamento desc","Investimento desc"])
-            if order_by == "ROAS desc":
-                rank = rank.sort_values("ROAS", ascending=False)
-            elif order_by == "CPA asc":
-                rank = rank.sort_values("CPA", ascending=True)
-            elif order_by == "Faturamento desc":
-                rank = rank.sort_values("Valor de conversão da compra", ascending=False)
-            else:
-                rank = rank.sort_values("Valor usado", ascending=False)
-
-            st.dataframe(
-                rank.rename(columns={
-                    "campanha":"Campanha",
-                    "Desativado/Ativado":"Status",
-                    "Veiculação":"Veiculação",
-                    "Valor usado":"Investimento (R$)",
-                    "Valor de conversão da compra":"Faturamento (R$)"
-                }),
-                use_container_width=True
-            )
-        else:
-            st.info("A coluna 'campanha' não foi encontrada para exibir o ranking.")
-
-        st.markdown("---")
-
-        # =========================
-        # Visão Temporal (se houver coluna de Data)
-        # =========================
-        st.markdown("### 📅 Visão Temporal")
-        date_col = None
-        for cand in ["Data","data","date","Dia","dia"]:
-            if cand in dff.columns:
-                date_col = cand
-                break
-
-        if date_col:
-            # Tenta converter para datetime
-            dff["_date"] = pd.to_datetime(dff[date_col], errors="coerce", dayfirst=True)
-            t = dff.dropna(subset=["_date"]).groupby("_date").agg({
-                "Valor usado":"sum",
-                "Valor de conversão da compra":"sum",
-                "Compras":"sum"
-            }).reset_index().sort_values("_date")
-
-            t["ROAS"] = t["Valor de conversão da compra"] / t["Valor usado"].replace(0, np.nan)
-
-            tabs_t = st.tabs(["ROAS diário","Investimento diário","Compras diárias"])
-            with tabs_t[0]:
-                fig_r = px.line(t, x="_date", y="ROAS", title="ROAS diário")
-                st.plotly_chart(fig_r, use_container_width=True)
-            with tabs_t[1]:
-                fig_i = px.line(t, x="_date", y="Valor usado", title="Investimento diário")
-                st.plotly_chart(fig_i, use_container_width=True)
-            with tabs_t[2]:
-                fig_c = px.line(t, x="_date", y="Compras", title="Compras diárias")
-                st.plotly_chart(fig_c, use_container_width=True)
-        else:
-            st.info("Para visão temporal, inclua uma coluna de data no CSV (ex.: 'Data').")
 
 else:
     st.info("Envie o CSV do Gerenciador para liberar os painéis de performance real.")
