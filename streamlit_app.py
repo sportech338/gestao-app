@@ -545,44 +545,6 @@ else:
 
 st.markdown("---")
 
-# =========================
-# ROAS diário
-# =========================
-st.markdown("### 📅 ROAS diário")
-
-if uploaded:
-    dd = dff.copy()
-
-    if "data" in dff.columns:
-        dd["_date"] = pd.to_datetime(dd["data"], errors="coerce", dayfirst=True)
-
-    elif "data_inicio" in dff.columns and "data_fim" in dff.columns:
-        dd["data_inicio"] = pd.to_datetime(dd["data_inicio"], errors="coerce", dayfirst=True)
-        dd["data_fim"] = pd.to_datetime(dd["data_fim"], errors="coerce", dayfirst=True)
-
-        if dd["data_inicio"].nunique() == 1 and dd["data_fim"].nunique() == 1 and (
-            dd["data_inicio"].iloc[0] == dd["data_fim"].iloc[0]
-        ):
-            # Relatório de 1 dia → usa esse dia
-            dd["_date"] = dd["data_inicio"]
-        else:
-            # Relatório de mais tempo → usa data de início
-            dd["_date"] = dd["data_inicio"]
-
-    else:
-        dd["_date"] = pd.NaT
-
-    t = dd.dropna(subset=["_date"]).groupby("_date").agg({"gasto":"sum","faturamento":"sum"}).reset_index().sort_values("_date")
-
-    if not t.empty:
-        t["ROAS"] = t["faturamento"] / t["gasto"].replace(0, np.nan)
-        st.plotly_chart(px.line(t, x="_date", y="ROAS", title="ROAS diário"), use_container_width=True)
-    else:
-        st.info("⚠️ Nenhuma data válida encontrada no CSV para calcular ROAS diário.")
-else:
-    st.warning("⚠️ Nenhum arquivo carregado. Envie o CSV para visualizar o ROAS diário.")
-
-
 
 # =========================
 # Bloco 3 — Acompanhamento Diário (enxuto, derivado da meta mensal)
