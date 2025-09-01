@@ -327,42 +327,43 @@ else:
     # =========================
     # Eficiência de mídia (por campanha)
     # =========================
-    st.markdown("### 📈 Eficiência de Mídia (por Campanha)")
-    if "campanha" in dff.columns:
-        # refiltra por gasto > 0 (garantia)
-        if "Valor usado" in dff.columns:
-            dff = dff[dff["Valor usado"] > 0].copy()
+st.markdown("### 📈 Eficiência de Mídia (por Campanha)")
+if "campanha" in dff.columns:
+    # 🔸 REFORÇO: mantém apenas linhas com gasto > 0
+    if "Valor usado" in dff.columns:
+        dff = dff[dff["Valor usado"] > 0].copy()
 
-        grp = dff.groupby("campanha").agg({
-            "Valor usado":"sum",
-            "Valor de conversão da compra":"sum",
-            "Compras":"sum",
-            "Impressões":"sum",
-            "Cliques no link":"sum",
-            "CPM (custo por 1.000 impressões)":"mean",
-            "CPC (custo por clique no link)":"mean",
-            "CTR (taxa de cliques no link)":"mean",
-        }).reset_index()
+    grp = dff.groupby("campanha").agg({
+        "Valor usado":"sum",
+        "Valor de conversão da compra":"sum",
+        "Compras":"sum",
+        "Impressões":"sum",
+        "Cliques no link":"sum",
+        "CPM (custo por 1.000 impressões)":"mean",
+        "CPC (custo por clique no link)":"mean",
+        "CTR (taxa de cliques no link)":"mean",
+    }).reset_index()
 
-        grp["ROAS"] = grp["Valor de conversão da compra"] / grp["Valor usado"].replace(0, np.nan)
-        grp["CPA"]  = grp["Valor usado"] / grp["Compras"].replace(0, np.nan)
-        grp["CPC_calc"] = grp["Valor usado"] / grp["Cliques no link"].replace(0, np.nan)
-        grp["CPM_calc"] = (grp["Valor usado"] / grp["Impressões"].replace(0, np.nan)) * 1000.0
+    grp["ROAS"] = grp["Valor de conversão da compra"] / grp["Valor usado"].replace(0, np.nan)
+    grp["CPA"]  = grp["Valor usado"] / grp["Compras"].replace(0, np.nan)
+    grp["CPC_calc"] = grp["Valor usado"] / grp["Cliques no link"].replace(0, np.nan)
+    grp["CPM_calc"] = (grp["Valor usado"] / grp["Impressões"].replace(0, np.nan)) * 1000.0
 
-        tabs = st.tabs(["CPA", "CPC", "CPM", "ROAS"])
-        with tabs[0]:
-            st.plotly_chart(px.bar(grp, x="campanha", y="CPA", title="CPA por campanha"), use_container_width=True)
-        with tabs[1]:
-            st.plotly_chart(px.bar(grp, x="campanha", y=grp["CPC (custo por clique no link)"].fillna(grp["CPC_calc"]), title="CPC por campanha"), use_container_width=True)
-        with tabs[2]:
-            st.plotly_chart(px.bar(grp, x="campanha", y=grp["CPM (custo por 1.000 impressões)"].fillna(grp["CPM_calc"]), title="CPM por campanha"), use_container_width=True)
-        with tabs[3]:
-            st.plotly_chart(px.bar(grp, x="campanha", y="ROAS", title="ROAS por campanha"), use_container_width=True)
-    else:
-        st.info("A coluna 'campanha' não foi encontrada para agrupar eficiência de mídia.")
+    tabs = st.tabs(["CPA", "CPC", "CPM", "ROAS"])
+    with tabs[0]:
+        st.plotly_chart(px.bar(grp, x="campanha", y="CPA", title="CPA por campanha"), use_container_width=True)
+    with tabs[1]:
+        st.plotly_chart(px.bar(grp, x="campanha", y=grp["CPC (custo por clique no link)"].fillna(grp["CPC_calc"]), title="CPC por campanha"), use_container_width=True)
+    with tabs[2]:
+        st.plotly_chart(px.bar(grp, x="campanha", y=grp["CPM (custo por 1.000 impressões)"].fillna(grp["CPM_calc"]), title="CPM por campanha"), use_container_width=True)
+    with tabs[3]:
+        st.plotly_chart(px.bar(grp, x="campanha", y="ROAS", title="ROAS por campanha"), use_container_width=True)
+else:
+    st.info("A coluna 'campanha' não foi encontrada para agrupar eficiência de mídia.")
 
+# 🔹 aqui sim o separador, FORA do else
+st.markdown("---")
 
-    st.markdown("---")
 
     # =========================
     # Engajamento de vídeo
