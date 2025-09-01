@@ -468,7 +468,7 @@ if uploaded and "campanha" in dff.columns:
     dff["etapa_funil"] = dff["campanha"].apply(classificar_funil)
     realizado_funil = dff.groupby("etapa_funil")["gasto"].sum().to_dict()
 
-    etapas = ["Teste de Interesse", "Teste de Criativo", "Escala", "Remarketing"]
+    etapas = ["Teste de Criativo", "Teste de Interesse", "Escala", "Remarketing"]
 
     comp = pd.DataFrame({
         "Etapa": etapas,
