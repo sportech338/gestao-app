@@ -373,20 +373,21 @@ else:
 
     st.markdown("---")
 
-# =========================
-# Funil (volumes + taxas) — versão enxuta pedida
-# =========================
-st.markdown("### 🧭 Funil (volumes do filtro)")
+    # =========================
+    # Funil (volumes + taxas) — versão enxuta pedida
+    # =========================
+    st.markdown("### 🧭 Funil (volumes do filtro)")
 
-def _sum(col):
-    return float(dff[col].sum()) if col in dff.columns else 0.0
+    def _sum(col):
+        return float(dff[col].sum()) if col in dff.columns else 0.0
 
-# Volumes por etapa usadas nas taxas pedidas
-clicks  = _sum("cliques")
-lp      = _sum("lp_views")
-atc     = _sum("add_cart")
-ck      = _sum("ck_init")
-compras = _sum("compras")
+    # Volumes por etapa usadas nas taxas pedidas
+    clicks  = _sum("cliques")
+    lp      = _sum("lp_views")
+    atc     = _sum("add_cart")
+    ck      = _sum("ck_init")
+    compras = _sum("compras")
+
 
 # Tabela de volumes
 funil = pd.DataFrame({
