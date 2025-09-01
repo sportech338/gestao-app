@@ -1,5 +1,4 @@
 
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -479,6 +478,19 @@ if uploaded and "campanha" in dff.columns:
     comp["Diferença (R$)"] = comp["Realizado (R$)"] - comp["Planejado (R$)"]
 
     st.dataframe(comp, use_container_width=True)
+
+    # Orientações de verba
+    st.markdown("### 📌 Orientações de Verba")
+    for _, row in comp.iterrows():
+        etapa = row["Etapa"]
+        diff = row["Diferença (R$)"]
+        if diff < 0:
+            st.warning(f"➡️ Falta investir **R$ {abs(diff):,.0f}** em **{etapa}** para bater a meta planejada.".replace(",","."))
+        elif diff > 0:
+            st.info(f"✅ Já investiu **R$ {diff:,.0f}** a mais do que o planejado em **{etapa}**.".replace(",","."))
+        else:
+            st.success(f"⚖️ A etapa **{etapa}** está exatamente alinhada com o planejado.")
+
     col1, col2 = st.columns(2)
     with col1:
         st.plotly_chart(px.bar(comp, x="Etapa", y=["Planejado (R$)", "Realizado (R$)"],
@@ -489,6 +501,7 @@ if uploaded and "campanha" in dff.columns:
                         use_container_width=True)
 else:
     st.warning("⚠️ Nenhum arquivo carregado. Envie o CSV para visualizar o orçamento por etapa.")
+
 
 st.markdown("---")
 
