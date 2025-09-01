@@ -457,7 +457,8 @@ if not df_taxas_plot.empty:
     )
     fig_taxas.update_layout(xaxis_tickformat=".0%")
     st.plotly_chart(fig_taxas, use_container_width=True)
-
+else:
+    st.warning("⚠️ Nenhum arquivo de análise carregado. Envie o CSV para visualizar o funil.")
     st.markdown("---")
 
 
