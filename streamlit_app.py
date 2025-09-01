@@ -232,10 +232,10 @@ pct_escala = max(0.0, 100.0 - (pct_teste_interesse + pct_teste_criativo + pct_re
 
 # Converte os % em valores de R$ (baseado no orçamento semanal)
 planejado_funil = {
-    "Teste de Interesse": (pct_teste_interesse/100) * budget_goal_week,
     "Teste de Criativo": (pct_teste_criativo/100) * budget_goal_week,
-    "Remarketing": (pct_remarketing/100) * budget_goal_week,
+    "Teste de Interesse": (pct_teste_interesse/100) * budget_goal_week,
     "Escala": (pct_escala/100) * budget_goal_week,
+    "Remarketing": (pct_remarketing/100) * budget_goal_week,
 }
 
 st.markdown("### 💵 Distribuição Planejada da Verba (por dia)")
