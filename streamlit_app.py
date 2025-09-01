@@ -128,57 +128,129 @@ k5.metric("ROI Estimado (semana)", f"{weekly_totals['roi_estimado']*100:,.0f}%".
 # =========================
 st.markdown("---")
 st.markdown("## 📥 Performance Real (Gerenciador)")
-expected_cols = [
-    "Desativado/Ativado",
-    "campanha",
-    "Veiculação",
-    "Ações",
-    "Resultados",
-    "Custo por resultado",
-    "Orçamento",
-    "Valor usado",
-    "Retorno sobre o investimento em publicidade (ROAS) das compras",
-    "Valor de conversão da compra",
-    "Custo por finalização de compra iniciada",
-    "Alcance",
-    "Impressões",
-    "Frequência",
-    "CPM (custo por 1.000 impressões)",
-    "Conexão",
-    "Conversão Página",
-    "Entrega",
-    "Info. Pagamento / Entrega",
-    "Compras / Inf. Pagamento",
-    "Conversão Checkout",
-    "Cliques no link",
-    "Visualizações da página de destino",
-    "Adições ao carrinho",
-    "Finalizações de compra iniciadas",
-    "Inclusões de informações de pagamento",
-    "Compras",
-    "CPC (custo por clique no link)",
-    "CTR (taxa de cliques no link)",
-    "Reproduções de 25% do vídeo",
-    "Reproduções de 50% do vídeo",
-    "Reproduções de 75% do vídeo",
-    "Reproduções de 95% do vídeo",
-    "Tempo médio de reprodução do vídeo",
-    # opcionalmente inclua "Data" se o CSV trouxer coluna de data
-]
 
 if uploaded:
-    df = pd.read_csv(uploaded)
-    # Normaliza nomes para evitar problemas de espaços acidentais
-    df.columns = [c.strip() for c in df.columns]
+    # =========================
+    # Leitura flexível + normalização de cabeçalhos
+    # =========================
+    import re, unicodedata
 
-    missing = [c for c in expected_cols if c not in df.columns]
-    if missing:
-        st.warning("Colunas faltando no CSV: " + ", ".join(missing))
-        st.caption("Dica: confira se exportou do Gerenciador com os mesmos nomes e separador vírgula.")
-    else:
-        # =========================
-        # Filtros
-        # =========================
+    def _norm(s: str) -> str:
+        s = unicodedata.normalize("NFKD", s)
+        s = "".join(c for c in s if not unicodedata.combining(c))
+        s = s.lower().strip()
+        s = s.replace("\n", " ").replace("\r", " ")
+        s = re.sub(r"\s+", " ", s)
+        s = s.replace("(brl)", "").replace(" r$", "").strip()
+        return s
+
+    def _read_flex(file):
+        for enc in ["utf-8", "latin-1", "utf-16", "cp1252"]:
+            try:
+                return pd.read_csv(file, sep=None, engine="python", encoding=enc)
+            except Exception:
+                continue
+        return pd.read_csv(file)
+
+    raw = _read_flex(uploaded)
+
+    # Mapa de aliases -> nomes finais que seu dashboard usa
+    ALIASES = {
+        "Desativado/Ativado": ("desativado/ativado","ativado/desativado","status da campanha","estado"),
+        "campanha": ("nome da campanha","campanha","nome da campanha (id)"),
+        "Veiculação": ("veiculacao da campanha","veiculacao","posicionamento"),
+        "Resultados": ("resultados",),
+        "Custo por resultado": ("custo por resultado","custo por resultados"),
+        "Orçamento": ("orcamento","orcamento do conjunto de anuncios","orcamento do conjunto de anúncios"),
+        "Valor usado": ("valor usado","valor usado brl","valor gasto","valor gasto brl"),
+        "Retorno sobre o investimento em publicidade (ROAS) das compras": ("roas das compras","retorno sobre o investimento em publicidade (roas) das compras","roas"),
+        "Valor de conversão da compra": ("valor de conversao da compra","valor de conversão da compra","receita","faturamento"),
+        "Custo por finalização de compra iniciada": ("custo por finalizacao de compra iniciada","custo por inic. checkout","custo por checkout iniciado"),
+        "Alcance": ("alcance",),
+        "Impressões": ("impressoes","impressões"),
+        "Frequência": ("frequencia","frequência"),
+        "CPM (custo por 1.000 impressões)": ("cpm (custo por 1.000 impressoes)","cpm"),
+        "Conexão": ("conexao","conexão"),
+        "Conversão Página": ("conversao pagina","conversao de pagina","conversão pagina","conversão de página","visualizacoes da pagina de destino"),
+        "Entrega": ("entrega","entrega.1"),
+        "Info. Pagamento / Entrega": ("info. pagamento / entrega","informacoes de pagamento / entrega","informações de pagamento / entrega"),
+        "Compras / Inf. Pagamento": ("compras / inf. pagamento","compras/inf. pagamento"),
+        "Conversão Checkout": ("conversao checkout","conversão checkout"),
+        "Cliques no link": ("cliques no link","cliques"),
+        "Visualizações da página de destino": ("visualizacoes da pagina de destino","visualizações da página de destino","page views"),
+        "Adições ao carrinho": ("adicoes ao carrinho","adições ao carrinho","add to cart"),
+        "Finalizações de compra iniciadas": ("finalizacoes de compra iniciadas","finalizações de compra iniciadas","checkout iniciado"),
+        "Inclusões de informações de pagamento": ("inclusoes de informacoes de pagamento","inclusões de informações de pagamento","pagamento info"),
+        "Compras": ("compras","purchases"),
+        "CPC (custo por clique no link)": ("cpc (custo por clique no link)","cpc"),
+        "CTR (taxa de cliques no link)": ("ctr (taxa de cliques no link)","ctr"),
+        "Reproduções de 25% do vídeo": ("reproducoes de 25% do video","reproduções de 25% do vídeo"),
+        "Reproduções de 50% do vídeo": ("reproducoes de 50% do video","reproduções de 50% do vídeo"),
+        "Reproduções de 75% do vídeo": ("reproducoes de 75% do video","reproduções de 75% do vídeo"),
+        "Reproduções de 95% do vídeo": ("reproducoes de 95% do video","reproduções de 95% do vídeo"),
+        "Tempo médio de reprodução do vídeo": ("tempo medio de reproducao do video","tempo médio de reprodução do vídeo"),
+    }
+
+    norm_map = {_norm(c): c for c in raw.columns}
+    rename_dict = {}
+    for final_name, choices in ALIASES.items():
+        for cand in choices:
+            if cand in norm_map:
+                rename_dict[norm_map[cand]] = final_name
+                break
+
+    df = raw.rename(columns=rename_dict).copy()
+    df = df.loc[:, ~df.columns.duplicated()]
+
+    # Conversão numérica robusta (formato BR)
+    def _to_num(x):
+        if pd.isna(x): return 0.0
+        if isinstance(x, (int, float)): return float(x)
+        s = str(x).strip().lower()
+        s = s.replace("r$", "").replace("brl", "")
+        s = s.replace(".", "").replace(",", ".")
+        s = re.sub(r"[^0-9\.\-eE]", "", s)
+        try:
+            return float(s)
+        except:
+            return 0.0
+
+    for col in [
+        "Valor usado","Valor de conversão da compra","Compras",
+        "CPC (custo por clique no link)","CTR (taxa de cliques no link)",
+        "CPM (custo por 1.000 impressões)","Impressões","Alcance","Frequência",
+        "Cliques no link","Visualizações da página de destino","Adições ao carrinho",
+        "Finalizações de compra iniciadas","Inclusões de informações de pagamento",
+        "Custo por resultado","Custo por finalização de compra iniciada",
+    ]:
+        if col in df.columns:
+            df[col] = df[col].apply(_to_num)
+
+    # =========================
+    # Filtros
+    # =========================
+    st.markdown("### 🔎 Filtros")
+    colf1, colf2, colf3 = st.columns(3)
+    with colf1:
+        campanhas = ["(Todas)"] + sorted(df["campanha"].astype(str).unique().tolist()) if "campanha" in df.columns else ["(Todas)"]
+        sel_campanha = st.selectbox("Campanha", campanhas)
+    with colf2:
+        status = ["(Todos)"] + sorted(df["Desativado/Ativado"].astype(str).unique().tolist()) if "Desativado/Ativado" in df.columns else ["(Todos)"]
+        sel_status = st.selectbox("Status", status)
+    with colf3:
+        veics = ["(Todas)"] + sorted(df["Veiculação"].astype(str).unique().tolist()) if "Veiculação" in df.columns else ["(Todas)"]
+        sel_veic = st.selectbox("Veiculação", veics)
+
+    filt = pd.Series(True, index=df.index)
+    if "campanha" in df.columns and sel_campanha != "(Todas)":
+        filt &= (df["campanha"].astype(str) == sel_campanha)
+    if "Desativado/Ativado" in df.columns and sel_status != "(Todos)":
+        filt &= (df["Desativado/Ativado"].astype(str) == sel_status)
+    if "Veiculação" in df.columns and sel_veic != "(Todas)":
+        filt &= (df["Veiculação"].astype(str) == sel_veic)
+
+    dff = df.loc[filt].copy()
+
         st.markdown("### 🔎 Filtros")
         colf1, colf2, colf3 = st.columns(3)
         with colf1:
