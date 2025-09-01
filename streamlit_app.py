@@ -179,67 +179,63 @@ def fetch_meta_insights(level="campaign", since=None, until=None, fields_extra=N
             st.error(f"Erro na Meta API: {r.status_code} — {r.text}")
             break
         data = r.json()
-        for it in data.get("data", []):
-            spend = float(it.get("spend", 0) or 0)
-            impressions = float(it.get("impressions", 0) or 0)
-            clicks_all = float(it.get("clicks", 0) or 0)
-            link_clicks = float(it.get("inline_link_clicks", 0) or 0)
+for it in data.get("data", []):
+    spend = float(it.get("spend", 0) or 0)
+    impressions = float(it.get("impressions", 0) or 0)
+    clicks_all = float(it.get("clicks", 0) or 0)
+    link_clicks = float(it.get("inline_link_clicks", 0) or 0)
 
-            purchases = _safe_get_action(it.get("actions"), "purchase")
-            revenue   = _safe_get_action(it.get("action_values"), "purchase")
+    purchases = _safe_get_action(it.get("actions"), "purchase")
+    revenue   = _safe_get_action(it.get("action_values"), "purchase")
 
-            def _vid(listname):
-                lst = it.get(listname)
-                return _safe_get_action(lst, "video_view") if lst else 0.0
-            v25 = _vid("video_p25_watched_actions")
-            v50 = _vid("video_p50_watched_actions")
-            v75 = _vid("video_p75_watched_actions")
-            v95 = _vid("video_p95_watched_actions")
+    def _vid(listname):
+        lst = it.get(listname)
+        return _safe_get_action(lst, "video_view") if lst else 0.0
 
-            # ===== Funil (ações pixel/app) =====
-lp_views = float(it.get("landing_page_views", 0) or 0)
-if lp_views == 0:
-    # fallback via actions quando o campo nativo não vier
-    lp_views = _safe_get_action(it.get("actions"), "landing_page_view")
+    v25 = _vid("video_p25_watched_actions")
+    v50 = _vid("video_p50_watched_actions")
+    v75 = _vid("video_p75_watched_actions")
+    v95 = _vid("video_p95_watched_actions")
 
-# estes ficam FORA do if
-add_to_cart       = _safe_get_action(it.get("actions"), "add_to_cart")
-initiate_checkout = _safe_get_action(it.get("actions"), "initiate_checkout")
-add_payment_info  = _safe_get_action(it.get("actions"), "add_payment_info")
+    # ===== Funil (ações pixel/app) =====
+    lp_views = float(it.get("landing_page_views", 0) or 0)
+    if lp_views == 0:
+        # fallback via actions quando o campo nativo não vier
+        lp_views = _safe_get_action(it.get("actions"), "landing_page_view")
 
+    add_to_cart       = _safe_get_action(it.get("actions"), "add_to_cart")
+    initiate_checkout = _safe_get_action(it.get("actions"), "initiate_checkout")
+    add_payment_info  = _safe_get_action(it.get("actions"), "add_payment_info")
 
     rows.append({
-    "campanha": it.get("campaign_name"),
-    "Desativado/Ativado": "Ativo",
-    "Veiculação": it.get("objective"),
-    "Valor usado": spend,
-    "Valor de conversão da compra": revenue,
-    "Compras": purchases,
-    "Impressões": impressions,
-    "Alcance": float(it.get("reach", 0) or 0),
-    "Frequência": float(it.get("frequency", 0) or 0),
-    "CPC (custo por clique no link)": float(it.get("cpc", 0) or 0),
-    "CTR (taxa de cliques no link)": float(it.get("ctr", 0) or 0) / 100.0,
-    "CPM (custo por 1.000 impressões)": float(it.get("cpm", 0) or 0),
-    "Cliques no link": link_clicks if link_clicks > 0 else clicks_all,
-    "Cliques": clicks_all,
-
-    # 👇 Novas colunas usadas no seu funil
-    "Visualizações da página de destino": lp_views,
-    "Adições ao carrinho": add_to_cart,
-    "Finalizações de compra iniciadas": initiate_checkout,
-    "Inclusões de informações de pagamento": add_payment_info,
-
-    "Reproduções de 25% do vídeo": v25,
-    "Reproduções de 50% do vídeo": v50,
-    "Reproduções de 75% do vídeo": v75,
-    "Reproduções de 95% do vídeo": v95,
-    "_campaign_id": it.get("campaign_id"),
-    "_adset_id": it.get("adset_id"),
-    "_ad_id": it.get("ad_id"),
-    "_date_start": it.get("date_start"),
-    "_date_stop": it.get("date_stop"),
-})
+        "campanha": it.get("campaign_name"),
+        "Desativado/Ativado": "Ativo",
+        "Veiculação": it.get("objective"),
+        "Valor usado": spend,
+        "Valor de conversão da compra": revenue,
+        "Compras": purchases,
+        "Impressões": impressions,
+        "Alcance": float(it.get("reach", 0) or 0),
+        "Frequência": float(it.get("frequency", 0) or 0),
+        "CPC (custo por clique no link)": float(it.get("cpc", 0) or 0),
+        "CTR (taxa de cliques no link)": float(it.get("ctr", 0) or 0) / 100.0,
+        "CPM (custo por 1.000 impressões)": float(it.get("cpm", 0) or 0),
+        "Cliques no link": link_clicks if link_clicks > 0 else clicks_all,
+        "Cliques": clicks_all,
+        "Visualizações da página de destino": lp_views,
+        "Adições ao carrinho": add_to_cart,
+        "Finalizações de compra iniciadas": initiate_checkout,
+        "Inclusões de informações de pagamento": add_payment_info,
+        "Reproduções de 25% do vídeo": v25,
+        "Reproduções de 50% do vídeo": v50,
+        "Reproduções de 75% do vídeo": v75,
+        "Reproduções de 95% do vídeo": v95,
+        "_campaign_id": it.get("campaign_id"),
+        "_adset_id": it.get("adset_id"),
+        "_ad_id": it.get("ad_id"),
+        "_date_start": it.get("date_start"),
+        "_date_stop": it.get("date_stop"),
+    })
 
         next_url = data.get("paging", {}).get("next")
         if not next_url:
