@@ -375,7 +375,7 @@ else:
     st.markdown("---")
 
 # =========================
-# Funil (volumes + taxas) — versão enxuta pedida
+# Funil (volumes + taxas)
 # =========================
 st.markdown("### 🧭 Funil (volumes do filtro)")
 
@@ -383,13 +383,11 @@ if uploaded:
     def _sum(col):
         return float(dff[col].sum()) if col in dff.columns else 0.0
 
-    # Volumes por etapa (sem AddToCart)
     clicks  = _sum("cliques")
     lp      = _sum("lp_views")
     ck      = _sum("ck_init")
     compras = _sum("compras")
 
-    # Tabela de volumes
     funil = pd.DataFrame({
         "Etapa": ["Cliques","LP Views","Checkout","Compras"],
         "Volume": [clicks, lp, ck, compras]
@@ -403,38 +401,28 @@ if uploaded:
             use_container_width=True
         )
 
-    # -------------------------
-    # Taxas entre as etapas (sem AddToCart)
-    # -------------------------
     st.markdown("### 📈 Taxas do Funil (sem AddToCart)")
-
-    def _rate(num, den):
-        return (num / den) if den > 0 else np.nan
-
+    def _rate(num, den): return (num / den) if den > 0 else np.nan
     taxas = [
         {"De→Para": "Cliques → LP",      "Taxa": _rate(lp, clicks)},
         {"De→Para": "LP → Checkout",     "Taxa": _rate(ck, lp)},
         {"De→Para": "Checkout → Compra", "Taxa": _rate(compras, ck)},
     ]
-
     df_taxas = pd.DataFrame(taxas)
     df_taxas["Taxa (%)"] = (df_taxas["Taxa"] * 100).round(2)
-
     st.dataframe(df_taxas[["De→Para","Taxa (%)"]], use_container_width=True)
 
     df_taxas_plot = df_taxas.dropna(subset=["Taxa"])
     if not df_taxas_plot.empty:
-        fig_taxas = px.bar(
-            df_taxas_plot, x="Taxa", y="De→Para", orientation="h",
-            title="Taxas por Etapa (Cliques→LP→Checkout→Compra)"
-        )
+        fig_taxas = px.bar(df_taxas_plot, x="Taxa", y="De→Para", orientation="h",
+                           title="Taxas por Etapa (Cliques→LP→Checkout→Compra)")
         fig_taxas.update_layout(xaxis_tickformat=".0%")
         st.plotly_chart(fig_taxas, use_container_width=True)
+
 else:
-    st.warning("⚠️ Nenhum arquivo de análise carregado. Envie o CSV para visualizar o funil.")
+    st.warning("⚠️ Nenhum arquivo carregado. Envie o CSV para visualizar o funil.")
 
-    st.markdown("---")
-
+st.markdown("---")
 
 # =========================
 # Ranking de campanhas
@@ -463,51 +451,61 @@ if uploaded:
             "gasto":"Investimento (R$)",
             "faturamento":"Faturamento (R$)"
         })
-
         st.dataframe(friendly, use_container_width=True)
     else:
-        st.info("⚠️ O arquivo carregado não contém a coluna 'campanha'.")
+        st.info("⚠️ O arquivo não contém a coluna 'campanha'.")
 else:
-    st.warning("⚠️ Nenhum arquivo de análise carregado. Envie o CSV para visualizar o ranking de campanhas.")
+    st.warning("⚠️ Nenhum arquivo carregado. Envie o CSV para visualizar o ranking.")
 
+st.markdown("---")
 
-    st.markdown("---")
+# =========================
+# Orçamento por etapa do funil
+# =========================
+st.markdown("### 💵 Orçamento por Etapa (Planejado vs Realizado)")
 
-    # Orçamento por etapa do funil
-    if "campanha" in dff.columns:
-        dff["etapa_funil"] = dff["campanha"].apply(classificar_funil)
-        realizado_funil = dff.groupby("etapa_funil")["gasto"].sum().to_dict()
+if uploaded and "campanha" in dff.columns:
+    dff["etapa_funil"] = dff["campanha"].apply(classificar_funil)
+    realizado_funil = dff.groupby("etapa_funil")["gasto"].sum().to_dict()
 
-        etapas = ["Teste de Interesse", "Teste de Criativo", "Escala", "Remarketing"]
+    etapas = ["Teste de Interesse", "Teste de Criativo", "Escala", "Remarketing"]
 
-        comp = pd.DataFrame({
-            "Etapa": etapas,
-            "Planejado (R$)": [planejado_funil.get(e,0) for e in etapas],
-            "Realizado (R$)": [realizado_funil.get(e,0) for e in etapas],
-        })
-        comp["Diferença (R$)"] = comp["Realizado (R$)"] - comp["Planejado (R$)"]
+    comp = pd.DataFrame({
+        "Etapa": etapas,
+        "Planejado (R$)": [planejado_funil.get(e,0) for e in etapas],
+        "Realizado (R$)": [realizado_funil.get(e,0) for e in etapas],
+    })
+    comp["Diferença (R$)"] = comp["Realizado (R$)"] - comp["Planejado (R$)"]
 
-        st.markdown("### 💵 Orçamento por Etapa do Funil (Planejado vs Realizado)")
-        st.dataframe(comp, use_container_width=True)
+    st.dataframe(comp, use_container_width=True)
+    col1, col2 = st.columns(2)
+    with col1:
+        st.plotly_chart(px.bar(comp, x="Etapa", y=["Planejado (R$)", "Realizado (R$)"],
+                               barmode="group", title="Planejado vs Realizado"),
+                        use_container_width=True)
+    with col2:
+        st.plotly_chart(px.pie(comp, values="Realizado (R$)", names="Etapa", title="Distribuição Realizada"),
+                        use_container_width=True)
+else:
+    st.warning("⚠️ Nenhum arquivo carregado. Envie o CSV para visualizar o orçamento por etapa.")
 
-        col1, col2 = st.columns(2)
-        with col1:
-            st.plotly_chart(px.bar(comp, x="Etapa", y=["Planejado (R$)", "Realizado (R$)"],
-                                   barmode="group", title="Planejado vs Realizado"), use_container_width=True)
-        with col2:
-            st.plotly_chart(px.pie(comp, values="Realizado (R$)", names="Etapa", title="Distribuição Realizada"), use_container_width=True)
+st.markdown("---")
 
-    st.markdown("---")
+# =========================
+# ROAS diário
+# =========================
+st.markdown("### 📅 ROAS diário")
 
-    # ROAS diário
-    st.markdown("### 📅 ROAS diário (arquivo filtrado)")
-    if date_col:
-        dd = dff.copy()
-        dd["_date"] = pd.to_datetime(dd[date_col], errors="coerce", dayfirst=True)
-        t = dd.dropna(subset=["_date"]).groupby("_date").agg({"gasto":"sum","faturamento":"sum"}).reset_index().sort_values("_date")
-        if not t.empty:
-            t["ROAS"] = t["faturamento"] / t["gasto"].replace(0, np.nan)
-            st.plotly_chart(px.line(t, x="_date", y="ROAS", title="ROAS diário"), use_container_width=True)
+if uploaded and "data" in dff.columns:
+    dd = dff.copy()
+    dd["_date"] = pd.to_datetime(dd["data"], errors="coerce", dayfirst=True)
+    t = dd.dropna(subset=["_date"]).groupby("_date").agg({"gasto":"sum","faturamento":"sum"}).reset_index().sort_values("_date")
+    if not t.empty:
+        t["ROAS"] = t["faturamento"] / t["gasto"].replace(0, np.nan)
+        st.plotly_chart(px.line(t, x="_date", y="ROAS", title="ROAS diário"), use_container_width=True)
+else:
+    st.warning("⚠️ Nenhum arquivo carregado. Envie o CSV para visualizar o ROAS diário.")
+
 
 # =========================
 # Bloco 3 — Acompanhamento Diário (enxuto, derivado da meta mensal)
