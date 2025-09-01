@@ -41,20 +41,6 @@ pct_teste_interesse = st.number_input("Teste de Interesse (%)", value=20.0, step
 pct_teste_criativo  = st.number_input("Teste de Criativo (%)", value=15.0, step=1.0, min_value=0.0, max_value=100.0)
 pct_remarketing     = st.number_input("Remarketing (%)", value=15.0, step=1.0, min_value=0.0, max_value=100.0)
 
-# Escala sempre pega o restante
-pct_escala = max(0.0, 100.0 - (pct_teste_interesse + pct_teste_criativo + pct_remarketing))
-
-st.markdown(f"**Escala (%) calculado:** {pct_escala:.1f}%")
-
-# Converte os % em R$ baseado no orçamento semanal derivado
-planejado_funil = {
-    "Teste de Interesse": (pct_teste_interesse/100) * budget_goal_week,
-    "Teste de Criativo": (pct_teste_criativo/100) * budget_goal_week,
-    "Remarketing": (pct_remarketing/100) * budget_goal_week,
-    "Escala": (pct_escala/100) * budget_goal_week,
-}
-
-
 # =========================
 # Helpers
 # =========================
@@ -181,6 +167,20 @@ week_share = week_days_considered / month_days_considered
 goal_rev_week = goal_rev_month * week_share
 goal_pur_week = goal_pur_month * week_share
 budget_goal_week = budget_goal_month * week_share
+
+# Escala pega o restante automaticamente
+pct_escala = max(0.0, 100.0 - (pct_teste_interesse + pct_teste_criativo + pct_remarketing))
+
+st.markdown(f"**Distribuição de verba (%):** Interesse {pct_teste_interesse:.1f}% | Criativo {pct_teste_criativo:.1f}% | Remarketing {pct_remarketing:.1f}% | Escala {pct_escala:.1f}%")
+
+# Converte os % em valores de R$ (baseado no orçamento semanal)
+planejado_funil = {
+    "Teste de Interesse": (pct_teste_interesse/100) * budget_goal_week,
+    "Teste de Criativo": (pct_teste_criativo/100) * budget_goal_week,
+    "Remarketing": (pct_remarketing/100) * budget_goal_week,
+    "Escala": (pct_escala/100) * budget_goal_week,
+}
+
 
 # =========================
 # Bloco 1 — Metas (planejado)
