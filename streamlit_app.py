@@ -20,14 +20,12 @@ with st.sidebar:
     target_roas = st.number_input("ROAS alvo", value=2.0, min_value=0.1, step=0.1, format="%.2f")
 
     st.subheader("📅 Referências de Tempo")
-    # Semana baseia-se nesta data (segunda a domingo)
     week_start = st.date_input(
         "Início da semana (segunda)",
         value=(datetime.today() - timedelta(days=datetime.today().weekday())).date(),
     )
     include_weekends = st.checkbox("Metas consideram finais de semana", value=True, help="Se desmarcar, metas diárias ignoram sábados e domingos.")
 
-    # Mês de referência para a META MENSAL
     month_ref = st.date_input("Qualquer dia do mês da meta", value=datetime.today().date())
 
     st.subheader("🎯 META MENSAL (base de tudo)")
@@ -37,10 +35,22 @@ with st.sidebar:
     st.subheader("📥 CSV do Gerenciador")
     uploaded = st.file_uploader("Envie o CSV (separador vírgula)", type=["csv"]) 
 
+    st.subheader("💰 Planejamento de Verba por Etapa")
+    orc_teste_interesse = st.number_input("Teste de Interesse (R$)", value=1000.0, step=100.0)
+    orc_teste_criativo  = st.number_input("Teste de Criativo (R$)", value=1000.0, step=100.0)
+    orc_escala          = st.number_input("Escala (R$)", value=2000.0, step=100.0)
+    orc_remarketing     = st.number_input("Remarketing (R$)", value=1000.0, step=100.0)
+
+    planejado_funil = {
+        "Teste de Interesse": orc_teste_interesse,
+        "Teste de Criativo": orc_teste_criativo,
+        "Escala": orc_escala,
+        "Remarketing": orc_remarketing
+    }
+
 # =========================
 # Helpers
 # =========================
-
 def daterange(start_date, end_date, include_weekends=True):
     days, d = [], start_date
     while d <= end_date:
@@ -71,7 +81,6 @@ def read_csv_flex(file):
         return pd.read_csv(file)
     raw = _read(file)
 
-    # mapa simples de aliases
     ALIASES = {
         "campanha": ("nome da campanha", "campanha", "campaign name", "nome da campanha (id)"),
         "status": ("desativado/ativado", "ativado/desativado", "estado", "status da campanha"),
@@ -114,43 +123,44 @@ def read_csv_flex(file):
         if col in df.columns:
             df[col] = df[col].apply(_to_num)
 
-    # percentuais
     if "ctr" in df.columns:
-        df["ctr"] = df["ctr"].apply(lambda v: v/100.0 if v>1.5 else v)  # se vier em % converte para proporção
-
+        df["ctr"] = df["ctr"].apply(lambda v: v/100.0 if v>1.5 else v)
     return df
+
+def classificar_funil(nome):
+    nome = str(nome).lower()
+    if "[teste/público]" in nome or "[teste/publico]" in nome:
+        return "Teste de Interesse"
+    elif "[teste/criativo]" in nome:
+        return "Teste de Criativo"
+    elif "cbo" in nome or "escala" in nome:
+        return "Escala"
+    elif "remarketing" in nome:
+        return "Remarketing"
+    return "Outros"
 
 # =========================
 # Metas — MÊS ➜ Semana
 # =========================
-# Mês
 month_first = month_ref.replace(day=1)
 next_month_first = (month_first.replace(year=month_first.year+1, month=1) if month_first.month==12 else month_first.replace(month=month_first.month+1))
 month_last = next_month_first - timedelta(days=1)
-month_days = daterange(month_first, month_last, include_weekends=True)  # metas mensais sempre olham o calendário completo; a granularidade dia/semana usa o checkbox
+month_days = daterange(month_first, month_last, include_weekends=True)
 
-# Semana
 week_start_dt = datetime.combine(week_start, datetime.min.time())
 week_end_dt = week_start_dt + timedelta(days=6)
-week_days_all = daterange(week_start_dt.date(), week_end_dt.date(), include_weekends=True)  # semana cheia
+week_days_all = daterange(week_start_dt.date(), week_end_dt.date(), include_weekends=True)
 
-# Intersecção SEMANA x MÊS (para repartir a meta mensal só pela fração que cai no mês)
 week_days_in_month = [d for d in week_days_all if (month_first <= d <= month_last)]
 
-# Contagem de dias “considerados” para rateio diário
 def count_considered_days(days, consider_weekends):
     if consider_weekends:
         return len(days)
     return sum(1 for d in days if datetime.strptime(str(d), "%Y-%m-%d").weekday() < 5)
 
-month_days_considered = count_considered_days(month_days, include_weekends)
-week_days_considered = count_considered_days(week_days_in_month, include_weekends)
+month_days_considered = max(1, count_considered_days(month_days, include_weekends))
+week_days_considered = max(1, count_considered_days(week_days_in_month, include_weekends))
 
-# Evitar divisão por zero
-month_days_considered = max(1, month_days_considered)
-week_days_considered = max(1, week_days_considered)
-
-# Meta mensal em faturamento/compras e orçamento
 if goal_type_m == "Faturamento":
     goal_rev_month = float(monthly_goal_value)
     goal_pur_month = goal_rev_month / aov if aov>0 else 0.0
@@ -160,10 +170,7 @@ else:
 
 budget_goal_month = goal_rev_month / target_roas if target_roas>0 else 0.0
 
-# Proporção da semana dentro do mês (ajustada por dias considerados)
 week_share = week_days_considered / month_days_considered
-
-# Metas semanais DERIVADAS da meta mensal
 goal_rev_week = goal_rev_month * week_share
 goal_pur_week = goal_pur_month * week_share
 budget_goal_week = budget_goal_month * week_share
@@ -218,17 +225,16 @@ else:
 
     dff = df.loc[filt].copy()
 
-    # KPIs gerais (arquivo inteiro)
+    # KPIs gerais
     invest_total = float(dff.get("gasto", pd.Series([0])).sum())
     fatur_total = float(dff.get("faturamento", pd.Series([0])).sum())
     compras_total = float(dff.get("compras", pd.Series([0])).sum())
 
-    # Se houver datas: separar MÊS e SEMANA para progresso
+    # Se houver datas
     date_col = next((c for c in ["data"] if c in dff.columns), None)
     if date_col:
         dd = dff.copy()
         dd["_date"] = pd.to_datetime(dd[date_col], errors="coerce", dayfirst=True)
-        # filtros por janela
         week_mask = (dd["_date"] >= pd.to_datetime(week_start_dt)) & (dd["_date"] <= pd.to_datetime(week_end_dt))
         month_mask = (dd["_date"] >= pd.to_datetime(month_first)) & (dd["_date"] <= pd.to_datetime(month_last))
         w = dd.loc[week_mask]
@@ -240,15 +246,13 @@ else:
         fatur_m = float(m.get("faturamento", pd.Series([0])).sum())
         compras_m = float(m.get("compras", pd.Series([0])).sum())
     else:
-        # Sem datas: usa totais do CSV como "atual"
         invest_w = invest_m = invest_total
         fatur_w = fatur_m = fatur_total
         compras_w = compras_m = compras_total
 
-    # KPIs essenciais (SEMANA atual)
+    # KPIs Semana
     roas_w = (fatur_w/invest_w) if invest_w>0 else 0.0
     cpa_w = (invest_w/compras_w) if compras_w>0 else 0.0
-
     st.markdown("### 📌 KPIs Semanais (Reais)")
     k1,k2,k3,k4,k5 = st.columns(5)
     k1.metric("Investimento — Semana", f"R$ {invest_w:,.0f}".replace(",","."))
@@ -257,13 +261,11 @@ else:
     k4.metric("CPA — Semana", f"R$ {cpa_w:,.2f}".replace(",","."))
     k5.metric("Compras — Semana", f"{compras_w:,.0f}".replace(",","."))
 
-    # Progresso SEMANA vs meta derivada
     st.progress(min(1.0, fatur_w/max(1.0, goal_rev_week)), text=f"Semana: R$ {fatur_w:,.0f} / R$ {goal_rev_week:,.0f}".replace(",","."))
 
-    # KPIs MENSAL (Reais)
+    # KPIs Mês
     roas_m = (fatur_m/invest_m) if invest_m>0 else 0.0
     cpa_m = (invest_m/compras_m) if compras_m>0 else 0.0
-
     st.markdown("### 📌 KPIs Mensais (Reais)")
     m1,m2,m3,m4,m5 = st.columns(5)
     m1.metric("Investimento — Mês", f"R$ {invest_m:,.0f}".replace(",","."))
@@ -272,12 +274,11 @@ else:
     m4.metric("CPA — Mês", f"R$ {cpa_m:,.2f}".replace(",","."))
     m5.metric("Compras — Mês", f"{compras_m:,.0f}".replace(",","."))
 
-    # Progresso MÊS vs meta mensal
     st.progress(min(1.0, fatur_m/max(1.0, goal_rev_month)), text=f"Mês: R$ {fatur_m:,.0f} / R$ {goal_rev_month:,.0f}".replace(",","."))
 
     st.markdown("---")
 
-    # Funil simplificado
+    # Funil
     st.markdown("### 🧭 Funil (volume total do filtro)")
     def safe_sum(col):
         return dff[col].sum() if col in dff.columns else 0
@@ -286,14 +287,12 @@ else:
         "valor": [safe_sum("cliques"), safe_sum("lp_views"), safe_sum("add_cart"), safe_sum("ck_init"), safe_sum("pay_info"), safe_sum("compras")]
     })
     funil = funil[funil["valor"]>0]
-    if funil.empty:
-        st.info("Para ver o funil, inclua no CSV colunas de cliques, LP views, add to cart, checkout, pagamento e compras.")
-    else:
+    if not funil.empty:
         st.plotly_chart(px.funnel(funil, x="valor", y="etapa", title="Funil de Conversão"), use_container_width=True)
 
     st.markdown("---")
 
-    # Ranking por campanha
+    # Ranking
     st.markdown("### 🏆 Campanhas (Top 10 por ROAS)")
     if "campanha" in dff.columns:
         grp = dff.groupby("campanha").agg({
@@ -310,12 +309,36 @@ else:
             grp = grp.sort_values(order_cols, ascending=[False, False, True]).head(10)
         friendly = grp.rename(columns={"campanha":"Campanha","gasto":"Investimento (R$)","faturamento":"Faturamento (R$)"})
         st.dataframe(friendly, use_container_width=True)
-    else:
-        st.info("Coluna 'campanha' não encontrada para ranquear.")
 
     st.markdown("---")
 
-    # ROAS diário (se houver data)
+    # Orçamento por etapa do funil
+    if "campanha" in dff.columns:
+        dff["etapa_funil"] = dff["campanha"].apply(classificar_funil)
+        realizado_funil = dff.groupby("etapa_funil")["gasto"].sum().to_dict()
+
+        etapas = ["Teste de Interesse", "Teste de Criativo", "Escala", "Remarketing"]
+
+        comp = pd.DataFrame({
+            "Etapa": etapas,
+            "Planejado (R$)": [planejado_funil.get(e,0) for e in etapas],
+            "Realizado (R$)": [realizado_funil.get(e,0) for e in etapas],
+        })
+        comp["Diferença (R$)"] = comp["Realizado (R$)"] - comp["Planejado (R$)"]
+
+        st.markdown("### 💵 Orçamento por Etapa do Funil (Planejado vs Realizado)")
+        st.dataframe(comp, use_container_width=True)
+
+        col1, col2 = st.columns(2)
+        with col1:
+            st.plotly_chart(px.bar(comp, x="Etapa", y=["Planejado (R$)", "Realizado (R$)"],
+                                   barmode="group", title="Planejado vs Realizado"), use_container_width=True)
+        with col2:
+            st.plotly_chart(px.pie(comp, values="Realizado (R$)", names="Etapa", title="Distribuição Realizada"), use_container_width=True)
+
+    st.markdown("---")
+
+    # ROAS diário
     st.markdown("### 📅 ROAS diário (arquivo filtrado)")
     if date_col:
         dd = dff.copy()
@@ -324,10 +347,6 @@ else:
         if not t.empty:
             t["ROAS"] = t["faturamento"] / t["gasto"].replace(0, np.nan)
             st.plotly_chart(px.line(t, x="_date", y="ROAS", title="ROAS diário"), use_container_width=True)
-        else:
-            st.info("Sem datas válidas para série temporal.")
-    else:
-        st.info("Inclua uma coluna de data no CSV para ver a série temporal.")
 
 # =========================
 # Bloco 3 — Acompanhamento Diário (enxuto, derivado da meta mensal)
