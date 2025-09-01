@@ -124,12 +124,8 @@ def read_csv_flex(file):
         "info. pagamento / entrega"  # algumas exports vêm assim
     ),
     "compras": (
-        "compras",
-        "compras / inf. pagamento",
-        "compras / informações de pagamento",
-        "purchases"
+        "compras"
     ),
-
 
     # Métricas de alcance / mid-funnel
     "alcance": ("alcance",),
@@ -420,34 +416,16 @@ taxas = [
 df_taxas = pd.DataFrame(taxas)
 df_taxas["Taxa (%)"] = (df_taxas["Taxa"] * 100).round(2)
 
-# Mostra tabela
 st.dataframe(df_taxas[["De→Para","Taxa (%)"]], use_container_width=True)
 
-# Gráfico de funil horizontal (mais intuitivo)
-df_plot = df_taxas.dropna(subset=["Taxa"]).copy()
-df_plot["Taxa (%)"] = df_plot["Taxa"] * 100
-
-fig_funil = px.funnel(
-    df_plot,
-    y="De→Para",
-    x="Taxa (%)",
-    title="Taxas de Conversão no Funil (%)"
-)
-
-# Adiciona labels grandes na barra
-fig_funil.update_traces(textinfo="value+percent initial")
-
-# Melhor layout visual
-fig_funil.update_layout(
-    xaxis_tickformat=".0f",
-    xaxis_title="Taxa (%)",
-    yaxis_title="Etapas",
-    uniformtext_minsize=14,
-    uniformtext_mode="show"
-)
-
-st.plotly_chart(fig_funil, use_container_width=True)
-
+df_taxas_plot = df_taxas.dropna(subset=["Taxa"])
+if not df_taxas_plot.empty:
+    fig_taxas = px.bar(
+        df_taxas_plot, x="Taxa", y="De→Para", orientation="h",
+        title="Taxas por Etapa (Cliques→LP→ATC→Checkout→Compra)"
+    )
+    fig_taxas.update_layout(xaxis_tickformat=".0%")
+    st.plotly_chart(fig_taxas, use_container_width=True)
 
 
     st.markdown("---")
