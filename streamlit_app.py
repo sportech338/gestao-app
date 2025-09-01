@@ -369,64 +369,64 @@ else:
 
     st.markdown("---")
 
-    # =========================
-    # Funil (volumes + taxas)
-    # =========================
-    st.markdown("### 🧭 Funil (volumes do filtro)")
+# =========================
+# Funil (volumes + taxas) — versão enxuta pedida
+# =========================
+st.markdown("### 🧭 Funil (volumes do filtro)")
 
-    def _sum(col):
-        return float(dff[col].sum()) if col in dff.columns else 0.0
+def _sum(col):
+    return float(dff[col].sum()) if col in dff.columns else 0.0
 
-    # Volumes por etapa (usando os nomes já mapeados em ALIASES)
-    clicks    = _sum("cliques")
-    lp        = _sum("lp_views")
-    atc       = _sum("add_cart")
-    ck        = _sum("ck_init")
-    entrega   = _sum("entrega")     # você disse que essa coluna existe
-    payinfo   = _sum("pay_info")
-    compras   = _sum("compras")
+# Volumes por etapa usadas nas taxas pedidas
+clicks  = _sum("cliques")
+lp      = _sum("lp_views")
+atc     = _sum("add_cart")
+ck      = _sum("ck_init")
+compras = _sum("compras")
 
-    # Tabela de volumes
-    funil = pd.DataFrame({
-        "Etapa": ["Cliques","LP Views","Add to Cart","Checkout","Pagamento","Compras"],
-        "Volume": [clicks, lp, atc, ck, payinfo, compras]
-    })
-    funil = funil[funil["Volume"] > 0]
+# Tabela de volumes
+funil = pd.DataFrame({
+    "Etapa": ["Cliques","LP Views","Add to Cart","Checkout","Compras"],
+    "Volume": [clicks, lp, atc, ck, compras]
+})
+funil = funil[funil["Volume"] > 0]
 
-    if not funil.empty:
-        st.dataframe(funil, use_container_width=True)
-        st.plotly_chart(px.funnel(funil, x="Volume", y="Etapa", title="Funil de Conversão (Volume)"), use_container_width=True)
+if not funil.empty:
+    st.dataframe(funil, use_container_width=True)
+    st.plotly_chart(
+        px.funnel(funil, x="Volume", y="Etapa", title="Funil de Conversão (Volume)"),
+        use_container_width=True
+    )
 
-    # -------------------------
-    # Taxas entre as etapas
-    # -------------------------
-    st.markdown("### 📈 Taxas do Funil")
+# -------------------------
+# Taxas entre as etapas (apenas as 4 pedidas)
+# -------------------------
+st.markdown("### 📈 Taxas do Funil (enxutas)")
 
-    def _rate(num, den):
-        return (num / den) if den > 0 else np.nan
+def _rate(num, den):
+    return (num / den) if den > 0 else np.nan
 
-    taxas = [
-        {"De→Para": "Cliques → LP",               "Taxa": _rate(lp, clicks)},
-        {"De→Para": "LP → AddToCart",             "Taxa": _rate(atc, lp)},
-        {"De→Para": "AddToCart → Checkout",       "Taxa": _rate(ck, atc)},
-        {"De→Para": "Checkout → Entrega",         "Taxa": _rate(entrega, ck)},
-        {"De→Para": "Entrega → Pagamento",        "Taxa": _rate(payinfo, entrega)},
-        {"De→Para": "Pagamento → Compra",         "Taxa": _rate(compras, payinfo)},
-        {"De→Para": "Checkout → Compra (direto)", "Taxa": _rate(compras, ck)},
-    ]
+taxas = [
+    {"De→Para": "Cliques → LP",           "Taxa": _rate(lp, clicks)},
+    {"De→Para": "LP → AddToCart",         "Taxa": _rate(atc, lp)},
+    {"De→Para": "AddToCart → Checkout",   "Taxa": _rate(ck, atc)},
+    {"De→Para": "Checkout → Compra",      "Taxa": _rate(compras, ck)},
+]
 
-    df_taxas = pd.DataFrame(taxas)
-    df_taxas["Taxa (%)"] = (df_taxas["Taxa"] * 100).round(2)
+df_taxas = pd.DataFrame(taxas)
+df_taxas["Taxa (%)"] = (df_taxas["Taxa"] * 100).round(2)
 
-    st.dataframe(df_taxas[["De→Para","Taxa (%)"]], use_container_width=True)
+st.dataframe(df_taxas[["De→Para","Taxa (%)"]], use_container_width=True)
 
+df_taxas_plot = df_taxas.dropna(subset=["Taxa"])
+if not df_taxas_plot.empty:
     fig_taxas = px.bar(
-        df_taxas.dropna(subset=["Taxa"]),
-        x="Taxa", y="De→Para", orientation="h",
-        title="Taxas por Etapa do Funil"
+        df_taxas_plot, x="Taxa", y="De→Para", orientation="h",
+        title="Taxas por Etapa (Cliques→LP→ATC→Checkout→Compra)"
     )
     fig_taxas.update_layout(xaxis_tickformat=".0%")
     st.plotly_chart(fig_taxas, use_container_width=True)
+
 
     st.markdown("---")
 
