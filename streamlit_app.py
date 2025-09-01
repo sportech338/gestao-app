@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -373,21 +374,20 @@ else:
 
     st.markdown("---")
 
-    # =========================
-    # Funil (volumes + taxas) — versão enxuta pedida
-    # =========================
-    st.markdown("### 🧭 Funil (volumes do filtro)")
+# =========================
+# Funil (volumes + taxas) — versão enxuta pedida
+# =========================
+st.markdown("### 🧭 Funil (volumes do filtro)")
 
-    def _sum(col):
-        return float(dff[col].sum()) if col in dff.columns else 0.0
+def _sum(col):
+    return float(dff[col].sum()) if col in dff.columns else 0.0
 
-    # Volumes por etapa usadas nas taxas pedidas
-    clicks  = _sum("cliques")
-    lp      = _sum("lp_views")
-    atc     = _sum("add_cart")
-    ck      = _sum("ck_init")
-    compras = _sum("compras")
-
+# Volumes por etapa usadas nas taxas pedidas
+clicks  = _sum("cliques")
+lp      = _sum("lp_views")
+atc     = _sum("add_cart")
+ck      = _sum("ck_init")
+compras = _sum("compras")
 
 # Tabela de volumes
 funil = pd.DataFrame({
@@ -403,105 +403,56 @@ if not funil.empty:
         use_container_width=True
     )
 
-    # =========================
-    # Funil (volumes + taxas) — versão enxuta pedida
-    # =========================
-    st.markdown("### 🧭 Funil (volumes do filtro)")
+# -------------------------
+# Taxas entre as etapas (apenas as 4 pedidas)
+# -------------------------
+st.markdown("### 📈 Taxas do Funil (enxutas)")
 
-    def _sum(col):
-        return float(dff[col].sum()) if col in dff.columns else 0.0
+def _rate(num, den):
+    return (num / den) if den > 0 else np.nan
 
-    # Volumes por etapa usadas nas taxas pedidas
-    clicks  = _sum("cliques")
-    lp      = _sum("lp_views")
-    atc     = _sum("add_cart")
-    ck      = _sum("ck_init")
-    compras = _sum("compras")
+taxas = [
+    {"De→Para": "Cliques → LP",           "Taxa": _rate(lp, clicks)},
+    {"De→Para": "LP → AddToCart",         "Taxa": _rate(atc, lp)},
+    {"De→Para": "AddToCart → Checkout",   "Taxa": _rate(ck, atc)},
+    {"De→Para": "Checkout → Compra",      "Taxa": _rate(compras, ck)},
+]
 
-    # -------------------------
-    # Tabela de volumes
-    # -------------------------
-    funil = pd.DataFrame({
-        "Etapa": ["Cliques","LP Views","Add to Cart","Checkout","Compras"],
-        "Volume": [clicks, lp, atc, ck, compras]
-    })
-    funil = funil[funil["Volume"] > 0]
+df_taxas = pd.DataFrame(taxas)
+df_taxas["Taxa (%)"] = (df_taxas["Taxa"] * 100).round(2)
 
-    if not funil.empty:
-        st.dataframe(funil, use_container_width=True)
-        st.plotly_chart(
-            px.funnel(funil, x="Volume", y="Etapa", title="Funil de Conversão (Volume)"),
-            use_container_width=True
-        )
+st.dataframe(df_taxas[["De→Para","Taxa (%)"]], use_container_width=True)
 
-    # -------------------------
-    # Taxas entre as etapas
-    # -------------------------
-    st.markdown("### 📈 Taxas do Funil (enxutas)")
-
-    def _rate(num, den):
-        return (num / den) if den > 0 else np.nan
-
-    taxas = [
-        {"De→Para": "Cliques → LP",           "Taxa": _rate(lp, clicks)},
-        {"De→Para": "LP → AddToCart",         "Taxa": _rate(atc, lp)},
-        {"De→Para": "AddToCart → Checkout",   "Taxa": _rate(ck, atc)},
-        {"De→Para": "Checkout → Compra",      "Taxa": _rate(compras, ck)},
-    ]
-
-    df_taxas = pd.DataFrame(taxas)
-    df_taxas["Taxa (%)"] = (df_taxas["Taxa"] * 100).round(2)
-
-    st.dataframe(df_taxas[["De→Para","Taxa (%)"]], use_container_width=True)
-
-    df_plot = df_taxas.dropna(subset=["Taxa"]).copy()
-    df_plot["Taxa (%)"] = df_plot["Taxa"] * 100
-
-    fig_funil = px.funnel(
-        df_plot,
-        y="De→Para",
-        x="Taxa (%)",
-        title="Taxas de Conversão no Funil (%)"
+df_taxas_plot = df_taxas.dropna(subset=["Taxa"])
+if not df_taxas_plot.empty:
+    fig_taxas = px.bar(
+        df_taxas_plot, x="Taxa", y="De→Para", orientation="h",
+        title="Taxas por Etapa (Cliques→LP→ATC→Checkout→Compra)"
     )
+    fig_taxas.update_layout(xaxis_tickformat=".0%")
+    st.plotly_chart(fig_taxas, use_container_width=True)
 
-    fig_funil.update_traces(textinfo="value+percent initial")
-    fig_funil.update_layout(
-        xaxis_tickformat=".0f",
-        xaxis_title="Taxa (%)",
-        yaxis_title="Etapas",
-        uniformtext_minsize=14,
-        uniformtext_mode="show"
-    )
-
-    st.plotly_chart(fig_funil, use_container_width=True)
 
     st.markdown("---")
 
-# Ranking
-st.markdown("### 🏆 Campanhas (Top 10 por ROAS)")
-if "campanha" in dff.columns:
-    grp = dff.groupby("campanha").agg({
-        **({"gasto":"sum"} if "gasto" in dff.columns else {}),
-        **({"faturamento":"sum"} if "faturamento" in dff.columns else {}),
-        **({"compras":"sum"} if "compras" in dff.columns else {}),
-    }).reset_index()
 
-    if "gasto" in grp.columns and "faturamento" in grp.columns:
-        grp["ROAS"] = grp["faturamento"] / grp["gasto"].replace(0, np.nan)
-    if "gasto" in grp.columns and "compras" in grp.columns:
-        grp["CPA"] = grp["gasto"] / grp["compras"].replace(0, np.nan)
-
-    order_cols = [c for c in ["ROAS","faturamento","gasto"] if c in grp.columns]
-    if order_cols:
-        grp = grp.sort_values(order_cols, ascending=[False, False, True]).head(10)
-
-    friendly = grp.rename(columns={
-        "campanha":"Campanha",
-        "gasto":"Investimento (R$)",
-        "faturamento":"Faturamento (R$)"
-    })
-    st.dataframe(friendly, use_container_width=True)
-
+    # Ranking
+    st.markdown("### 🏆 Campanhas (Top 10 por ROAS)")
+    if "campanha" in dff.columns:
+        grp = dff.groupby("campanha").agg({
+            **({"gasto":"sum"} if "gasto" in dff.columns else {}),
+            **({"faturamento":"sum"} if "faturamento" in dff.columns else {}),
+            **({"compras":"sum"} if "compras" in dff.columns else {}),
+        }).reset_index()
+        if "gasto" in grp.columns and "faturamento" in grp.columns:
+            grp["ROAS"] = grp["faturamento"] / grp["gasto"].replace(0, np.nan)
+        if "gasto" in grp.columns and "compras" in grp.columns:
+            grp["CPA"] = grp["gasto"] / grp["compras"].replace(0, np.nan)
+        order_cols = [c for c in ["ROAS","faturamento","gasto"] if c in grp.columns]
+        if order_cols:
+            grp = grp.sort_values(order_cols, ascending=[False, False, True]).head(10)
+        friendly = grp.rename(columns={"campanha":"Campanha","gasto":"Investimento (R$)","faturamento":"Faturamento (R$)"})
+        st.dataframe(friendly, use_container_width=True)
 
     st.markdown("---")
 
