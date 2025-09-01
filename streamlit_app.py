@@ -454,19 +454,27 @@ st.markdown("---")
 st.markdown("### 🏆 Campanhas (Top 10 por ROAS)")
 if "campanha" in dff.columns:
     grp = dff.groupby("campanha").agg({
-            **({"gasto":"sum"} if "gasto" in dff.columns else {}),
-            **({"faturamento":"sum"} if "faturamento" in dff.columns else {}),
-            **({"compras":"sum"} if "compras" in dff.columns else {}),
-        }).reset_index()
-        if "gasto" in grp.columns and "faturamento" in grp.columns:
-            grp["ROAS"] = grp["faturamento"] / grp["gasto"].replace(0, np.nan)
-        if "gasto" in grp.columns and "compras" in grp.columns:
-            grp["CPA"] = grp["gasto"] / grp["compras"].replace(0, np.nan)
-        order_cols = [c for c in ["ROAS","faturamento","gasto"] if c in grp.columns]
-        if order_cols:
-            grp = grp.sort_values(order_cols, ascending=[False, False, True]).head(10)
-        friendly = grp.rename(columns={"campanha":"Campanha","gasto":"Investimento (R$)","faturamento":"Faturamento (R$)"})
-        st.dataframe(friendly, use_container_width=True)
+        **({"gasto":"sum"} if "gasto" in dff.columns else {}),
+        **({"faturamento":"sum"} if "faturamento" in dff.columns else {}),
+        **({"compras":"sum"} if "compras" in dff.columns else {}),
+    }).reset_index()
+
+    if "gasto" in grp.columns and "faturamento" in grp.columns:
+        grp["ROAS"] = grp["faturamento"] / grp["gasto"].replace(0, np.nan)
+    if "gasto" in grp.columns and "compras" in grp.columns:
+        grp["CPA"] = grp["gasto"] / grp["compras"].replace(0, np.nan)
+
+    order_cols = [c for c in ["ROAS","faturamento","gasto"] if c in grp.columns]
+    if order_cols:
+        grp = grp.sort_values(order_cols, ascending=[False, False, True]).head(10)
+
+    friendly = grp.rename(columns={
+        "campanha":"Campanha",
+        "gasto":"Investimento (R$)",
+        "faturamento":"Faturamento (R$)"
+    })
+    st.dataframe(friendly, use_container_width=True)
+
 
     st.markdown("---")
 
