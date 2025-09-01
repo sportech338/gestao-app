@@ -1,5 +1,4 @@
 
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -57,7 +56,6 @@ def daterange(start_date, end_date, include_weekends=True):
 @st.cache_data(show_spinner=False)
 def read_csv_flex(file):
     import re, unicodedata
-
     def _norm(s: str) -> str:
         s = unicodedata.normalize("NFKD", s)
         s = "".join(c for c in s if not unicodedata.combining(c))
@@ -66,7 +64,6 @@ def read_csv_flex(file):
         s = re.sub(r"\s+", " ", s)
         s = s.replace("(brl)", "").replace(" r$", "").strip()
         return s
-
     def _read(file):
         for enc in ["utf-8", "latin-1", "utf-16", "cp1252"]:
             try:
@@ -76,81 +73,77 @@ def read_csv_flex(file):
                 continue
         file.seek(0)
         return pd.read_csv(file)
-
     raw = _read(file)
 
     ALIASES = {
-        # Identificação / status
-        "campanha": (
-            "nome da campanha", "campanha", "campaign name", "nome da campanha (id)"
-        ),
-        "status": (
-            "desativado/ativado", "ativado/desativado", "estado", "status da campanha"
-        ),
-        "veiculacao": (
-            "veiculação", "veiculacao", "veiculação da campanha", "posicionamento"
-        ),
+    # Identificação / status
+    "campanha": (
+        "nome da campanha", "campanha", "campaign name", "nome da campanha (id)"
+    ),
+    "status": (
+        "desativado/ativado", "ativado/desativado", "estado", "status da campanha"
+    ),
+    "veiculacao": (
+        "veiculação", "veiculacao", "veiculação da campanha", "posicionamento"
+    ),
 
-        # Investimento / receita / roas
-        "gasto": (
-            "valor usado", "valor gasto", "amount spent", "spend", "valor usado brl"
-        ),
-        "faturamento": (
-            "valor de conversão da compra", "valor de conversao da compra", "purchase conversion value",
-            "receita"
-        ),
-        "roas": (
-            "retorno sobre o investimento em publicidade (roas) das compras", "roas"
-        ),
-        "orcamento": (
-            "orçamento", "budget"
-        ),
+    # Investimento / receita / roas
+    "gasto": (
+        "valor usado", "valor gasto", "amount spent", "spend", "valor usado brl"
+    ),
+    "faturamento": (
+        "valor de conversão da compra", "valor de conversao da compra", "purchase conversion value",
+        "receita"
+    ),
+    "roas": (
+        "retorno sobre o investimento em publicidade (roas) das compras", "roas"
+    ),
+    "orcamento": (
+        "orçamento", "budget"
+    ),
 
-        # Eventos do funil
-        "cliques": (
-            "cliques no link", "link clicks", "clicks"
-        ),
-        "lp_views": (
-            "visualizações da página de destino", "visualizacoes da pagina de destino",
-            "landing page views"
-        ),
-        "add_cart": (
-            "adições ao carrinho", "adicoes ao carrinho", "add to cart"
-        ),
-        "ck_init": (
-            "finalizações de compra iniciadas", "finalizacoes de compra iniciadas", "checkout iniciado",
-            "conversão checkout", "conversao checkout"
-        ),
-        "entrega": (
-            "entrega"
-        ),
-        "pay_info": (
-            "inclusões de informações de pagamento", "inclusoes de informacoes de pagamento",
-            "info. pagamento / entrega"
-        ),
-        "compras": (
-            "compras",
-            "compras / inf. pagamento",
-            "compras / informações de pagamento",
-            "purchases"
-        ),
+    # Eventos do funil
+    "cliques": (
+        "cliques no link", "link clicks", "clicks"
+    ),
+    "lp_views": (
+        "visualizações da página de destino", "visualizacoes da pagina de destino",
+        "landing page views"
+    ),
+    "add_cart": (
+        "adições ao carrinho", "adicoes ao carrinho", "add to cart"
+    ),
+    "ck_init": (
+        "finalizações de compra iniciadas", "finalizacoes de compra iniciadas", "checkout iniciado",
+        "conversão checkout", "conversao checkout"
+    ),
+    "entrega": (
+        "entrega"  # <-- você tem essa coluna; agora mapeamos
+    ),
+    "pay_info": (
+        "inclusões de informações de pagamento", "inclusoes de informacoes de pagamento",
+        "info. pagamento / entrega"  # algumas exports vêm assim
+    ),
+    "compras": (
+        "compras",
+        "compras / inf. pagamento",
+        "compras / informações de pagamento",
+        "purchases"
+    ),
 
-        # Métricas de alcance / mid-funnel
-        "alcance": ("alcance",),
-        "impressoes": ("impressões", "impressoes", "impressions"),
-        "frequencia": ("frequência", "frequencia", "frequency"),
-        "cpm": ("cpm (custo por 1.000 impressões)", "cpm"),
-        "cpc": ("cpc (custo por clique no link)", "cpc"),
-        "ctr": ("ctr (taxa de cliques no link)", "ctr"),
 
-        # Datas (início e fim do relatório)
-        "data_inicio": (
-            "início dos relatórios", "inicio dos relatorios", "start date", "report start"
-        ),
-        "data_fim": (
-            "término dos relatórios", "termino dos relatorios", "end date", "report end"
-        ),
-    }
+    # Métricas de alcance / mid-funnel
+    "alcance": ("alcance",),
+    "impressoes": ("impressões", "impressoes", "impressions"),
+    "frequencia": ("frequência", "frequencia", "frequency"),
+    "cpm": ("cpm (custo por 1.000 impressões)", "cpm"),
+    "cpc": ("cpc (custo por clique no link)", "cpc"),
+    "ctr": ("ctr (taxa de cliques no link)", "ctr"),
+
+    # Datas
+    "data": ("data", "date", "dia"),
+}
+
 
     norm_map = { _norm(c): c for c in raw.columns }
     rename = {}
@@ -160,7 +153,6 @@ def read_csv_flex(file):
             if key in norm_map:
                 rename[norm_map[key]] = final
                 break
-
     df = raw.rename(columns=rename).copy()
 
     def _to_num(x):
@@ -185,22 +177,7 @@ def read_csv_flex(file):
     if "ctr" in df.columns:
         df["ctr"] = df["ctr"].apply(lambda v: v/100.0 if v > 1.5 else v)
 
-    # Ajusta coluna de data
-    if "data_inicio" in df.columns and "data_fim" in df.columns:
-        df["data_inicio"] = pd.to_datetime(df["data_inicio"], errors="coerce", dayfirst=True)
-        df["data_fim"] = pd.to_datetime(df["data_fim"], errors="coerce", dayfirst=True)
-
-        if df["data_inicio"].nunique() == 1 and df["data_fim"].nunique() == 1 and (
-            df["data_inicio"].iloc[0] == df["data_fim"].iloc[0]
-        ):
-            # Relatório de 1 dia → usa esse dia
-            df["data"] = df["data_inicio"]
-        else:
-            # Relatório de mais tempo → usa data de início
-            df["data"] = df["data_inicio"]
-
     return df
-
 
 def classificar_funil(nome):
     nome = str(nome).lower()
@@ -350,42 +327,24 @@ else:
     compras_total = float(dff.get("compras", pd.Series([0])).sum())
 
     # Se houver datas
-    if "data" in dff.columns:
+    date_col = next((c for c in ["data"] if c in dff.columns), None)
+    if date_col:
         dd = dff.copy()
-        dd["_date"] = pd.to_datetime(dd["data"], errors="coerce", dayfirst=True)
-
-    elif "data_inicio" in dff.columns and "data_fim" in dff.columns:
-        dd = dff.copy()
-        dd["data_inicio"] = pd.to_datetime(dd["data_inicio"], errors="coerce", dayfirst=True)
-        dd["data_fim"] = pd.to_datetime(dd["data_fim"], errors="coerce", dayfirst=True)
-
-        if dd["data_inicio"].nunique() == 1 and dd["data_fim"].nunique() == 1 and (
-            dd["data_inicio"].iloc[0] == dd["data_fim"].iloc[0]
-        ):
-            # Relatório de 1 dia → usa esse dia
-            dd["_date"] = dd["data_inicio"]
-        else:
-            # Relatório de mais tempo → usa data de início
-            dd["_date"] = dd["data_inicio"]
-
+        dd["_date"] = pd.to_datetime(dd[date_col], errors="coerce", dayfirst=True)
+        week_mask = (dd["_date"] >= pd.to_datetime(week_start_dt)) & (dd["_date"] <= pd.to_datetime(week_end_dt))
+        month_mask = (dd["_date"] >= pd.to_datetime(month_first)) & (dd["_date"] <= pd.to_datetime(month_last))
+        w = dd.loc[week_mask]
+        m = dd.loc[month_mask]
+        invest_w = float(w.get("gasto", pd.Series([0])).sum())
+        fatur_w = float(w.get("faturamento", pd.Series([0])).sum())
+        compras_w = float(w.get("compras", pd.Series([0])).sum())
+        invest_m = float(m.get("gasto", pd.Series([0])).sum())
+        fatur_m = float(m.get("faturamento", pd.Series([0])).sum())
+        compras_m = float(m.get("compras", pd.Series([0])).sum())
     else:
-        dd = dff.copy()
-        dd["_date"] = pd.NaT
-
-    # Filtros por semana e mês
-    week_mask = (dd["_date"] >= pd.to_datetime(week_start_dt)) & (dd["_date"] <= pd.to_datetime(week_end_dt))
-    month_mask = (dd["_date"] >= pd.to_datetime(month_first)) & (dd["_date"] <= pd.to_datetime(month_last))
-    w = dd.loc[week_mask]
-    m = dd.loc[month_mask]
-
-    invest_w = float(w.get("gasto", pd.Series([0])).sum())
-    fatur_w = float(w.get("faturamento", pd.Series([0])).sum())
-    compras_w = float(w.get("compras", pd.Series([0])).sum())
-
-    invest_m = float(m.get("gasto", pd.Series([0])).sum())
-    fatur_m = float(m.get("faturamento", pd.Series([0])).sum())
-    compras_m = float(m.get("compras", pd.Series([0])).sum())
-
+        invest_w = invest_m = invest_total
+        fatur_w = fatur_m = fatur_total
+        compras_w = compras_m = compras_total
 
     # KPIs Semana
     roas_w = (fatur_w/invest_w) if invest_w>0 else 0.0
@@ -551,38 +510,15 @@ st.markdown("---")
 # =========================
 st.markdown("### 📅 ROAS diário")
 
-if uploaded:
+if uploaded and "data" in dff.columns:
     dd = dff.copy()
-
-    if "data" in dff.columns:
-        dd["_date"] = pd.to_datetime(dd["data"], errors="coerce", dayfirst=True)
-
-    elif "data_inicio" in dff.columns and "data_fim" in dff.columns:
-        dd["data_inicio"] = pd.to_datetime(dd["data_inicio"], errors="coerce", dayfirst=True)
-        dd["data_fim"] = pd.to_datetime(dd["data_fim"], errors="coerce", dayfirst=True)
-
-        if dd["data_inicio"].nunique() == 1 and dd["data_fim"].nunique() == 1 and (
-            dd["data_inicio"].iloc[0] == dd["data_fim"].iloc[0]
-        ):
-            # Relatório de 1 dia → usa esse dia
-            dd["_date"] = dd["data_inicio"]
-        else:
-            # Relatório de mais tempo → usa data de início
-            dd["_date"] = dd["data_inicio"]
-
-    else:
-        dd["_date"] = pd.NaT
-
+    dd["_date"] = pd.to_datetime(dd["data"], errors="coerce", dayfirst=True)
     t = dd.dropna(subset=["_date"]).groupby("_date").agg({"gasto":"sum","faturamento":"sum"}).reset_index().sort_values("_date")
-
     if not t.empty:
         t["ROAS"] = t["faturamento"] / t["gasto"].replace(0, np.nan)
         st.plotly_chart(px.line(t, x="_date", y="ROAS", title="ROAS diário"), use_container_width=True)
-    else:
-        st.info("⚠️ Nenhuma data válida encontrada no CSV para calcular ROAS diário.")
 else:
     st.warning("⚠️ Nenhum arquivo carregado. Envie o CSV para visualizar o ROAS diário.")
-
 
 
 # =========================
