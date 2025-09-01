@@ -525,3 +525,249 @@ st.download_button("Baixar Plano Semanal (CSV)", data=wcsv.to_csv(index=False).e
 st.download_button("Baixar Plano Mensal (CSV)", data=mcsv.to_csv(index=False).encode("utf-8"), file_name="plano_mensal.csv", mime="text/csv")
 
 st.info("💾 Para persistência real (Google Sheets/Supabase/DB), adapte o código de leitura/gravação. O upload lê o CSV exportado do Gerenciador.")
+
+# =========================
+# 🧪 Teste de Criativos
+# =========================
+st.markdown("---")
+st.header("🧪 Teste de Criativos — Análise e Campeões")
+
+with st.expander("Como usar"):
+    st.write(
+        "- Exporte do Gerenciador o CSV da **campanha de teste de criativos** (nível anúncio).\n"
+        "- Colunas úteis (qualquer variação é aceita): Campanha, Conjunto, Anúncio/ID, Valor gasto, Impressões, Cliques, Compras, Receita/Valor de conversão.\n"
+        "- Opcional: Views da LP, thumbnails/links da peça para pré-visualização."
+    )
+
+uploaded_creatives = st.file_uploader("📥 Suba o CSV do teste de criativos", type=["csv"], key="upload_creatives")
+
+if uploaded_creatives:
+    import re, unicodedata
+
+    def _norm(s: str) -> str:
+        s = unicodedata.normalize("NFKD", s)
+        s = "".join(c for c in s if not unicodedata.combining(c))
+        s = s.lower().strip()
+        s = s.replace("\n", " ").replace("\r", " ")
+        s = re.sub(r"\s+", " ", s)
+        s = s.replace("(brl)", "").replace(" r$", "").strip()
+        return s
+
+    def _read_flex(file):
+        for enc in ["utf-8", "latin-1", "utf-16", "cp1252"]:
+            try:
+                return pd.read_csv(file, sep=None, engine="python", encoding=enc)
+            except Exception:
+                continue
+        return pd.read_csv(file)
+
+    def _to_num(x):
+        if pd.isna(x): return 0.0
+        if isinstance(x, (int, float)): return float(x)
+        s = str(x).lower().replace("r$", "").replace("brl", "")
+        s = s.replace(".", "").replace(",", ".")
+        s = re.sub(r"[^0-9\.\-eE]", "", s)
+        try: return float(s)
+        except: return 0.0
+
+    rawc = _read_flex(uploaded_creatives)
+    norm_map = {_norm(c): c for c in rawc.columns}
+
+    # Aliases flexíveis
+    A = {
+        "campanha": ("campanha","campaign name","nome da campanha"),
+        "conjunto": ("conjunto","ad set name","conjunto de anúncios","conjunto de anuncios"),
+        "anuncio": ("anúncio","anuncio","ad name","nome do anúncio","nome do anuncio"),
+        "ad_id": ("id do anúncio","id do anuncio","ad id","id"),
+        "gasto": ("valor usado","valor gasto","spend","amount spent","valor usado brl","gasto"),
+        "imp": ("impressões","impressoes","impressions"),
+        "clicks": ("cliques no link","clicks","link clicks"),
+        "lpv": ("visualizações da página de destino","visualizacoes da pagina de destino","landing page views","lp views"),
+        "compras": ("compras","purchases"),
+        "receita": ("valor de conversão da compra","valor de conversao da compra","purchase conversion value","revenue","faturamento"),
+        "thumb": ("thumbnail","image url","creativo","criação","link da midia","link da mídia"),
+        "data": ("data","date","dia"),
+    }
+
+    def pick(*keys, default=None):
+        for k in keys:
+            nk = _norm(k)
+            if nk in norm_map: return norm_map[nk]
+        return default
+
+    cols = {k: pick(*v) for k, v in A.items()}
+    dfc = rawc.rename(columns={v: k for k, v in cols.items() if v}).copy()
+
+    # Converte numéricos
+    for c in ["gasto","imp","clicks","lpv","compras","receita"]:
+        if c in dfc.columns: dfc[c] = dfc[c].apply(_to_num)
+
+    # Filtros básicos
+    colf1, colf2, colf3 = st.columns(3)
+    with colf1:
+        sel_camp = st.selectbox("Campanha", ["(Todas)"] + sorted(dfc.get("campanha", pd.Series([""])).dropna().astype(str).unique().tolist())) if "campanha" in dfc.columns else "(Todas)"
+    with colf2:
+        sel_set = st.selectbox("Conjunto", ["(Todos)"] + sorted(dfc.get("conjunto", pd.Series([""])).dropna().astype(str).unique().tolist())) if "conjunto" in dfc.columns else "(Todos)"
+    with colf3:
+        min_spend = st.number_input("Gasto mínimo p/ considerar (R$)", value=10.0, step=5.0)
+
+    filt = pd.Series(True, index=dfc.index)
+    if "campanha" in dfc.columns and sel_camp != "(Todas)":
+        filt &= (dfc["campanha"].astype(str) == sel_camp)
+    if "conjunto" in dfc.columns and sel_set != "(Todos)":
+        filt &= (dfc["conjunto"].astype(str) == sel_set)
+
+    dfc = dfc.loc[filt].copy()
+
+    if "gasto" in dfc.columns:
+        dfc = dfc[dfc["gasto"] >= float(min_spend)].copy()
+
+    if dfc.empty:
+        st.warning("Nenhum criativo com os filtros atuais (ou acima do gasto mínimo).")
+        st.stop()
+
+    # Chave do criativo (anúncio ou id)
+    key_col = "anuncio" if "anuncio" in dfc.columns else ("ad_id" if "ad_id" in dfc.columns else None)
+    if key_col is None:
+        st.error("Não achei coluna de identificação do criativo (ex.: 'Anúncio' ou 'Ad ID').")
+        st.stop()
+
+    # Agregação por criativo
+    grp = dfc.groupby(key_col).agg({
+        **({ "gasto":"sum" } if "gasto" in dfc.columns else {}),
+        **({ "imp":"sum" } if "imp" in dfc.columns else {}),
+        **({ "clicks":"sum" } if "clicks" in dfc.columns else {}),
+        **({ "lpv":"sum" } if "lpv" in dfc.columns else {}),
+        **({ "compras":"sum" } if "compras" in dfc.columns else {}),
+        **({ "receita":"sum" } if "receita" in dfc.columns else {}),
+    }).reset_index().rename(columns={key_col:"Criativo"})
+
+    # Métricas derivadas
+    eps = 1e-9
+    if "imp" in grp.columns and "clicks" in grp.columns:
+        grp["CTR"] = grp["clicks"] / (grp["imp"] + eps)
+    if "clicks" in grp.columns and "compras" in grp.columns:
+        grp["CVR"] = grp["compras"] / (grp["clicks"] + eps)
+    if "gasto" in grp.columns and "clicks" in grp.columns:
+        grp["CPC"] = grp["gasto"] / (grp["clicks"] + eps)
+    if "gasto" in grp.columns and "imp" in grp.columns:
+        grp["CPM"] = (grp["gasto"] / (grp["imp"] + eps)) * 1000.0
+    if "gasto" in grp.columns and "compras" in grp.columns:
+        grp["CPA"] = grp["gasto"] / (grp["compras"] + eps)
+    if "receita" in grp.columns and "gasto" in grp.columns:
+        grp["ROAS"] = grp["receita"] / (grp["gasto"] + eps)
+
+    # Significância simples (proporção z) vs. média da amostra
+    def prop_z_test(success_a, n_a, p_pool):
+        # z = (p_a - p_pool) / sqrt(p_pool*(1-p_pool)/n_a)
+        if n_a <= 0 or p_pool<=0 or p_pool>=1: return np.nan
+        p_a = success_a / n_a
+        se = np.sqrt(p_pool*(1-p_pool)/(n_a+eps))
+        if se==0: return np.nan
+        z = (p_a - p_pool)/se
+        # p-value bicaudal aproximado
+        from math import erf, sqrt
+        p = 2*(1 - 0.5*(1+erf(abs(z)/sqrt(2))))
+        return p
+
+    # p-valor para CTR e CVR (se existirem)
+    if "CTR" in grp.columns and "clicks" in grp.columns and "imp" in grp.columns:
+        p_ctr_base = (dfc["clicks"].sum())/max(dfc["imp"].sum(), eps)
+        grp["p_CTR"] = grp.apply(lambda r: prop_z_test(r["clicks"], r["imp"], p_ctr_base), axis=1)
+    if "CVR" in grp.columns and "compras" in grp.columns and "clicks" in grp.columns:
+        p_cvr_base = (dfc["compras"].sum())/max(dfc["clicks"].sum(), eps)
+        grp["p_CVR"] = grp.apply(lambda r: prop_z_test(r["compras"], r["clicks"], p_cvr_base), axis=1)
+
+    # Regras de campeão
+    st.subheader("🏆 Campeões")
+    colr1, colr2, colr3 = st.columns(3)
+    with colr1:
+        rank_metric = st.selectbox("Métrica para ranquear", [m for m in ["ROAS","CPA","CTR","CVR","Compras","Receita","Gasto"] if m in grp.columns] or ["ROAS"])
+    with colr2:
+        top_n = st.slider("Quantos destacar", 1, min(10, len(grp)), value=min(3, len(grp)))
+    with colr3:
+        p_thresh = st.selectbox("Significância (p-value)", ["(ignorar)","0.10","0.05","0.01"], index=2)
+
+    # Ordenação
+    asc = True if rank_metric in ["CPA"] else False
+    if rank_metric.lower() == "compras" and "compras" in grp.columns:
+        grp["_sort"] = grp["compras"]
+        asc = False
+    elif rank_metric.lower() == "receita" and "receita" in grp.columns:
+        grp["_sort"] = grp["receita"]; asc = False
+    elif rank_metric.lower() == "gasto" and "gasto" in grp.columns:
+        grp["_sort"] = grp["gasto"]; asc = False
+    else:
+        grp["_sort"] = grp.get(rank_metric, pd.Series(np.zeros(len(grp))))
+
+    board = grp.sort_values("_sort", ascending=asc).drop(columns=["_sort"])
+
+    # Aplica critério de p-valor se selecionado
+    if p_thresh != "(ignorar)":
+        cut = float(p_thresh)
+        # se ranqueando por CTR usa p_CTR, se CVR usa p_CVR; caso contrário, aceita se qualquer um for significativo
+        if rank_metric == "CTR" and "p_CTR" in board.columns:
+            board = board[(board["p_CTR"] <= cut) | (board["p_CTR"].isna())]
+        elif rank_metric == "CVR" and "p_CVR" in board.columns:
+            board = board[(board["p_CVR"] <= cut) | (board["p_CVR"].isna())]
+        elif {"p_CTR","p_CVR"}.issubset(board.columns):
+            board = board[(board["p_CTR"] <= cut) | (board["p_CVR"] <= cut) | (board["p_CTR"].isna() & board["p_CVR"].isna())]
+
+    # Marcação de campeões
+    board["Campeão"] = False
+    board.loc[board.index[:top_n], "Campeão"] = True
+
+    # Formatação amigável
+    def _fmt_pct(x): return "" if pd.isna(x) else f"{x*100:,.2f}%".replace(",", ".")
+    def _fmt_moeda(x): return "" if pd.isna(x) else f"R$ {x:,.2f}".replace(",", ".")
+    def _fmt_p(x): return "" if pd.isna(x) else f"{x:.3f}"
+
+    show = board.copy()
+    rename = {
+        "gasto":"Gasto","imp":"Impressões","clicks":"Cliques","lpv":"LP Views",
+        "compras":"Compras","receita":"Receita","CTR":"CTR","CVR":"CVR",
+        "CPC":"CPC","CPM":"CPM","CPA":"CPA","ROAS":"ROAS","p_CTR":"p(CTR)","p_CVR":"p(CVR)"
+    }
+    show = show.rename(columns=rename)
+
+    # Apresentação
+    st.markdown("#### Ranking de Criativos")
+    st.dataframe(
+        show.style
+            .format({
+                "CTR": _fmt_pct, "CVR": _fmt_pct,
+                "CPC": _fmt_moeda, "CPM": _fmt_moeda, "CPA": _fmt_moeda, "ROAS": "{:,.2f}".format,
+                "Gasto": _fmt_moeda, "Receita": _fmt_moeda,
+                "p(CTR)": _fmt_p, "p(CVR)": _fmt_p
+            })
+            .apply(lambda s: ["background-color:#e6ffe6" if (show.loc[idx, "Campeão"] is True) else "" for idx in s.index], axis=0),
+        use_container_width=True
+    )
+
+    # Galeria opcional dos campeões (se tiver thumbnail/link)
+    thumbs_col = None
+    for cand in ["thumb","image url","thumbnail","link da midia","link da mídia"]:
+        if cand in [c.lower() for c in rawc.columns]:
+            thumbs_col = norm_map.get(cand, None)
+            break
+
+    if thumbs_col and thumbs_col in rawc.columns:
+        st.markdown("#### Galeria — Campeões")
+        champs = board[board["Campeão"]].merge(dfc[[key_col, thumbs_col]].drop_duplicates(), left_on="Criativo", right_on=key_col if key_col!="anuncio" else "anuncio", how="left")
+        cols = st.columns(min(4, len(champs)))
+        i = 0
+        for _, r in champs.iterrows():
+            with cols[i % len(cols)]:
+                st.caption(str(r["Criativo"]))
+                st.image(r.get(thumbs_col), use_container_width=True)
+            i += 1
+
+    # Download do ranking
+    st.download_button(
+        "📤 Baixar ranking de criativos (CSV)",
+        data=board.to_csv(index=False).encode("utf-8"),
+        file_name="ranking_criativos.csv",
+        mime="text/csv"
+    )
+else:
+    st.info("Para analisar criativos, suba o CSV específico da campanha de teste.")
