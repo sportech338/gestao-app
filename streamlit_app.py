@@ -336,13 +336,10 @@ st.markdown("---")
 st.subheader("✅ Acompanhamento Diário — Semana (meta derivada do mês)")
 
 # Tabela mínima: data, metas derivadas (dia) e realizados
-week_days_considered_list = []
-for d in week_days_all:
-    # mantém apenas dias que caem dentro do mês selecionado
-    if (month_first <= pd.to_datetime(d) <= month_last):
-        # aplica regra de finais de semana
-        if include_weekends or datetime.strptime(str(d), "%Y-%m-%d").weekday() < 5:
-            week_days_considered_list.append(d)
+week_days_considered_list = [
+    d for d in week_days_all
+    if (month_first <= d <= month_last) and (include_weekends or d.weekday() < 5)
+]
 
 meta_dia_rev = (goal_rev_week / max(1,len(week_days_considered_list))) if week_days_considered_list else 0.0
 budget_dia = (budget_goal_week / max(1,len(week_days_considered_list))) if week_days_considered_list else 0.0
