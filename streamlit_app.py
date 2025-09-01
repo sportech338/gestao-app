@@ -479,28 +479,48 @@ if uploaded and "campanha" in dff.columns:
 
     st.dataframe(comp, use_container_width=True)
 
-    # Orientações de verba
-    st.markdown("### 📌 Orientações de Verba")
-    for _, row in comp.iterrows():
-        etapa = row["Etapa"]
-        diff = row["Diferença (R$)"]
-        if diff < 0:
-            st.warning(f"➡️ Falta investir **R$ {abs(diff):,.0f}** em **{etapa}** para bater a meta planejada.".replace(",","."))
-        elif diff > 0:
-            st.info(f"✅ Já investiu **R$ {diff:,.0f}** a mais do que o planejado em **{etapa}**.".replace(",","."))
-        else:
-            st.success(f"⚖️ A etapa **{etapa}** está exatamente alinhada com o planejado.")
+    # =========================
+    # Orientações de verba — diárias
+    # =========================
+    st.markdown("### 📌 Orientações de Verba — por Dia e Etapa")
 
-    col1, col2 = st.columns(2)
-    with col1:
-        st.plotly_chart(px.bar(comp, x="Etapa", y=["Planejado (R$)", "Realizado (R$)"],
-                               barmode="group", title="Planejado vs Realizado"),
-                        use_container_width=True)
-    with col2:
-        st.plotly_chart(px.pie(comp, values="Realizado (R$)", names="Etapa", title="Distribuição Realizada"),
-                        use_container_width=True)
-else:
-    st.warning("⚠️ Nenhum arquivo carregado. Envie o CSV para visualizar o orçamento por etapa.")
+    # Prepara base real diária
+    dff["_date"] = pd.to_datetime(dff["data"], errors="coerce", dayfirst=True)
+    dff["etapa_funil"] = dff["campanha"].apply(classificar_funil)
+
+    real_diario = (
+        dff.groupby([dff["_date"].dt.strftime("%d/%m/%Y"), "etapa_funil"])["gasto"]
+        .sum()
+        .reset_index()
+        .rename(columns={"_date": "Data", "gasto": "Realizado (R$)", "etapa_funil": "Etapa"})
+    )
+
+    # Junta planejado + realizado
+    comparativo = pd.merge(
+        df_planejado_dia.rename(columns={"Valor Diário (R$)": "Planejado (R$)"}),
+        real_diario,
+        on=["Data","Etapa"],
+        how="left"
+    ).fillna(0)
+
+    comparativo["Diferença (R$)"] = comparativo["Realizado (R$)"] - comparativo["Planejado (R$)"]
+
+    st.dataframe(comparativo, use_container_width=True)
+
+    # Gera orientações por dia
+    for data in comparativo["Data"].unique():
+        st.markdown(f"#### 📅 {data}")
+        subset = comparativo[comparativo["Data"] == data]
+        for _, row in subset.iterrows():
+            etapa = row["Etapa"]
+            diff = row["Diferença (R$)"]
+            if diff < 0:
+                st.warning(f"➡️ Falta investir **R$ {abs(diff):,.0f}** em **{etapa}**.".replace(",","."))
+            elif diff > 0:
+                st.info(f"✅ Excedeu em **R$ {diff:,.0f}** o planejado de **{etapa}**.".replace(",","."))
+            else:
+                st.success(f"⚖️ Etapa **{etapa}** alinhada com o planejado.")
+
 
 
 st.markdown("---")
