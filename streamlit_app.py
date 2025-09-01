@@ -510,15 +510,41 @@ st.markdown("---")
 # =========================
 st.markdown("### 📅 ROAS diário")
 
-if uploaded and "data" in dff.columns:
+if uploaded:
     dd = dff.copy()
-    dd["_date"] = pd.to_datetime(dd["data"], errors="coerce", dayfirst=True)
-    t = dd.dropna(subset=["_date"]).groupby("_date").agg({"gasto":"sum","faturamento":"sum"}).reset_index().sort_values("_date")
+
+    # tenta várias opções de coluna de data (data, dia, date, data_inicio)
+    if "data" in dd.columns:
+        base_date = dd["data"]
+    elif "dia" in dd.columns:
+        base_date = dd["dia"]
+    elif "date" in dd.columns:
+        base_date = dd["date"]
+    elif "data_inicio" in dd.columns:
+        base_date = dd["data_inicio"]
+    else:
+        base_date = pd.Series(pd.NaT, index=dd.index)
+
+    dd["_date"] = pd.to_datetime(base_date, errors="coerce", dayfirst=True).dt.normalize()
+
+    t = (
+        dd.dropna(subset=["_date"])
+          .groupby("_date", as_index=False)
+          .agg({"gasto": "sum", "faturamento": "sum"})
+          .sort_values("_date")
+    )
+
     if not t.empty:
-        t["ROAS"] = t["faturamento"] / t["gasto"].replace(0, np.nan)
+        t["ROAS"] = t.apply(
+            lambda r: (r["faturamento"] / r["gasto"]) if r["gasto"] > 0 else np.nan,
+            axis=1
+        )
         st.plotly_chart(px.line(t, x="_date", y="ROAS", title="ROAS diário"), use_container_width=True)
+    else:
+        st.info("⚠️ Não foi possível identificar datas válidas no CSV para calcular o ROAS diário.")
 else:
     st.warning("⚠️ Nenhum arquivo carregado. Envie o CSV para visualizar o ROAS diário.")
+
 
 
 # =========================
