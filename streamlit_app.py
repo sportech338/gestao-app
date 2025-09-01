@@ -197,15 +197,15 @@ def fetch_meta_insights(level="campaign", since=None, until=None, fields_extra=N
             v95 = _vid("video_p95_watched_actions")
 
             # ===== Funil (ações pixel/app) =====
-            lp_views = float(it.get("landing_page_views", 0) or 0)
-            if lp_views == 0:
-            # fallback via actions quando o campo nativo não vier
-            lp_views = _safe_get_action(it.get("actions"), "landing_page_view")
+lp_views = float(it.get("landing_page_views", 0) or 0)
+if lp_views == 0:
+    # fallback via actions quando o campo nativo não vier
+    lp_views = _safe_get_action(it.get("actions"), "landing_page_view")
 
-            # estes SEMPRE fora do if:
-            add_to_cart       = _safe_get_action(it.get("actions"), "add_to_cart")
-            initiate_checkout = _safe_get_action(it.get("actions"), "initiate_checkout")
-            add_payment_info  = _safe_get_action(it.get("actions"), "add_payment_info")
+# estes ficam FORA do if
+add_to_cart       = _safe_get_action(it.get("actions"), "add_to_cart")
+initiate_checkout = _safe_get_action(it.get("actions"), "initiate_checkout")
+add_payment_info  = _safe_get_action(it.get("actions"), "add_payment_info")
 
 
             rows.append({
