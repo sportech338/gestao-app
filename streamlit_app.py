@@ -360,39 +360,64 @@ if uploaded:
 
     st.markdown("---")
 
-    # =========================
-    # Ranking de campanhas
+        # =========================
+    # Ranking de campanhas (robusto a colunas ausentes)
     # =========================
     st.markdown("### 🏆 Ranking de Campanhas")
-    if "campanha" in dff.columns:
-        rank = dff.groupby("campanha").agg({
-            "Desativado/Ativado":"first",
-            "Veiculação":"first",
-            "Valor usado":"sum",
-            "Valor de conversão da compra":"sum",
-            "Compras":"sum",
-        }).reset_index()
-        rank["ROAS"] = rank["Valor de conversão da compra"] / rank["Valor usado"].replace(0, np.nan)
-        rank["CPA"]  = rank["Valor usado"] / rank["Compras"].replace(0, np.nan)
 
-        order_by = st.selectbox("Ordenar ranking por:", ["ROAS desc","CPA asc","Faturamento desc","Investimento desc"])
-        if order_by == "ROAS desc":              rank = rank.sort_values("ROAS", ascending=False)
-        elif order_by == "CPA asc":              rank = rank.sort_values("CPA",  ascending=True)
-        elif order_by == "Faturamento desc":     rank = rank.sort_values("Valor de conversão da compra", ascending=False)
-        else:                                    rank = rank.sort_values("Valor usado", ascending=False)
-
-        st.dataframe(
-            rank.rename(columns={
-                "campanha":"Campanha",
-                "Desativado/Ativado":"Status",
-                "Veiculação":"Veiculação",
-                "Valor usado":"Investimento (R$)",
-                "Valor de conversão da compra":"Faturamento (R$)"
-            }),
-            use_container_width=True
-        )
-    else:
+    if "campanha" not in dff.columns:
         st.info("A coluna 'campanha' não foi encontrada para exibir o ranking.")
+    else:
+        # Quais métricas temos de fato?
+        have = set(dff.columns)
+        metrics_defs = {
+            "Desativado/Ativado": ("first", "Status"),
+            "Veiculação": ("first", "Veiculação"),
+            "Valor usado": ("sum", "Investimento (R$)"),
+            "Valor de conversão da compra": ("sum", "Faturamento (R$)"),
+            "Compras": ("sum", "Compras"),
+        }
+
+        # Monta dict de agregações só com as colunas disponíveis
+        agg_dict = {col: func for col, (func, _) in metrics_defs.items() if col in have}
+
+        if not agg_dict:
+            st.info("Nenhuma métrica disponível para ranquear campanhas (faltam colunas como Valor usado, Faturamento, Compras…).")
+        else:
+            rank = dff.groupby("campanha").agg(agg_dict).reset_index()
+
+            # KPIs derivados se possíveis
+            if "Valor usado" in rank.columns and "Valor de conversão da compra" in rank.columns:
+                rank["ROAS"] = rank["Valor de conversão da compra"] / rank["Valor usado"].replace(0, np.nan)
+            if "Valor usado" in rank.columns and "Compras" in rank.columns:
+                rank["CPA"] = rank["Valor usado"] / rank["Compras"].replace(0, np.nan)
+
+            # Opções de ordenação só para colunas que existem
+            order_opts = []
+            if "ROAS" in rank.columns: order_opts.append("ROAS desc")
+            if "CPA"  in rank.columns: order_opts.append("CPA asc")
+            if "Valor de conversão da compra" in rank.columns: order_opts.append("Faturamento desc")
+            if "Valor usado" in rank.columns: order_opts.append("Investimento desc")
+            if not order_opts:
+                order_opts = ["Campanha A→Z"]
+
+            order_by = st.selectbox("Ordenar ranking por:", order_opts)
+            if order_by == "ROAS desc":
+                rank = rank.sort_values("ROAS", ascending=False)
+            elif order_by == "CPA asc":
+                rank = rank.sort_values("CPA", ascending=True)
+            elif order_by == "Faturamento desc":
+                rank = rank.sort_values("Valor de conversão da compra", ascending=False)
+            elif order_by == "Investimento desc":
+                rank = rank.sort_values("Valor usado", ascending=False)
+            else:
+                rank = rank.sort_values("campanha", ascending=True)
+
+            # Renomeia colunas amigáveis (só as que existem)
+            rename_map = {col: label for col, (_, label) in metrics_defs.items() if col in rank.columns}
+            rename_map.update({"campanha": "Campanha"})
+            st.dataframe(rank.rename(columns=rename_map), use_container_width=True)
+
 
     st.markdown("---")
 
