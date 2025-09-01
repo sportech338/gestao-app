@@ -448,15 +448,12 @@ fig_funil.update_layout(
 
 st.plotly_chart(fig_funil, use_container_width=True)
 
+st.markdown("---")
 
-
-    st.markdown("---")
-
-
-    # Ranking
-    st.markdown("### 🏆 Campanhas (Top 10 por ROAS)")
-    if "campanha" in dff.columns:
-        grp = dff.groupby("campanha").agg({
+# Ranking
+st.markdown("### 🏆 Campanhas (Top 10 por ROAS)")
+if "campanha" in dff.columns:
+    grp = dff.groupby("campanha").agg({
             **({"gasto":"sum"} if "gasto" in dff.columns else {}),
             **({"faturamento":"sum"} if "faturamento" in dff.columns else {}),
             **({"compras":"sum"} if "compras" in dff.columns else {}),
