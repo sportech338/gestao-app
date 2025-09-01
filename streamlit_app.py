@@ -250,6 +250,9 @@ if uploaded:
         filt &= (df["Veiculação"].astype(str) == sel_veic)
 
     dff = df.loc[filt].copy()
+    # 🔸 Só analisa linhas com gasto > 0
+    if "Valor usado" in dff.columns:
+        dff = dff[dff["Valor usado"] > 0].copy()
 
     # =========================
     # KPIs principais (real)
@@ -261,15 +264,21 @@ if uploaded:
     cpa = (invest / compras) if compras > 0 else 0.0
     cpc = dff["CPC (custo por clique no link)"].mean() if "CPC (custo por clique no link)" in dff.columns and len(dff)>0 else 0.0
     ctr = (dff["CTR (taxa de cliques no link)"].mean() / 100.0) if "CTR (taxa de cliques no link)" in dff.columns and len(dff)>0 else 0.0
-
+    # 🔸 NOVO (CVR): cliques totais e taxa de conversão de cliques para compra
+    clicks_sum = dff["Cliques no link"].sum() if "Cliques no link" in dff.columns else 0.0
+    # fallback (algumas exports vêm só como "Cliques")
+    if clicks_sum == 0 and "Cliques" in dff.columns:
+    clicks_sum = dff["Cliques"].sum()
+    cvr = (compras / clicks_sum) if clicks_sum > 0 else 0.0
     st.markdown("### 📌 KPIs — Performance Real")
-    kpi1, kpi2, kpi3, kpi4, kpi5, kpi6 = st.columns(6)
+    kpi1, kpi2, kpi3, kpi4, kpi5, kpi6, kpi7 = st.columns(7)
     kpi1.metric("Investimento", f"R$ {invest:,.0f}".replace(",", "."))
     kpi2.metric("Faturamento", f"R$ {fatur:,.0f}".replace(",", "."))
     kpi3.metric("ROAS", f"{roas:,.2f}".replace(",", "."))
     kpi4.metric("CPA", f"R$ {cpa:,.2f}".replace(",", "."))
     kpi5.metric("CTR", f"{ctr*100:,.2f}%".replace(",", "."))
     kpi6.metric("CPC", f"R$ {cpc:,.2f}".replace(",", "."))
+    kpi7.metric("CVR (Cliques→Compra)", f"{cvr*100:,.2f}%".replace(",", "."))
 
     # Alertas
     alerts = []
@@ -317,6 +326,10 @@ if uploaded:
     # =========================
     st.markdown("### 📈 Eficiência de Mídia (por Campanha)")
     if "campanha" in dff.columns:
+        # refiltra por gasto > 0 (garantia)
+        if "Valor usado" in dff.columns:
+            dff = dff[dff["Valor usado"] > 0].copy()
+
         grp = dff.groupby("campanha").agg({
             "Valor usado":"sum",
             "Valor de conversão da compra":"sum",
@@ -327,18 +340,24 @@ if uploaded:
             "CPC (custo por clique no link)":"mean",
             "CTR (taxa de cliques no link)":"mean",
         }).reset_index()
+
         grp["ROAS"] = grp["Valor de conversão da compra"] / grp["Valor usado"].replace(0, np.nan)
         grp["CPA"]  = grp["Valor usado"] / grp["Compras"].replace(0, np.nan)
         grp["CPC_calc"] = grp["Valor usado"] / grp["Cliques no link"].replace(0, np.nan)
         grp["CPM_calc"] = (grp["Valor usado"] / grp["Impressões"].replace(0, np.nan)) * 1000.0
 
         tabs = st.tabs(["CPA", "CPC", "CPM", "ROAS"])
-        with tabs[0]: st.plotly_chart(px.bar(grp, x="campanha", y="CPA", title="CPA por campanha"), use_container_width=True)
-        with tabs[1]: st.plotly_chart(px.bar(grp, x="campanha", y=grp["CPC (custo por clique no link)"].fillna(grp["CPC_calc"]), title="CPC por campanha"), use_container_width=True)
-        with tabs[2]: st.plotly_chart(px.bar(grp, x="campanha", y=grp["CPM (custo por 1.000 impressões)"].fillna(grp["CPM_calc"]), title="CPM por campanha"), use_container_width=True)
-        with tabs[3]: st.plotly_chart(px.bar(grp, x="campanha", y="ROAS", title="ROAS por campanha"), use_container_width=True)
+        with tabs[0]:
+            st.plotly_chart(px.bar(grp, x="campanha", y="CPA", title="CPA por campanha"), use_container_width=True)
+        with tabs[1]:
+            st.plotly_chart(px.bar(grp, x="campanha", y=grp["CPC (custo por clique no link)"].fillna(grp["CPC_calc"]), title="CPC por campanha"), use_container_width=True)
+        with tabs[2]:
+            st.plotly_chart(px.bar(grp, x="campanha", y=grp["CPM (custo por 1.000 impressões)"].fillna(grp["CPM_calc"]), title="CPM por campanha"), use_container_width=True)
+        with tabs[3]:
+            st.plotly_chart(px.bar(grp, x="campanha", y="ROAS", title="ROAS por campanha"), use_container_width=True)
     else:
         st.info("A coluna 'campanha' não foi encontrada para agrupar eficiência de mídia.")
+
 
     st.markdown("---")
 
@@ -581,7 +600,10 @@ if uploaded_creatives:
         "ad_id": ("id do anúncio","id do anuncio","ad id","id"),
         "gasto": ("valor usado","valor gasto","spend","amount spent","valor usado brl","gasto"),
         "imp": ("impressões","impressoes","impressions"),
-        "clicks": ("cliques no link","clicks","link clicks"),
+        "clicks": (
+    "cliques no link","clicks","link clicks",
+    "cliques (todos)","cliques","cliques no link (todos)"
+),
         "lpv": ("visualizações da página de destino","visualizacoes da pagina de destino","landing page views","lp views"),
         "compras": ("compras","purchases"),
         "receita": ("valor de conversão da compra","valor de conversao da compra","purchase conversion value","revenue","faturamento"),
