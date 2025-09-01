@@ -135,7 +135,7 @@ week_end_dt = week_start_dt + timedelta(days=6)
 week_days_all = daterange(week_start_dt.date(), week_end_dt.date(), include_weekends=True)  # semana cheia
 
 # Intersecção SEMANA x MÊS (para repartir a meta mensal só pela fração que cai no mês)
-week_days_in_month = [d for d in week_days_all if (month_first <= pd.to_datetime(d) <= month_last)]
+week_days_in_month = [d for d in week_days_all if (month_first <= d <= month_last)]
 
 # Contagem de dias “considerados” para rateio diário
 def count_considered_days(days, consider_weekends):
