@@ -179,31 +179,38 @@ planejado_funil = {
     "Escala": (pct_escala/100) * budget_goal_week,
 }
 
-st.markdown("### 💵 Distribuição Planejada da Verba (semana)")
+st.markdown("### 💵 Distribuição Planejada da Verba (por dia)")
 
-df_planejado = pd.DataFrame({
-    "Etapa": list(planejado_funil.keys()),
-    "Percentual (%)": [
-        pct_teste_interesse,
-        pct_teste_criativo,
-        pct_remarketing,
-        pct_escala
-    ],
-    "Valor Planejado (R$)": [
-        planejado_funil["Teste de Interesse"],
-        planejado_funil["Teste de Criativo"],
-        planejado_funil["Remarketing"],
-        planejado_funil["Escala"]
-    ]
-})
+# Lista de dias considerados na semana
+week_days_considered_list = [
+    d for d in week_days_all
+    if (month_first <= d <= month_last) and (include_weekends or d.weekday() < 5)
+]
 
-st.dataframe(df_planejado, use_container_width=True)
+dias = max(1, len(week_days_considered_list))
 
+# Gera distribuição diária por etapa
+rows = []
+for etapa, valor_semana in planejado_funil.items():
+    valor_dia = valor_semana / dias
+    for d in week_days_considered_list:
+        rows.append({
+            "Data": d.strftime("%d/%m/%Y"),
+            "Etapa": etapa,
+            "Valor Diário (R$)": valor_dia
+        })
+
+df_planejado_dia = pd.DataFrame(rows)
+
+# Mostra tabela
+st.dataframe(df_planejado_dia, use_container_width=True)
+
+# Gráfico de barras empilhadas por dia
 st.plotly_chart(
-    px.pie(df_planejado, values="Valor Planejado (R$)", names="Etapa", title="Distribuição Planejada da Verba"),
+    px.bar(df_planejado_dia, x="Data", y="Valor Diário (R$)", color="Etapa",
+           title="Distribuição Planejada da Verba por Dia (R$)", barmode="stack"),
     use_container_width=True
 )
-
 
 # =========================
 # Bloco 1 — Metas (planejado)
