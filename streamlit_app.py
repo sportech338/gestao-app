@@ -146,19 +146,20 @@ def _safe_get_action(actions_list, key):
 def fetch_meta_insights(level="campaign", since=None, until=None, fields_extra=None):
     base = f"https://graph.facebook.com/v19.0/act_{AD_ACCOUNT_ID}/insights"
     fields = [
-    "campaign_name","campaign_id",
-    "adset_name","adset_id",
-    "ad_name","ad_id",
-    "spend","impressions","clicks","inline_link_clicks",
-    "cpc","ctr","cpm",
-    "actions","action_values",
-    "video_p25_watched_actions","video_p50_watched_actions",
-    "video_p75_watched_actions","video_p95_watched_actions",
-    "landing_page_views",
-    "reach","frequency","objective","buying_type","account_currency"
-]
+        "campaign_name","campaign_id",
+        "adset_name","adset_id",
+        "ad_name","ad_id",
+        "spend","impressions","clicks","inline_link_clicks",
+        "cpc","ctr","cpm",
+        "actions","action_values",
+        "video_p25_watched_actions","video_p50_watched_actions",
+        "video_p75_watched_actions","video_p95_watched_actions",
+        "landing_page_views",
+        "reach","frequency","objective","buying_type","account_currency"
+    ]
 
-    if fields_extra: fields += fields_extra
+    if fields_extra:
+        fields += fields_extra
 
     params = {
         "access_token": META_TOKEN,
@@ -170,7 +171,7 @@ def fetch_meta_insights(level="campaign", since=None, until=None, fields_extra=N
         "action_breakdowns": "action_type",
         "fields": ",".join(fields)
     }
-    params = {k:v for k,v in params.items() if v is not None}
+    params = {k: v for k, v in params.items() if v is not None}
 
     rows, url = [], base
     while True:
@@ -178,64 +179,69 @@ def fetch_meta_insights(level="campaign", since=None, until=None, fields_extra=N
         if r.status_code != 200:
             st.error(f"Erro na Meta API: {r.status_code} — {r.text}")
             break
+
         data = r.json()
-for it in data.get("data", []):
-    spend = float(it.get("spend", 0) or 0)
-    impressions = float(it.get("impressions", 0) or 0)
-    clicks_all = float(it.get("clicks", 0) or 0)
-    link_clicks = float(it.get("inline_link_clicks", 0) or 0)
 
-    purchases = _safe_get_action(it.get("actions"), "purchase")
-    revenue   = _safe_get_action(it.get("action_values"), "purchase")
+        for it in data.get("data", []):
+            spend = float(it.get("spend", 0) or 0)
+            impressions = float(it.get("impressions", 0) or 0)
+            clicks_all = float(it.get("clicks", 0) or 0)
+            link_clicks = float(it.get("inline_link_clicks", 0) or 0)
 
-    def _vid(listname):
-        lst = it.get(listname)
-        return _safe_get_action(lst, "video_view") if lst else 0.0
+            purchases = _safe_get_action(it.get("actions"), "purchase")
+            revenue   = _safe_get_action(it.get("action_values"), "purchase")
 
-    v25 = _vid("video_p25_watched_actions")
-    v50 = _vid("video_p50_watched_actions")
-    v75 = _vid("video_p75_watched_actions")
-    v95 = _vid("video_p95_watched_actions")
+            def _vid(listname):
+                lst = it.get(listname)
+                return _safe_get_action(lst, "video_view") if lst else 0.0
 
-    # ===== Funil (ações pixel/app) =====
-    lp_views = float(it.get("landing_page_views", 0) or 0)
-    if lp_views == 0:
-        # fallback via actions quando o campo nativo não vier
-        lp_views = _safe_get_action(it.get("actions"), "landing_page_view")
+            v25 = _vid("video_p25_watched_actions")
+            v50 = _vid("video_p50_watched_actions")
+            v75 = _vid("video_p75_watched_actions")
+            v95 = _vid("video_p95_watched_actions")
 
-    add_to_cart       = _safe_get_action(it.get("actions"), "add_to_cart")
-    initiate_checkout = _safe_get_action(it.get("actions"), "initiate_checkout")
-    add_payment_info  = _safe_get_action(it.get("actions"), "add_payment_info")
+            # ===== Funil (ações pixel/app) =====
+            lp_views = float(it.get("landing_page_views", 0) or 0)
+            if lp_views == 0:
+                # fallback via actions quando o campo nativo não vier
+                lp_views = _safe_get_action(it.get("actions"), "landing_page_view")
 
-    rows.append({
-        "campanha": it.get("campaign_name"),
-        "Desativado/Ativado": "Ativo",
-        "Veiculação": it.get("objective"),
-        "Valor usado": spend,
-        "Valor de conversão da compra": revenue,
-        "Compras": purchases,
-        "Impressões": impressions,
-        "Alcance": float(it.get("reach", 0) or 0),
-        "Frequência": float(it.get("frequency", 0) or 0),
-        "CPC (custo por clique no link)": float(it.get("cpc", 0) or 0),
-        "CTR (taxa de cliques no link)": float(it.get("ctr", 0) or 0) / 100.0,
-        "CPM (custo por 1.000 impressões)": float(it.get("cpm", 0) or 0),
-        "Cliques no link": link_clicks if link_clicks > 0 else clicks_all,
-        "Cliques": clicks_all,
-        "Visualizações da página de destino": lp_views,
-        "Adições ao carrinho": add_to_cart,
-        "Finalizações de compra iniciadas": initiate_checkout,
-        "Inclusões de informações de pagamento": add_payment_info,
-        "Reproduções de 25% do vídeo": v25,
-        "Reproduções de 50% do vídeo": v50,
-        "Reproduções de 75% do vídeo": v75,
-        "Reproduções de 95% do vídeo": v95,
-        "_campaign_id": it.get("campaign_id"),
-        "_adset_id": it.get("adset_id"),
-        "_ad_id": it.get("ad_id"),
-        "_date_start": it.get("date_start"),
-        "_date_stop": it.get("date_stop"),
-    })
+            add_to_cart       = _safe_get_action(it.get("actions"), "add_to_cart")
+            initiate_checkout = _safe_get_action(it.get("actions"), "initiate_checkout")
+            add_payment_info  = _safe_get_action(it.get("actions"), "add_payment_info")
+
+            rows.append({
+                "campanha": it.get("campaign_name"),
+                "Desativado/Ativado": "Ativo",
+                "Veiculação": it.get("objective"),
+                "Valor usado": spend,
+                "Valor de conversão da compra": revenue,
+                "Compras": purchases,
+                "Impressões": impressions,
+                "Alcance": float(it.get("reach", 0) or 0),
+                "Frequência": float(it.get("frequency", 0) or 0),
+                "CPC (custo por clique no link)": float(it.get("cpc", 0) or 0),
+                "CTR (taxa de cliques no link)": float(it.get("ctr", 0) or 0) / 100.0,
+                "CPM (custo por 1.000 impressões)": float(it.get("cpm", 0) or 0),
+                "Cliques no link": link_clicks if link_clicks > 0 else clicks_all,
+                "Cliques": clicks_all,
+
+                # 👇 Novas colunas usadas no seu funil
+                "Visualizações da página de destino": lp_views,
+                "Adições ao carrinho": add_to_cart,
+                "Finalizações de compra iniciadas": initiate_checkout,
+                "Inclusões de informações de pagamento": add_payment_info,
+
+                "Reproduções de 25% do vídeo": v25,
+                "Reproduções de 50% do vídeo": v50,
+                "Reproduções de 75% do vídeo": v75,
+                "Reproduções de 95% do vídeo": v95,
+                "_campaign_id": it.get("campaign_id"),
+                "_adset_id": it.get("adset_id"),
+                "_ad_id": it.get("ad_id"),
+                "_date_start": it.get("date_start"),
+                "_date_stop": it.get("date_stop"),
+            })
 
         next_url = data.get("paging", {}).get("next")
         if not next_url:
@@ -431,7 +437,6 @@ if "_date_start" in dff.columns:
 else:
     st.info("Sem campo de data para visão temporal.")
 
-
 # =========================
 # Metas — Acompanhamento Diário (semana)
 # =========================
@@ -568,9 +573,9 @@ if uploaded_creatives:
         "gasto": ("valor usado","valor gasto","spend","amount spent","valor usado brl","gasto"),
         "imp": ("impressões","impressoes","impressions"),
         "clicks": (
-    "cliques no link","clicks","link clicks",
-    "cliques (todos)","cliques","cliques no link (todos)"
-),
+            "cliques no link","clicks","link clicks",
+            "cliques (todos)","cliques","cliques no link (todos)"
+        ),
         "lpv": ("visualizações da página de destino","visualizacoes da pagina de destino","landing page views","lp views"),
         "compras": ("compras","purchases"),
         "receita": ("valor de conversão da compra","valor de conversao da compra","purchase conversion value","revenue","faturamento"),
@@ -648,14 +653,13 @@ if uploaded_creatives:
 
     # Significância simples (proporção z) vs. média da amostra
     def prop_z_test(success_a, n_a, p_pool):
-        # z = (p_a - p_pool) / sqrt(p_pool*(1-p_pool)/n_a)
-        if n_a <= 0 or p_pool<=0 or p_pool>=1: return np.nan
+        # z = (p_a - p_pool) / sqrt(p_pool*(1-pool)/n_a)
+        if n_a <= 0 or p_pool <= 0 or p_pool >= 1: return np.nan
         p_a = success_a / n_a
         se = np.sqrt(p_pool*(1-p_pool)/(n_a+eps))
-        if se==0: return np.nan
-        z = (p_a - p_pool)/se
-        # p-value bicaudal aproximado
+        if se == 0: return np.nan
         from math import erf, sqrt
+        z = (p_a - p_pool)/se
         p = 2*(1 - 0.5*(1+erf(abs(z)/sqrt(2))))
         return p
 
@@ -680,8 +684,7 @@ if uploaded_creatives:
     # Ordenação
     asc = True if rank_metric in ["CPA"] else False
     if rank_metric.lower() == "compras" and "compras" in grp.columns:
-        grp["_sort"] = grp["compras"]
-        asc = False
+        grp["_sort"] = grp["compras"]; asc = False
     elif rank_metric.lower() == "receita" and "receita" in grp.columns:
         grp["_sort"] = grp["receita"]; asc = False
     elif rank_metric.lower() == "gasto" and "gasto" in grp.columns:
@@ -694,7 +697,6 @@ if uploaded_creatives:
     # Aplica critério de p-valor se selecionado
     if p_thresh != "(ignorar)":
         cut = float(p_thresh)
-        # se ranqueando por CTR usa p_CTR, se CVR usa p_CVR; caso contrário, aceita se qualquer um for significativo
         if rank_metric == "CTR" and "p_CTR" in board.columns:
             board = board[(board["p_CTR"] <= cut) | (board["p_CTR"].isna())]
         elif rank_metric == "CVR" and "p_CVR" in board.columns:
@@ -719,7 +721,6 @@ if uploaded_creatives:
     }
     show = show.rename(columns=rename)
 
-    # Apresentação
     st.markdown("#### Ranking de Criativos")
     st.dataframe(
         show.style
@@ -742,7 +743,12 @@ if uploaded_creatives:
 
     if thumbs_col and thumbs_col in rawc.columns:
         st.markdown("#### Galeria — Campeões")
-        champs = board[board["Campeão"]].merge(dfc[[key_col, thumbs_col]].drop_duplicates(), left_on="Criativo", right_on=key_col if key_col!="anuncio" else "anuncio", how="left")
+        champs = board[board["Campeão"]].merge(
+            dfc[[key_col, thumbs_col]].drop_duplicates(),
+            left_on="Criativo",
+            right_on=key_col if key_col != "anuncio" else "anuncio",
+            how="left"
+        )
         cols = st.columns(min(4, len(champs)))
         i = 0
         for _, r in champs.iterrows():
@@ -751,7 +757,6 @@ if uploaded_creatives:
                 st.image(r.get(thumbs_col), use_container_width=True)
             i += 1
 
-    # Download do ranking
     st.download_button(
         "📤 Baixar ranking de criativos (CSV)",
         data=board.to_csv(index=False).encode("utf-8"),
