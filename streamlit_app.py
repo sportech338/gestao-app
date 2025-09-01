@@ -272,10 +272,17 @@ if uploaded:
     kpi6.metric("CPC", f"R$ {cpc:,.2f}".replace(",", "."))
 
     # Alertas
-    alerts = []
-    if roas < alert_roas_min: alerts.append(f"ROAS abaixo do mínimo ({roas:.2f} < {alert_roas_min:.2f})")
-    if cpa > alert_cpa_max: alerts.append(f"CPA acima do máximo (R$ {cpa:.2f} > R$ {alert_cpa_max:.2f})")
-    st.error("🚨 " + " | ".join(alerts)) if alerts else st.success("✅ Dentro dos limites definidos de ROAS/CPA.")
+alerts = []
+if roas < alert_roas_min:
+    alerts.append(f"ROAS abaixo do mínimo ( {roas:.2f} < {alert_roas_min:.2f} )")
+if cpa > alert_cpa_max:
+    alerts.append(f"CPA acima do máximo ( R$ {cpa:.2f} > R$ {alert_cpa_max:.2f} )")
+
+if alerts:
+    st.error("🚨 " + " | ".join(alerts))
+else:
+    st.success("✅ Dentro dos limites definidos de ROAS/CPA.")
+
 
     st.markdown("---")
 
