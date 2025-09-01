@@ -479,13 +479,15 @@ if uploaded and "campanha" in dff.columns:
 
     st.dataframe(comp, use_container_width=True)
 
-    # =========================
-    # Orientações de verba — diárias
-    # =========================
-    st.markdown("### 📌 Orientações de Verba — por Dia e Etapa")
+# =========================
+# Orientações de verba — diárias
+# =========================
+st.markdown("### 📌 Orientações de Verba — por Dia e Etapa")
 
-    # Prepara base real diária
-    dff["_date"] = pd.to_datetime(dff["data"], errors="coerce", dayfirst=True)
+date_col = next((c for c in ["data"] if c in dff.columns), None)
+
+if date_col:
+    dff["_date"] = pd.to_datetime(dff[date_col], errors="coerce", dayfirst=True)
     dff["etapa_funil"] = dff["campanha"].apply(classificar_funil)
 
     real_diario = (
@@ -495,7 +497,6 @@ if uploaded and "campanha" in dff.columns:
         .rename(columns={"_date": "Data", "gasto": "Realizado (R$)", "etapa_funil": "Etapa"})
     )
 
-    # Junta planejado + realizado
     comparativo = pd.merge(
         df_planejado_dia.rename(columns={"Valor Diário (R$)": "Planejado (R$)"}),
         real_diario,
@@ -507,7 +508,6 @@ if uploaded and "campanha" in dff.columns:
 
     st.dataframe(comparativo, use_container_width=True)
 
-    # Gera orientações por dia
     for data in comparativo["Data"].unique():
         st.markdown(f"#### 📅 {data}")
         subset = comparativo[comparativo["Data"] == data]
@@ -520,7 +520,8 @@ if uploaded and "campanha" in dff.columns:
                 st.info(f"✅ Excedeu em **R$ {diff:,.0f}** o planejado de **{etapa}**.".replace(",","."))
             else:
                 st.success(f"⚖️ Etapa **{etapa}** alinhada com o planejado.")
-
+else:
+    st.warning("⚠️ O CSV não contém coluna de datas. Não é possível calcular orientações diárias.")
 
 
 st.markdown("---")
@@ -530,13 +531,17 @@ st.markdown("---")
 # =========================
 st.markdown("### 📅 ROAS diário")
 
-if uploaded and "data" in dff.columns:
-    dd = dff.copy()
-    dd["_date"] = pd.to_datetime(dd["data"], errors="coerce", dayfirst=True)
-    t = dd.dropna(subset=["_date"]).groupby("_date").agg({"gasto":"sum","faturamento":"sum"}).reset_index().sort_values("_date")
-    if not t.empty:
-        t["ROAS"] = t["faturamento"] / t["gasto"].replace(0, np.nan)
-        st.plotly_chart(px.line(t, x="_date", y="ROAS", title="ROAS diário"), use_container_width=True)
+if uploaded:
+    date_col = next((c for c in ["data"] if c in dff.columns), None)
+    if date_col:
+        dd = dff.copy()
+        dd["_date"] = pd.to_datetime(dd[date_col], errors="coerce", dayfirst=True)
+        t = dd.dropna(subset=["_date"]).groupby("_date").agg({"gasto":"sum","faturamento":"sum"}).reset_index().sort_values("_date")
+        if not t.empty:
+            t["ROAS"] = t["faturamento"] / t["gasto"].replace(0, np.nan)
+            st.plotly_chart(px.line(t, x="_date", y="ROAS", title="ROAS diário"), use_container_width=True)
+    else:
+        st.warning("⚠️ O CSV não contém coluna de datas. Não é possível calcular ROAS diário.")
 else:
     st.warning("⚠️ Nenhum arquivo carregado. Envie o CSV para visualizar o ROAS diário.")
 
