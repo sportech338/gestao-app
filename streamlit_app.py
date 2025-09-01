@@ -75,23 +75,70 @@ def read_csv_flex(file):
     raw = _read(file)
 
     ALIASES = {
-        "campanha": ("nome da campanha", "campanha", "campaign name", "nome da campanha (id)"),
-        "status": ("desativado/ativado", "ativado/desativado", "estado", "status da campanha"),
-        "veiculacao": ("veiculacao", "veiculacao da campanha", "posicionamento"),
-        "gasto": ("valor usado", "valor gasto", "amount spent", "spend", "valor usado brl"),
-        "faturamento": ("valor de conversao da compra", "valor de conversão da compra", "purchase conversion value", "receita"),
-        "compras": ("compras", "purchases"),
-        "impressoes": ("impressões", "impressoes", "impressions"),
-        "cliques": ("cliques no link", "link clicks", "clicks"),
-        "lp_views": ("visualizações da página de destino", "visualizacoes da pagina de destino", "landing page views"),
-        "add_cart": ("adições ao carrinho", "adicoes ao carrinho", "add to cart"),
-        "ck_init": ("finalizações de compra iniciadas", "finalizacoes de compra iniciadas", "checkout iniciado"),
-        "pay_info": ("inclusões de informações de pagamento", "inclusoes de informacoes de pagamento"),
-        "cpc": ("cpc (custo por clique no link)", "cpc"),
-        "ctr": ("ctr (taxa de cliques no link)", "ctr"),
-        "cpm": ("cpm (custo por 1.000 impressões)", "cpm"),
-        "data": ("data", "date", "dia"),
-    }
+    # Identificação / status
+    "campanha": (
+        "nome da campanha", "campanha", "campaign name", "nome da campanha (id)"
+    ),
+    "status": (
+        "desativado/ativado", "ativado/desativado", "estado", "status da campanha"
+    ),
+    "veiculacao": (
+        "veiculação", "veiculacao", "veiculação da campanha", "posicionamento"
+    ),
+
+    # Investimento / receita / roas
+    "gasto": (
+        "valor usado", "valor gasto", "amount spent", "spend", "valor usado brl"
+    ),
+    "faturamento": (
+        "valor de conversão da compra", "valor de conversao da compra", "purchase conversion value",
+        "receita"
+    ),
+    "roas": (
+        "retorno sobre o investimento em publicidade (roas) das compras", "roas"
+    ),
+    "orcamento": (
+        "orçamento", "budget"
+    ),
+
+    # Eventos do funil
+    "cliques": (
+        "cliques no link", "link clicks", "clicks"
+    ),
+    "lp_views": (
+        "visualizações da página de destino", "visualizacoes da pagina de destino",
+        "landing page views"
+    ),
+    "add_cart": (
+        "adições ao carrinho", "adicoes ao carrinho", "add to cart"
+    ),
+    "ck_init": (
+        "finalizações de compra iniciadas", "finalizacoes de compra iniciadas", "checkout iniciado",
+        "conversão checkout", "conversao checkout"
+    ),
+    "entrega": (
+        "entrega"  # <-- você tem essa coluna; agora mapeamos
+    ),
+    "pay_info": (
+        "inclusões de informações de pagamento", "inclusoes de informacoes de pagamento",
+        "info. pagamento / entrega"  # algumas exports vêm assim
+    ),
+    "compras": (
+        "compras"
+    ),
+
+    # Métricas de alcance / mid-funnel
+    "alcance": ("alcance",),
+    "impressoes": ("impressões", "impressoes", "impressions"),
+    "frequencia": ("frequência", "frequencia", "frequency"),
+    "cpm": ("cpm (custo por 1.000 impressões)", "cpm"),
+    "cpc": ("cpc (custo por clique no link)", "cpc"),
+    "ctr": ("ctr (taxa de cliques no link)", "ctr"),
+
+    # Datas
+    "data": ("data", "date", "dia"),
+}
+
 
     norm_map = { _norm(c): c for c in raw.columns }
     rename = {}
@@ -112,12 +159,19 @@ def read_csv_flex(file):
         try: return float(s)
         except: return 0.0
 
-    for col in ["gasto","faturamento","compras","cpc","ctr","cpm","impressoes","cliques","lp_views","add_cart","ck_init","pay_info"]:
+    for col in [
+        "gasto","orcamento","faturamento","roas",
+        "compras","impressoes","alcance","frequencia",
+        "cliques","lp_views","add_cart","ck_init","entrega","pay_info",
+        "cpc","ctr","cpm"
+    ]:
         if col in df.columns:
             df[col] = df[col].apply(_to_num)
 
+    # percentuais
     if "ctr" in df.columns:
-        df["ctr"] = df["ctr"].apply(lambda v: v/100.0 if v>1.5 else v)
+        df["ctr"] = df["ctr"].apply(lambda v: v/100.0 if v > 1.5 else v)
+
     return df
 
 def classificar_funil(nome):
