@@ -546,42 +546,76 @@ else:
 st.markdown("---")
 
 # =========================
-# ROAS diário
+# KPIs Diários (Investimento, Faturamento, ROAS, CPA)
 # =========================
-st.markdown("### 📅 ROAS diário")
+st.markdown("### 📅 KPIs Diários — ROAS, CPA e Faturamento")
 
 if uploaded:
     dd = dff.copy()
 
+    # Garante coluna de datas
     if "data" in dff.columns:
         dd["_date"] = pd.to_datetime(dd["data"], errors="coerce", dayfirst=True)
-
     elif "data_inicio" in dff.columns and "data_fim" in dff.columns:
         dd["data_inicio"] = pd.to_datetime(dd["data_inicio"], errors="coerce", dayfirst=True)
         dd["data_fim"] = pd.to_datetime(dd["data_fim"], errors="coerce", dayfirst=True)
-
         if dd["data_inicio"].nunique() == 1 and dd["data_fim"].nunique() == 1 and (
             dd["data_inicio"].iloc[0] == dd["data_fim"].iloc[0]
         ):
-            # Relatório de 1 dia → usa esse dia
             dd["_date"] = dd["data_inicio"]
         else:
-            # Relatório de mais tempo → usa data de início
             dd["_date"] = dd["data_inicio"]
-
     else:
         dd["_date"] = pd.NaT
 
-    t = dd.dropna(subset=["_date"]).groupby("_date").agg({"gasto":"sum","faturamento":"sum"}).reset_index().sort_values("_date")
+    # Agrupamento diário
+    t = dd.dropna(subset=["_date"]).groupby("_date").agg({
+        "gasto":"sum",
+        "faturamento":"sum",
+        "compras":"sum"
+    }).reset_index().sort_values("_date")
 
     if not t.empty:
         t["ROAS"] = t["faturamento"] / t["gasto"].replace(0, np.nan)
-        st.plotly_chart(px.line(t, x="_date", y="ROAS", title="ROAS diário"), use_container_width=True)
-    else:
-        st.info("⚠️ Nenhuma data válida encontrada no CSV para calcular ROAS diário.")
-else:
-    st.warning("⚠️ Nenhum arquivo carregado. Envie o CSV para visualizar o ROAS diário.")
+        t["CPA"] = t["gasto"] / t["compras"].replace(0, np.nan)
 
+# Junta metas diárias com realizados
+t = t.rename(columns={"_date":"Data"})
+t["Meta Investimento (R$)"] = budget_dia
+t["Meta Faturamento (R$)"] = meta_dia_rev
+
+t["Diferença Investimento"] = t["gasto"] - t["Meta Investimento (R$)"]
+t["Diferença Faturamento"] = t["faturamento"] - t["Meta Faturamento (R$)"]
+
+# Tabela comparativa
+st.dataframe(
+    t[[
+        "Data",
+        "gasto","Meta Investimento (R$)","Diferença Investimento",
+        "faturamento","Meta Faturamento (R$)","Diferença Faturamento",
+        "compras","ROAS","CPA"
+    ]].rename(columns={
+        "gasto":"Investimento (R$)",
+        "faturamento":"Faturamento (R$)",
+        "compras":"Compras"
+    }),
+    use_container_width=True
+)
+
+# Gráficos comparativos
+col1, col2 = st.columns(2)
+with col1:
+    st.plotly_chart(
+        px.line(t, x="Data", y=["faturamento","Meta Faturamento (R$)"], markers=True,
+                title="Faturamento Diário: Real vs Meta"),
+        use_container_width=True
+    )
+with col2:
+    st.plotly_chart(
+        px.line(t, x="Data", y=["gasto","Meta Investimento (R$)"], markers=True,
+                title="Investimento Diário: Real vs Meta"),
+        use_container_width=True
+    )
 
 
 # =========================
