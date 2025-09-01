@@ -129,8 +129,19 @@ st.markdown("## 📥 Performance Real (Meta Ads API)")
 
 import requests
 
-META_TOKEN = st.secrets["META_ACCESS_TOKEN"]
-AD_ACCOUNT_ID = st.secrets["META_AD_ACCOUNT_ID"]  # ex.: "777822113493164"
+import os  # <-- pode deixar junto dos outros imports
+
+META_TOKEN = os.getenv("META_ACCESS_TOKEN") or st.secrets.get("META_ACCESS_TOKEN")
+AD_ACCOUNT_ID = os.getenv("META_AD_ACCOUNT_ID") or st.secrets.get("META_AD_ACCOUNT_ID")
+
+if not META_TOKEN or not AD_ACCOUNT_ID:
+    st.error(
+        "⚠️ Credenciais da Meta não encontradas.\n\n"
+        "Defina `META_ACCESS_TOKEN` e `META_AD_ACCOUNT_ID` em **secrets.toml** "
+        "ou como variáveis de ambiente no deploy."
+    )
+    st.stop()
+
 
 def _safe_get_action(actions_list, key):
     if not isinstance(actions_list, list):
