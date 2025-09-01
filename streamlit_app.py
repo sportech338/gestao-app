@@ -124,8 +124,12 @@ def read_csv_flex(file):
         "info. pagamento / entrega"  # algumas exports vêm assim
     ),
     "compras": (
-        "compras"
+        "compras",
+        "compras / inf. pagamento",
+        "compras / informações de pagamento",
+        "purchases"
     ),
+
 
     # Métricas de alcance / mid-funnel
     "alcance": ("alcance",),
