@@ -519,17 +519,80 @@ if uploaded and "campanha" in dff.columns:
 
     st.dataframe(comp, use_container_width=True)
 
-    # Orientações de verba
-    st.markdown("### 📌 Orientações de Verba")
-    for _, row in comp.iterrows():
-        etapa = row["Etapa"]
-        diff = row["Diferença (R$)"]
-        if diff < 0:
-            st.warning(f"➡️ Falta investir **R$ {abs(diff):,.0f}** em **{etapa}** para bater a meta planejada.".replace(",","."))
+# Orientações de verba — AGORA POR DIA
+st.markdown("### 📌 Orientações de Verba (por dia)")
+
+# 1) Escolha do dia (limitado aos dias considerados da semana)
+dias_opcoes = [
+    d for d in week_days_all
+    if (month_first <= d <= month_last) and (include_weekends or d.weekday() < 5)
+]
+if not dias_opcoes:
+    dias_opcoes = week_days_all
+
+hoje = datetime.today().date()
+default_day = hoje if hoje in [d.date() if isinstance(d, datetime) else d for d in dias_opcoes] else dias_opcoes[0]
+dia_sel = st.selectbox(
+    "Selecione o dia para ver o faltante vs planejado",
+    options=dias_opcoes,
+    index=dias_opcoes.index(default_day),
+    format_func=lambda d: pd.to_datetime(d).strftime("%d/%m/%Y")
+)
+
+# 2) Planejado diário por etapa (usa df_planejado_dia já criado acima)
+dfp = df_planejado_dia.copy()
+dfp["_date"] = pd.to_datetime(dfp["Data"], format="%d/%m/%Y", errors="coerce")
+planejado_dia = (
+    dfp.loc[dfp["_date"].dt.date == pd.to_datetime(dia_sel).date()]
+       .groupby("Etapa")["Valor Diário (R$)"]
+       .sum()
+       .to_dict()
+)
+
+# 3) Realizado diário por etapa (a partir do CSV carregado)
+#    - garante coluna de data e etapa_funil
+dd_orient = dff.copy()
+if "etapa_funil" not in dd_orient.columns:
+    dd_orient["etapa_funil"] = dd_orient.get("campanha","").apply(classificar_funil)
+
+if "data" in dd_orient.columns:
+    dd_orient["_date"] = pd.to_datetime(dd_orient["data"], errors="coerce", dayfirst=True)
+elif "data_inicio" in dd_orient.columns and "data_fim" in dd_orient.columns:
+    dd_orient["data_inicio"] = pd.to_datetime(dd_orient["data_inicio"], errors="coerce", dayfirst=True)
+    dd_orient["data_fim"]    = pd.to_datetime(dd_orient["data_fim"],    errors="coerce", dayfirst=True)
+    dd_orient["_date"] = dd_orient["data_inicio"]
+else:
+    dd_orient["_date"] = pd.NaT
+
+realizado_dia = (
+    dd_orient.loc[dd_orient["_date"].dt.date == pd.to_datetime(dia_sel).date()]
+             .groupby("etapa_funil")["gasto"]
+             .sum()
+             .to_dict()
+)
+
+# 4) Lista de etapas para exibir sempre nas mensagens
+etapas_msg = ["Teste de Interesse", "Teste de Criativo", "Escala", "Remarketing"]
+
+# 5) Mensagens por etapa para o DIA selecionado
+if not planejado_dia:
+    st.info("Não há planejamento diário para a data selecionada.")
+else:
+    for etapa in etapas_msg:
+        plano = float(planejado_dia.get(etapa, 0.0))
+        real  = float(realizado_dia.get(etapa, 0.0))
+        diff  = real - plano
+        if plano == 0 and real == 0:
+            st.write(f"• **{etapa}** — sem verba planejada para {pd.to_datetime(dia_sel).strftime('%d/%m/%Y')}.")
+        elif diff < 0:
+            st.warning(f"➡️ Falta investir **R$ {abs(diff):,.0f}** em **{etapa}** no dia **{pd.to_datetime(dia_sel).strftime('%d/%m/%Y')}**.".replace(",","."))
         elif diff > 0:
-            st.info(f"✅ Já investiu **R$ {diff:,.0f}** a mais do que o planejado em **{etapa}**.".replace(",","."))
+            st.info(f"✅ Investiu **R$ {diff:,.0f}** a mais do que o planejado em **{etapa}** no dia **{pd.to_datetime(dia_sel).strftime('%d/%m/%Y')}**.".replace(",",".")) 
         else:
-            st.success(f"⚖️ A etapa **{etapa}** está exatamente alinhada com o planejado.")
+            st.success(f"⚖️ **{etapa}** no dia **{pd.to_datetime(dia_sel).strftime('%d/%m/%Y')}** está exatamente no planejado.")
+
+# (opcional) manter o comparativo semanal/mensal abaixo dos gráficos como já está
+
 
     col1, col2 = st.columns(2)
     with col1:
