@@ -35,18 +35,25 @@ with st.sidebar:
     st.subheader("📥 CSV do Gerenciador")
     uploaded = st.file_uploader("Envie o CSV (separador vírgula)", type=["csv"]) 
 
-    st.subheader("💰 Planejamento de Verba por Etapa")
-    orc_teste_interesse = st.number_input("Teste de Interesse (R$)", value=1000.0, step=100.0)
-    orc_teste_criativo  = st.number_input("Teste de Criativo (R$)", value=1000.0, step=100.0)
-    orc_escala          = st.number_input("Escala (R$)", value=2000.0, step=100.0)
-    orc_remarketing     = st.number_input("Remarketing (R$)", value=1000.0, step=100.0)
+st.subheader("💰 Planejamento de Verba por Etapa (%)")
 
-    planejado_funil = {
-        "Teste de Interesse": orc_teste_interesse,
-        "Teste de Criativo": orc_teste_criativo,
-        "Escala": orc_escala,
-        "Remarketing": orc_remarketing
-    }
+pct_teste_interesse = st.number_input("Teste de Interesse (%)", value=20.0, step=1.0, min_value=0.0, max_value=100.0)
+pct_teste_criativo  = st.number_input("Teste de Criativo (%)", value=15.0, step=1.0, min_value=0.0, max_value=100.0)
+pct_remarketing     = st.number_input("Remarketing (%)", value=15.0, step=1.0, min_value=0.0, max_value=100.0)
+
+# Escala sempre pega o restante
+pct_escala = max(0.0, 100.0 - (pct_teste_interesse + pct_teste_criativo + pct_remarketing))
+
+st.markdown(f"**Escala (%) calculado:** {pct_escala:.1f}%")
+
+# Converte os % em R$ baseado no orçamento semanal derivado
+planejado_funil = {
+    "Teste de Interesse": (pct_teste_interesse/100) * budget_goal_week,
+    "Teste de Criativo": (pct_teste_criativo/100) * budget_goal_week,
+    "Remarketing": (pct_remarketing/100) * budget_goal_week,
+    "Escala": (pct_escala/100) * budget_goal_week,
+}
+
 
 # =========================
 # Helpers
