@@ -171,8 +171,6 @@ budget_goal_week = budget_goal_month * week_share
 # Escala pega o restante automaticamente
 pct_escala = max(0.0, 100.0 - (pct_teste_interesse + pct_teste_criativo + pct_remarketing))
 
-st.markdown(f"**Distribuição de verba (%):** Interesse {pct_teste_interesse:.1f}% | Criativo {pct_teste_criativo:.1f}% | Remarketing {pct_remarketing:.1f}% | Escala {pct_escala:.1f}%")
-
 # Converte os % em valores de R$ (baseado no orçamento semanal)
 planejado_funil = {
     "Teste de Interesse": (pct_teste_interesse/100) * budget_goal_week,
@@ -180,6 +178,31 @@ planejado_funil = {
     "Remarketing": (pct_remarketing/100) * budget_goal_week,
     "Escala": (pct_escala/100) * budget_goal_week,
 }
+
+st.markdown("### 💵 Distribuição Planejada da Verba (semana)")
+
+df_planejado = pd.DataFrame({
+    "Etapa": list(planejado_funil.keys()),
+    "Percentual (%)": [
+        pct_teste_interesse,
+        pct_teste_criativo,
+        pct_remarketing,
+        pct_escala
+    ],
+    "Valor Planejado (R$)": [
+        planejado_funil["Teste de Interesse"],
+        planejado_funil["Teste de Criativo"],
+        planejado_funil["Remarketing"],
+        planejado_funil["Escala"]
+    ]
+})
+
+st.dataframe(df_planejado, use_container_width=True)
+
+st.plotly_chart(
+    px.pie(df_planejado, values="Valor Planejado (R$)", names="Etapa", title="Distribuição Planejada da Verba"),
+    use_container_width=True
+)
 
 
 # =========================
