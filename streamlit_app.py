@@ -369,19 +369,67 @@ else:
 
     st.markdown("---")
 
-    # Funil
-    st.markdown("### 🧭 Funil (volume total do filtro)")
-    def safe_sum(col):
-        return dff[col].sum() if col in dff.columns else 0
+    # =========================
+    # Funil (volumes + taxas)
+    # =========================
+    st.markdown("### 🧭 Funil (volumes do filtro)")
+
+    def _sum(col):
+        return float(dff[col].sum()) if col in dff.columns else 0.0
+
+    # Volumes por etapa (usando os nomes já mapeados em ALIASES)
+    clicks    = _sum("cliques")
+    lp        = _sum("lp_views")
+    atc       = _sum("add_cart")
+    ck        = _sum("ck_init")
+    entrega   = _sum("entrega")     # você disse que essa coluna existe
+    payinfo   = _sum("pay_info")
+    compras   = _sum("compras")
+
+    # Tabela de volumes
     funil = pd.DataFrame({
-        "etapa": ["Cliques","LP Views","Add to Cart","Checkout","Pagamento","Compras"],
-        "valor": [safe_sum("cliques"), safe_sum("lp_views"), safe_sum("add_cart"), safe_sum("ck_init"), safe_sum("pay_info"), safe_sum("compras")]
+        "Etapa": ["Cliques","LP Views","Add to Cart","Checkout","Pagamento","Compras"],
+        "Volume": [clicks, lp, atc, ck, payinfo, compras]
     })
-    funil = funil[funil["valor"]>0]
+    funil = funil[funil["Volume"] > 0]
+
     if not funil.empty:
-        st.plotly_chart(px.funnel(funil, x="valor", y="etapa", title="Funil de Conversão"), use_container_width=True)
+        st.dataframe(funil, use_container_width=True)
+        st.plotly_chart(px.funnel(funil, x="Volume", y="Etapa", title="Funil de Conversão (Volume)"), use_container_width=True)
+
+    # -------------------------
+    # Taxas entre as etapas
+    # -------------------------
+    st.markdown("### 📈 Taxas do Funil")
+
+    def _rate(num, den):
+        return (num / den) if den > 0 else np.nan
+
+    taxas = [
+        {"De→Para": "Cliques → LP",               "Taxa": _rate(lp, clicks)},
+        {"De→Para": "LP → AddToCart",             "Taxa": _rate(atc, lp)},
+        {"De→Para": "AddToCart → Checkout",       "Taxa": _rate(ck, atc)},
+        {"De→Para": "Checkout → Entrega",         "Taxa": _rate(entrega, ck)},
+        {"De→Para": "Entrega → Pagamento",        "Taxa": _rate(payinfo, entrega)},
+        {"De→Para": "Pagamento → Compra",         "Taxa": _rate(compras, payinfo)},
+        {"De→Para": "Checkout → Compra (direto)", "Taxa": _rate(compras, ck)},
+    ]
+
+    df_taxas = pd.DataFrame(taxas)
+    df_taxas["Taxa (%)"] = (df_taxas["Taxa"] * 100).round(2)
+
+    st.dataframe(df_taxas[["De→Para","Taxa (%)"]], use_container_width=True)
+
+    fig_taxas = px.bar(
+        df_taxas.dropna(subset=["Taxa"]),
+        x="Taxa", y="De→Para", orientation="h",
+        title="Taxas por Etapa do Funil"
+    )
+    fig_taxas.update_layout(xaxis_tickformat=".0%")
+    st.plotly_chart(fig_taxas, use_container_width=True)
 
     st.markdown("---")
+
 
     # Ranking
     st.markdown("### 🏆 Campanhas (Top 10 por ROAS)")
