@@ -208,7 +208,7 @@ initiate_checkout = _safe_get_action(it.get("actions"), "initiate_checkout")
 add_payment_info  = _safe_get_action(it.get("actions"), "add_payment_info")
 
 
-            rows.append({
+    rows.append({
     "campanha": it.get("campaign_name"),
     "Desativado/Ativado": "Ativo",
     "Veiculação": it.get("objective"),
