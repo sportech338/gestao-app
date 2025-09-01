@@ -433,16 +433,15 @@ if not df_taxas_plot.empty:
 # -------------------------
 # Taxas entre as etapas (apenas as 4 pedidas)
 # -------------------------
-st.markdown("### 📈 Taxas do Funil (enxutas)")
+st.markdown("### 📈 Taxas do Funil (sem AddToCart)")
 
 def _rate(num, den):
     return (num / den) if den > 0 else np.nan
 
 taxas = [
-    {"De→Para": "Cliques → LP",           "Taxa": _rate(lp, clicks)},
-    {"De→Para": "LP → AddToCart",         "Taxa": _rate(atc, lp)},
-    {"De→Para": "AddToCart → Checkout",   "Taxa": _rate(ck, atc)},
-    {"De→Para": "Checkout → Compra",      "Taxa": _rate(compras, ck)},
+    {"De→Para": "Cliques → LP",      "Taxa": _rate(lp, clicks)},
+    {"De→Para": "LP → Checkout",     "Taxa": _rate(ck, lp)},
+    {"De→Para": "Checkout → Compra", "Taxa": _rate(compras, ck)},
 ]
 
 df_taxas = pd.DataFrame(taxas)
@@ -454,11 +453,10 @@ df_taxas_plot = df_taxas.dropna(subset=["Taxa"])
 if not df_taxas_plot.empty:
     fig_taxas = px.bar(
         df_taxas_plot, x="Taxa", y="De→Para", orientation="h",
-        title="Taxas por Etapa (Cliques→LP→ATC→Checkout→Compra)"
+        title="Taxas por Etapa (Cliques→LP→Checkout→Compra)"
     )
     fig_taxas.update_layout(xaxis_tickformat=".0%")
     st.plotly_chart(fig_taxas, use_container_width=True)
-
 
     st.markdown("---")
 
