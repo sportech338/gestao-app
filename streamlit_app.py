@@ -254,14 +254,16 @@ if uploaded:
     if "Valor usado" in dff.columns:
         dff = dff[dff["Valor usado"] > 0].copy()
 
+# =========================
 # KPIs principais (real)
+# =========================
 invest = dff["Valor usado"].sum() if "Valor usado" in dff.columns else 0.0
 fatur = dff["Valor de conversão da compra"].sum() if "Valor de conversão da compra" in dff.columns else 0.0
 compras = dff["Compras"].sum() if "Compras" in dff.columns else 0.0
 roas = (fatur / invest) if invest > 0 else 0.0
 cpa = (invest / compras) if compras > 0 else 0.0
-cpc = dff["CPC (custo por clique no link)"].mean() if "CPC (custo por clique no link)" in dff.columns and len(dff)>0 else 0.0
-ctr = (dff["CTR (taxa de cliques no link)"].mean() / 100.0) if "CTR (taxa de cliques no link)" in dff.columns and len(dff)>0 else 0.0
+cpc = dff["CPC (custo por clique no link)"].mean() if "CPC (custo por clique no link)" in dff.columns and len(dff) > 0 else 0.0
+ctr = (dff["CTR (taxa de cliques no link)"].mean() / 100.0) if "CTR (taxa de cliques no link)" in dff.columns and len(dff) > 0 else 0.0
 
 # 🔸 CVR (cliques → compra) com fallback
 clicks_sum = dff["Cliques no link"].sum() if "Cliques no link" in dff.columns else 0.0
@@ -269,7 +271,7 @@ if clicks_sum == 0 and "Cliques" in dff.columns:
     clicks_sum = dff["Cliques"].sum()
 cvr = (compras / clicks_sum) if clicks_sum > 0 else 0.0
 
-# Aqui o título e os KPIs
+# Exibição dos KPIs
 st.markdown("### 📌 KPIs — Performance Real")
 kpi1, kpi2, kpi3, kpi4, kpi5, kpi6, kpi7 = st.columns(7)
 kpi1.metric("Investimento", f"R$ {invest:,.0f}".replace(",", "."))
@@ -280,18 +282,18 @@ kpi5.metric("CTR", f"{ctr*100:,.2f}%".replace(",", "."))
 kpi6.metric("CPC", f"R$ {cpc:,.2f}".replace(",", "."))
 kpi7.metric("CVR (Cliques→Compra)", f"{cvr*100:,.2f}%".replace(",", "."))
 
+# Alertas
+alerts = []
+if roas < alert_roas_min:
+    alerts.append(f"ROAS abaixo do mínimo ( {roas:.2f} < {alert_roas_min:.2f} )")
+if cpa > alert_cpa_max:
+    alerts.append(f"CPA acima do máximo ( R$ {cpa:.2f} > R$ {alert_cpa_max:.2f} )")
 
-    # Alertas
-    alerts = []
-    if roas < alert_roas_min:
-        alerts.append(f"ROAS abaixo do mínimo ( {roas:.2f} < {alert_roas_min:.2f} )")
-    if cpa > alert_cpa_max:
-        alerts.append(f"CPA acima do máximo ( R$ {cpa:.2f} > R$ {alert_cpa_max:.2f} )")
+if alerts:
+    st.error("🚨 " + " | ".join(alerts))
+else:
+    st.success("✅ Dentro dos limites definidos de ROAS/CPA.")
 
-    if alerts:
-        st.error("🚨 " + " | ".join(alerts))
-    else:
-        st.success("✅ Dentro dos limites definidos de ROAS/CPA.")
 
 
     st.markdown("---")
