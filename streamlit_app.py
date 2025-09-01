@@ -264,12 +264,13 @@ if uploaded:
     cpa = (invest / compras) if compras > 0 else 0.0
     cpc = dff["CPC (custo por clique no link)"].mean() if "CPC (custo por clique no link)" in dff.columns and len(dff)>0 else 0.0
     ctr = (dff["CTR (taxa de cliques no link)"].mean() / 100.0) if "CTR (taxa de cliques no link)" in dff.columns and len(dff)>0 else 0.0
-    # 🔸 NOVO (CVR): cliques totais e taxa de conversão de cliques para compra
-    clicks_sum = dff["Cliques no link"].sum() if "Cliques no link" in dff.columns else 0.0
-    # fallback (algumas exports vêm só como "Cliques")
-    if clicks_sum == 0 and "Cliques" in dff.columns:
+# 🔸 CVR (cliques → compra) com fallback para coluna "Cliques"
+clicks_sum = dff["Cliques no link"].sum() if "Cliques no link" in dff.columns else 0.0
+# fallback (algumas exports vêm só como "Cliques")
+if clicks_sum == 0 and "Cliques" in dff.columns:
     clicks_sum = dff["Cliques"].sum()
-    cvr = (compras / clicks_sum) if clicks_sum > 0 else 0.0
+cvr = (compras / clicks_sum) if clicks_sum > 0 else 0.0
+
     st.markdown("### 📌 KPIs — Performance Real")
     kpi1, kpi2, kpi3, kpi4, kpi5, kpi6, kpi7 = st.columns(7)
     kpi1.metric("Investimento", f"R$ {invest:,.0f}".replace(",", "."))
