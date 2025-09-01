@@ -1,19 +1,44 @@
-# 🎈 Blank app template
 
-A simple Streamlit app template for you to modify!
+# Dashboard de Metas — Tráfego Pago (Streamlit)
 
-[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://blank-app-template.streamlit.app/)
+Este é um app **Streamlit** para planejar e acompanhar metas **semanais e mensais** de tráfego pago.
+- Define metas por **Faturamento** ou **Compras**
+- Calcula **sessões necessárias** usando as taxas *Sessão→Checkout* e *Checkout→Compra*
+- Sugere **orçamento** com base no **ROAS alvo**
+- Exibe **ROI estimado**
+- Gera **planilhas CSV** de metas (semanal e mensal)
+- Permite editar os **realizados** (investimento, sessões, checkouts, compras, faturamento) direto no app e baixar o CSV
 
-### How to run it on your own machine
+## Como usar com GitHub + Streamlit Cloud
 
-1. Install the requirements
+1. Crie um repositório com estes arquivos:
+   - `app.py`
+   - `requirements.txt`
+   - `README.md`
+2. Suba para o GitHub.
+3. Vá ao **Streamlit Community Cloud** (share.streamlit.io) e conecte ao seu repositório.
+4. Selecione o arquivo principal `app.py` e implante.
+5. Use os botões para **baixar** os CSVs de plano, atualize no seu Excel/Sheets e **reenvie** no app quando quiser (no momento, o exemplo não persiste escrita em disco no Cloud).
 
-   ```
-   $ pip install -r requirements.txt
-   ```
+## Fórmulas principais
 
-2. Run the app
+Supondo:
+- `AOV` = ticket médio (R$)
+- `t1` = taxa Sessão→Checkout (ex.: 5% = 0.05)
+- `t2` = taxa Checkout→Compra (ex.: 40% = 0.40)
+- `ROAS_alvo` (ex.: 2.0)
 
-   ```
-   $ streamlit run streamlit_app.py
-   ```
+**Se a meta for Faturamento (R$):**
+- Compras meta = `Faturamento_meta / AOV`
+- Sessões necessárias = `Compras_meta / (t1 * t2)`
+- Orçamento sugerido = `Faturamento_meta / ROAS_alvo`
+- ROI estimado = `(Faturamento_meta - Orçamento) / Orçamento`
+
+**Se a meta for Compras (nº):**
+- Faturamento meta = `Compras_meta * AOV`
+- Sessões necessárias = `Compras_meta / (t1 * t2)`
+- Orçamento sugerido = `Faturamento_meta / ROAS_alvo`
+
+## Observações
+- Para persistência real (ex.: Google Sheets, Supabase, etc.), adapte o código para gravar/ler de uma fonte externa.
+- Este projeto usa `st.data_editor` para facilitar a edição diária.
