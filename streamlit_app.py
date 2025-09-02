@@ -826,7 +826,6 @@ fig_comp.update_layout(
 
 st.plotly_chart(fig_comp, use_container_width=True)
 
-            )
             fig_comp.update_traces(texttemplate="%{y:.0f}", textposition="outside")
             fig_comp.update_layout(uniformtext_minsize=10, uniformtext_mode="hide")
             st.plotly_chart(fig_comp, use_container_width=True)
