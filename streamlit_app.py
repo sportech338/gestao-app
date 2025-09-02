@@ -677,7 +677,6 @@ st.header("📦 Relatório para Sócios — Download")
 from io import BytesIO
 
 # --- Monta DataFrames do relatório (com tolerância caso algo não exista) ---
-# Resumo geral (sempre disponível)
 resumo_cols = ["Item", "Valor"]
 resumo_data = [
     ["Mês de Referência", month_first.strftime("%m/%Y")],
@@ -693,16 +692,13 @@ resumo_data = [
 ]
 df_resumo = pd.DataFrame(resumo_data, columns=resumo_cols)
 
-# Mix planejado por etapa (do seu dict planejado_funil)
 mix_df = pd.DataFrame({
     "Etapa": list(planejado_funil.keys()),
     "Planejado (R$)": list(planejado_funil.values())
 }).sort_values("Planejado (R$)", ascending=False)
 
-# Plano diário (já calculado)
 df_plano_diario = df_planejado_dia.copy() if 'df_planejado_dia' in locals() else pd.DataFrame()
 
-# Funil de volumes (se houver upload)
 df_funil = pd.DataFrame()
 if 'clicks' in locals():
     df_funil = pd.DataFrame({
@@ -710,17 +706,12 @@ if 'clicks' in locals():
         "Volume": [clicks, lp, ck, compras]
     })
 
-# Taxas do funil (se calculadas)
 df_taxas_export = pd.DataFrame()
 if 'df_taxas' in locals():
     df_taxas_export = df_taxas[["De→Para", "Taxa (%)"]].copy()
 
-# Orçamento por etapa (Planejado vs Realizado), se houver CSV
-df_comp = pd.DataFrame()
-if 'comp' in locals():
-    df_comp = comp.copy()
+df_comp = comp.copy() if 'comp' in locals() else pd.DataFrame()
 
-# KPIs Semanais e Mensais, se houver CSV
 df_kpis_semana = pd.DataFrame()
 df_kpis_mes = pd.DataFrame()
 if 'invest_w' in locals():
@@ -740,108 +731,110 @@ if 'invest_m' in locals():
         "Compras — Mês (nº)": compras_m,
     }])
 
-# Plano diário editável (o que você preencheu na UI), se existir
 df_acompanhamento_semana = edited.copy() if 'edited' in locals() else pd.DataFrame()
 
-# --- Escreve tudo em um único Excel ---
+# --- Writer com fallback: xlsxwriter -> openpyxl ---
+try:
+    import xlsxwriter  # noqa: F401
+    _engine = "xlsxwriter"
+    _can_format = True
+except Exception:
+    try:
+        import openpyxl  # noqa: F401
+        _engine = "openpyxl"
+        _can_format = False  # openpyxl não usa add_format/set_column do xlsxwriter
+    except Exception:
+        _engine = None
+        _can_format = False
+
 buffer = BytesIO()
-with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
-    # Abas principais
-    df_resumo.to_excel(writer, sheet_name="00_Resumo", index=False)
-    mix_df.to_excel(writer, sheet_name="01_Mix_Planejado", index=False)
-    df_plano_diario.to_excel(writer, sheet_name="02_Plano_Diario_Planejado", index=False)
+if _engine is None:
+    st.error("Não há engine de Excel disponível. Adicione `XlsxWriter` (recomendado) ou `openpyxl` ao requirements.txt.")
+else:
+    with pd.ExcelWriter(buffer, engine=_engine) as writer:
+        # Abas
+        df_resumo.to_excel(writer, sheet_name="00_Resumo", index=False)
+        mix_df.to_excel(writer, sheet_name="01_Mix_Planejado", index=False)
+        df_plano_diario.to_excel(writer, sheet_name="02_Plano_Diario_Planejado", index=False)
 
-    if not df_funil.empty:
-        df_funil.to_excel(writer, sheet_name="03_Funil_Volumes", index=False)
-    if not df_taxas_export.empty:
-        df_taxas_export.to_excel(writer, sheet_name="04_Taxas_Funil", index=False)
-    if not df_comp.empty:
-        df_comp.to_excel(writer, sheet_name="05_Orc_Planejado_vs_Real", index=False)
-    if not df_kpis_semana.empty:
-        df_kpis_semana.to_excel(writer, sheet_name="06_KPIs_Semana", index=False)
-    if not df_kpis_mes.empty:
-        df_kpis_mes.to_excel(writer, sheet_name="07_KPIs_Mes", index=False)
-    if not df_acompanhamento_semana.empty:
-        df_acompanhamento_semana.to_excel(writer, sheet_name="08_Acompanhamento_Sem", index=False)
+        if not df_funil.empty:
+            df_funil.to_excel(writer, sheet_name="03_Funil_Volumes", index=False)
+        if not df_taxas_export.empty:
+            df_taxas_export.to_excel(writer, sheet_name="04_Taxas_Funil", index=False)
+        if not df_comp.empty:
+            df_comp.to_excel(writer, sheet_name="05_Orc_Planejado_vs_Real", index=False)
+        if not df_kpis_semana.empty:
+            df_kpis_semana.to_excel(writer, sheet_name="06_KPIs_Semana", index=False)
+        if not df_kpis_mes.empty:
+            df_kpis_mes.to_excel(writer, sheet_name="07_KPIs_Mes", index=False)
+        if not df_acompanhamento_semana.empty:
+            df_acompanhamento_semana.to_excel(writer, sheet_name="08_Acompanhamento_Sem", index=False)
 
-    # Formatações simples (opcional)
-    wb  = writer.book
-    fmt_moeda   = wb.add_format({"num_format": "R$ #,##0.00"})
-    fmt_inteiro = wb.add_format({"num_format": "#,##0"})
-    fmt_pct     = wb.add_format({"num_format": "0.00%"})
+        # Formatação (apenas se xlsxwriter disponível)
+        if _can_format:
+            wb  = writer.book
+            fmt_moeda   = wb.add_format({"num_format": "R$ #,##0.00"})
+            fmt_inteiro = wb.add_format({"num_format": "#,##0"})
+            fmt_pct     = wb.add_format({"num_format": "0.00%"})
 
-    # 01_Mix_Planejado
-    try:
-        ws = writer.sheets["01_Mix_Planejado"]
-        ws.set_column("A:A", 28)
-        ws.set_column("B:B", 18, fmt_moeda)
-    except:
-        pass
+            try:
+                ws = writer.sheets["01_Mix_Planejado"]
+                ws.set_column("A:A", 28)
+                ws.set_column("B:B", 18, fmt_moeda)
+            except: pass
 
-    # 02_Plano_Diario_Planejado
-    try:
-        ws = writer.sheets["02_Plano_Diario_Planejado"]
-        ws.set_column("A:A", 12)              # Data
-        ws.set_column("B:B", 22)              # Etapa
-        ws.set_column("C:C", 20, fmt_moeda)   # Valor Diário
-    except:
-        pass
+            try:
+                ws = writer.sheets["02_Plano_Diario_Planejado"]
+                ws.set_column("A:A", 12)
+                ws.set_column("B:B", 22)
+                ws.set_column("C:C", 20, fmt_moeda)
+            except: pass
 
-    # 03_Funil_Volumes
-    try:
-        ws = writer.sheets["03_Funil_Volumes"]
-        ws.set_column("A:A", 18)
-        ws.set_column("B:B", 12, fmt_inteiro)
-    except:
-        pass
+            try:
+                ws = writer.sheets["03_Funil_Volumes"]
+                ws.set_column("A:A", 18)
+                ws.set_column("B:B", 12, fmt_inteiro)
+            except: pass
 
-    # 04_Taxas_Funil  (AGORA DENTRO DO with)
-    try:
-        ws = writer.sheets["04_Taxas_Funil"]
-        ws.set_column("A:A", 28)
-        ws.set_column("B:B", 12, fmt_pct)     # aplica 0.00% na coluna de taxa
-    except:
-        pass
+            try:
+                ws = writer.sheets["04_Taxas_Funil"]
+                ws.set_column("A:A", 28)
+                ws.set_column("B:B", 12, fmt_pct)
+            except: pass
 
-    # 05_Orc_Planejado_vs_Real
-    try:
-        ws = writer.sheets["05_Orc_Planejado_vs_Real"]
-        ws.set_column("A:A", 20)              # Etapa
-        ws.set_column("B:D", 20, fmt_moeda)   # Planejado, Realizado, Diferença
-    except:
-        pass
+            try:
+                ws = writer.sheets["05_Orc_Planejado_vs_Real"]
+                ws.set_column("A:A", 20)
+                ws.set_column("B:D", 20, fmt_moeda)
+            except: pass
 
-    # 06_KPIs_Semana
-    try:
-        ws = writer.sheets["06_KPIs_Semana"]
-        ws.set_column("A:B", 26, fmt_moeda)
-        ws.set_column("C:C", 14)              # ROAS
-        ws.set_column("D:D", 18, fmt_moeda)   # CPA
-        ws.set_column("E:E", 22, fmt_inteiro)
-    except:
-        pass
+            try:
+                ws = writer.sheets["06_KPIs_Semana"]
+                ws.set_column("A:B", 26, fmt_moeda)
+                ws.set_column("C:C", 14)
+                ws.set_column("D:D", 18, fmt_moeda)
+                ws.set_column("E:E", 22, fmt_inteiro)
+            except: pass
 
-    # 07_KPIs_Mes
-    try:
-        ws = writer.sheets["07_KPIs_Mes"]
-        ws.set_column("A:B", 26, fmt_moeda)
-        ws.set_column("C:C", 14)              # ROAS
-        ws.set_column("D:D", 18, fmt_moeda)   # CPA
-        ws.set_column("E:E", 22, fmt_inteiro)
-    except:
-        pass
+            try:
+                ws = writer.sheets["07_KPIs_Mes"]
+                ws.set_column("A:B", 26, fmt_moeda)
+                ws.set_column("C:C", 14)
+                ws.set_column("D:D", 18, fmt_moeda)
+                ws.set_column("E:E", 22, fmt_inteiro)
+            except: pass
 
-buffer.seek(0)
+    buffer.seek(0)
+    file_name = f"Relatorio_Socios_{datetime.today().strftime('%Y-%m-%d')}.xlsx"
 
-file_name = f"Relatorio_Socios_{datetime.today().strftime('%Y-%m-%d')}.xlsx"
-
-st.download_button(
-    "⬇️ Baixar Relatório para Sócios (.xlsx)",
-    data=buffer,
-    file_name=file_name,
-    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    help="Arquivo Excel com abas: Resumo, Mix Planejado, Plano Diário, Funil, Taxas, Orçamento, KPIs, etc."
-)
+    st.download_button(
+        "⬇️ Baixar Relatório para Sócios (.xlsx)",
+        data=buffer,
+        file_name=file_name,
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        help=("Arquivo Excel com abas: Resumo, Mix Planejado, Plano Diário, Funil, "
+              "Taxas, Orçamento, KPIs, etc. (Com formatação se XlsxWriter disponível)")
+    )
 
 st.caption("Dica: envie esse Excel no grupo dos sócios. Ele já vem com aba de resumo, metas e comparativos — fica didático e objetivo.")
 
