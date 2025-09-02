@@ -687,7 +687,7 @@ with tab_perf:
         k3.metric("📈 ROAS — Semana", f"{roas_w:,.2f}".replace(",","."))
         k4.metric("🎯 CPA — Semana", f"R$ {cpa_w:,.2f}".replace(",","."))
         k5.metric("🛒 Compras — Semana", f"{compras_w:,.0f}".replace(",","."))
-        st.progress(min(1.0, fatur_w/max(1.0, goal_rev_week)), text=f"Semana: R$ {fatur_w:,.0f} / R$ {goal_rev_week:,.0f}".replace(",","."))
+        st.progress(min(1.0, fatur_w/max(1.0, goal_rev_week)), text=f"Meta semanal: R$ {fatur_w:,.0f} / R$ {goal_rev_week:,.0f}".replace(",","."))
 
         # --- KPIs Mensais ---
         roas_m = (fatur_m/invest_m) if invest_m>0 else 0.0
@@ -704,7 +704,7 @@ with tab_perf:
         perc_mensal = min(1.0, fatur_m / max(1.0, goal_rev_month))
         st.progress(
             perc_mensal,
-            text=f"Mês: R$ {fatur_m:,.0f} / R$ {goal_rev_month:,.0f}".replace(",", ".")
+            text=f"Meta mensal: R$ {fatur_m:,.0f} / R$ {goal_rev_month:,.0f}".replace(",", ".")
         )
 
 
