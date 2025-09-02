@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 import plotly.express as px
-
+import plotly.graph_objects as go 
 # =========================
 # Config
 # =========================
@@ -28,21 +28,11 @@ ETAPAS_COLORS = {
     "Outros":             "#94A3B8",  # cinza
 }
 
-# Paleta base para gráficos sem legenda de etapa (ex: linhas)
+# Paleta base p/ linhas e séries sem mapeamento explícito
 COLORWAY = ["#7C3AED", "#06B6D4", "#22C55E", "#F59E0B", "#94A3B8", "#0EA5E9", "#EF4444", "#10B981", "#3B82F6"]
 
-def style_fig_pdf(fig, title=None):
-    """Tema consistente + fundo branco para exportar no PDF (Kaleido)."""
-    style_fig(fig, title)  # sua função padrão
-    fig.update_layout(
-        paper_bgcolor="white",
-        plot_bgcolor="white",
-        colorway=COLORWAY
-    )
-    return fig
-
 def style_fig(fig, title=None):
-    """Aplica um tema visual consistente aos gráficos Plotly."""
+    """Tema padrão do dashboard."""
     fig.update_layout(
         template="plotly_white",
         font=dict(family="Inter, Segoe UI, Helvetica, Arial", size=13),
@@ -51,8 +41,86 @@ def style_fig(fig, title=None):
         margin=dict(l=40, r=20, t=60, b=40),
         xaxis=dict(showgrid=True, gridwidth=1, gridcolor="rgba(0,0,0,0.06)"),
         yaxis=dict(showgrid=True, gridwidth=1, gridcolor="rgba(0,0,0,0.06)"),
+        colorway=COLORWAY,
     )
     return fig
+
+def style_fig_pdf(fig, title=None):
+    """Mesma estética + fundo branco (Kaleido) para PDF."""
+    style_fig(fig, title)
+    fig.update_layout(paper_bgcolor="white", plot_bgcolor="white")
+    return fig
+
+def _darken(hex_color, factor=0.85):
+    hex_color = hex_color.lstrip("#")
+    r = max(0, min(255, int(int(hex_color[0:2],16)*factor)))
+    g = max(0, min(255, int(int(hex_color[2:4],16)*factor)))
+    b = max(0, min(255, int(int(hex_color[4:6],16)*factor)))
+    return f"rgb({r},{g},{b})"
+
+def make_pie_3dish(df, names_col, values_col, color_map, title):
+    fig = px.pie(
+        df, names=names_col, values=values_col, hole=0.45,
+        color=names_col, color_discrete_map=color_map
+    )
+    fig.update_traces(
+        textposition="inside", textinfo="percent+label", pull=0.02,
+        marker=dict(line=dict(color="rgba(0,0,0,0.12)", width=2))
+    )
+    return style_fig(fig, title)
+
+def make_bar_3dish(df, x, y, color=None, color_map=None, title="", barmode="group"):
+    if color:
+        fig = px.bar(df, x=x, y=y, color=color, barmode=barmode,
+                     color_discrete_map=color_map if color_map else None,
+                     text_auto=".0f")
+    else:
+        fig = px.bar(df, x=x, y=y, text_auto=".0f")
+    # borda suave
+    fig.update_traces(marker_line_color="rgba(0,0,0,0.18)", marker_line_width=1.2)
+    # “sombra” (duplicata translúcida) para dar volume
+    shadow_traces = []
+    for tr in fig.data:
+        shadow = tr.copy()
+        shadow.marker.opacity = 0.22
+        shadow.marker.line.width = 0
+        shadow.showlegend = False
+        shadow_traces.append(shadow)
+    fig.data = tuple(shadow_traces) + fig.data
+    fig.update_layout(bargap=-0.05)
+    return style_fig(fig, title)
+
+def make_line_glow(df, x, y_cols, title=""):
+    fig = go.Figure()
+    for i, col in enumerate(y_cols):
+        base_color = COLORWAY[i % len(COLORWAY)]
+        glow1 = go.Scatter(
+            x=df[x], y=df[col], mode="lines",
+            line=dict(width=14, color=_darken(base_color, 0.85)), opacity=0.10,
+            hoverinfo="skip", showlegend=False
+        )
+        glow2 = go.Scatter(
+            x=df[x], y=df[col], mode="lines",
+            line=dict(width=8, color=_darken(base_color, 0.92)), opacity=0.18,
+            hoverinfo="skip", showlegend=False
+        )
+        main = go.Scatter(
+            x=df[x], y=df[col], mode="lines+markers",
+            line=dict(width=3, color=base_color),
+            marker=dict(size=6, line=dict(width=1, color="white")),
+            name=str(col)
+        )
+        fig.add_traces([glow1, glow2, main])
+    style_fig(fig, title)
+    return fig
+
+def make_funnelarea_3dish(df, stage_col, value_col, color_map, title):
+    fig = px.funnel_area(
+        df, names=stage_col, values=value_col,
+        color=stage_col, color_discrete_map=color_map
+    )
+    fig.update_traces(marker_line=dict(color="rgba(0,0,0,0.15)", width=1))
+    return style_fig(fig, title)
 
 # =========================
 # Sidebar — Parâmetros essenciais
@@ -337,16 +405,11 @@ with tab_plan:
         "Valor (R$)": list(planejado_funil.values())
     }).sort_values("Valor (R$)", ascending=False)
 
-    fig_mix = px.pie(
-        mix_plot_df,
-        values="Valor (R$)",
-        names="Etapa",
-        hole=0.45,
-        color="Etapa",
-        color_discrete_map=ETAPAS_COLORS
+    fig_mix = make_pie_3dish(
+        mix_plot_df, names_col="Etapa", values_col="Valor (R$)",
+        color_map=ETAPAS_COLORS, title="Mix Planejado da Verba (R$)"
     )
-    fig_mix.update_traces(textposition="inside", textinfo="percent+label", pull=0.02)
-    st.plotly_chart(style_fig(fig_mix, "Mix Planejado da Verba (R$)"), use_container_width=True)
+    st.plotly_chart(fig_mix, use_container_width=True)
 
     st.markdown("### 💵 Distribuição Planejada da Verba (por dia)")
 
@@ -369,14 +432,16 @@ with tab_plan:
 
     st.dataframe(df_planejado_dia, use_container_width=True)
 
-    fig_stack = px.bar(
+    fig_stack = make_bar_3dish(
         df_planejado_dia,
-        x="Data", y="Valor Diário (R$)", color="Etapa",
-        color_discrete_map=ETAPAS_COLORS,
-        barmode="stack", text_auto=".0f"
+        x="Data", y="Valor Diário (R$)",
+        color="Etapa", color_map=ETAPAS_COLORS,
+        title="Distribuição Planejada da Verba por Dia (R$)",
+        barmode="stack"
     )
     fig_stack.update_xaxes(type="category")
-    st.plotly_chart(style_fig(fig_stack, "Distribuição Planejada da Verba por Dia (R$)"), use_container_width=True)
+    st.plotly_chart(fig_stack, use_container_width=True)
+
 
 # =========================
 # Bloco 1 — Metas (planejado)
@@ -498,13 +563,12 @@ with tab_perf:
               .sort_values("_date")
         )
         if not t.empty:
-            t["ROAS"] = t.apply(lambda r: (r["faturamento"]/r["gasto"]) if r["gasto"]>0 else np.nan, axis=1)
-            fig_roas = px.line(t, x="_date", y="ROAS")
-            fig_roas.update_traces(mode="lines+markers")
-            fig_roas.update_yaxes(tickformat=".2f")
-            st.plotly_chart(style_fig(fig_roas, "ROAS Diário"), use_container_width=True)
+            t["ROAS"] = t.apply(lambda r: (r["faturamento"]/r["gasto"]) if r["gasto"] > 0 else np.nan, axis=1)
+            fig_roas = make_line_glow(t, x="_date", y_cols=["ROAS"], title="ROAS Diário")
+            st.plotly_chart(fig_roas, use_container_width=True)
         else:
             st.info("⚠️ Não foi possível identificar datas válidas no CSV para calcular o ROAS diário.")
+
 
         st.markdown("---")
 
@@ -537,12 +601,12 @@ with tab_funnel:
         if not funil.empty:
             st.dataframe(funil, use_container_width=True)
 
-            fig_funil = px.funnel(
-                funil, x="Volume", y="Etapa", color="Etapa",
-                color_discrete_map=ETAPAS_COLORS
+            fig_funil = make_funnelarea_3dish(
+                funil, stage_col="Etapa", value_col="Volume",
+                color_map=ETAPAS_COLORS, title="Funil de Conversão (Volume)"
             )
-            fig_funil.update_traces(texttemplate="%{value:.0f}", textposition="inside")
-            st.plotly_chart(style_fig(fig_funil, "Funil de Conversão (Volume)"), use_container_width=True)
+            st.plotly_chart(fig_funil, use_container_width=True)
+
 
             st.markdown("### 📈 Taxas do Funil (sem AddToCart)")
             def _rate(num, den): return (num / den) if den > 0 else np.nan
@@ -643,14 +707,13 @@ with tab_campaigns:
 
         col1, col2 = st.columns(2)
         with col1:
-            fig_comp = px.bar(
+            fig_comp = make_bar_3dish(
                 comp, x="Etapa", y=["Planejado (R$)", "Realizado (R$)"],
-                barmode="group",
-                color_discrete_sequence=["#CBD5E1", "#0EA5E9"]
+                title="Orçamento — Planejado vs Realizado", barmode="group"
             )
             fig_comp.update_traces(texttemplate="%{y:.0f}", textposition="outside")
             fig_comp.update_layout(uniformtext_minsize=10, uniformtext_mode="hide")
-            st.plotly_chart(style_fig(fig_comp, "Orçamento — Planejado vs Realizado"), use_container_width=True)
+            st.plotly_chart(fig_comp, use_container_width=True)
 
         with col2:
             fig_real = px.pie(
@@ -659,6 +722,7 @@ with tab_campaigns:
             )
             fig_real.update_traces(textposition="inside", textinfo="percent+label")
             st.plotly_chart(style_fig(fig_real, "Distribuição Realizada por Etapa"), use_container_width=True)
+
     else:
         st.warning("⚠️ Nenhum arquivo carregado. Envie o CSV para visualizar o orçamento por etapa.")
 
