@@ -704,7 +704,7 @@ with tab_perf:
         perc_mensal = min(1.0, fatur_m / max(1.0, goal_rev_month))
         st.progress(
             perc_mensal,
-            text=f"Progresso mensal: R$ {fatur_m:,.0f} / R$ {goal_rev_month:,.0f}".replace(",", ".")
+            text=f"Mês: R$ {fatur_m:,.0f} / R$ {goal_rev_month:,.0f}".replace(",", ".")
         )
 
 
