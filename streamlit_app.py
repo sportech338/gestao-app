@@ -798,33 +798,34 @@ with tab_campaigns:
                 st.success(f"⚖️ A etapa **{etapa}** está exatamente alinhada com o planejado.")
 
         col1, col2 = st.columns(2)
-        with col1:
-fig_comp = go.Figure()
+with col1:
+    fig_comp = go.Figure()
 
-fig_comp.add_trace(go.Bar(
-    x=comp["Etapa"], y=comp["Planejado (R$)"],
-    name="Planejado (R$)",
-    marker_color="#CBD5E1",  # cinza claro
-    text=comp["Planejado (R$)"], textposition="outside"
-))
+    fig_comp.add_trace(go.Bar(
+        x=comp["Etapa"], y=comp["Planejado (R$)"],
+        name="Planejado (R$)",
+        marker_color="#CBD5E1",  # cinza claro
+        text=comp["Planejado (R$)"], textposition="outside"
+    ))
 
-fig_comp.add_trace(go.Bar(
-    x=comp["Etapa"], y=comp["Realizado (R$)"],
-    name="Realizado (R$)",
-    marker_color="#0EA5E9",  # azul
-    text=comp["Realizado (R$)"], textposition="outside"
-))
+    fig_comp.add_trace(go.Bar(
+        x=comp["Etapa"], y=comp["Realizado (R$)"],
+        name="Realizado (R$)",
+        marker_color="#0EA5E9",  # azul
+        text=comp["Realizado (R$)"], textposition="outside"
+    ))
 
-fig_comp.update_layout(
-    barmode="group",
-    title="Orçamento — Planejado vs Realizado",
-    font=dict(size=12),
-    xaxis=dict(title="Etapa"),
-    yaxis=dict(title="Valor (R$)"),
-    margin=dict(l=40, r=20, t=60, b=40)
-)
+    fig_comp.update_layout(
+        barmode="group",
+        title="Orçamento — Planejado vs Realizado",
+        font=dict(size=12),
+        xaxis=dict(title="Etapa"),
+        yaxis=dict(title="Valor (R$)"),
+        margin=dict(l=40, r=20, t=60, b=40)
+    )
 
-st.plotly_chart(fig_comp, use_container_width=True)
+    st.plotly_chart(fig_comp, use_container_width=True)
+
 
             fig_comp.update_traces(texttemplate="%{y:.0f}", textposition="outside")
             fig_comp.update_layout(uniformtext_minsize=10, uniformtext_mode="hide")
