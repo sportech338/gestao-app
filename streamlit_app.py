@@ -704,14 +704,22 @@ def df_to_table(df, col_widths=None):
     return tbl
 
 def fig_to_rl_image(fig, width=500):
-    """Converte um gráfico Plotly em Image (ReportLab) via PNG em memória."""
-    # garante fundo branco p/ PDF
-    fig.update_layout(paper_bgcolor="white", plot_bgcolor="white", margin=dict(l=40,r=20,t=50,b=40))
-    png = fig.to_image(format="png", scale=2)  # requer 'kaleido'
+    if fig is None:
+        return None
+    try:
+        fig.update_layout(
+            paper_bgcolor="white", plot_bgcolor="white",
+            margin=dict(l=40, r=20, t=50, b=40)
+        )
+        png = fig.to_image(format="png", scale=2)  # requer 'kaleido'
+    except Exception as e:
+        st.error("Não foi possível exportar o gráfico para o PDF. Verifique se 'kaleido' está no requirements.txt.")
+        return None
     bio = BytesIO(png)
     img = Image(bio)
     img._restrictSize(width, 9999)
     return img
+
 
 # --- Monta os dados-base do relatório ---
 
@@ -837,56 +845,79 @@ story.append(Spacer(1, 12))
 # Mix Planejado (tabela + gráfico)
 story.append(Paragraph("Mix Planejado da Verba", H2))
 tbl_mix = df_to_table(mix_df, col_widths=[200, 150])
-if tbl_mix: story.append(tbl_mix)
-story.append(Spacer(1, 6))
-story.append(fig_to_rl_image(fig_mix, width=460))
-story.append(Spacer(1, 12))
+if tbl_mix:
+    story.append(tbl_mix)
+    story.append(Spacer(1, 6))
+
+img_mix = fig_to_rl_image(fig_mix, width=460)
+if img_mix:
+    story.append(img_mix)
+    story.append(Spacer(1, 12))
 
 # Distribuição diária planejada
 if fig_dia is not None:
     story.append(Paragraph("Distribuição Planejada por Dia", H2))
-    story.append(fig_to_rl_image(fig_dia, width=460))
-    story.append(Spacer(1, 12))
+    img_dia = fig_to_rl_image(fig_dia, width=460)
+    if img_dia:
+        story.append(img_dia)
+        story.append(Spacer(1, 12))
 
 # Funil
 if fig_funil is not None:
     story.append(Paragraph("Funil de Conversão (Volume)", H2))
-    story.append(fig_to_rl_image(fig_funil, width=460))
-    story.append(Spacer(1, 6))
+    img_funil = fig_to_rl_image(fig_funil, width=460)
+    if img_funil:
+        story.append(img_funil)
+        story.append(Spacer(1, 6))
+
     if not taxas_df.empty:
         story.append(Paragraph("Taxas do Funil", H2))
-        story.append(df_to_table(taxas_df, col_widths=[220, 80]))
-        story.append(Spacer(1, 12))
+        tbl_taxas = df_to_table(taxas_df, col_widths=[220, 80])
+        if tbl_taxas:
+            story.append(tbl_taxas)
+            story.append(Spacer(1, 12))
 
 # KPIs Semanais
 if not kpis_sem_df.empty:
     story.append(Paragraph("KPIs Semanais", H2))
-    story.append(df_to_table(kpis_sem_df.round(2)))
-    story.append(Spacer(1, 10))
+    tbl_kpi_w = df_to_table(kpis_sem_df.round(2))
+    if tbl_kpi_w:
+        story.append(tbl_kpi_w)
+        story.append(Spacer(1, 10))
 
 # KPIs Mensais
 if not kpis_mes_df.empty:
     story.append(Paragraph("KPIs Mensais", H2))
-    story.append(df_to_table(kpis_mes_df.round(2)))
-    story.append(Spacer(1, 12))
+    tbl_kpi_m = df_to_table(kpis_mes_df.round(2))
+    if tbl_kpi_m:
+        story.append(tbl_kpi_m)
+        story.append(Spacer(1, 12))
 
 # Planejado vs Realizado por etapa
 if fig_comp is not None:
     story.append(Paragraph("Orçamento por Etapa — Comparativo", H2))
-    story.append(fig_to_rl_image(fig_comp, width=460))
-    story.append(Spacer(1, 12))
-    if not comp_df.empty:
-        story.append(df_to_table(comp_df.round(2)))
+    img_comp = fig_to_rl_image(fig_comp, width=460)
+    if img_comp:
+        story.append(img_comp)
         story.append(Spacer(1, 12))
+
+    if not comp_df.empty:
+        tbl_comp = df_to_table(comp_df.round(2))
+        if tbl_comp:
+            story.append(tbl_comp)
+            story.append(Spacer(1, 12))
 
 # ROAS diário
 if fig_roas is not None:
     story.append(Paragraph("ROAS Diário", H2))
-    story.append(fig_to_rl_image(fig_roas, width=460))
-    story.append(Spacer(1, 12))
+    img_roas = fig_to_rl_image(fig_roas, width=460)
+    if img_roas:
+        story.append(img_roas)
+        story.append(Spacer(1, 12))
 
 # Renderiza PDF
 doc.build(story)
+buffer.seek(0)  # garante ponteiro no início antes de ler o conteúdo
 
 # Botão de download
 file_pdf_name = f"Relatorio_Socios_{datetime.today().strftime('%Y-%m-%d')}.pdf"
@@ -897,6 +928,7 @@ st.download_button(
     mime="application/pdf",
     help="PDF com resumo, tabelas e gráficos (mix, diário, funil, KPIs, comparativos)."
 )
+
 
 st.caption("Dica: envie este PDF no grupo dos sócios. Ele já vem com aba de resumo, metas e comparativos — fica didático e objetivo.")
 
