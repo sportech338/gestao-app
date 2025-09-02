@@ -355,9 +355,10 @@ def weeks_in_month(month_first, month_last, include_weekends=True):
                 })
         cur += timedelta(days=7)
 
-    total_days = sum(w["days_considered"] for w in weeks) or 1
-    for w in weeks:
-        w["share"] = w["days_considered"] / total_days
+n_weeks = len(weeks)
+for w in weeks:
+    w["share"] = 1 / n_weeks
+
     return weeks
 
 # Semana escolhida pelo usuário
