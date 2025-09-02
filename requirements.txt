@@ -5,3 +5,5 @@ plotly>=5.22.0
 requests>=2.31.0
 XlsxWriter==3.2.0
 openpyxl
+reportlab
+kaleido
