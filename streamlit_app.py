@@ -36,12 +36,6 @@ with st.sidebar:
     st.subheader("📥 CSV do Gerenciador")
     uploaded = st.file_uploader("Envie o CSV (separador vírgula)", type=["csv"]) 
 
-st.subheader("💰 Planejamento de Verba por Etapa (%)")
-
-pct_teste_interesse = st.number_input("Teste de Interesse (%)", value=20.0, step=1.0, min_value=0.0, max_value=100.0)
-pct_teste_criativo  = st.number_input("Teste de Criativo (%)", value=15.0, step=1.0, min_value=0.0, max_value=100.0)
-pct_remarketing     = st.number_input("Remarketing (%)", value=15.0, step=1.0, min_value=0.0, max_value=100.0)
-
 # =========================
 # Helpers
 # =========================
@@ -227,16 +221,70 @@ goal_rev_week = goal_rev_month * week_share
 goal_pur_week = goal_pur_month * week_share
 budget_goal_week = budget_goal_month * week_share
 
-# Escala pega o restante automaticamente
-pct_escala = max(0.0, 100.0 - (pct_teste_interesse + pct_teste_criativo + pct_remarketing))
+# =========================
+# 💰 Planejamento de Verba por Etapa (%)
+# =========================
+st.subheader("💰 Planejamento de Verba por Etapa (%)")
 
-# Converte os % em valores de R$ (baseado no orçamento semanal)
+colm1, colm2 = st.columns([2,1])
+with colm1:
+    escala_mode = st.radio(
+        "Como definir Escala?",
+        ["Automático (restante)", "Manual"],
+        index=0, horizontal=True,
+        help="Automático: Escala recebe o restante após Teste de Interesse, Teste de Criativo e Remarketing."
+    )
+with colm2:
+    auto_norm = st.checkbox(
+        "Normalizar p/ 100%",
+        value=True,
+        help="Se ligado, ajusta proporcionalmente para que a soma feche em 100%."
+    )
+
+col1, col2, col3, col4 = st.columns(4)
+pct_teste_interesse = col1.number_input("Teste de Interesse (%)", value=20.0, step=1.0, min_value=0.0, max_value=100.0)
+pct_teste_criativo  = col2.number_input("Teste de Criativo (%)",  value=15.0, step=1.0, min_value=0.0, max_value=100.0)
+pct_remarketing     = col3.number_input("Remarketing (%)",        value=15.0, step=1.0, min_value=0.0, max_value=100.0)
+
+if escala_mode == "Manual":
+    pct_escala = col4.number_input("Escala (%)", value=50.0, step=1.0, min_value=0.0, max_value=100.0)
+else:
+    # Escala = restante automático
+    pct_escala = max(0.0, 100.0 - (pct_teste_interesse + pct_teste_criativo + pct_remarketing))
+    col4.metric("Escala (%) (auto)", f"{pct_escala:.1f}")
+
+total_pct = pct_teste_interesse + pct_teste_criativo + pct_remarketing + pct_escala
+
+# Normalização opcional para fechar em 100%
+if auto_norm and total_pct > 0:
+    fator = 100.0 / total_pct
+    n_interesse   = pct_teste_interesse * fator
+    n_criativo    = pct_teste_criativo  * fator
+    n_remarketing = pct_remarketing     * fator
+    n_escala      = pct_escala          * fator
+else:
+    n_interesse, n_criativo, n_remarketing, n_escala = (
+        pct_teste_interesse, pct_teste_criativo, pct_remarketing, pct_escala
+    )
+
+st.caption(
+    f"Total informado: {total_pct:.1f}% "
+    + ("(normalizado para 100%)" if auto_norm and abs(total_pct-100.0) > 0.01 else "")
+)
+
+if not auto_norm and total_pct > 100.0:
+    st.error(f"As etapas somam {total_pct:.1f}%. Reduza para 100% ou ative a normalização.")
+elif not auto_norm and total_pct < 100.0 and escala_mode == "Manual":
+    st.warning(f"As etapas somam {total_pct:.1f}%. Há {100.0 - total_pct:.1f}% sem alocação.")
+
+# Converte os % (finais) em valores de R$ (baseado no orçamento semanal)
 planejado_funil = {
-    "Teste de Criativo": (pct_teste_criativo/100) * budget_goal_week,
-    "Teste de Interesse": (pct_teste_interesse/100) * budget_goal_week,
-    "Escala": (pct_escala/100) * budget_goal_week,
-    "Remarketing": (pct_remarketing/100) * budget_goal_week,
+    "Teste de Criativo":  (n_criativo/100.0)    * budget_goal_week,
+    "Teste de Interesse": (n_interesse/100.0)   * budget_goal_week,
+    "Escala":             (n_escala/100.0)      * budget_goal_week,
+    "Remarketing":        (n_remarketing/100.0) * budget_goal_week,
 }
+
 
 st.markdown("### 💵 Distribuição Planejada da Verba (por dia)")
 
