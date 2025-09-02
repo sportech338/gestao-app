@@ -8,9 +8,12 @@ import plotly.express as px
 # =========================
 # Config
 # =========================
-st.set_page_config(page_title="Metas & Performance — Simples", layout="wide")
-st.title("📊 Metas & Performance — Simples")
-st.caption("Defina a META MENSAL e o app reparte automaticamente a META SEMANAL da semana selecionada.")
+st.set_page_config(
+    page_title="Metas & Performance — Simples",
+    page_icon="📊",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
 
 # =========================
 # Sidebar — Parâmetros essenciais
