@@ -261,7 +261,10 @@ def read_csv_flex(file):
         "ctr": ("ctr (taxa de cliques no link)", "ctr"),
 
         # Datas
-        "data": ("data", "date", "dia"),
+        "data": (
+            "data", "date", "dia",
+            "início dos relatórios",   # com acento
+            "inicio dos relatorios"    # sem acento (o normalizador cobre ambos)
     }
 
     norm_map = { _norm(c): c for c in raw.columns }
