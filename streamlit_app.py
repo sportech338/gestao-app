@@ -355,9 +355,10 @@ def weeks_in_month(month_first, month_last, include_weekends=True):
                 })
         cur += timedelta(days=7)
 
-n_weeks = len(weeks)
-for w in weeks:
-    w["share"] = 1 / n_weeks
+    # 🔥 Correção: divide igualmente pela quantidade de semanas do mês
+    n_weeks = len(weeks) or 1
+    for w in weeks:
+        w["share"] = 1 / n_weeks
 
     return weeks
 
