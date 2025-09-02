@@ -683,73 +683,28 @@ with tab_perf:
         # --- KPIs DIÁRIAS ---
         st.markdown("### 📅 KPIs Diárias")
 
-        # se não houver datas válidas, avisa e não tenta calcular
         if dd["_date"].notna().sum() == 0:
             st.info("⚠️ Seu CSV não tem coluna de data reconhecida para calcular KPIs diárias.")
         else:
-            # garante colunas necessárias
-            dd_daily = dd.copy()
-            for _c in ["gasto", "faturamento", "compras"]:
-                if _c not in dd_daily.columns:
-                    dd_daily[_c] = 0.0
-
-            # agrega por dia
-            daily_kpis_df = (
-                dd_daily.dropna(subset=["_date"])
-                        .groupby("_date", as_index=False)[["gasto", "faturamento", "compras"]]
-                        .sum()
-                        .sort_values("_date")
+            daily = (
+                dd.dropna(subset=["_date"])
+                  .groupby("_date", as_index=False)[["gasto", "faturamento", "compras"]]
+                  .sum()
+                  .sort_values("_date")
             )
 
-            # calcula ROAS e CPA
-            daily_kpis_df["ROAS"] = np.where(
-                daily_kpis_df["gasto"] > 0,
-                daily_kpis_df["faturamento"] / daily_kpis_df["gasto"],
-                np.nan
-            )
-            daily_kpis_df["CPA (R$)"] = np.where(
-                daily_kpis_df["compras"] > 0,
-                daily_kpis_df["gasto"] / daily_kpis_df["compras"],
-                np.nan
-            )
+            daily["ROAS"] = np.where(daily["gasto"] > 0, daily["faturamento"] / daily["gasto"], np.nan)
+            daily["CPA"]  = np.where(daily["compras"] > 0, daily["gasto"] / daily["compras"], np.nan)
 
-            # friendly columns
-            daily_kpis_df = daily_kpis_df.rename(columns={
-                "_date": "Data",
-                "gasto": "Investimento (R$)",
-                "faturamento": "Faturamento (R$)",
-                "compras": "Compras"
-            })
-
-            # tabela
-            st.dataframe(
-                daily_kpis_df,
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "Data": st.column_config.DateColumn("Data", format="DD/MM/YYYY"),
-                    "Investimento (R$)": st.column_config.NumberColumn("Investimento (R$)", format="R$ %.0f"),
-                    "Faturamento (R$)": st.column_config.NumberColumn("Faturamento (R$)", format="R$ %.0f"),
-                    "Compras": st.column_config.NumberColumn("Compras", format="%.0f"),
-                    "ROAS": st.column_config.NumberColumn("ROAS", format="%.2f"),
-                    "CPA (R$)": st.column_config.NumberColumn("CPA (R$)", format="R$ %.2f"),
-                },
-            )
-
-            # gráfico opcional: Investimento x Faturamento por dia
-            _plot = daily_kpis_df.melt(
-                id_vars=["Data"], value_vars=["Investimento (R$)", "Faturamento (R$)"],
-                var_name="Métrica", value_name="Valor (R$)"
-            )
-            fig_inv_fat = make_bar_3dish(
-                _plot, x="Data", y="Valor (R$)", color="Métrica",
-                title="Investimento x Faturamento — por dia", barmode="group"
-            )
-            fig_inv_fat.update_xaxes(type="category")
-            st.plotly_chart(fig_inv_fat, use_container_width=True)
-
-
-            st.markdown("---")
+            for _, row in daily.iterrows():
+                st.markdown(f"#### 📆 {row['_date'].strftime('%d/%m/%Y')}")
+                c1, c2, c3, c4, c5 = st.columns(5)
+                c1.metric("💰 Investimento", f"R$ {row['gasto']:,.0f}".replace(",", "."))
+                c2.metric("🏪 Faturamento", f"R$ {row['faturamento']:,.0f}".replace(",", "."))
+                c3.metric("🛒 Compras", f"{row['compras']:,.0f}".replace(",", "."))
+                c4.metric("📈 ROAS", f"{row['ROAS']:,.2f}".replace(",", "."))
+                c5.metric("🎯 CPA", f"R$ {row['CPA']:,.2f}".replace(",", "."))
+                st.markdown("---")
 
 
 # =========================
