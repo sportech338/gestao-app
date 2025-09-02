@@ -330,37 +330,32 @@ def count_days_between(d0, d1, include_weekends=True):
     return n
 
 def weeks_in_month(month_first, month_last, include_weekends=True):
-    # Começa na segunda da semana do 1º dia do mês
-    first_monday = month_first - timedelta(days=month_first.weekday())
-    # Termina no domingo da semana do último dia do mês
-    last_sunday = month_last + timedelta(days=(6 - month_last.weekday()))
-
     weeks = []
-    cur = first_monday
-    while cur <= last_sunday:
-        w_start = cur
-        w_end = cur + timedelta(days=6)
-        # Janela que realmente conta dentro do mês
-        win_start = max(w_start, month_first)
-        win_end = min(w_end, month_last)
-        if win_start <= win_end:
-            days_considered = count_days_between(win_start, win_end, include_weekends=include_weekends)
-            if days_considered > 0:
-                weeks.append({
-                    "start": w_start,
-                    "end": w_end,
-                    "in_month_start": win_start,
-                    "in_month_end": win_end,
-                    "days_considered": days_considered
-                })
-        cur += timedelta(days=7)
+    cur = month_first
 
-    # 🔥 Correção: divide igualmente pela quantidade de semanas do mês
-    n_weeks = len(weeks) or 1
+    # Avança de segunda em segunda
+    while cur <= month_last:
+        w_start = cur
+        w_end = min(cur + timedelta(days=6), month_last)
+
+        # Conta apenas os dias dentro do mês
+        days_considered = count_days_between(w_start, w_end, include_weekends=include_weekends)
+        if days_considered > 0:
+            weeks.append({
+                "start": w_start,
+                "end": w_end,
+                "days_considered": days_considered
+            })
+        cur = w_end + timedelta(days=1)
+
+    total_days = sum(w["days_considered"] for w in weeks) or 1
+
+    # Meta proporcional por dias
     for w in weeks:
-        w["share"] = 1 / n_weeks
+        w["share"] = w["days_considered"] / total_days
 
     return weeks
+
 
 # Semana escolhida pelo usuário
 week_start_dt = datetime.combine(week_start, datetime.min.time())
