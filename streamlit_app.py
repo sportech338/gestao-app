@@ -5,7 +5,7 @@ import numpy as np
 from datetime import datetime, timedelta
 import plotly.express as px
 import plotly.graph_objects as go 
-from copy import deepcopy
+
 # =========================
 # Config
 # =========================
@@ -139,7 +139,55 @@ with st.sidebar:
     monthly_goal_value = st.number_input("Valor da meta mensal (R$ se Faturamento; nº se Compras)", value=40000.0, min_value=0.0, step=500.0)
 
     st.subheader("📥 CSV do Gerenciador")
-    uploaded = st.file_uploader("Envie o CSV (separador vírgula)", type=["csv"]) 
+
+    st.markdown("**Envie 1 ou mais arquivos (opcional)** — se você enviar mais de um, o app unifica tudo:")
+    uploaded_daily   = st.file_uploader("CSV **DIÁRIO** (ex.: export por dia)", type=["csv"], key="csv_diario")
+    uploaded_weekly  = st.file_uploader("CSV **SEMANAL** (ex.: export por semana)", type=["csv"], key="csv_semana")
+    uploaded_monthly = st.file_uploader("CSV **MENSAL** (ex.: export por mês)", type=["csv"], key="csv_mes")
+
+    st.caption("Formato flexível: o leitor normaliza nomes/acentos e tenta detectar colunas (gasto, faturamento, compras, data etc.).")
+
+def _safe_to_date(series):
+    return pd.to_datetime(series, errors="coerce", dayfirst=True).dt.normalize()
+
+def unify_frames(frames):
+    """Une dataframes (somando métricas em duplicatas por data+campanha)."""
+    frames = [f for f in frames if f is not None and not f.empty]
+    if not frames:
+        return pd.DataFrame()
+
+    df_all = pd.concat(frames, ignore_index=True)
+
+    # garante colunas básicas
+    for c in ["campanha","gasto","faturamento","compras"]:
+        if c not in df_all.columns:
+            df_all[c] = 0.0 if c != "campanha" else ""
+
+    # achar/normalizar coluna de data
+    if "data" not in df_all.columns:
+        for alt in ["dia","date","data_inicio"]:
+            if alt in df_all.columns:
+                df_all["data"] = df_all[alt]
+                break
+
+    if "data" in df_all.columns:
+        df_all["_date"] = _safe_to_date(df_all["data"])
+    else:
+        df_all["_date"] = pd.NaT
+
+    # somar números quando repetir (mesma data + mesma campanha)
+    num_cols = [c for c in df_all.columns if c not in ["campanha","status","veiculacao","data","_date"]]
+    agg = {c: "sum" for c in num_cols}
+    if "status" in df_all.columns: agg["status"] = "first"
+    if "veiculacao" in df_all.columns: agg["veiculacao"] = "first"
+
+    df_all = (df_all
+              .groupby(["_date","campanha"], dropna=False, as_index=False)
+              .agg(agg))
+
+    df_all["data"] = df_all["_date"]
+    df_all.drop(columns=["_date"], inplace=True)
+    return df_all
 
 # =========================
 # Helpers
@@ -155,14 +203,16 @@ def daterange(start_date, end_date, include_weekends=True):
 @st.cache_data(show_spinner=False)
 def read_csv_flex(file):
     import re, unicodedata
+
     def _norm(s: str) -> str:
         s = unicodedata.normalize("NFKD", s)
         s = "".join(c for c in s if not unicodedata.combining(c))
         s = s.lower().strip()
-        s = s.replace("\n"," ").replace("\r"," ")
+        s = s.replace("\n", " ").replace("\r", " ")
         s = re.sub(r"\s+", " ", s)
         s = s.replace("(brl)", "").replace(" r$", "").strip()
         return s
+
     def _read(file):
         for enc in ["utf-8", "latin-1", "utf-16", "cp1252"]:
             try:
@@ -172,77 +222,47 @@ def read_csv_flex(file):
                 continue
         file.seek(0)
         return pd.read_csv(file)
+
     raw = _read(file)
 
     ALIASES = {
-    # Identificação / status
-    "campanha": (
-        "nome da campanha", "campanha", "campaign name", "nome da campanha (id)"
-    ),
-    "status": (
-        "desativado/ativado", "ativado/desativado", "estado", "status da campanha"
-    ),
-    "veiculacao": (
-        "veiculação", "veiculacao", "veiculação da campanha", "posicionamento"
-    ),
+        # Identificação / status
+        "campanha": ("nome da campanha", "campanha", "campaign name", "nome da campanha (id)"),
+        "status": ("desativado/ativado", "ativado/desativado", "estado", "status da campanha"),
+        "veiculacao": ("veiculação", "veiculacao", "veiculação da campanha", "posicionamento"),
 
-    # Investimento / receita / roas
-    "gasto": (
-        "valor usado", "valor gasto", "amount spent", "spend", "valor usado brl"
-    ),
-    "faturamento": (
-        "valor de conversão da compra", "valor de conversao da compra", "purchase conversion value",
-        "receita"
-    ),
-    "roas": (
-        "retorno sobre o investimento em publicidade (roas) das compras", "roas"
-    ),
-    "orcamento": (
-        "orçamento", "budget"
-    ),
+        # Investimento / receita / roas
+        "gasto": ("valor usado", "valor gasto", "amount spent", "spend", "valor usado brl"),
+        "faturamento": (
+            "valor de conversão da compra", "valor de conversao da compra",
+            "purchase conversion value", "receita"
+        ),
+        "roas": ("retorno sobre o investimento em publicidade (roas) das compras", "roas"),
+        "orcamento": ("orçamento", "budget"),
 
-    # Eventos do funil
-    "cliques": (
-        "cliques no link", "link clicks", "clicks"
-    ),
-    "lp_views": (
-        "visualizações da página de destino", "visualizacoes da pagina de destino",
-        "landing page views"
-    ),
-    "add_cart": (
-        "adições ao carrinho", "adicoes ao carrinho", "add to cart"
-    ),
-    "ck_init": (
-        "finalizações de compra iniciadas", "finalizacoes de compra iniciadas", "checkout iniciado",
-        "conversão checkout", "conversao checkout"
-    ),
-    "entrega": (
-        "entrega"  # <-- você tem essa coluna; agora mapeamos
-    ),
-    "pay_info": (
-        "inclusões de informações de pagamento", "inclusoes de informacoes de pagamento",
-        "info. pagamento / entrega"  # algumas exports vêm assim
-    ),
-    "compras": (
-        "compras",
-        "compras / inf. pagamento",
-        "compras / informações de pagamento",
-        "purchases"
-    ),
+        # Eventos do funil
+        "cliques": ("cliques no link", "link clicks", "clicks"),
+        "lp_views": ("visualizações da página de destino", "visualizacoes da pagina de destino", "landing page views"),
+        "add_cart": ("adições ao carrinho", "adicoes ao carrinho", "add to cart"),
+        "ck_init": (
+            "finalizações de compra iniciadas", "finalizacoes de compra iniciadas",
+            "checkout iniciado", "conversão checkout", "conversao checkout"
+        ),
+        "entrega": ("entrega",),
+        "pay_info": ("inclusões de informações de pagamento", "inclusoes de informacoes de pagamento", "info. pagamento / entrega"),
+        "compras": ("compras", "compras / inf. pagamento", "compras / informações de pagamento", "purchases"),
 
+        # Métricas de alcance / mid-funnel
+        "alcance": ("alcance",),
+        "impressoes": ("impressões", "impressoes", "impressions"),
+        "frequencia": ("frequência", "frequencia", "frequency"),
+        "cpm": ("cpm (custo por 1.000 impressões)", "cpm"),
+        "cpc": ("cpc (custo por clique no link)", "cpc"),
+        "ctr": ("ctr (taxa de cliques no link)", "ctr"),
 
-    # Métricas de alcance / mid-funnel
-    "alcance": ("alcance",),
-    "impressoes": ("impressões", "impressoes", "impressions"),
-    "frequencia": ("frequência", "frequencia", "frequency"),
-    "cpm": ("cpm (custo por 1.000 impressões)", "cpm"),
-    "cpc": ("cpc (custo por clique no link)", "cpc"),
-    "ctr": ("ctr (taxa de cliques no link)", "ctr"),
-
-    # Datas
-    "data": ("data", "date", "dia"),
-}
-
+        # Datas
+        "data": ("data", "date", "dia"),
+    }
 
     norm_map = { _norm(c): c for c in raw.columns }
     rename = {}
@@ -252,16 +272,19 @@ def read_csv_flex(file):
             if key in norm_map:
                 rename[norm_map[key]] = final
                 break
+
     df = raw.rename(columns=rename).copy()
 
     def _to_num(x):
         if pd.isna(x): return 0.0
-        if isinstance(x,(int,float)): return float(x)
-        s = str(x).lower().replace("r$"," ").replace("brl"," ")
+        if isinstance(x, (int, float)): return float(x)
+        s = str(x).lower().replace("r$", " ").replace("brl", " ")
         s = s.replace(".", "").replace(",", ".")
         s = "".join(ch for ch in s if ch.isdigit() or ch in ".-eE")
-        try: return float(s)
-        except: return 0.0
+        try:
+            return float(s)
+        except:
+            return 0.0
 
     for col in [
         "gasto","orcamento","faturamento","roas",
@@ -277,6 +300,17 @@ def read_csv_flex(file):
         df["ctr"] = df["ctr"].apply(lambda v: v/100.0 if v > 1.5 else v)
 
     return df
+
+# =========================
+# Carregamento dos CSVs
+# =========================
+df_daily = read_csv_flex(uploaded_daily)   if uploaded_daily   else pd.DataFrame()
+df_week  = read_csv_flex(uploaded_weekly)  if uploaded_weekly  else pd.DataFrame()
+df_month = read_csv_flex(uploaded_monthly) if uploaded_monthly else pd.DataFrame()
+
+df_all = unify_frames([df_daily, df_week, df_month])
+any_csv = not df_all.empty  # True se você enviou pelo menos 1 CSV
+
 
 def classificar_funil(nome):
     nome = str(nome).lower()
@@ -544,10 +578,10 @@ with tab_goals:
 # =========================
 with tab_perf:
     st.markdown("## 📥 Performance Real")
-    if not uploaded:
-        st.info("Envie o CSV para ver os KPIs reais, funil e ranking de campanhas — com progresso SEMANAL e MENSAL.")
+    if not any_csv:
+        st.info("Envie ao menos um CSV (diário, semanal ou mensal) para ver os KPIs.")
     else:
-        df = read_csv_flex(uploaded)
+        df = df_all.copy()
 
         colf1, colf2, colf3 = st.columns(3)
         with colf1:
@@ -615,19 +649,14 @@ with tab_perf:
         st.progress(min(1.0, fatur_m/max(1.0, goal_rev_month)), text=f"Mês: R$ {fatur_m:,.0f} / R$ {goal_rev_month:,.0f}".replace(",","."))
 
         st.markdown("### 📅 ROAS diário")
-        # série diária
         dd = dff.copy()
-        if "data" in dd.columns:
-            base_date = dd["data"]
-        elif "dia" in dd.columns:
-            base_date = dd["dia"]
-        elif "date" in dd.columns:
-            base_date = dd["date"]
-        elif "data_inicio" in dd.columns:
-            base_date = dd["data_inicio"]
-        else:
-            base_date = pd.Series(pd.NaT, index=dd.index)
-
+        base_date = (
+            dd["data"] if "data" in dd.columns else
+            dd["dia"] if "dia" in dd.columns else
+            dd["date"] if "date" in dd.columns else
+            dd["data_inicio"] if "data_inicio" in dd.columns else
+            pd.Series(pd.NaT, index=dd.index)
+        )
         dd["_date"] = pd.to_datetime(base_date, errors="coerce", dayfirst=True).dt.normalize()
         t = (
             dd.dropna(subset=["_date"])
@@ -642,8 +671,8 @@ with tab_perf:
         else:
             st.info("⚠️ Não foi possível identificar datas válidas no CSV para calcular o ROAS diário.")
 
-
         st.markdown("---")
+
 
 # =========================
 # Funil (volumes + taxas)
@@ -651,11 +680,9 @@ with tab_perf:
 with tab_funnel:
     st.markdown("### 🧭 Funil (volumes do filtro)")
 
-    if uploaded:
-        # usa dff gerado na aba Performance (ou refaz caso não exista)
+    if any_csv:
         if 'dff' not in locals():
-            df = read_csv_flex(uploaded)
-            dff = df.copy()
+            dff = df_all.copy()
 
         def _sum(col):
             return float(dff[col].sum()) if col in dff.columns else 0.0
@@ -673,13 +700,11 @@ with tab_funnel:
 
         if not funil.empty:
             st.dataframe(funil, use_container_width=True)
-
             fig_funil = make_funnelarea_3dish(
                 funil, stage_col="Etapa", value_col="Volume",
                 color_map=ETAPAS_COLORS, title="Funil de Conversão (Volume)"
             )
             st.plotly_chart(fig_funil, use_container_width=True)
-
 
             st.markdown("### 📈 Taxas do Funil (sem AddToCart)")
             def _rate(num, den): return (num / den) if den > 0 else np.nan
@@ -704,7 +729,7 @@ with tab_funnel:
         else:
             st.info("⚠️ Não há volumes para montar o funil no filtro atual.")
     else:
-        st.warning("⚠️ Nenhum arquivo carregado. Envie o CSV para visualizar o funil.")
+        st.warning("⚠️ Nenhum arquivo carregado. Envie ao menos um CSV para visualizar o funil.")
 
     st.markdown("---")
 
@@ -714,10 +739,9 @@ with tab_funnel:
 # =========================
 with tab_campaigns:
     st.markdown("### 🏆 Campanhas (Top 10 por ROAS)")
-    if uploaded:
+    if any_csv:
         if 'dff' not in locals():
-            df = read_csv_flex(uploaded)
-            dff = df.copy()
+            dff = df_all.copy()
 
         if "campanha" in dff.columns:
             grp = dff.groupby("campanha").agg({
@@ -744,15 +768,14 @@ with tab_campaigns:
         else:
             st.info("⚠️ O arquivo não contém a coluna 'campanha'.")
     else:
-        st.warning("⚠️ Nenhum arquivo carregado. Envie o CSV para visualizar o ranking.")
+        st.warning("⚠️ Nenhum arquivo carregado. Envie ao menos um CSV para visualizar o ranking.")
 
     st.markdown("---")
 
     st.markdown("### 💵 Orçamento por Etapa (Planejado vs Realizado)")
-    if uploaded:
+    if any_csv:
         if 'dff' not in locals():
-            df = read_csv_flex(uploaded)
-            dff = df.copy()
+            dff = df_all.copy()
 
         dff["etapa_funil"] = dff["campanha"].apply(classificar_funil) if "campanha" in dff.columns else "Outros"
         realizado_funil = dff.groupby("etapa_funil")["gasto"].sum().to_dict() if "gasto" in dff.columns else {}
@@ -779,24 +802,20 @@ with tab_campaigns:
                 st.success(f"⚖️ A etapa **{etapa}** está exatamente alinhada com o planejado.")
 
         col1, col2 = st.columns(2)
-
         with col1:
             fig_comp = go.Figure()
-
             fig_comp.add_trace(go.Bar(
                 x=comp["Etapa"], y=comp["Planejado (R$)"],
                 name="Planejado (R$)",
-                marker_color="#CBD5E1",  # cinza claro
+                marker_color="#CBD5E1",
                 text=comp["Planejado (R$)"], textposition="outside"
             ))
-
             fig_comp.add_trace(go.Bar(
                 x=comp["Etapa"], y=comp["Realizado (R$)"],
                 name="Realizado (R$)",
-                marker_color="#0EA5E9",  # azul
+                marker_color="#0EA5E9",
                 text=comp["Realizado (R$)"], textposition="outside"
             ))
-
             fig_comp.update_layout(
                 barmode="group",
                 title="Orçamento — Planejado vs Realizado",
@@ -805,11 +824,9 @@ with tab_campaigns:
                 yaxis=dict(title="Valor (R$)"),
                 margin=dict(l=40, r=20, t=60, b=40)
             )
-
             fig_comp.update_traces(texttemplate="%{y:.0f}", textposition="outside")
             fig_comp.update_layout(uniformtext_minsize=10, uniformtext_mode="hide")
             st.plotly_chart(fig_comp, use_container_width=True)
-
 
         with col2:
             fig_real = px.pie(
@@ -818,10 +835,8 @@ with tab_campaigns:
             )
             fig_real.update_traces(textposition="inside", textinfo="percent+label")
             st.plotly_chart(style_fig(fig_real, "Distribuição Realizada por Etapa"), use_container_width=True)
-
     else:
-        st.warning("⚠️ Nenhum arquivo carregado. Envie o CSV para visualizar o orçamento por etapa.")
-
+        st.warning("⚠️ Nenhum arquivo carregado. Envie ao menos um CSV para visualizar o orçamento por etapa.")
 
 # =========================
 # Bloco 3 — Acompanhamento Diário (enxuto, derivado da meta mensal)
