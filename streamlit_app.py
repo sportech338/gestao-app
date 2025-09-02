@@ -662,7 +662,8 @@ with tab_perf:
         if date_col:
             dd["_date"] = pd.to_datetime(dd[date_col], errors="coerce", dayfirst=True).dt.normalize()
             week_mask  = (dd["_date"] >= pd.to_datetime(week_start_dt)) & (dd["_date"] <= pd.to_datetime(week_end_dt))
-            month_mask = (dd["_date"] >= pd.to_datetime(month_first)) & (dd["_date"] <= pd.to_datetime(month_last))
+            today = datetime.today().normalize()  # garante só a data de hoje
+            month_mask = (dd["_date"] >= pd.to_datetime(month_first)) & (dd["_date"] <= today)
             w = dd.loc[week_mask]
             m = dd.loc[month_mask]
             invest_w = float(w.get("gasto", pd.Series([0])).sum())
