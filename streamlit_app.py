@@ -700,17 +700,13 @@ with tab_perf:
         m4.metric("CPA — Mês", f"R$ {cpa_m:,.2f}".replace(",","."))
         m5.metric("Compras — Mês", f"{compras_m:,.0f}".replace(",", "."))
 
-        # 🚀 Barra de progresso em relação à meta proporcional até hoje
-        today = datetime.today().date()
-        dias_considerados_mes = daterange(month_first, month_last, include_weekends=include_weekends)
-        dias_passados = [d for d in dias_considerados_mes if d <= today]
-        meta_acumulada_ate_hoje = goal_rev_month * (len(dias_passados) / max(1, len(dias_considerados_mes)))
-
-        perc_mensal = min(1.0, fatur_m / max(1.0, meta_acumulada_ate_hoje))
+        # 🚀 Barra de progresso simples em relação à meta mensal inteira
+        perc_mensal = min(1.0, fatur_m / max(1.0, goal_rev_month))
         st.progress(
             perc_mensal,
-            text=f"Mês até {today.strftime('%d/%m')}: R$ {fatur_m:,.0f} / R$ {meta_acumulada_ate_hoje:,.0f}".replace(",", ".")
+            text=f"Progresso mensal: R$ {fatur_m:,.0f} / R$ {goal_rev_month:,.0f}".replace(",", ".")
         )
+
 
         # --- ROAS Diário (gráfico linha) ---
         st.markdown("### 📅 ROAS Diário")
