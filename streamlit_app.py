@@ -642,7 +642,19 @@ with tab_perf:
                 c3.metric("🛒 Compras", f"{row['compras']:,.0f}".replace(",","."))
                 c4.metric("📈 ROAS", f"{row['ROAS']:,.2f}".replace(",","."))
                 c5.metric("🎯 CPA", f"R$ {row['CPA']:,.2f}".replace(",","."))
+                
+                # 🚀 Barra de progresso em relação à meta diária
+                dias_considerados = daterange(month_first, month_last, include_weekends=include_weekends)
+                meta_dia = goal_rev_month / max(1, len(dias_considerados))
+
+                perc = min(1.0, row['faturamento'] / max(1.0, meta_dia))
+                st.progress(
+                    perc,
+                    text=f"Meta diária: R$ {row['faturamento']:,.0f} / R$ {meta_dia:,.0f}".replace(",", ".")
+                )
+
                 st.markdown("---")
+
 
         # --- Agora KPIs Semanais ---
         dd = dff.copy()
