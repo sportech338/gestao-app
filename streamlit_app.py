@@ -83,16 +83,27 @@ def make_bar_3dish(df, x, y, color=None, color_map=None, title="", barmode="grou
     # borda suave
     fig.update_traces(marker_line_color="rgba(0,0,0,0.18)", marker_line_width=1.2)
 
-    # “sombra” (duplicata translúcida) para dar volume
+    # ======= SOMBRA SEGURA (sem setar fig.data diretamente) =======
+    import plotly.graph_objects as go
+
     shadow_traces = []
     for tr in fig.data:
-        shadow = deepcopy(tr)  # evita AttributeError de .copy()
-        shadow.update(marker=dict(opacity=0.22, line=dict(width=0)))
-        shadow.showlegend = False
-        shadow.hoverinfo = "skip"
-        shadow_traces.append(shadow)
+        # Clona via JSON -> constrói novo go.Bar (evita problemas de atribuição)
+        tr_dict = tr.to_plotly_json()
+        tr_dict.setdefault("marker", {})
+        # Ajustes da "sombra"
+        tr_dict["marker"]["opacity"] = 0.22
+        tr_dict["marker"]["line"] = {"width": 0}
+        tr_dict["showlegend"] = False
+        tr_dict["hoverinfo"] = "skip"
 
-    fig.data = tuple(shadow_traces) + fig.data
+        # Garante o tipo Bar (px.bar sempre cria Bar)
+        shadow_traces.append(go.Bar(**tr_dict))
+
+    # Recria a figura com sombras primeiro (ficam "atrás") + originais
+    fig = go.Figure(data=tuple(shadow_traces) + tuple(fig.data), layout=fig.layout)
+    # ==============================================================
+
     fig.update_layout(bargap=-0.05)
     return style_fig(fig, title)
 
