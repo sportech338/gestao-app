@@ -83,11 +83,12 @@ def make_bar_3dish(df, x, y, color=None, color_map=None, title="", barmode="grou
     # borda suave
     fig.update_traces(marker_line_color="rgba(0,0,0,0.18)", marker_line_width=1.2)
 
-    # ======= SOMBRA SEGURA (sem rótulo na sombra) =======
+    # ======= SOMBRA SEGURA (sem setar fig.data diretamente) =======
     import plotly.graph_objects as go
 
     shadow_traces = []
     for tr in fig.data:
+        # Clona via JSON -> constrói novo go.Bar (evita problemas de atribuição)
         tr_dict = tr.to_plotly_json()
         tr_dict.setdefault("marker", {})
         # Ajustes da "sombra"
@@ -96,21 +97,47 @@ def make_bar_3dish(df, x, y, color=None, color_map=None, title="", barmode="grou
         tr_dict["showlegend"] = False
         tr_dict["hoverinfo"] = "skip"
 
-        # 🔑 remover qualquer texto/rótulo da sombra
-        tr_dict.pop("text", None)
-        tr_dict.pop("texttemplate", None)
-        tr_dict["textposition"] = None
-
+        # Garante o tipo Bar (px.bar sempre cria Bar)
         shadow_traces.append(go.Bar(**tr_dict))
 
-    # Recria a figura com sombras (atrás) + originais
+    # Recria a figura com sombras primeiro (ficam "atrás") + originais
     fig = go.Figure(data=tuple(shadow_traces) + tuple(fig.data), layout=fig.layout)
+    # ==============================================================
 
-    # Garantir rótulo só nas barras reais (opcional)
-    for tr in fig.data[len(shadow_traces):]:
-        tr.texttemplate = "%{y:.0f}"
-        tr.textposition = "outside"
-    # ======================================================
+    fig.update_layout(bargap=0, bargroupgap=0.02)
+    return style_fig(fig, title)
+
+def make_line_glow(df, x, y_cols, title=""):
+    fig = go.Figure()
+    for i, col in enumerate(y_cols):
+        base_color = COLORWAY[i % len(COLORWAY)]
+        glow1 = go.Scatter(
+            x=df[x], y=df[col], mode="lines",
+            line=dict(width=14, color=_darken(base_color, 0.85)), opacity=0.10,
+            hoverinfo="skip", showlegend=False
+        )
+        glow2 = go.Scatter(
+            x=df[x], y=df[col], mode="lines",
+            line=dict(width=8, color=_darken(base_color, 0.92)), opacity=0.18,
+            hoverinfo="skip", showlegend=False
+        )
+        main = go.Scatter(
+            x=df[x], y=df[col], mode="lines+markers",
+            line=dict(width=3, color=base_color),
+            marker=dict(size=6, line=dict(width=1, color="white")),
+            name=str(col)
+        )
+        fig.add_traces([glow1, glow2, main])
+    style_fig(fig, title)
+    return fig
+
+def make_funnelarea_3dish(df, stage_col, value_col, color_map, title):
+    fig = px.funnel_area(
+        df, names=stage_col, values=value_col,
+        color=stage_col, color_discrete_map=color_map
+    )
+    fig.update_traces(marker_line=dict(color="rgba(0,0,0,0.15)", width=1))
+    return style_fig(fig, title)
 
 # =========================
 # Sidebar — Parâmetros essenciais
