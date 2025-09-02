@@ -83,6 +83,8 @@ def make_bar_3dish(df, x, y, color=None, color_map=None, title="", barmode="grou
     # borda suave
     fig.update_traces(marker_line_color="rgba(0,0,0,0.18)", marker_line_width=1.2)
 
+    return style_fig(fig, title)
+
 def make_line_glow(df, x, y_cols, title=""):
     fig = go.Figure()
     for i, col in enumerate(y_cols):
