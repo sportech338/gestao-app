@@ -28,6 +28,19 @@ ETAPAS_COLORS = {
     "Outros":             "#94A3B8",  # cinza
 }
 
+# Paleta base para gráficos sem legenda de etapa (ex: linhas)
+COLORWAY = ["#7C3AED", "#06B6D4", "#22C55E", "#F59E0B", "#94A3B8", "#0EA5E9", "#EF4444", "#10B981", "#3B82F6"]
+
+def style_fig_pdf(fig, title=None):
+    """Tema consistente + fundo branco para exportar no PDF (Kaleido)."""
+    style_fig(fig, title)  # sua função padrão
+    fig.update_layout(
+        paper_bgcolor="white",
+        plot_bgcolor="white",
+        colorway=COLORWAY
+    )
+    return fig
+
 def style_fig(fig, title=None):
     """Aplica um tema visual consistente aos gráficos Plotly."""
     fig.update_layout(
@@ -765,6 +778,9 @@ with tab_pdf:
     import plotly.express as px
     import plotly.io as pio
 
+    # ----------------------------
+    # Tabelas-base para o PDF
+    # ----------------------------
     resumo_df = pd.DataFrame({
         "Item": [
             "Mês de Referência",
@@ -825,17 +841,66 @@ with tab_pdf:
         "Compras — Mês (nº)": compras_m if 'compras_m' in locals() else np.nan,
     }])
 
-    fig_mix_pdf = px.pie(mix_df, values="Planejado (R$)", names="Etapa", title="Mix Planejado da Verba (R$)")
-    fig_dia = px.bar(plano_df, x="Data", y="Valor Diário (R$)", color="Etapa", title="Distribuição Planejada por Dia (R$)", barmode="stack") if not plano_df.empty else None
-    fig_funil_pdf = px.funnel(funil_df, x="Volume", y="Etapa", title="Funil de Conversão (Volume)") if not funil_df.empty else None
-    fig_comp_pdf = px.bar(comp_df, x="Etapa", y=["Planejado (R$)", "Realizado (R$)"], barmode="group", title="Orçamento — Planejado vs Realizado") if not comp_df.empty else None
+    # ----------------------------
+    # Gráficos (cores alinhadas ao dashboard)
+    # ----------------------------
+    # 1) Pizza do mix planejado
+    fig_mix_pdf = px.pie(
+        mix_df,
+        values="Planejado (R$)",
+        names="Etapa",
+        title="Mix Planejado da Verba (R$)",
+        color="Etapa",
+        color_discrete_map=ETAPAS_COLORS
+    )
+    fig_mix_pdf = style_fig_pdf(fig_mix_pdf)
 
+    # 2) Barras empilhadas por dia (planejado)
+    fig_dia = None
+    if not plano_df.empty:
+        fig_dia = px.bar(
+            plano_df, x="Data", y="Valor Diário (R$)",
+            color="Etapa",
+            title="Distribuição Planejada por Dia (R$)",
+            barmode="stack",
+            color_discrete_map=ETAPAS_COLORS
+        )
+        fig_dia = style_fig_pdf(fig_dia)
+
+    # 3) Funil de volumes
+    fig_funil_pdf = None
+    if not funil_df.empty:
+        fig_funil_pdf = px.funnel(
+            funil_df, x="Volume", y="Etapa",
+            title="Funil de Conversão (Volume)",
+            color="Etapa",
+            color_discrete_map=ETAPAS_COLORS
+        )
+        fig_funil_pdf = style_fig_pdf(fig_funil_pdf)
+
+    # 4) Planejado vs Realizado por etapa
+    fig_comp_pdf = None
+    if not comp_df.empty:
+        fig_comp_pdf = px.bar(
+            comp_df, x="Etapa", y=["Planejado (R$)", "Realizado (R$)"],
+            barmode="group", title="Orçamento — Planejado vs Realizado",
+            color_discrete_sequence=["#CBD5E1", "#0EA5E9"]
+        )
+        fig_comp_pdf.update_traces(texttemplate="%{y:.0f}", textposition="outside")
+        fig_comp_pdf = style_fig_pdf(fig_comp_pdf)
+
+    # 5) ROAS diário — aplica tema/fundo branco e colorway
     fig_roas_pdf = None
     if 't' in locals() and not t.empty and "ROAS" in t.columns:
         fig_roas_pdf = px.line(t, x="_date", y="ROAS", title="ROAS Diário")
+        fig_roas_pdf.update_traces(mode="lines+markers")
+        fig_roas_pdf.update_yaxes(title="ROAS", tickformat=".2f")
         fig_roas_pdf.update_xaxes(title="Data")
-        fig_roas_pdf.update_yaxes(title="ROAS")
+        fig_roas_pdf = style_fig_pdf(fig_roas_pdf)
 
+    # ----------------------------
+    # Montagem do PDF
+    # ----------------------------
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4, leftMargin=36, rightMargin=36, topMargin=36, bottomMargin=36)
     styles = getSampleStyleSheet()
@@ -849,11 +914,13 @@ with tab_pdf:
     story.append(Paragraph(sub, N))
     story.append(Spacer(1, 10))
 
+    # Resumo
     story.append(Paragraph("Resumo", H2))
     tbl_resumo = df_to_table(resumo_df, col_widths=[180, 330])
     if tbl_resumo: story.append(tbl_resumo)
     story.append(Spacer(1, 12))
 
+    # Mix Planejado
     story.append(Paragraph("Mix Planejado da Verba", H2))
     tbl_mix = df_to_table(mix_df, col_widths=[200, 150])
     if tbl_mix:
@@ -861,11 +928,13 @@ with tab_pdf:
     img_mix = fig_to_rl_image(fig_mix_pdf, width=460)
     if img_mix: story.append(img_mix); story.append(Spacer(1, 12))
 
+    # Distribuição por dia
     if fig_dia is not None:
         story.append(Paragraph("Distribuição Planejada por Dia", H2))
         img_dia = fig_to_rl_image(fig_dia, width=460)
         if img_dia: story.append(img_dia); story.append(Spacer(1, 12))
 
+    # Funil + Taxas
     if fig_funil_pdf is not None:
         story.append(Paragraph("Funil de Conversão (Volume)", H2))
         img_funil = fig_to_rl_image(fig_funil_pdf, width=460)
@@ -875,16 +944,19 @@ with tab_pdf:
             tbl_taxas = df_to_table(taxas_df, col_widths=[220, 80])
             if tbl_taxas: story.append(tbl_taxas); story.append(Spacer(1, 12))
 
+    # KPIs Semanais
     if not kpis_sem_df.empty:
         story.append(Paragraph("KPIs Semanais", H2))
         tbl_kpi_w = df_to_table(kpis_sem_df.round(2))
         if tbl_kpi_w: story.append(tbl_kpi_w); story.append(Spacer(1, 10))
 
+    # KPIs Mensais
     if not kpis_mes_df.empty:
         story.append(Paragraph("KPIs Mensais", H2))
         tbl_kpi_m = df_to_table(kpis_mes_df.round(2))
         if tbl_kpi_m: story.append(tbl_kpi_m); story.append(Spacer(1, 12))
 
+    # Comparativo por etapa
     if fig_comp_pdf is not None:
         story.append(Paragraph("Orçamento por Etapa — Comparativo", H2))
         img_comp = fig_to_rl_image(fig_comp_pdf, width=460)
@@ -893,11 +965,13 @@ with tab_pdf:
             tbl_comp = df_to_table(comp_df.round(2))
             if tbl_comp: story.append(tbl_comp); story.append(Spacer(1, 12))
 
+    # ROAS Diário
     if fig_roas_pdf is not None:
         story.append(Paragraph("ROAS Diário", H2))
         img_roas = fig_to_rl_image(fig_roas_pdf, width=460)
         if img_roas: story.append(img_roas); story.append(Spacer(1, 12))
 
+    # Finaliza PDF
     doc.build(story)
     buffer.seek(0)
 
