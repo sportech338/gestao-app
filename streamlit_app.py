@@ -330,32 +330,38 @@ def count_days_between(d0, d1, include_weekends=True):
     return n
 
 def weeks_in_month(month_first, month_last, include_weekends=True):
+    """Divide a meta em semanas cheias e cria uma semana extra só se sobrarem dias."""
+    total_days = (month_last - month_first).days + 1
+    total_weeks = total_days // 7   # só semanas completas
+    dias_sobra = total_days % 7
+
     weeks = []
     cur = month_first
 
-    # Avança de segunda em segunda
-    while cur <= month_last:
+    # Semanas cheias
+    for i in range(total_weeks):
         w_start = cur
-        w_end = min(cur + timedelta(days=6), month_last)
-
-        # Conta apenas os dias dentro do mês
-        days_considered = count_days_between(w_start, w_end, include_weekends=include_weekends)
-        if days_considered > 0:
-            weeks.append({
-                "start": w_start,
-                "end": w_end,
-                "days_considered": days_considered
-            })
+        w_end = cur + timedelta(days=6)
+        weeks.append({
+            "start": w_start,
+            "end": w_end,
+            "days_considered": 7,
+            "share": 1 / total_weeks if total_weeks > 0 else 0
+        })
         cur = w_end + timedelta(days=1)
 
-    total_days = sum(w["days_considered"] for w in weeks) or 1
-
-    # Meta proporcional por dias
-    for w in weeks:
-        w["share"] = w["days_considered"] / total_days
+    # Semana extra se sobrarem dias (ex: 2 dias finais do mês)
+    if dias_sobra > 0:
+        w_start = cur
+        w_end = month_last
+        weeks.append({
+            "start": w_start,
+            "end": w_end,
+            "days_considered": dias_sobra,
+            "share": dias_sobra / (total_weeks * 7 + dias_sobra)
+        })
 
     return weeks
-
 
 # Semana escolhida pelo usuário
 week_start_dt = datetime.combine(week_start, datetime.min.time())
