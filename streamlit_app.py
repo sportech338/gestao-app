@@ -104,7 +104,7 @@ def make_bar_3dish(df, x, y, color=None, color_map=None, title="", barmode="grou
     fig = go.Figure(data=tuple(shadow_traces) + tuple(fig.data), layout=fig.layout)
     # ==============================================================
 
-    fig.update_layout(bargap=-0.05)
+    fig.update_layout(bargap=0, bargroupgap=0.02)
     return style_fig(fig, title)
 
 def make_line_glow(df, x, y_cols, title=""):
