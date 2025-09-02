@@ -589,6 +589,7 @@ with tab_perf:
     else:
         df = df_all.copy()
 
+        # --- Filtros ---
         colf1, colf2, colf3 = st.columns(3)
         with colf1:
             sel_camp = st.selectbox("Campanha", ["(Todas)"] + sorted(df.get("campanha", pd.Series([""])).dropna().astype(str).unique().tolist())) if "campanha" in df.columns else "(Todas)"
@@ -611,9 +612,41 @@ with tab_perf:
         fatur_total = float(dff.get("faturamento", pd.Series([0])).sum())
         compras_total = float(dff.get("compras", pd.Series([0])).sum())
 
-        # --- junte dados por data (se existir) ---
-        dd = dff.copy()  # garante dd definido
-        date_col = next((c for c in ["data", "dia", "date", "data_inicio"] if c in dff.columns), None)
+        # --- KPIs DIÁRIAS (primeiro) ---
+        st.markdown("### 📅 KPIs Diárias")
+        base_date = (
+            dff["data"] if "data" in dff.columns else
+            dff["dia"] if "dia" in dff.columns else
+            dff["date"] if "date" in dff.columns else
+            dff["data_inicio"] if "data_inicio" in dff.columns else
+            pd.Series(pd.NaT, index=dff.index)
+        )
+        dff["_date"] = pd.to_datetime(base_date, errors="coerce", dayfirst=True).dt.normalize()
+        daily = (
+            dff.dropna(subset=["_date"])
+               .groupby("_date", as_index=False)[["gasto","faturamento","compras"]]
+               .sum()
+               .sort_values("_date")
+        )
+        if daily.empty:
+            st.info("⚠️ Seu CSV não tem coluna de data reconhecida para calcular KPIs diárias.")
+        else:
+            daily["ROAS"] = np.where(daily["gasto"] > 0, daily["faturamento"]/daily["gasto"], np.nan)
+            daily["CPA"]  = np.where(daily["compras"] > 0, daily["gasto"]/daily["compras"], np.nan)
+
+            for _, row in daily.iterrows():
+                st.markdown(f"#### 📆 {row['_date'].strftime('%d/%m/%Y')}")
+                c1,c2,c3,c4,c5 = st.columns(5)
+                c1.metric("💰 Investimento", f"R$ {row['gasto']:,.0f}".replace(",","."))
+                c2.metric("🏪 Faturamento", f"R$ {row['faturamento']:,.0f}".replace(",","."))
+                c3.metric("🛒 Compras", f"{row['compras']:,.0f}".replace(",","."))
+                c4.metric("📈 ROAS", f"{row['ROAS']:,.2f}".replace(",","."))
+                c5.metric("🎯 CPA", f"R$ {row['CPA']:,.2f}".replace(",","."))
+                st.markdown("---")
+
+        # --- Agora KPIs Semanais ---
+        dd = dff.copy()
+        date_col = next((c for c in ["data","dia","date","data_inicio"] if c in dff.columns), None)
         if date_col:
             dd["_date"] = pd.to_datetime(dd[date_col], errors="coerce", dayfirst=True).dt.normalize()
             week_mask  = (dd["_date"] >= pd.to_datetime(week_start_dt)) & (dd["_date"] <= pd.to_datetime(week_end_dt))
@@ -627,85 +660,41 @@ with tab_perf:
             fatur_m  = float(m.get("faturamento", pd.Series([0])).sum())
             compras_m= float(m.get("compras", pd.Series([0])).sum())
         else:
-            # sem data: usa totais e marca _date como NaT (KPIs diárias serão puladas)
             dd["_date"] = pd.NaT
             invest_w = invest_m = invest_total
             fatur_w  = fatur_m  = fatur_total
             compras_w= compras_m= compras_total
 
         roas_w = (fatur_w/invest_w) if invest_w>0 else 0.0
-        cpa_w = (invest_w/compras_w) if compras_w>0 else 0.0
+        cpa_w  = (invest_w/compras_w) if compras_w>0 else 0.0
         st.markdown("### 📌 KPIs Semanais (Reais)")
         k1,k2,k3,k4,k5 = st.columns(5)
         k1.metric("💰 Investimento — Semana", f"R$ {invest_w:,.0f}".replace(",","."))
         k2.metric("🏪 Faturamento — Semana", f"R$ {fatur_w:,.0f}".replace(",","."))
-        k3.metric("📈 ROAS — Semana", f"{roas_w:,.2f}".replace(",","."), delta=f"alvo {target_roas:,.2f}")
+        k3.metric("📈 ROAS — Semana", f"{roas_w:,.2f}".replace(",","."))
         k4.metric("🎯 CPA — Semana", f"R$ {cpa_w:,.2f}".replace(",","."))
         k5.metric("🛒 Compras — Semana", f"{compras_w:,.0f}".replace(",","."))
-
         st.progress(min(1.0, fatur_w/max(1.0, goal_rev_week)), text=f"Semana: R$ {fatur_w:,.0f} / R$ {goal_rev_week:,.0f}".replace(",","."))
 
+        # --- KPIs Mensais ---
         roas_m = (fatur_m/invest_m) if invest_m>0 else 0.0
-        cpa_m = (invest_m/compras_m) if compras_m>0 else 0.0
+        cpa_m  = (invest_m/compras_m) if compras_m>0 else 0.0
         st.markdown("### 📌 KPIs Mensais (Reais)")
         m1,m2,m3,m4,m5 = st.columns(5)
         m1.metric("Investimento — Mês", f"R$ {invest_m:,.0f}".replace(",","."))
         m2.metric("Faturamento — Mês", f"R$ {fatur_m:,.0f}".replace(",","."))
-        m3.metric("ROAS — Mês", f"{roas_m:,.2f}".replace(",","."), delta=f"alvo {target_roas:,.2f}")
+        m3.metric("ROAS — Mês", f"{roas_m:,.2f}".replace(",","."))
         m4.metric("CPA — Mês", f"R$ {cpa_m:,.2f}".replace(",","."))
         m5.metric("Compras — Mês", f"{compras_m:,.0f}".replace(",","."))
-
         st.progress(min(1.0, fatur_m/max(1.0, goal_rev_month)), text=f"Mês: R$ {fatur_m:,.0f} / R$ {goal_rev_month:,.0f}".replace(",","."))
 
-        st.markdown("### 📅 ROAS diário")
-        dd = dff.copy()
-        base_date = (
-            dd["data"] if "data" in dd.columns else
-            dd["dia"] if "dia" in dd.columns else
-            dd["date"] if "date" in dd.columns else
-            dd["data_inicio"] if "data_inicio" in dd.columns else
-            pd.Series(pd.NaT, index=dd.index)
-        )
-        dd["_date"] = pd.to_datetime(base_date, errors="coerce", dayfirst=True).dt.normalize()
-        t = (
-            dd.dropna(subset=["_date"])
-              .groupby("_date", as_index=False)
-              .agg({"gasto": "sum", "faturamento": "sum"})
-              .sort_values("_date")
-        )
-        if not t.empty:
-            t["ROAS"] = t.apply(lambda r: (r["faturamento"]/r["gasto"]) if r["gasto"] > 0 else np.nan, axis=1)
-            fig_roas = make_line_glow(t, x="_date", y_cols=["ROAS"], title="ROAS Diário")
+        # --- ROAS Diário (gráfico linha) ---
+        st.markdown("### 📅 ROAS Diário")
+        if not daily.empty:
+            fig_roas = make_line_glow(daily, x="_date", y_cols=["ROAS"], title="ROAS Diário")
             st.plotly_chart(fig_roas, use_container_width=True)
         else:
             st.info("⚠️ Não foi possível identificar datas válidas no CSV para calcular o ROAS diário.")
-
-        # --- KPIs DIÁRIAS ---
-        st.markdown("### 📅 KPIs Diárias")
-
-        if dd["_date"].notna().sum() == 0:
-            st.info("⚠️ Seu CSV não tem coluna de data reconhecida para calcular KPIs diárias.")
-        else:
-            daily = (
-                dd.dropna(subset=["_date"])
-                  .groupby("_date", as_index=False)[["gasto", "faturamento", "compras"]]
-                  .sum()
-                  .sort_values("_date")
-            )
-
-            daily["ROAS"] = np.where(daily["gasto"] > 0, daily["faturamento"] / daily["gasto"], np.nan)
-            daily["CPA"]  = np.where(daily["compras"] > 0, daily["gasto"] / daily["compras"], np.nan)
-
-            for _, row in daily.iterrows():
-                st.markdown(f"#### 📆 {row['_date'].strftime('%d/%m/%Y')}")
-                c1, c2, c3, c4, c5 = st.columns(5)
-                c1.metric("💰 Investimento", f"R$ {row['gasto']:,.0f}".replace(",", "."))
-                c2.metric("🏪 Faturamento", f"R$ {row['faturamento']:,.0f}".replace(",", "."))
-                c3.metric("🛒 Compras", f"{row['compras']:,.0f}".replace(",", "."))
-                c4.metric("📈 ROAS", f"{row['ROAS']:,.2f}".replace(",", "."))
-                c5.metric("🎯 CPA", f"R$ {row['CPA']:,.2f}".replace(",", "."))
-                st.markdown("---")
-
 
 # =========================
 # Funil (volumes + taxas)
