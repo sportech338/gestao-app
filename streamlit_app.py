@@ -611,24 +611,27 @@ with tab_perf:
         fatur_total = float(dff.get("faturamento", pd.Series([0])).sum())
         compras_total = float(dff.get("compras", pd.Series([0])).sum())
 
-        date_col = next((c for c in ["data"] if c in dff.columns), None)
+        # --- junte dados por data (se existir) ---
+        dd = dff.copy()  # garante dd definido
+        date_col = next((c for c in ["data", "dia", "date", "data_inicio"] if c in dff.columns), None)
         if date_col:
-            dd = dff.copy()
-            dd["_date"] = pd.to_datetime(dd[date_col], errors="coerce", dayfirst=True)
-            week_mask = (dd["_date"] >= pd.to_datetime(week_start_dt)) & (dd["_date"] <= pd.to_datetime(week_end_dt))
+            dd["_date"] = pd.to_datetime(dd[date_col], errors="coerce", dayfirst=True).dt.normalize()
+            week_mask  = (dd["_date"] >= pd.to_datetime(week_start_dt)) & (dd["_date"] <= pd.to_datetime(week_end_dt))
             month_mask = (dd["_date"] >= pd.to_datetime(month_first)) & (dd["_date"] <= pd.to_datetime(month_last))
             w = dd.loc[week_mask]
             m = dd.loc[month_mask]
             invest_w = float(w.get("gasto", pd.Series([0])).sum())
-            fatur_w = float(w.get("faturamento", pd.Series([0])).sum())
-            compras_w = float(w.get("compras", pd.Series([0])).sum())
+            fatur_w  = float(w.get("faturamento", pd.Series([0])).sum())
+            compras_w= float(w.get("compras", pd.Series([0])).sum())
             invest_m = float(m.get("gasto", pd.Series([0])).sum())
-            fatur_m = float(m.get("faturamento", pd.Series([0])).sum())
-            compras_m = float(m.get("compras", pd.Series([0])).sum())
+            fatur_m  = float(m.get("faturamento", pd.Series([0])).sum())
+            compras_m= float(m.get("compras", pd.Series([0])).sum())
         else:
+            # sem data: usa totais e marca _date como NaT (KPIs diárias serão puladas)
+            dd["_date"] = pd.NaT
             invest_w = invest_m = invest_total
-            fatur_w = fatur_m = fatur_total
-            compras_w = compras_m = compras_total
+            fatur_w  = fatur_m  = fatur_total
+            compras_w= compras_m= compras_total
 
         roas_w = (fatur_w/invest_w) if invest_w>0 else 0.0
         cpa_w = (invest_w/compras_w) if compras_w>0 else 0.0
@@ -677,7 +680,76 @@ with tab_perf:
         else:
             st.info("⚠️ Não foi possível identificar datas válidas no CSV para calcular o ROAS diário.")
 
-        st.markdown("---")
+        # --- KPIs DIÁRIAS ---
+        st.markdown("### 📅 KPIs Diárias")
+
+        # se não houver datas válidas, avisa e não tenta calcular
+        if dd["_date"].notna().sum() == 0:
+            st.info("⚠️ Seu CSV não tem coluna de data reconhecida para calcular KPIs diárias.")
+        else:
+            # garante colunas necessárias
+            dd_daily = dd.copy()
+            for _c in ["gasto", "faturamento", "compras"]:
+                if _c not in dd_daily.columns:
+                    dd_daily[_c] = 0.0
+
+            # agrega por dia
+            daily_kpis_df = (
+                dd_daily.dropna(subset=["_date"])
+                        .groupby("_date", as_index=False)[["gasto", "faturamento", "compras"]]
+                        .sum()
+                        .sort_values("_date")
+            )
+
+            # calcula ROAS e CPA
+            daily_kpis_df["ROAS"] = np.where(
+                daily_kpis_df["gasto"] > 0,
+                daily_kpis_df["faturamento"] / daily_kpis_df["gasto"],
+                np.nan
+            )
+            daily_kpis_df["CPA (R$)"] = np.where(
+                daily_kpis_df["compras"] > 0,
+                daily_kpis_df["gasto"] / daily_kpis_df["compras"],
+                np.nan
+            )
+
+            # friendly columns
+            daily_kpis_df = daily_kpis_df.rename(columns={
+                "_date": "Data",
+                "gasto": "Investimento (R$)",
+                "faturamento": "Faturamento (R$)",
+                "compras": "Compras"
+            })
+
+            # tabela
+            st.dataframe(
+                daily_kpis_df,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Data": st.column_config.DateColumn("Data", format="DD/MM/YYYY"),
+                    "Investimento (R$)": st.column_config.NumberColumn("Investimento (R$)", format="R$ %.0f"),
+                    "Faturamento (R$)": st.column_config.NumberColumn("Faturamento (R$)", format="R$ %.0f"),
+                    "Compras": st.column_config.NumberColumn("Compras", format="%.0f"),
+                    "ROAS": st.column_config.NumberColumn("ROAS", format="%.2f"),
+                    "CPA (R$)": st.column_config.NumberColumn("CPA (R$)", format="R$ %.2f"),
+                },
+            )
+
+            # gráfico opcional: Investimento x Faturamento por dia
+            _plot = daily_kpis_df.melt(
+                id_vars=["Data"], value_vars=["Investimento (R$)", "Faturamento (R$)"],
+                var_name="Métrica", value_name="Valor (R$)"
+            )
+            fig_inv_fat = make_bar_3dish(
+                _plot, x="Data", y="Valor (R$)", color="Métrica",
+                title="Investimento x Faturamento — por dia", barmode="group"
+            )
+            fig_inv_fat.update_xaxes(type="category")
+            st.plotly_chart(fig_inv_fat, use_container_width=True)
+
+
+            st.markdown("---")
 
 
 # =========================
