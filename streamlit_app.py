@@ -313,40 +313,97 @@ def classificar_funil(nome):
     return "Outros"
 
 # =========================
-# Metas — MÊS ➜ Semana
+# Metas — MÊS ➜ Semana (consistente por semanas do mês)
 # =========================
 month_first = month_ref.replace(day=1)
-next_month_first = (month_first.replace(year=month_first.year+1, month=1) if month_first.month==12 else month_first.replace(month=month_first.month+1))
+next_month_first = (month_first.replace(year=month_first.year+1, month=1)
+                    if month_first.month == 12 else month_first.replace(month=month_first.month+1))
 month_last = next_month_first - timedelta(days=1)
-month_days = daterange(month_first, month_last, include_weekends=True)
 
+def count_days_between(d0, d1, include_weekends=True):
+    d = d0
+    n = 0
+    while d <= d1:
+        if include_weekends or d.weekday() < 5:
+            n += 1
+        d += timedelta(days=1)
+    return n
+
+def weeks_in_month(month_first, month_last, include_weekends=True):
+    # Começa na segunda da semana do 1º dia do mês
+    first_monday = month_first - timedelta(days=month_first.weekday())
+    # Termina no domingo da semana do último dia do mês
+    last_sunday = month_last + timedelta(days=(6 - month_last.weekday()))
+
+    weeks = []
+    cur = first_monday
+    while cur <= last_sunday:
+        w_start = cur
+        w_end = cur + timedelta(days=6)
+        # Janela que realmente conta dentro do mês
+        win_start = max(w_start, month_first)
+        win_end = min(w_end, month_last)
+        if win_start <= win_end:
+            days_considered = count_days_between(win_start, win_end, include_weekends=include_weekends)
+            if days_considered > 0:
+                weeks.append({
+                    "start": w_start,
+                    "end": w_end,
+                    "in_month_start": win_start,
+                    "in_month_end": win_end,
+                    "days_considered": days_considered
+                })
+        cur += timedelta(days=7)
+
+    total_days = sum(w["days_considered"] for w in weeks) or 1
+    for w in weeks:
+        w["share"] = w["days_considered"] / total_days
+    return weeks
+
+# Semana escolhida pelo usuário
 week_start_dt = datetime.combine(week_start, datetime.min.time())
 week_end_dt = week_start_dt + timedelta(days=6)
 week_days_all = daterange(week_start_dt.date(), week_end_dt.date(), include_weekends=True)
 
-week_days_in_month = [d for d in week_days_all if (month_first <= d <= month_last)]
-
-def count_considered_days(days, consider_weekends):
-    if consider_weekends:
-        return len(days)
-    return sum(1 for d in days if datetime.strptime(str(d), "%Y-%m-%d").weekday() < 5)
-
-month_days_considered = max(1, count_considered_days(month_days, include_weekends))
-week_days_considered = max(1, count_considered_days(week_days_in_month, include_weekends))
-
+# Distribuição de metas: primeiro definimos a meta MENSAL
 if goal_type_m == "Faturamento":
     goal_rev_month = float(monthly_goal_value)
-    goal_pur_month = goal_rev_month / aov if aov>0 else 0.0
+    goal_pur_month = goal_rev_month / aov if aov > 0 else 0.0
 else:
     goal_pur_month = float(monthly_goal_value)
     goal_rev_month = goal_pur_month * aov
 
-budget_goal_month = goal_rev_month / target_roas if target_roas>0 else 0.0
+budget_goal_month = goal_rev_month / target_roas if target_roas > 0 else 0.0
 
-week_share = week_days_considered / month_days_considered
-goal_rev_week = goal_rev_month * week_share
-goal_pur_week = goal_pur_month * week_share
-budget_goal_week = budget_goal_month * week_share
+# Agora distribuímos por semanas do mês
+weeks = weeks_in_month(month_first, month_last, include_weekends=include_weekends)
+
+# Acrescenta metas semanais a cada semana
+for w in weeks:
+    w["goal_rev_week"] = goal_rev_month * w["share"]
+    w["goal_pur_week"] = goal_pur_month * w["share"]
+    w["budget_goal_week"] = budget_goal_month * w["share"]
+
+# Seleciona a semana ativa (a que o usuário escolheu)
+def pick_week(weeks, week_start_dt):
+    ws = week_start_dt.date()
+    for w in weeks:
+        if w["start"] == ws:
+            return w
+        # fallback: caso o usuário selecione um dia que caia dentro da semana
+        if w["start"] <= ws <= w["end"]:
+            return w
+    return None
+
+sel_week = pick_week(weeks, week_start_dt)
+# Se por algum motivo não encontrar, cai na última semana válida
+if sel_week is None and weeks:
+    sel_week = weeks[-1]
+
+# Estes são usados no restante do app
+goal_rev_week  = sel_week["goal_rev_week"]  if sel_week else 0.0
+goal_pur_week  = sel_week["goal_pur_week"]  if sel_week else 0.0
+budget_goal_week = sel_week["budget_goal_week"] if sel_week else 0.0
 
 # =========================
 # Layout por Abas
@@ -473,6 +530,24 @@ with tab_goals:
     with c3:
         st.metric("Orçamento MENSAL p/ ROAS", f"R$ {budget_goal_month:,.0f}".replace(",","."))
 
+    # --- Tabela com a meta de CADA semana do mês (consistente com a meta mensal) ---
+    if weeks:
+        metas_semanas_df = pd.DataFrame([{
+            "Semana #": i+1,
+            "Início (seg)": w["start"].strftime("%d/%m"),
+            "Fim (dom)": w["end"].strftime("%d/%m"),
+            "Dias considerados": w["days_considered"],
+            "Meta Faturamento (R$)": round(w["goal_rev_week"], 2),
+            "Meta Compras (un)": round(w["goal_pur_week"], 2),
+            "Orçamento p/ ROAS (R$)": round(w["budget_goal_week"], 2),
+        } for i, w in enumerate(weeks)])
+
+        st.markdown("### 📅 Metas por semana do mês (proporcionais aos dias considerados)")
+        st.dataframe(metas_semanas_df, use_container_width=True)
+
+    st.markdown("---")
+
+
     s1,s2,s3 = st.columns(3)
     with s1:
         st.metric("Meta SEMANAL (derivada) — Faturamento", f"R$ {goal_rev_week:,.0f}".replace(",","."), help="Proporcional aos dias da semana que caem dentro do mês de referência")
@@ -481,7 +556,7 @@ with tab_goals:
     with s3:
         st.metric("Orçamento SEMANAL (derivada)", f"R$ {budget_goal_week:,.0f}".replace(",","."))
 
-    st.markdown("---")
+    # --- Tabela com a meta de CADA semana do mês (consistente com a meta mensal) ---
 
 # =========================
 # Bloco 2 — Performance Real
