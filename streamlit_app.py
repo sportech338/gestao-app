@@ -669,173 +669,235 @@ out["data"] = pd.to_datetime(out["data"]).dt.strftime("%Y-%m-%d")
 st.download_button("⬇️ Baixar plano semanal derivado (CSV)", data=out.to_csv(index=False).encode("utf-8"), file_name="plano_semana_derivado.csv", mime="text/csv")
 
 # =========================
-# 📦 Relatório para Sócios — Download
+# 📦 Relatório para Sócios — Download (PDF)
 # =========================
 st.markdown("---")
-st.header("📦 Relatório para Sócios — Download")
+st.header("📦 Relatório para Sócios — PDF")
 
 from io import BytesIO
+from reportlab.lib.pagesizes import A4
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib import colors
+import plotly.express as px
+import plotly.io as pio
 
-# --- Monta DataFrames do relatório (com tolerância caso algo não exista) ---
-resumo_cols = ["Item", "Valor"]
-resumo_data = [
-    ["Mês de Referência", month_first.strftime("%m/%Y")],
-    ["Semana (início → fim)", f"{week_start_dt.date().strftime('%d/%m/%Y')} → {(week_end_dt.date()).strftime('%d/%m/%Y')}"],
-    ["Ticket Médio (AOV)", f"R$ {aov:,.2f}".replace(",", ".")],
-    ["ROAS Alvo", f"{target_roas:,.2f}".replace(",", ".")],
-    ["Meta Mensal — Faturamento", f"R$ {goal_rev_month:,.0f}".replace(",", ".")],
-    ["Meta Mensal — Compras", f"{goal_pur_month:,.0f}".replace(",", ".")],
-    ["Orçamento Mensal p/ ROAS", f"R$ {budget_goal_month:,.0f}".replace(",", ".")],
-    ["Meta Semanal — Faturamento (derivada)", f"R$ {goal_rev_week:,.0f}".replace(",", ".")],
-    ["Meta Semanal — Compras (derivada)", f"{goal_pur_week:,.0f}".replace(",", ".")],
-    ["Orçamento Semanal (derivada)", f"R$ {budget_goal_week:,.0f}".replace(",", ".")],
-]
-df_resumo = pd.DataFrame(resumo_data, columns=resumo_cols)
+# --- Funções auxiliares ---
 
+def df_to_table(df, col_widths=None):
+    """Converte DataFrame em tabela do ReportLab com estilo básico."""
+    if df is None or df.empty:
+        return None
+    data = [list(df.columns)] + df.values.tolist()
+    tbl = Table(data, colWidths=col_widths)
+    tbl.setStyle(TableStyle([
+        ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#F0F2F6")),
+        ("TEXTCOLOR", (0,0), (-1,0), colors.HexColor("#333333")),
+        ("ALIGN", (0,0), (-1,-1), "CENTER"),
+        ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
+        ("FONTSIZE", (0,0), (-1,0), 10),
+        ("BOTTOMPADDING", (0,0), (-1,0), 8),
+        ("GRID", (0,0), (-1,-1), 0.25, colors.HexColor("#DDDDDD")),
+        ("FONTSIZE", (0,1), (-1,-1), 9),
+        ("ROWBACKGROUNDS", (0,1), (-1,-1), [colors.white, colors.HexColor("#FBFBFD")]),
+    ]))
+    return tbl
+
+def fig_to_rl_image(fig, width=500):
+    """Converte um gráfico Plotly em Image (ReportLab) via PNG em memória."""
+    # garante fundo branco p/ PDF
+    fig.update_layout(paper_bgcolor="white", plot_bgcolor="white", margin=dict(l=40,r=20,t=50,b=40))
+    png = fig.to_image(format="png", scale=2)  # requer 'kaleido'
+    bio = BytesIO(png)
+    img = Image(bio)
+    img._restrictSize(width, 9999)
+    return img
+
+# --- Monta os dados-base do relatório ---
+
+# Resumo (sempre disponível)
+resumo_df = pd.DataFrame({
+    "Item": [
+        "Mês de Referência",
+        "Semana (início → fim)",
+        "Ticket Médio (AOV)",
+        "ROAS Alvo",
+        "Meta Mensal — Faturamento",
+        "Meta Mensal — Compras",
+        "Orçamento Mensal p/ ROAS",
+        "Meta Semanal — Faturamento (derivada)",
+        "Meta Semanal — Compras (derivada)",
+        "Orçamento Semanal (derivada)",
+    ],
+    "Valor": [
+        month_first.strftime("%m/%Y"),
+        f"{week_start_dt.date().strftime('%d/%m/%Y')} → {week_end_dt.date().strftime('%d/%m/%Y')}",
+        f"R$ {aov:,.2f}".replace(",", "."),
+        f"{target_roas:,.2f}".replace(",", "."),
+        f"R$ {goal_rev_month:,.0f}".replace(",", "."),
+        f"{goal_pur_month:,.0f}".replace(",", "."),
+        f"R$ {budget_goal_month:,.0f}".replace(",", "."),
+        f"R$ {goal_rev_week:,.0f}".replace(",", "."),
+        f"{goal_pur_week:,.0f}".replace(",", "."),
+        f"R$ {budget_goal_week:,.0f}".replace(",", "."),
+    ]
+})
+
+# Mix planejado por etapa
 mix_df = pd.DataFrame({
     "Etapa": list(planejado_funil.keys()),
     "Planejado (R$)": list(planejado_funil.values())
 }).sort_values("Planejado (R$)", ascending=False)
 
-df_plano_diario = df_planejado_dia.copy() if 'df_planejado_dia' in locals() else pd.DataFrame()
+# Plano diário (planejado)
+plano_df = df_planejado_dia.copy() if 'df_planejado_dia' in locals() else pd.DataFrame()
 
-df_funil = pd.DataFrame()
+# Funil (se houver dados)
+funil_df = pd.DataFrame()
 if 'clicks' in locals():
-    df_funil = pd.DataFrame({
+    funil_df = pd.DataFrame({
         "Etapa": ["Cliques", "LP Views", "Checkout", "Compras"],
         "Volume": [clicks, lp, ck, compras]
     })
 
-df_taxas_export = pd.DataFrame()
-if 'df_taxas' in locals():
-    df_taxas_export = df_taxas[["De→Para", "Taxa (%)"]].copy()
+# Taxas do Funil (se houver)
+taxas_df = df_taxas[["De→Para","Taxa (%)"]].copy() if 'df_taxas' in locals() else pd.DataFrame()
 
-df_comp = comp.copy() if 'comp' in locals() else pd.DataFrame()
+# Orçamento por Etapa (Planejado vs Realizado), se houver
+comp_df = comp.copy() if 'comp' in locals() else pd.DataFrame()
 
-df_kpis_semana = pd.DataFrame()
-df_kpis_mes = pd.DataFrame()
-if 'invest_w' in locals():
-    df_kpis_semana = pd.DataFrame([{
-        "Investimento — Semana (R$)": invest_w,
-        "Faturamento — Semana (R$)": fatur_w,
-        "ROAS — Semana": roas_w,
-        "CPA — Semana (R$)": cpa_w,
-        "Compras — Semana (nº)": compras_w,
-    }])
-if 'invest_m' in locals():
-    df_kpis_mes = pd.DataFrame([{
-        "Investimento — Mês (R$)": invest_m,
-        "Faturamento — Mês (R$)": fatur_m,
-        "ROAS — Mês": roas_m,
-        "CPA — Mês (R$)": cpa_m,
-        "Compras — Mês (nº)": compras_m,
-    }])
+# KPIs Semanais / Mensais (se houver)
+kpis_sem_df = pd.DataFrame([{
+    "Investimento — Semana (R$)": invest_w,
+    "Faturamento — Semana (R$)": fatur_w,
+    "ROAS — Semana": roas_w,
+    "CPA — Semana (R$)": cpa_w,
+    "Compras — Semana (nº)": compras_w,
+}]) if 'invest_w' in locals() else pd.DataFrame()
 
-df_acompanhamento_semana = edited.copy() if 'edited' in locals() else pd.DataFrame()
+kpis_mes_df = pd.DataFrame([{
+    "Investimento — Mês (R$)": invest_m,
+    "Faturamento — Mês (R$)": fatur_m,
+    "ROAS — Mês": roas_m,
+    "CPA — Mês (R$)": cpa_m,
+    "Compras — Mês (nº)": compras_m,
+}]) if 'invest_m' in locals() else pd.DataFrame()
 
-# --- Writer com fallback: xlsxwriter -> openpyxl ---
-try:
-    import xlsxwriter  # noqa: F401
-    _engine = "xlsxwriter"
-    _can_format = True
-except Exception:
-    try:
-        import openpyxl  # noqa: F401
-        _engine = "openpyxl"
-        _can_format = False  # openpyxl não usa add_format/set_column do xlsxwriter
-    except Exception:
-        _engine = None
-        _can_format = False
+# --- Gráficos para inserir no PDF ---
 
+# 1) Pizza do mix planejado
+fig_mix = px.pie(mix_df, values="Planejado (R$)", names="Etapa", title="Mix Planejado da Verba (R$)")
+
+# 2) Barras empilhadas por dia (planejado)
+fig_dia = px.bar(
+    plano_df, x="Data", y="Valor Diário (R$)", color="Etapa",
+    title="Distribuição Planejada por Dia (R$)", barmode="stack"
+) if not plano_df.empty else None
+
+# 3) Funil de volumes (se houver)
+fig_funil = px.funnel(funil_df, x="Volume", y="Etapa", title="Funil de Conversão (Volume)") if not funil_df.empty else None
+
+# 4) Planejado vs Realizado por etapa (se houver)
+fig_comp = px.bar(
+    comp_df, x="Etapa", y=["Planejado (R$)", "Realizado (R$)"],
+    barmode="group", title="Orçamento — Planejado vs Realizado"
+) if not comp_df.empty else None
+
+# 5) ROAS diário (se calculado mais acima)
+fig_roas = None
+if uploaded:
+    # reaproveita 't' se existir (série diária de gasto/faturamento)
+    if 't' in locals() and not t.empty and "ROAS" in t.columns:
+        fig_roas = px.line(t, x="_date", y="ROAS", title="ROAS Diário")
+        fig_roas.update_xaxes(title="Data")
+        fig_roas.update_yaxes(title="ROAS")
+
+# --- Monta o PDF ---
 buffer = BytesIO()
-if _engine is None:
-    st.error("Não há engine de Excel disponível. Adicione `XlsxWriter` (recomendado) ou `openpyxl` ao requirements.txt.")
-else:
-    with pd.ExcelWriter(buffer, engine=_engine) as writer:
-        # Abas
-        df_resumo.to_excel(writer, sheet_name="00_Resumo", index=False)
-        mix_df.to_excel(writer, sheet_name="01_Mix_Planejado", index=False)
-        df_plano_diario.to_excel(writer, sheet_name="02_Plano_Diario_Planejado", index=False)
+doc = SimpleDocTemplate(buffer, pagesize=A4, leftMargin=36, rightMargin=36, topMargin=36, bottomMargin=36)
+styles = getSampleStyleSheet()
+H1 = styles["Heading1"]; H1.fontSize = 16
+H2 = styles["Heading2"]; H2.fontSize = 13
+N = styles["BodyText"]; N.fontSize = 10
 
-        if not df_funil.empty:
-            df_funil.to_excel(writer, sheet_name="03_Funil_Volumes", index=False)
-        if not df_taxas_export.empty:
-            df_taxas_export.to_excel(writer, sheet_name="04_Taxas_Funil", index=False)
-        if not df_comp.empty:
-            df_comp.to_excel(writer, sheet_name="05_Orc_Planejado_vs_Real", index=False)
-        if not df_kpis_semana.empty:
-            df_kpis_semana.to_excel(writer, sheet_name="06_KPIs_Semana", index=False)
-        if not df_kpis_mes.empty:
-            df_kpis_mes.to_excel(writer, sheet_name="07_KPIs_Mes", index=False)
-        if not df_acompanhamento_semana.empty:
-            df_acompanhamento_semana.to_excel(writer, sheet_name="08_Acompanhamento_Sem", index=False)
+story = []
 
-        # Formatação (apenas se xlsxwriter disponível)
-        if _can_format:
-            wb  = writer.book
-            fmt_moeda   = wb.add_format({"num_format": "R$ #,##0.00"})
-            fmt_inteiro = wb.add_format({"num_format": "#,##0"})
-            fmt_pct     = wb.add_format({"num_format": "0.00%"})
+# Capa/Topo
+story.append(Paragraph("Relatório para Sócios — Metas & Performance", H1))
+sub = f"Mês: {month_first.strftime('%m/%Y')} | Semana: {week_start_dt.date().strftime('%d/%m')}–{week_end_dt.date().strftime('%d/%m')} | Gerado em: {datetime.today().strftime('%d/%m/%Y %H:%M')}"
+story.append(Paragraph(sub, N))
+story.append(Spacer(1, 10))
 
-            try:
-                ws = writer.sheets["01_Mix_Planejado"]
-                ws.set_column("A:A", 28)
-                ws.set_column("B:B", 18, fmt_moeda)
-            except: pass
+# Resumo
+story.append(Paragraph("Resumo", H2))
+tbl_resumo = df_to_table(resumo_df, col_widths=[180, 330])
+if tbl_resumo: story.append(tbl_resumo)
+story.append(Spacer(1, 12))
 
-            try:
-                ws = writer.sheets["02_Plano_Diario_Planejado"]
-                ws.set_column("A:A", 12)
-                ws.set_column("B:B", 22)
-                ws.set_column("C:C", 20, fmt_moeda)
-            except: pass
+# Mix Planejado (tabela + gráfico)
+story.append(Paragraph("Mix Planejado da Verba", H2))
+tbl_mix = df_to_table(mix_df, col_widths=[200, 150])
+if tbl_mix: story.append(tbl_mix)
+story.append(Spacer(1, 6))
+story.append(fig_to_rl_image(fig_mix, width=460))
+story.append(Spacer(1, 12))
 
-            try:
-                ws = writer.sheets["03_Funil_Volumes"]
-                ws.set_column("A:A", 18)
-                ws.set_column("B:B", 12, fmt_inteiro)
-            except: pass
+# Distribuição diária planejada
+if fig_dia is not None:
+    story.append(Paragraph("Distribuição Planejada por Dia", H2))
+    story.append(fig_to_rl_image(fig_dia, width=460))
+    story.append(Spacer(1, 12))
 
-            try:
-                ws = writer.sheets["04_Taxas_Funil"]
-                ws.set_column("A:A", 28)
-                ws.set_column("B:B", 12, fmt_pct)
-            except: pass
+# Funil
+if fig_funil is not None:
+    story.append(Paragraph("Funil de Conversão (Volume)", H2))
+    story.append(fig_to_rl_image(fig_funil, width=460))
+    story.append(Spacer(1, 6))
+    if not taxas_df.empty:
+        story.append(Paragraph("Taxas do Funil", H2))
+        story.append(df_to_table(taxas_df, col_widths=[220, 80]))
+        story.append(Spacer(1, 12))
 
-            try:
-                ws = writer.sheets["05_Orc_Planejado_vs_Real"]
-                ws.set_column("A:A", 20)
-                ws.set_column("B:D", 20, fmt_moeda)
-            except: pass
+# KPIs Semanais
+if not kpis_sem_df.empty:
+    story.append(Paragraph("KPIs Semanais", H2))
+    story.append(df_to_table(kpis_sem_df.round(2)))
+    story.append(Spacer(1, 10))
 
-            try:
-                ws = writer.sheets["06_KPIs_Semana"]
-                ws.set_column("A:B", 26, fmt_moeda)
-                ws.set_column("C:C", 14)
-                ws.set_column("D:D", 18, fmt_moeda)
-                ws.set_column("E:E", 22, fmt_inteiro)
-            except: pass
+# KPIs Mensais
+if not kpis_mes_df.empty:
+    story.append(Paragraph("KPIs Mensais", H2))
+    story.append(df_to_table(kpis_mes_df.round(2)))
+    story.append(Spacer(1, 12))
 
-            try:
-                ws = writer.sheets["07_KPIs_Mes"]
-                ws.set_column("A:B", 26, fmt_moeda)
-                ws.set_column("C:C", 14)
-                ws.set_column("D:D", 18, fmt_moeda)
-                ws.set_column("E:E", 22, fmt_inteiro)
-            except: pass
+# Planejado vs Realizado por etapa
+if fig_comp is not None:
+    story.append(Paragraph("Orçamento por Etapa — Comparativo", H2))
+    story.append(fig_to_rl_image(fig_comp, width=460))
+    story.append(Spacer(1, 12))
+    if not comp_df.empty:
+        story.append(df_to_table(comp_df.round(2)))
+        story.append(Spacer(1, 12))
 
-    buffer.seek(0)
-    file_name = f"Relatorio_Socios_{datetime.today().strftime('%Y-%m-%d')}.xlsx"
+# ROAS diário
+if fig_roas is not None:
+    story.append(Paragraph("ROAS Diário", H2))
+    story.append(fig_to_rl_image(fig_roas, width=460))
+    story.append(Spacer(1, 12))
 
-    st.download_button(
-        "⬇️ Baixar Relatório para Sócios (.xlsx)",
-        data=buffer,
-        file_name=file_name,
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        help=("Arquivo Excel com abas: Resumo, Mix Planejado, Plano Diário, Funil, "
-              "Taxas, Orçamento, KPIs, etc. (Com formatação se XlsxWriter disponível)")
-    )
+# Renderiza PDF
+doc.build(story)
 
-st.caption("Dica: envie esse Excel no grupo dos sócios. Ele já vem com aba de resumo, metas e comparativos — fica didático e objetivo.")
+# Botão de download
+file_pdf_name = f"Relatorio_Socios_{datetime.today().strftime('%Y-%m-%d')}.pdf"
+st.download_button(
+    "⬇️ Baixar Relatório para Sócios (PDF)",
+    data=buffer.getvalue(),
+    file_name=file_pdf_name,
+    mime="application/pdf",
+    help="PDF com resumo, tabelas e gráficos (mix, diário, funil, KPIs, comparativos)."
+)
+
+st.caption("Dica: envie este PDF no grupo dos sócios. Ele já vem com aba de resumo, metas e comparativos — fica didático e objetivo.")
 
 st.info("Esta versão deriva toda a semana a partir da META MENSAL, proporcional aos dias da semana que caem no mês selecionado e respeitando a opção de incluir/excluir finais de semana.")
