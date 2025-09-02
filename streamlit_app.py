@@ -690,28 +690,27 @@ with tab_perf:
         st.progress(min(1.0, fatur_w/max(1.0, goal_rev_week)), text=f"Semana: R$ {fatur_w:,.0f} / R$ {goal_rev_week:,.0f}".replace(",","."))
 
         # --- KPIs Mensais ---
-roas_m = (fatur_m/invest_m) if invest_m>0 else 0.0
-cpa_m  = (invest_m/compras_m) if compras_m>0 else 0.0
-st.markdown("### 📌 KPIs Mensais (Reais)")
-m1,m2,m3,m4,m5 = st.columns(5)
-m1.metric("Investimento — Mês", f"R$ {invest_m:,.0f}".replace(",","."))
-m2.metric("Faturamento — Mês", f"R$ {fatur_m:,.0f}".replace(",","."))
-m3.metric("ROAS — Mês", f"{roas_m:,.2f}".replace(",","."))
-m4.metric("CPA — Mês", f"R$ {cpa_m:,.2f}".replace(",","."))
-m5.metric("Compras — Mês", f"{compras_m:,.0f}".replace(",", "."))
+        roas_m = (fatur_m/invest_m) if invest_m>0 else 0.0
+        cpa_m  = (invest_m/compras_m) if compras_m>0 else 0.0
+        st.markdown("### 📌 KPIs Mensais (Reais)")
+        m1,m2,m3,m4,m5 = st.columns(5)
+        m1.metric("Investimento — Mês", f"R$ {invest_m:,.0f}".replace(",","."))
+        m2.metric("Faturamento — Mês", f"R$ {fatur_m:,.0f}".replace(",","."))
+        m3.metric("ROAS — Mês", f"{roas_m:,.2f}".replace(",","."))
+        m4.metric("CPA — Mês", f"R$ {cpa_m:,.2f}".replace(",","."))
+        m5.metric("Compras — Mês", f"{compras_m:,.0f}".replace(",", "."))
 
-# 🚀 Barra de progresso em relação à meta proporcional até hoje
-today = datetime.today().date()
-dias_considerados_mes = daterange(month_first, month_last, include_weekends=include_weekends)
-dias_passados = [d for d in dias_considerados_mes if d <= today]
-meta_acumulada_ate_hoje = goal_rev_month * (len(dias_passados) / max(1, len(dias_considerados_mes)))
+        # 🚀 Barra de progresso em relação à meta proporcional até hoje
+        today = datetime.today().date()
+        dias_considerados_mes = daterange(month_first, month_last, include_weekends=include_weekends)
+        dias_passados = [d for d in dias_considerados_mes if d <= today]
+        meta_acumulada_ate_hoje = goal_rev_month * (len(dias_passados) / max(1, len(dias_considerados_mes)))
 
-perc_mensal = min(1.0, fatur_m / max(1.0, meta_acumulada_ate_hoje))
-st.progress(
-    perc_mensal,
-    text=f"Mês até {today.strftime('%d/%m')}: R$ {fatur_m:,.0f} / R$ {meta_acumulada_ate_hoje:,.0f}".replace(",", ".")
-)
-
+        perc_mensal = min(1.0, fatur_m / max(1.0, meta_acumulada_ate_hoje))
+        st.progress(
+            perc_mensal,
+            text=f"Mês até {today.strftime('%d/%m')}: R$ {fatur_m:,.0f} / R$ {meta_acumulada_ate_hoje:,.0f}".replace(",", ".")
+        )
 
         # --- ROAS Diário (gráfico linha) ---
         st.markdown("### 📅 ROAS Diário")
