@@ -5,6 +5,7 @@ import numpy as np
 from datetime import datetime, timedelta
 import plotly.express as px
 import plotly.graph_objects as go 
+from copy import deepcopy
 # =========================
 # Config
 # =========================
@@ -71,21 +72,26 @@ def make_pie_3dish(df, names_col, values_col, color_map, title):
 
 def make_bar_3dish(df, x, y, color=None, color_map=None, title="", barmode="group"):
     if color:
-        fig = px.bar(df, x=x, y=y, color=color, barmode=barmode,
-                     color_discrete_map=color_map if color_map else None,
-                     text_auto=".0f")
+        fig = px.bar(
+            df, x=x, y=y, color=color, barmode=barmode,
+            color_discrete_map=color_map if color_map else None,
+            text_auto=".0f"
+        )
     else:
         fig = px.bar(df, x=x, y=y, text_auto=".0f")
+
     # borda suave
     fig.update_traces(marker_line_color="rgba(0,0,0,0.18)", marker_line_width=1.2)
+
     # “sombra” (duplicata translúcida) para dar volume
     shadow_traces = []
     for tr in fig.data:
-        shadow = tr.copy()
-        shadow.marker.opacity = 0.22
-        shadow.marker.line.width = 0
+        shadow = deepcopy(tr)  # evita AttributeError de .copy()
+        shadow.update(marker=dict(opacity=0.22, line=dict(width=0)))
         shadow.showlegend = False
+        shadow.hoverinfo = "skip"
         shadow_traces.append(shadow)
+
     fig.data = tuple(shadow_traces) + fig.data
     fig.update_layout(bargap=-0.05)
     return style_fig(fig, title)
