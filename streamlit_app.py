@@ -342,233 +342,6 @@ daily = df.groupby("date", as_index=False)[["spend", "revenue", "purchases"]].su
 st.line_chart(daily.set_index("date")[["spend", "revenue"]])
 st.caption("Linhas diárias de Valor usado e Valor de conversão. Vendas na tabela abaixo.")
 
-# ========= COMPARATIVOS (Período A vs Período B) =========
-st.subheader("Comparativos — descubra o que mudou e por quê")
-
-# Período anterior com mesmo tamanho
-period_len = (until - since).days + 1
-default_sinceA = since - timedelta(days=period_len)
-default_untilA = since - timedelta(days=1)
-
-colA, colB = st.columns(2)
-with colA:
-    st.markdown("**Período A**")
-    sinceA = st.date_input("Desde (A)", value=default_sinceA, key="sinceA")
-    untilA = st.date_input("Até (A)",   value=default_untilA, key="untilA")
-with colB:
-    st.markdown("**Período B**")
-    sinceB = st.date_input("Desde (B)", value=since, key="sinceB")
-    untilB = st.date_input("Até (B)",   value=until, key="untilB")
-
-if sinceA > untilA or sinceB > untilB:
-    st.warning("Confira as datas: 'Desde' não pode ser maior que 'Até'.")
-else:
-    with st.spinner("Comparando períodos…"):
-        dfA = fetch_insights_daily(act_id, token, api_version, str(sinceA), str(untilA), level)
-        dfB = fetch_insights_daily(act_id, token, api_version, str(sinceB), str(untilB), level)
-
-    if dfA.empty or dfB.empty:
-        st.info("Sem dados em um dos períodos selecionados.")
-    else:
-        # Agregados por período (inclui add_payment)
-        def _agg(d):
-            return {
-                "spend": d["spend"].sum(),
-                "revenue": d["revenue"].sum(),
-                "purchases": d["purchases"].sum(),
-                "clicks": d["link_clicks"].sum(),
-                "lpv": d["lpv"].sum(),
-                "checkout": d["init_checkout"].sum(),
-                "add_payment": d["add_payment"].sum(),
-            }
-
-        A = _agg(dfA)
-        B = _agg(dfB)
-
-        # KPIs arrumados — tabela A x B x Δ
-        roasA = _safe_div(A["revenue"], A["spend"])
-        roasB = _safe_div(B["revenue"], B["spend"])
-        cpaA  = _safe_div(A["spend"], A["purchases"])
-        cpaB  = _safe_div(B["spend"], B["purchases"])
-        cpcA  = _safe_div(A["spend"], A["clicks"])
-        cpcB  = _safe_div(B["spend"], B["clicks"])
-
-        # Mapa de direção (sua regra)
-        dir_map = {
-            "Valor usado": "neutral",
-            "Faturamento": "higher",
-            "Vendas":      "higher",
-            "ROAS":        "higher",
-            "CPC":         "lower",
-            "CPA":         "lower",
-        }
-
-        # Deltas numéricos para a lógica de cor
-        delta_map = {
-            "Valor usado":  B["spend"] - A["spend"],
-            "Faturamento":  B["revenue"] - A["revenue"],
-            "Vendas":       B["purchases"] - A["purchases"],
-            "ROAS":         (roasB - roasA) if pd.notnull(roasA) and pd.notnull(roasB) else np.nan,
-            "CPC":          (cpcB - cpcA)   if pd.notnull(cpcA) and pd.notnull(cpcB) else np.nan,
-            "CPA":          (cpaB - cpaA)   if pd.notnull(cpaA) and pd.notnull(cpaB) else np.nan,
-        }
-
-        # Tabela formatada para exibir
-        kpi_rows = [
-            ("Valor usado", _fmt_money_br(A["spend"]),   _fmt_money_br(B["spend"]),   _fmt_money_br(B["spend"] - A["spend"])),
-            ("Faturamento", _fmt_money_br(A["revenue"]), _fmt_money_br(B["revenue"]), _fmt_money_br(B["revenue"] - A["revenue"])),
-            ("Vendas",      _fmt_int_br(A["purchases"]), _fmt_int_br(B["purchases"]), _fmt_int_br(B["purchases"] - A["purchases"])),
-            ("ROAS",        _fmt_ratio_br(roasA),        _fmt_ratio_br(roasB),        (_fmt_ratio_br(roasB - roasA) if pd.notnull(roasA) and pd.notnull(roasB) else "")),
-            ("CPC",         _fmt_money_br(cpcA) if pd.notnull(cpcA) else "", _fmt_money_br(cpcB) if pd.notnull(cpcB) else "", _fmt_money_br(cpcB - cpcA) if pd.notnull(cpcA) and pd.notnull(cpcB) else ""),
-            ("CPA",         _fmt_money_br(cpaA) if pd.notnull(cpaA) else "", _fmt_money_br(cpaB) if pd.notnull(cpaB) else "", _fmt_money_br(cpaB - cpaA) if pd.notnull(cpaA) and pd.notnull(cpaB) else ""),
-        ]
-        kpi_df_disp = pd.DataFrame(kpi_rows, columns=["Métrica", "Período A", "Período B", "Δ (B - A)"])
-
-        # Styler para colorir Δ e também o valor do Período B
-        def _style_kpi(row):
-            metric = row["Métrica"]
-            d      = delta_map.get(metric, np.nan)
-            rule   = dir_map.get(metric, "neutral")
-            styles = [""] * len(row)
-            try:
-                idxB = list(row.index).index("Período B")
-                idxD = list(row.index).index("Δ (B - A)")
-            except Exception:
-                return styles
-            if pd.isna(d) or rule == "neutral" or d == 0:
-                return styles
-            better = (d > 0) if rule == "higher" else (d < 0)
-            color  = "#16a34a" if better else "#dc2626"
-            weight = "700"
-            styles[idxB] = f"color:{color}; font-weight:{weight};"
-            styles[idxD] = f"color:{color}; font-weight:{weight};"
-            return styles
-
-        kpi_styled = kpi_df_disp.style.apply(_style_kpi, axis=1)
-        st.markdown("**KPIs do período (A vs B)**")
-        st.dataframe(kpi_styled, use_container_width=True, height=260)
-
-        st.markdown("---")
-
-        # Taxas do funil (as 3 principais)
-        rates_num = pd.DataFrame({
-            "Taxa": ["LPV/Cliques", "Checkout/LPV", "Compra/Checkout"],
-            "Período A": [
-                _safe_div(A["lpv"], A["clicks"]),
-                _safe_div(A["checkout"], A["lpv"]),
-                _safe_div(A["purchases"], A["checkout"]),
-            ],
-            "Período B": [
-                _safe_div(B["lpv"], B["clicks"]),
-                _safe_div(B["checkout"], B["lpv"]),
-                _safe_div(B["purchases"], B["checkout"]),
-            ],
-        })
-        rates_num["Δ"] = rates_num["Período B"] - rates_num["Período A"]
-
-        # Exibição formatada (%)
-        rates_disp = rates_num.copy()
-        for col in ["Período A", "Período B", "Δ"]:
-            rates_disp[col] = rates_disp[col].map(_fmt_pct_br)
-
-        st.markdown("**Taxas do funil (A vs B)**")
-        delta_by_taxa = dict(zip(rates_num["Taxa"], rates_num["Δ"]))
-
-        def _style_rate(row):
-            taxa = row["Taxa"]
-            d    = delta_by_taxa.get(taxa, np.nan)
-            styles = [""] * len(row)
-            try:
-                idxB = list(row.index).index("Período B")
-                idxD = list(row.index).index("Δ")
-            except Exception:
-                return styles
-            if pd.isna(d) or d == 0:
-                return styles
-            better = d > 0
-            color  = "#16a34a" if better else "#dc2626"
-            weight = "700"
-            styles[idxB] = f"color:{color}; font-weight:{weight};"
-            styles[idxD] = f"color:{color}; font-weight:{weight};"
-            return styles
-
-        rates_styled = rates_disp.style.apply(_style_rate, axis=1)
-        st.dataframe(rates_styled, use_container_width=True, height=180)
-
-        # === Funis lado a lado (A x B) com contagens absolutas ===
-        labels_funnel = ["Cliques", "LPV", "Checkout", "Add Pagamento", "Compra"]
-
-        valsA = [
-            int(round(A["clicks"])),
-            int(round(A["lpv"])),
-            int(round(A["checkout"])),
-            int(round(A["add_payment"])),
-            int(round(A["purchases"])),
-        ]
-        valsB = [
-            int(round(B["clicks"])),
-            int(round(B["lpv"])),
-            int(round(B["checkout"])),
-            int(round(B["add_payment"])),
-            int(round(B["purchases"])),
-        ]
-
-        valsA_plot = enforce_monotonic(valsA)
-        valsB_plot = enforce_monotonic(valsB)
-
-        cA, cB = st.columns(2)
-        with cA:
-            st.plotly_chart(
-                funnel_fig(labels_funnel, valsA_plot, title=f"Funil — Período A ({sinceA} a {untilA})"),
-                use_container_width=True
-            )
-        with cB:
-            st.plotly_chart(
-                funnel_fig(labels_funnel, valsB_plot, title=f"Funil — Período B ({sinceB} a {untilB})"),
-                use_container_width=True
-            )
-
-        # Tabela de perdas/ganhos por etapa (Δ pessoas)
-        delta_counts = [b - a for a, b in zip(valsA, valsB)]
-        delta_df = pd.DataFrame({
-            "Etapa": labels_funnel,
-            "Período A": valsA,
-            "Período B": valsB,
-            "Δ (B - A)": delta_counts,
-        })
-        delta_disp = delta_df.copy()
-        delta_disp["Período A"] = delta_disp["Período A"].map(_fmt_int_br)
-        delta_disp["Período B"] = delta_disp["Período B"].map(_fmt_int_br)
-        delta_disp["Δ (B - A)"] = delta_disp["Δ (B - A)"].map(_fmt_int_signed_br)
-
-        # Coloração (ganho = verde, perda = vermelho)
-        delta_by_stage = dict(zip(delta_df["Etapa"], delta_df["Δ (B - A)"]))
-
-        def _style_delta_counts(row):
-            d = delta_by_stage.get(row["Etapa"], np.nan)
-            styles = [""] * len(row)
-            try:
-                idxB = list(row.index).index("Período B")
-                idxD = list(row.index).index("Δ (B - A)")
-            except Exception:
-                return styles
-            if pd.isna(d) or d == 0:
-                return styles
-            color  = "#16a34a" if d > 0 else "#dc2626"
-            weight = "700"
-            styles[idxB] = f"color:{color}; font-weight:{weight};"
-            styles[idxD] = f"color:{color}; font-weight:{weight};"
-            return styles
-
-        st.markdown("**Pessoas a mais/menos em cada etapa (B − A)**")
-        st.dataframe(
-            delta_disp.style.apply(_style_delta_counts, axis=1),
-            use_container_width=True,
-            height=240
-        )
-
-        st.markdown("---")
-
 # ========= FUNIL (Período) — FUNIL VISUAL =========
 st.subheader("Funil do período (Total) — Cliques → LPV → Checkout → Add Pagamento → Compra")
 
@@ -632,6 +405,227 @@ base_h = 160
 row_h  = 36
 height = base_h + row_h * len(extras_selected)
 st.dataframe(sr, use_container_width=True, height=height)
+
+# ========= COMPARATIVOS (Período A vs Período B) — (opcional, após o Funil do período) =========
+with st.expander("Comparativos — Período A vs Período B (opcional)", expanded=False):
+    st.subheader("Comparativos — descubra o que mudou e por quê")
+
+    # Período anterior com mesmo tamanho
+    period_len = (until - since).days + 1
+    default_sinceA = since - timedelta(days=period_len)
+    default_untilA = since - timedelta(days=1)
+
+    colA, colB = st.columns(2)
+    with colA:
+        st.markdown("**Período A**")
+        sinceA = st.date_input("Desde (A)", value=default_sinceA, key="sinceA")
+        untilA = st.date_input("Até (A)",   value=default_untilA, key="untilA")
+    with colB:
+        st.markdown("**Período B**")
+        sinceB = st.date_input("Desde (B)", value=since, key="sinceB")
+        untilB = st.date_input("Até (B)",   value=until, key="untilB")
+
+    if sinceA > untilA or sinceB > untilB:
+        st.warning("Confira as datas: 'Desde' não pode ser maior que 'Até'.")
+    else:
+        with st.spinner("Comparando períodos…"):
+            dfA = fetch_insights_daily(act_id, token, api_version, str(sinceA), str(untilA), level)
+            dfB = fetch_insights_daily(act_id, token, api_version, str(sinceB), str(untilB), level)
+
+        if dfA.empty or dfB.empty:
+            st.info("Sem dados em um dos períodos selecionados.")
+        else:
+            # Agregados por período (inclui add_payment)
+            def _agg(d):
+                return {
+                    "spend": d["spend"].sum(),
+                    "revenue": d["revenue"].sum(),
+                    "purchases": d["purchases"].sum(),
+                    "clicks": d["link_clicks"].sum(),
+                    "lpv": d["lpv"].sum(),
+                    "checkout": d["init_checkout"].sum(),
+                    "add_payment": d["add_payment"].sum(),
+                }
+
+            A = _agg(dfA); B = _agg(dfB)
+
+            # KPIs arrumados — tabela A x B x Δ
+            roasA = _safe_div(A["revenue"], A["spend"])
+            roasB = _safe_div(B["revenue"], B["spend"])
+            cpaA  = _safe_div(A["spend"], A["purchases"])
+            cpaB  = _safe_div(B["spend"], B["purchases"])
+            cpcA  = _safe_div(A["spend"], A["clicks"])
+            cpcB  = _safe_div(B["spend"], B["clicks"])
+
+            dir_map = {
+                "Valor usado": "neutral",
+                "Faturamento": "higher",
+                "Vendas":      "higher",
+                "ROAS":        "higher",
+                "CPC":         "lower",
+                "CPA":         "lower",
+            }
+
+            delta_map = {
+                "Valor usado":  B["spend"] - A["spend"],
+                "Faturamento":  B["revenue"] - A["revenue"],
+                "Vendas":       B["purchases"] - A["purchases"],
+                "ROAS":         (roasB - roasA) if pd.notnull(roasA) and pd.notnull(roasB) else np.nan,
+                "CPC":          (cpcB - cpcA)   if pd.notnull(cpcA) and pd.notnull(cpcB) else np.nan,
+                "CPA":          (cpaB - cpaA)   if pd.notnull(cpaA) and pd.notnull(cpaB) else np.nan,
+            }
+
+            kpi_rows = [
+                ("Valor usado", _fmt_money_br(A["spend"]),   _fmt_money_br(B["spend"]),   _fmt_money_br(B["spend"] - A["spend"])),
+                ("Faturamento", _fmt_money_br(A["revenue"]), _fmt_money_br(B["revenue"]), _fmt_money_br(B["revenue"] - A["revenue"])),
+                ("Vendas",      _fmt_int_br(A["purchases"]), _fmt_int_br(B["purchases"]), _fmt_int_br(B["purchases"] - A["purchases"])),
+                ("ROAS",        _fmt_ratio_br(roasA),        _fmt_ratio_br(roasB),
+                                 (_fmt_ratio_br(roasB - roasA) if pd.notnull(roasA) and pd.notnull(roasB) else "")),
+                ("CPC",         _fmt_money_br(cpcA) if pd.notnull(cpcA) else "",
+                                 _fmt_money_br(cpcB) if pd.notnull(cpcB) else "",
+                                 _fmt_money_br(cpcB - cpcA) if pd.notnull(cpcA) and pd.notnull(cpcB) else ""),
+                ("CPA",         _fmt_money_br(cpaA) if pd.notnull(cpaA) else "",
+                                 _fmt_money_br(cpaB) if pd.notnull(cpaB) else "",
+                                 _fmt_money_br(cpaB - cpaA) if pd.notnull(cpaA) and pd.notnull(cpaB) else ""),
+            ]
+            kpi_df_disp = pd.DataFrame(kpi_rows, columns=["Métrica", "Período A", "Período B", "Δ (B - A)"])
+
+            def _style_kpi(row):
+                metric = row["Métrica"]
+                d      = delta_map.get(metric, np.nan)
+                rule   = dir_map.get(metric, "neutral")
+                styles = [""] * len(row)
+                try:
+                    idxB = list(row.index).index("Período B")
+                    idxD = list(row.index).index("Δ (B - A)")
+                except Exception:
+                    return styles
+                if pd.isna(d) or rule == "neutral" or d == 0:
+                    return styles
+                better = (d > 0) if rule == "higher" else (d < 0)
+                color  = "#16a34a" if better else "#dc2626"
+                weight = "700"
+                styles[idxB] = f"color:{color}; font-weight:{weight};"
+                styles[idxD] = f"color:{color}; font-weight:{weight};"
+                return styles
+
+            st.markdown("**KPIs do período (A vs B)**")
+            st.dataframe(kpi_df_disp.style.apply(_style_kpi, axis=1), use_container_width=True, height=260)
+
+            st.markdown("---")
+
+            # Taxas do funil (as 3 principais)
+            rates_num = pd.DataFrame({
+                "Taxa": ["LPV/Cliques", "Checkout/LPV", "Compra/Checkout"],
+                "Período A": [
+                    _safe_div(A["lpv"], A["clicks"]),
+                    _safe_div(A["checkout"], A["lpv"]),
+                    _safe_div(A["purchases"], A["checkout"]),
+                ],
+                "Período B": [
+                    _safe_div(B["lpv"], B["clicks"]),
+                    _safe_div(B["checkout"], B["lpv"]),
+                    _safe_div(B["purchases"], B["checkout"]),
+                ],
+            })
+            rates_num["Δ"] = rates_num["Período B"] - rates_num["Período A"]
+
+            rates_disp = rates_num.copy()
+            for col in ["Período A", "Período B", "Δ"]:
+                rates_disp[col] = rates_disp[col].map(_fmt_pct_br)
+
+            delta_by_taxa = dict(zip(rates_num["Taxa"], rates_num["Δ"]))
+
+            def _style_rate(row):
+                taxa = row["Taxa"]
+                d    = delta_by_taxa.get(taxa, np.nan)
+                styles = [""] * len(row)
+                try:
+                    idxB = list(row.index).index("Período B")
+                    idxD = list(row.index).index("Δ")
+                except Exception:
+                    return styles
+                if pd.isna(d) or d == 0:
+                    return styles
+                better = d > 0
+                color  = "#16a34a" if better else "#dc2626"
+                weight = "700"
+                styles[idxB] = f"color:{color}; font-weight:{weight};"
+                styles[idxD] = f"color:{color}; font-weight:{weight};"
+                return styles
+
+            st.markdown("**Taxas do funil (A vs B)**")
+            st.dataframe(rates_disp.style.apply(_style_rate, axis=1), use_container_width=True, height=180)
+
+            # === Funis lado a lado (A x B) com contagens absolutas ===
+            labels_funnel = ["Cliques", "LPV", "Checkout", "Add Pagamento", "Compra"]
+
+            valsA = [
+                int(round(A["clicks"])),
+                int(round(A["lpv"])),
+                int(round(A["checkout"])),
+                int(round(A["add_payment"])),
+                int(round(A["purchases"])),
+            ]
+            valsB = [
+                int(round(B["clicks"])),
+                int(round(B["lpv"])),
+                int(round(B["checkout"])),
+                int(round(B["add_payment"])),
+                int(round(B["purchases"])),
+            ]
+
+            valsA_plot = enforce_monotonic(valsA)
+            valsB_plot = enforce_monotonic(valsB)
+
+            cA, cB = st.columns(2)
+            with cA:
+                st.plotly_chart(
+                    funnel_fig(labels_funnel, valsA_plot, title=f"Funil — Período A ({sinceA} a {untilA})"),
+                    use_container_width=True
+                )
+            with cB:
+                st.plotly_chart(
+                    funnel_fig(labels_funnel, valsB_plot, title=f"Funil — Período B ({sinceB} a {untilB})"),
+                    use_container_width=True
+                )
+
+            # Tabela de perdas/ganhos por etapa (Δ pessoas)
+            delta_counts = [b - a for a, b in zip(valsA, valsB)]
+            delta_df = pd.DataFrame({
+                "Etapa": labels_funnel,
+                "Período A": valsA,
+                "Período B": valsB,
+                "Δ (B - A)": delta_counts,
+            })
+            delta_disp = delta_df.copy()
+            delta_disp["Período A"]  = delta_disp["Período A"].map(_fmt_int_br)
+            delta_disp["Período B"]  = delta_disp["Período B"].map(_fmt_int_br)
+            delta_disp["Δ (B - A)"]  = delta_disp["Δ (B - A)"].map(_fmt_int_signed_br)
+
+            delta_by_stage = dict(zip(delta_df["Etapa"], delta_df["Δ (B - A)"]))
+
+            def _style_delta_counts(row):
+                d = delta_by_stage.get(row["Etapa"], np.nan)
+                styles = [""] * len(row)
+                try:
+                    idxB = list(row.index).index("Período B")
+                    idxD = list(row.index).index("Δ (B - A)")
+                except Exception:
+                    return styles
+                if pd.isna(d) or d == 0:
+                    return styles
+                color  = "#16a34a" if d > 0 else "#dc2626"
+                weight = "700"
+                styles[idxB] = f"color:{color}; font-weight:{weight};"
+                styles[idxD] = f"color:{color}; font-weight:{weight};"
+                return styles
+
+            st.markdown("**Pessoas a mais/menos em cada etapa (B − A)**")
+            st.dataframe(delta_disp.style.apply(_style_delta_counts, axis=1), use_container_width=True, height=240)
+
+            st.markdown("---")
+
 
 # ========= FUNIL por CAMPANHA =========
 st.subheader("Campanhas — Funil e Taxas (somatório no período)")
