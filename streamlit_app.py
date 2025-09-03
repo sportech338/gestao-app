@@ -183,6 +183,13 @@ def _drivers_decomp(clicksA, lpvA, chkA, purA, revA,
     contrib = [(c1[i]+c2[i])/2 for i in range(5)]
     return labels, contrib
 
+def _fmt_int_br(x):
+    try:
+        return f"{int(round(x)):,}".replace(",", ".")
+    except:
+        return ""
+
+
 # =============== Coleta (com fallback de campos extras) ===============
 @st.cache_data(ttl=600, show_spinner=True)
 def fetch_insights_daily(act_id: str, token: str, api_version: str,
@@ -393,30 +400,27 @@ else:
             }
         A = _agg(dfA); B = _agg(dfB)
 
-        # KPIs lado a lado
-        c1,c2,c3,c4,c5,c6 = st.columns(6)
-        c1.metric("Valor usado A", _fmt_money_br(A["spend"]))
-        c2.metric("Valor usado B", _fmt_money_br(B["spend"]),
-                  delta=_fmt_money_br(B["spend"]-A["spend"]))
-        c3.metric("Vendas A", f"{int(A['purchases']):,}".replace(",", "."))
-        c4.metric("Vendas B", f"{int(B['purchases']):,}".replace(",", "."),
-                  delta=f"{int(B['purchases']-A['purchases']):,}".replace(",", "."))
-        c5.metric("Faturamento A", _fmt_money_br(A["revenue"]))
-        c6.metric("Faturamento B", _fmt_money_br(B["revenue"]),
-                  delta=_fmt_money_br(B["revenue"]-A["revenue"]))
+# KPIs arrumados — tabela A x B x Δ
+roasA = _safe_div(A["revenue"], A["spend"])
+roasB = _safe_div(B["revenue"], B["spend"])
+cpaA  = _safe_div(A["spend"], A["purchases"])
+cpaB  = _safe_div(B["spend"], B["purchases"])
+cpcA  = _safe_div(A["spend"], A["clicks"])
+cpcB  = _safe_div(B["spend"], B["clicks"])
 
-        c7,c8,c9 = st.columns(3)
-        roasA = _safe_div(A["revenue"], A["spend"])
-        roasB = _safe_div(B["revenue"], B["spend"])
-        cpaA  = _safe_div(A["spend"], A["purchases"])
-        cpaB  = _safe_div(B["spend"], B["purchases"])
-        cpcA  = _safe_div(A["spend"], A["clicks"])
-        cpcB  = _safe_div(B["spend"], B["clicks"])
-        c7.metric("ROAS A", _fmt_ratio_br(roasA))
-        c8.metric("ROAS B", _fmt_ratio_br(roasB),
-                  delta=_fmt_ratio_br(roasB-roasA) if pd.notnull(roasA) and pd.notnull(roasB) else "")
-        c9.metric("CPA B vs A", _fmt_money_br(cpaB) if pd.notnull(cpaB) else "",
-                  delta=_fmt_money_br(cpaB-cpaA) if pd.notnull(cpaA) and pd.notnull(cpaB) else "")
+kpi_rows = [
+    ("Valor usado",      _fmt_money_br(A["spend"]),     _fmt_money_br(B["spend"]),     _fmt_money_br(B["spend"]-A["spend"])),
+    ("Faturamento",      _fmt_money_br(A["revenue"]),   _fmt_money_br(B["revenue"]),   _fmt_money_br(B["revenue"]-A["revenue"])),
+    ("Vendas",           _fmt_int_br(A["purchases"]),   _fmt_int_br(B["purchases"]),   _fmt_int_br(B["purchases"]-A["purchases"])),
+    ("ROAS",             _fmt_ratio_br(roasA),          _fmt_ratio_br(roasB),          (_fmt_ratio_br(roasB-roasA) if pd.notnull(roasA) and pd.notnull(roasB) else "")),
+    ("CPC",              _fmt_money_br(cpcA) if pd.notnull(cpcA) else "", _fmt_money_br(cpcB) if pd.notnull(cpcB) else "", _fmt_money_br(cpcB-cpcA) if pd.notnull(cpcA) and pd.notnull(cpcB) else ""),
+    ("CPA",              _fmt_money_br(cpaA) if pd.notnull(cpaA) else "", _fmt_money_br(cpaB) if pd.notnull(cpaB) else "", _fmt_money_br(cpaB-cpaA) if pd.notnull(cpaA) and pd.notnull(cpaB) else ""),
+]
+
+kpi_df = pd.DataFrame(kpi_rows, columns=["Métrica", "Período A", "Período B", "Δ (B - A)"])
+st.markdown("**KPIs do período (A vs B)**")
+st.dataframe(kpi_df, use_container_width=True, height=260)
+
 
         st.markdown("---")
 
