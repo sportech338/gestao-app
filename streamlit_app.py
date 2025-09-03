@@ -401,6 +401,7 @@ else:
         A = _agg(dfA); B = _agg(dfB)
 
         # KPIs arrumados — tabela A x B x Δ
+        # KPIs arrumados — tabela A x B x Δ (com cores)
         roasA = _safe_div(A["revenue"], A["spend"])
         roasB = _safe_div(B["revenue"], B["spend"])
         cpaA  = _safe_div(A["spend"], A["purchases"])
@@ -408,22 +409,67 @@ else:
         cpcA  = _safe_div(A["spend"], A["clicks"])
         cpcB  = _safe_div(B["spend"], B["clicks"])
 
+        # Mapa de direção (sua regra)
+        dir_map = {
+            "Valor usado":    "neutral",  # indiferente
+            "Faturamento":    "higher",   # quanto maior melhor
+            "Vendas":         "higher",
+            "ROAS":           "higher",
+            "CPC":            "lower",    # quanto menor melhor
+            "CPA":            "lower",
+        }
+
+        # Deltas numéricos para a lógica de cor
+        delta_map = {
+            "Valor usado":  B["spend"] - A["spend"],
+            "Faturamento":  B["revenue"] - A["revenue"],
+            "Vendas":       B["purchases"] - A["purchases"],
+            "ROAS":         (roasB - roasA) if pd.notnull(roasA) and pd.notnull(roasB) else np.nan,
+            "CPC":          (cpcB - cpcA)   if pd.notnull(cpcA) and pd.notnull(cpcB) else np.nan,
+            "CPA":          (cpaB - cpaA)   if pd.notnull(cpaA) and pd.notnull(cpaB) else np.nan,
+        }
+
+        # Tabela formatada para exibir
         kpi_rows = [
-            ("Valor usado",      _fmt_money_br(A["spend"]),     _fmt_money_br(B["spend"]),     _fmt_money_br(B["spend"]-A["spend"])),
-            ("Faturamento",      _fmt_money_br(A["revenue"]),   _fmt_money_br(B["revenue"]),   _fmt_money_br(B["revenue"]-A["revenue"])),
-            ("Vendas",           _fmt_int_br(A["purchases"]),   _fmt_int_br(B["purchases"]),   _fmt_int_br(B["purchases"]-A["purchases"])),
-            ("ROAS",             _fmt_ratio_br(roasA),          _fmt_ratio_br(roasB),          (_fmt_ratio_br(roasB-roasA) if pd.notnull(roasA) and pd.notnull(roasB) else "")),
-            ("CPC",              _fmt_money_br(cpcA) if pd.notnull(cpcA) else "", _fmt_money_br(cpcB) if pd.notnull(cpcB) else "", _fmt_money_br(cpcB-cpcA) if pd.notnull(cpcA) and pd.notnull(cpcB) else ""),
-            ("CPA",              _fmt_money_br(cpaA) if pd.notnull(cpaA) else "", _fmt_money_br(cpaB) if pd.notnull(cpaB) else "", _fmt_money_br(cpaB-cpaA) if pd.notnull(cpaA) and pd.notnull(cpaB) else ""),
+            ("Valor usado", _fmt_money_br(A["spend"]),   _fmt_money_br(B["spend"]),   _fmt_money_br(delta_map["Valor usado"])),
+            ("Faturamento", _fmt_money_br(A["revenue"]), _fmt_money_br(B["revenue"]), _fmt_money_br(delta_map["Faturamento"])),
+            ("Vendas",      _fmt_int_br(A["purchases"]), _fmt_int_br(B["purchases"]), _fmt_int_br(delta_map["Vendas"])),
+            ("ROAS",        _fmt_ratio_br(roasA),        _fmt_ratio_br(roasB),        (_fmt_ratio_br(delta_map["ROAS"]) if pd.notnull(delta_map["ROAS"]) else "")),
+            ("CPC",         _fmt_money_br(cpcA) if pd.notnull(cpcA) else "", _fmt_money_br(cpcB) if pd.notnull(cpcB) else "", _fmt_money_br(delta_map["CPC"]) if pd.notnull(delta_map["CPC"]) else ""),
+            ("CPA",         _fmt_money_br(cpaA) if pd.notnull(cpaA) else "", _fmt_money_br(cpaB) if pd.notnull(cpaB) else "", _fmt_money_br(delta_map["CPA"]) if pd.notnull(delta_map["CPA"]) else ""),
         ]
-        kpi_df = pd.DataFrame(kpi_rows, columns=["Métrica", "Período A", "Período B", "Δ (B - A)"])
+        kpi_df_disp = pd.DataFrame(kpi_rows, columns=["Métrica", "Período A", "Período B", "Δ (B - A)"])
+
+        # Styler para colorir Δ e também o valor do Período B
+        def _style_kpi(row):
+            metric = row["Métrica"]
+            d      = delta_map.get(metric, np.nan)
+            rule   = dir_map.get(metric, "neutral")
+            # default sem cor
+            styles = [""] * len(row)
+            try:
+                idxB = list(row.index).index("Período B")
+                idxD = list(row.index).index("Δ (B - A)")
+            except Exception:
+                return styles
+            if pd.isna(d) or rule == "neutral" or d == 0:
+                return styles
+            better = (d > 0) if rule == "higher" else (d < 0)
+            color  = "#16a34a" if better else "#dc2626"  # verde / vermelho (Tailwind)
+            weight = "700"
+            styles[idxB] = f"color:{color}; font-weight:{weight};"
+            styles[idxD] = f"color:{color}; font-weight:{weight};"
+            return styles
+
+        kpi_styled = kpi_df_disp.style.apply(_style_kpi, axis=1)
         st.markdown("**KPIs do período (A vs B)**")
-        st.dataframe(kpi_df, use_container_width=True, height=260)
+        st.dataframe(kpi_styled, use_container_width=True, height=260)
 
         st.markdown("---")
 
-        # Taxas do funil (as 3 principais)
-        rates = pd.DataFrame({
+
+        # Taxas do funil (as 3 principais) — com cores no Δ e no Período B
+        rates_num = pd.DataFrame({
             "Taxa": ["LPV/Cliques", "Checkout/LPV", "Compra/Checkout"],
             "Período A": [
                 _safe_div(A["lpv"], A["clicks"]),
@@ -436,14 +482,40 @@ else:
                 _safe_div(B["purchases"], B["checkout"]),
             ],
         })
-        rates["Δ"] = rates["Período B"] - rates["Período A"]
-        rates_fmt = rates.copy()
+        rates_num["Δ"] = rates_num["Período B"] - rates_num["Período A"]
+
+        # Tabela exibida (formatada em %)
+        rates_disp = rates_num.copy()
         for col in ["Período A","Período B","Δ"]:
-            rates_fmt[col] = rates_fmt[col].map(_fmt_pct_br)
+            rates_disp[col] = rates_disp[col].map(_fmt_pct_br)
         st.markdown("**Taxas do funil (A vs B)**")
-        st.dataframe(rates_fmt, use_container_width=True, height=180)
+
+        # Styler: maior é melhor para todas estas taxas
+        delta_by_taxa = dict(zip(rates_num["Taxa"], rates_num["Δ"]))
+
+        def _style_rate(row):
+            taxa = row["Taxa"]
+            d    = delta_by_taxa.get(taxa, np.nan)
+            styles = [""] * len(row)
+            try:
+                idxB = list(row.index).index("Período B")
+                idxD = list(row.index).index("Δ")
+            except Exception:
+                return styles
+            if pd.isna(d) or d == 0:
+                return styles
+            better = d > 0   # higher is better
+            color  = "#16a34a" if better else "#dc2626"
+            weight = "700"
+            styles[idxB] = f"color:{color}; font-weight:{weight};"
+            styles[idxD] = f"color:{color}; font-weight:{weight};"
+            return styles
+
+        rates_styled = rates_disp.style.apply(_style_rate, axis=1)
+        st.dataframe(rates_styled, use_container_width=True, height=180)
 
         st.markdown("---")
+
 
         # Driver analysis (waterfall) — por que a receita mudou?
         labels_drv, contrib = _drivers_decomp(
