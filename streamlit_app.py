@@ -384,14 +384,15 @@ else:
 
         # Tabela formatada para exibir
         kpi_rows = [
-            ("Valor usado", _fmt_money_br(A["spend"]),   _fmt_money_br(B["spend"]),   _fmt_money_br(delta_map["Valor usado"])),
-            ("Faturamento", _fmt_money_br(A["revenue"]), _fmt_money_br(B["revenue"]), _fmt_money_br(delta_map["Faturamento"])),
-            ("Vendas",      _fmt_int_br(A["purchases"]), _fmt_int_br(B["purchases"]), _fmt_int_br(delta_map["Vendas"])),
-            ("ROAS",        _fmt_ratio_br(roasA),        _fmt_ratio_br(roasB),        (_fmt_ratio_br(delta_map["ROAS"]) if pd.notnull(delta_map["ROAS"]) else "")),
-            ("CPC",         _fmt_money_br(cpcA) if pd.notnull(cpcA) else "", _fmt_money_br(cpcB) if pd.notnull(cpcB) else "", _fmt_money_br(delta_map["CPC"]) if pd.notnull(delta_map["CPC"]) else ""),
-            ("CPA",         _fmt_money_br(cpaA) if pd.notnull(cpaA) else "", _fmt_money_br(cpaB) if pd.notnull(cpaB) else "", _fmt_money_br(delta_map["CPA"]) if pd.notnull(delta_map["CPA"]) else ""),
+            ("Valor usado",      _fmt_money_br(A["spend"]),     _fmt_money_br(B["spend"]),     _fmt_money_br(B["spend"]-A["spend"])),
+            ("Faturamento",      _fmt_money_br(A["revenue"]),   _fmt_money_br(B["revenue"]),   _fmt_money_br(B["revenue"]-A["revenue"])),
+            ("Vendas",           _fmt_int_br(A["purchases"]),   _fmt_int_br(B["purchases"]),   _fmt_int_br(B["purchases"]-A["purchases"])),
+            ("ROAS",             _fmt_ratio_br(roasA),          _fmt_ratio_br(roasB),          (_fmt_ratio_br(roasB-roasA) if pd.notnull(roasA) and pd.notnull(roasB) else "")),
+            ("CPC",              _fmt_money_br(cpcA) if pd.notnull(cpcA) else "", _fmt_money_br(cpcB) if pd.notnull(cpcB) else "", _fmt_money_br(cpcB-cpcA) if pd.notnull(cpcA) and pd.notnull(cpcB) else ""),
+            ("CPA",              _fmt_money_br(cpaA) if pd.notnull(cpaA) else "", _fmt_money_br(cpaB) if pd.notnull(cpaB) else "", _fmt_money_br(cpaB-cpaA) if pd.notnull(cpaA) and pd.notnull(cpaB) else ""),
         ]
         kpi_df_disp = pd.DataFrame(kpi_rows, columns=["Métrica", "Período A", "Período B", "Δ (B - A)"])
+
 
         # Styler para colorir Δ e também o valor do Período B
         def _style_kpi(row):
