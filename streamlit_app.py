@@ -117,6 +117,8 @@ def funnel_fig(labels, values, title=None):
     )
     return fig
 
+
+
 def enforce_monotonic(values):
     """Garante formato de funil: cada etapa <= etapa anterior (só para o desenho)."""
     out, cur = [], None
@@ -124,6 +126,62 @@ def enforce_monotonic(values):
         cur = v if cur is None else min(cur, v)
         out.append(cur)
     return out
+
+# ==== Helpers de comparação ====
+def _rate(a, b):
+    return (a / b) if b and b > 0 else np.nan
+
+def _fmt_pct_br(x):
+    return (f"{x*100:,.2f}%".replace(",", "X").replace(".", ",").replace("X", ".")
+            if pd.notnull(x) else "")
+
+def _fmt_ratio_br(x):  # ROAS "1,23x"
+    return (f"{x:,.2f}x".replace(",", "X").replace(".", ",").replace("X", ".")
+            if pd.notnull(x) else "")
+
+def _safe_div(n, d):
+    n = float(n or 0); d = float(d or 0)
+    return (n / d) if d > 0 else np.nan
+
+def _drivers_decomp(clicksA, lpvA, chkA, purA, revA,
+                    clicksB, lpvB, chkB, purB, revB):
+    """
+    Decompõe ΔReceita (B - A) em 5 fatores multiplicativos:
+    Receita = Cliques * (LPV/Cliques) * (Checkout/LPV) * (Compra/Checkout) * (Receita/Compra)
+    Usa média de duas ordens (A→B e B→A) para reduzir viés.
+    """
+    # Fatores A
+    r1A = _safe_div(lpvA, clicksA)
+    r2A = _safe_div(chkA, lpvA)
+    r3A = _safe_div(purA, chkA)
+    aovA = _safe_div(revA, purA)
+
+    # Fatores B
+    r1B = _safe_div(lpvB, clicksB)
+    r2B = _safe_div(chkB, lpvB)
+    r3B = _safe_div(purB, chkB)
+    aovB = _safe_div(revB, purB)
+
+    fA = [clicksA, r1A, r2A, r3A, aovA]
+    fB = [clicksB, r1B, r2B, r3B, aovB]
+    labels = ["Cliques", "LPV/Cliques", "Checkout/LPV", "Compra/Checkout", "Ticket médio"]
+
+    def _step_contrib(f_from, f_to, order):
+        cur = f_from[:]
+        contrib = [0.0]*5
+        for idx in order:
+            before = np.prod([v for v in cur if pd.notnull(v)]) if all(pd.notnull(v) for v in cur) else 0.0
+            cur[idx] = f_to[idx]
+            after  = np.prod([v for v in cur if pd.notnull(v)]) if all(pd.notnull(v) for v in cur) else 0.0
+            contrib[idx] += (after - before)
+        return contrib
+
+    order1 = [0,1,2,3,4]
+    order2 = [4,3,2,1,0]
+    c1 = _step_contrib(fA[:], fB[:], order1)
+    c2 = _step_contrib(fA[:], fB[:], order2)
+    contrib = [(c1[i]+c2[i])/2 for i in range(5)]
+    return labels, contrib
 
 # =============== Coleta (com fallback de campos extras) ===============
 @st.cache_data(ttl=600, show_spinner=True)
@@ -294,6 +352,124 @@ st.subheader("Série diária — Investimento e Conversão")
 daily = df.groupby("date", as_index=False)[["spend","revenue","purchases"]].sum()
 st.line_chart(daily.set_index("date")[["spend","revenue"]])
 st.caption("Linhas diárias de Valor usado e Valor de conversão. Vendas na tabela abaixo.")
+
+# ========= COMPARATIVOS (Período A vs Período B) =========
+st.subheader("Comparativos — descubra o que mudou e por quê")
+
+# Deduzi o tamanho do período atual para propor um período anterior de mesmo tamanho
+period_len = (until - since).days + 1
+default_sinceA = since - timedelta(days=period_len)
+default_untilA = since - timedelta(days=1)
+
+colA, colB = st.columns(2)
+with colA:
+    st.markdown("**Período A**")
+    sinceA = st.date_input("Desde (A)", value=default_sinceA, key="sinceA")
+    untilA = st.date_input("Até (A)",   value=default_untilA, key="untilA")
+with colB:
+    st.markdown("**Período B**")
+    sinceB = st.date_input("Desde (B)", value=since, key="sinceB")
+    untilB = st.date_input("Até (B)",   value=until, key="untilB")
+
+if sinceA > untilA or sinceB > untilB:
+    st.warning("Confira as datas: 'Desde' não pode ser maior que 'Até'.")
+else:
+    with st.spinner("Comparando períodos…"):
+        dfA = fetch_insights_daily(act_id, token, api_version, str(sinceA), str(untilA), level)
+        dfB = fetch_insights_daily(act_id, token, api_version, str(sinceB), str(untilB), level)
+
+    if dfA.empty or dfB.empty:
+        st.info("Sem dados em um dos períodos selecionados.")
+    else:
+        # Agregados por período
+        def _agg(d):
+            return {
+                "spend": d["spend"].sum(),
+                "revenue": d["revenue"].sum(),
+                "purchases": d["purchases"].sum(),
+                "clicks": d["link_clicks"].sum(),
+                "lpv": d["lpv"].sum(),
+                "checkout": d["init_checkout"].sum(),
+            }
+        A = _agg(dfA); B = _agg(dfB)
+
+        # KPIs lado a lado
+        c1,c2,c3,c4,c5,c6 = st.columns(6)
+        c1.metric("Valor usado A", _fmt_money_br(A["spend"]))
+        c2.metric("Valor usado B", _fmt_money_br(B["spend"]),
+                  delta=_fmt_money_br(B["spend"]-A["spend"]))
+        c3.metric("Vendas A", f"{int(A['purchases']):,}".replace(",", "."))
+        c4.metric("Vendas B", f"{int(B['purchases']):,}".replace(",", "."),
+                  delta=f"{int(B['purchases']-A['purchases']):,}".replace(",", "."))
+        c5.metric("Faturamento A", _fmt_money_br(A["revenue"]))
+        c6.metric("Faturamento B", _fmt_money_br(B["revenue"]),
+                  delta=_fmt_money_br(B["revenue"]-A["revenue"]))
+
+        c7,c8,c9 = st.columns(3)
+        roasA = _safe_div(A["revenue"], A["spend"])
+        roasB = _safe_div(B["revenue"], B["spend"])
+        cpaA  = _safe_div(A["spend"], A["purchases"])
+        cpaB  = _safe_div(B["spend"], B["purchases"])
+        cpcA  = _safe_div(A["spend"], A["clicks"])
+        cpcB  = _safe_div(B["spend"], B["clicks"])
+        c7.metric("ROAS A", _fmt_ratio_br(roasA))
+        c8.metric("ROAS B", _fmt_ratio_br(roasB),
+                  delta=_fmt_ratio_br(roasB-roasA) if pd.notnull(roasA) and pd.notnull(roasB) else "")
+        c9.metric("CPA B vs A", _fmt_money_br(cpaB) if pd.notnull(cpaB) else "",
+                  delta=_fmt_money_br(cpaB-cpaA) if pd.notnull(cpaA) and pd.notnull(cpaB) else "")
+
+        st.markdown("---")
+
+        # Taxas do funil (as 3 principais)
+        rates = pd.DataFrame({
+            "Taxa": ["LPV/Cliques", "Checkout/LPV", "Compra/Checkout"],
+            "Período A": [
+                _safe_div(A["lpv"], A["clicks"]),
+                _safe_div(A["checkout"], A["lpv"]),
+                _safe_div(A["purchases"], A["checkout"]),
+            ],
+            "Período B": [
+                _safe_div(B["lpv"], B["clicks"]),
+                _safe_div(B["checkout"], B["lpv"]),
+                _safe_div(B["purchases"], B["checkout"]),
+            ],
+        })
+        rates["Δ"] = rates["Período B"] - rates["Período A"]
+        rates_fmt = rates.copy()
+        for col in ["Período A","Período B","Δ"]:
+            rates_fmt[col] = rates_fmt[col].map(_fmt_pct_br)
+        st.markdown("**Taxas do funil (A vs B)**")
+        st.dataframe(rates_fmt, use_container_width=True, height=180)
+
+        st.markdown("---")
+
+        # Driver analysis (waterfall) — por que a receita mudou?
+        labels_drv, contrib = _drivers_decomp(
+            A["clicks"], A["lpv"], A["checkout"], A["purchases"], A["revenue"],
+            B["clicks"], B["lpv"], B["checkout"], B["purchases"], B["revenue"]
+        )
+        revA = A["revenue"]; revB = B["revenue"]
+
+        fig = go.Figure(go.Waterfall(
+            x=["Período A"] + labels_drv + ["Período B"],
+            measure=["absolute"] + ["relative"]*len(labels_drv) + ["total"],
+            y=[revA] + contrib + [revB],
+            connector={"line": {"dash": "dot", "width": 1}},
+            textposition="outside"
+        ))
+        fig.update_layout(
+            title="O que explicou a mudança de receita?",
+            template="plotly_white",
+            margin=dict(l=20,r=20,t=50,b=20),
+            separators=",.",
+            yaxis=dict(tickprefix="R$ ")
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+        st.caption("Interpretação: barras positivas puxaram a receita; negativas derrubaram. "
+                   "Os fatores são volume (Cliques), qualidade/aderência (LPV/Cliques), avanço no funil "
+                   "(Checkout/LPV, Compra/Checkout) e ticket médio (Receita/Compra).")
+
 
 # ========= FUNIL (Período) — FUNIL VISUAL =========
 st.subheader("Funil do período (Total) — Cliques → LPV → Checkout → Add Pagamento → Compra")
