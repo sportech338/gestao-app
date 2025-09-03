@@ -409,10 +409,16 @@ money_cols = ["spend","revenue"]
 for c in money_cols:
     camp_view[c] = camp_view[c].apply(_fmt_money_br)
 
-pct_cols = ["ROAS","LPV/Cliques","Checkout/LPV","Compra/Checkout"] + list(extras_selected)
+# Percentuais (APENAS as taxas do funil)
+pct_cols = ["LPV/Cliques","Checkout/LPV","Compra/Checkout"] + list(extras_selected)
 for c in pct_cols:
     camp_view[c] = camp_view[c].map(lambda x: (f"{x*100:,.2f}%" if pd.notnull(x) else "")
                                     .replace(",", "X").replace(".", ",").replace("X", "."))
+
+# ROAS como valor (razão), ex.: 1,23x
+camp_view["ROAS"] = camp_view["ROAS"].map(
+    lambda x: (f"{x:,.2f}x" if pd.notnull(x) else "").replace(",", "X").replace(".", ",").replace("X", ".")
+)
 
 # Renomeia para exibição
 camp_view = camp_view.rename(columns={
