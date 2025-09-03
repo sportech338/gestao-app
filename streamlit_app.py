@@ -400,29 +400,28 @@ else:
             }
         A = _agg(dfA); B = _agg(dfB)
 
-# KPIs arrumados — tabela A x B x Δ
-roasA = _safe_div(A["revenue"], A["spend"])
-roasB = _safe_div(B["revenue"], B["spend"])
-cpaA  = _safe_div(A["spend"], A["purchases"])
-cpaB  = _safe_div(B["spend"], B["purchases"])
-cpcA  = _safe_div(A["spend"], A["clicks"])
-cpcB  = _safe_div(B["spend"], B["clicks"])
+        # KPIs arrumados — tabela A x B x Δ
+        roasA = _safe_div(A["revenue"], A["spend"])
+        roasB = _safe_div(B["revenue"], B["spend"])
+        cpaA  = _safe_div(A["spend"], A["purchases"])
+        cpaB  = _safe_div(B["spend"], B["purchases"])
+        cpcA  = _safe_div(A["spend"], A["clicks"])
+        cpcB  = _safe_div(B["spend"], B["clicks"])
 
-kpi_rows = [
-    ("Valor usado",      _fmt_money_br(A["spend"]),     _fmt_money_br(B["spend"]),     _fmt_money_br(B["spend"]-A["spend"])),
-    ("Faturamento",      _fmt_money_br(A["revenue"]),   _fmt_money_br(B["revenue"]),   _fmt_money_br(B["revenue"]-A["revenue"])),
-    ("Vendas",           _fmt_int_br(A["purchases"]),   _fmt_int_br(B["purchases"]),   _fmt_int_br(B["purchases"]-A["purchases"])),
-    ("ROAS",             _fmt_ratio_br(roasA),          _fmt_ratio_br(roasB),          (_fmt_ratio_br(roasB-roasA) if pd.notnull(roasA) and pd.notnull(roasB) else "")),
-    ("CPC",              _fmt_money_br(cpcA) if pd.notnull(cpcA) else "", _fmt_money_br(cpcB) if pd.notnull(cpcB) else "", _fmt_money_br(cpcB-cpcA) if pd.notnull(cpcA) and pd.notnull(cpcB) else ""),
-    ("CPA",              _fmt_money_br(cpaA) if pd.notnull(cpaA) else "", _fmt_money_br(cpaB) if pd.notnull(cpaB) else "", _fmt_money_br(cpaB-cpaA) if pd.notnull(cpaA) and pd.notnull(cpaB) else ""),
-]
+        kpi_rows = [
+            ("Valor usado",      _fmt_money_br(A["spend"]),     _fmt_money_br(B["spend"]),     _fmt_money_br(B["spend"]-A["spend"])),
+            ("Faturamento",      _fmt_money_br(A["revenue"]),   _fmt_money_br(B["revenue"]),   _fmt_money_br(B["revenue"]-A["revenue"])),
+            ("Vendas",           _fmt_int_br(A["purchases"]),   _fmt_int_br(B["purchases"]),   _fmt_int_br(B["purchases"]-A["purchases"])),
+            ("ROAS",             _fmt_ratio_br(roasA),          _fmt_ratio_br(roasB),          (_fmt_ratio_br(roasB-roasA) if pd.notnull(roasA) and pd.notnull(roasB) else "")),
+            ("CPC",              _fmt_money_br(cpcA) if pd.notnull(cpcA) else "", _fmt_money_br(cpcB) if pd.notnull(cpcB) else "", _fmt_money_br(cpcB-cpcA) if pd.notnull(cpcA) and pd.notnull(cpcB) else ""),
+            ("CPA",              _fmt_money_br(cpaA) if pd.notnull(cpaA) else "", _fmt_money_br(cpaB) if pd.notnull(cpaB) else "", _fmt_money_br(cpaB-cpaA) if pd.notnull(cpaA) and pd.notnull(cpaB) else ""),
+        ]
+        kpi_df = pd.DataFrame(kpi_rows, columns=["Métrica", "Período A", "Período B", "Δ (B - A)"])
+        st.markdown("**KPIs do período (A vs B)**")
+        st.dataframe(kpi_df, use_container_width=True, height=260)
 
-kpi_df = pd.DataFrame(kpi_rows, columns=["Métrica", "Período A", "Período B", "Δ (B - A)"])
-st.markdown("**KPIs do período (A vs B)**")
-st.dataframe(kpi_df, use_container_width=True, height=260)
+        st.markdown("---")
 
-st.markdown("---")
-        
         # Taxas do funil (as 3 principais)
         rates = pd.DataFrame({
             "Taxa": ["LPV/Cliques", "Checkout/LPV", "Compra/Checkout"],
@@ -464,7 +463,7 @@ st.markdown("---")
             title="O que explicou a mudança de receita?",
             template="plotly_white",
             margin=dict(l=20,r=20,t=50,b=20),
-            separators=",.",
+            separators=".,",
             yaxis=dict(tickprefix="R$ ")
         )
         st.plotly_chart(fig, use_container_width=True)
@@ -472,7 +471,6 @@ st.markdown("---")
         st.caption("Interpretação: barras positivas puxaram a receita; negativas derrubaram. "
                    "Os fatores são volume (Cliques), qualidade/aderência (LPV/Cliques), avanço no funil "
                    "(Checkout/LPV, Compra/Checkout) e ticket médio (Receita/Compra).")
-
 
 # ========= FUNIL (Período) — FUNIL VISUAL =========
 st.subheader("Funil do período (Total) — Cliques → LPV → Checkout → Add Pagamento → Compra")
