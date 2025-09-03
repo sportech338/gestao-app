@@ -15,50 +15,37 @@ def _retry_call(fn, max_retries=5, base_wait=1.5):
             raise
     raise RuntimeError("Falha após múltiplas tentativas.")
 
-# prioridade de janelas quando NÃO houver 'value'
-WIN_PRIORITY = ["7d_click", "1d_view", "1d_click", "7d_view", "28d_click", "28d_view"]
+# --- NOVO: some as janelas da atribuição da conta (o Manager faz isso) ---
+ATTR_WINDOWS = ["7d_click", "1d_view"]   # ajuste se sua conta usar outra regra
 
-# prioridade de tipos de purchase (evita dupla contagem)
-PURCHASE_PREF = [
-    "omni_purchase",
-    "purchase",
-    "offsite_conversion.fb_pixel_purchase",
-    "onsite_conversion.purchase",
-    "app_custom_event.fb_mobile_purchase",
-]
+def _to_float(x):
+    try:
+        return float(x or 0)
+    except:
+        return 0.0
 
-def _best_number(item: dict) -> float:
-    """Se existir 'value', usa só ele. Senão escolhe 1 janela pela ordem WIN_PRIORITY."""
+def _one_item_total(item: dict) -> float:
+    """Se o item tem 'value', usa esse valor; senão, soma as janelas definidas em ATTR_WINDOWS."""
     if not isinstance(item, dict):
-        try: return float(item or 0)
-        except: return 0.0
+        return _to_float(item)
     if "value" in item:
-        try: return float(item["value"] or 0)
-        except: return 0.0
-    for k in WIN_PRIORITY:
-        if k in item:
-            try: return float(item[k] or 0)
-            except: continue
-    # último recurso: nada
-    return 0.0
+        return _to_float(item.get("value"))
+    return sum(_to_float(item.get(k)) for k in ATTR_WINDOWS if k in item)
 
 def _sum_by_action_type(rows: list, wanted_types: list) -> float:
-    """Agrega por action_type e retorna o total usando a 1ª action da prioridade que existir."""
-    if not rows: 
+    """Soma por action_type usando _one_item_total; retorna a 1ª ação disponível conforme prioridade."""
+    if not rows:
         return 0.0
-    # agrega um único número por item (value OU 1 janela), somando por action_type
     acc = {}
     for it in rows:
         at = str(it.get("action_type") or "").lower()
-        val = _best_number(it)
-        acc[at] = acc.get(at, 0.0) + val
-    # escolhe a melhor action disponível
+        acc[at] = acc.get(at, 0.0) + _one_item_total(it)
     for t in wanted_types:
         if t in acc:
             return float(acc[t])
-    # fallback: qualquer action que contenha 'purchase'
-    tot = sum(v for k, v in acc.items() if "purchase" in k)
-    return float(tot or 0.0)
+    # fallback amplo (qualquer 'purchase')
+    return float(sum(v for k, v in acc.items() if "purchase" in k) or 0.0)
+
 
 # -------------------- coleta da API --------------------
 @st.cache_data(ttl=600, show_spinner=True)
