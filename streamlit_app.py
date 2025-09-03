@@ -97,25 +97,23 @@ def _pick_purchase_totals(rows: list) -> float:
 def _fmt_money_br(v: float) -> str:
     return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
-def funnel_fig(labels, values, title=None, show_percents=True):
-    # Mostra só valor ou valor + percentuais (do início e da etapa anterior)
-    textinfo = "value+percent initial+percent previous" if show_percents else "value"
+def funnel_fig(labels, values, title=None):
     fig = go.Figure(
         go.Funnel(
             y=labels,
             x=values,
-            textinfo=textinfo,
-            textposition="inside",                 # valores dentro das faixas
+            textinfo="value",             # <<< mostra só os valores
+            textposition="inside",
             opacity=0.95,
-            connector={"line": {"dash": "dot", "width": 1}},  # conexão sutil
+            connector={"line": {"dash": "dot", "width": 1}},
         )
     )
     fig.update_layout(
         title=title or "",
         margin=dict(l=12, r=12, t=40, b=12),
         height=440,
-        template="plotly_white",                  # visual clean
-        separators=",.",                          # pt-BR: milhar "." e decimal ","
+        template="plotly_white",
+        separators=",.",                  # pt-BR
     )
     return fig
 
