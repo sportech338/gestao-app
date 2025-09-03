@@ -355,13 +355,25 @@ def pull_meta_insights_http(act_id: str, token: str, api_version: str, level: st
                             since: datetime, until: datetime, breakdowns: list,
                             daily_granularity: bool = True) -> pd.DataFrame:
     """
-    Busca insights direto no Graph API (HTTP), pagina com 'after',
-    e normaliza para colunas do app: data, gasto, faturamento, compras, campanha, status, veiculacao (+breakdowns).
+    Busca insights no Graph API e normaliza em:
+    data, gasto, faturamento, compras, campanha, veiculacao (+breakdowns).
     """
     if not act_id or not token:
         return pd.DataFrame()
 
     base_url = f"https://graph.facebook.com/{api_version}/{act_id}/insights"
+
+    fields = [
+        "spend",
+        "actions",          # para contar compras
+        "action_values",    # para valor de compra
+        "date_start","date_stop",
+        "campaign_name","campaign_id",
+        "adset_name","adset_id",
+        "ad_name","ad_id",
+        "account_name","account_id",
+    ]
+
     params = {
         "access_token": token,
         "level": level,
@@ -370,63 +382,63 @@ def pull_meta_insights_http(act_id: str, token: str, api_version: str, level: st
             "until": until.strftime("%Y-%m-%d"),
         }),
         "limit": 500,
-        "fields": ",".join([
-            "spend",
-            "purchases",
-            "purchase_conversion_value",
-            "date_start","date_stop",
-            "campaign_name","campaign_id",
-            "adset_name","adset_id",
-            "ad_name","ad_id",
-            "account_name","account_id",
-            "effective_status"
-        ]),
+        "fields": ",".join(fields),
     }
-    if breakdowns:
-        params["breakdowns"] = ",".join(breakdowns)
     if daily_granularity:
         params["time_increment"] = 1
+    if breakdowns:
+        params["breakdowns"] = ",".join(breakdowns)
 
-    rows = []
-    next_url = base_url
-    next_params = params.copy()
+    # peça explicitamente somente 'purchase'
+    params["action_types"] = '["purchase"]'
+
+    def _get_action_value(rec: dict, field: str, contains: str = "purchase") -> float:
+        """Soma valores/contagens do action_type que contenha 'purchase'."""
+        total = 0.0
+        for it in (rec.get(field) or []):
+            atype = (it.get("action_type") or "").lower()
+            if contains in atype:
+                try:
+                    total += float(it.get("value", 0) or 0)
+                except Exception:
+                    pass
+        return total
+
+    rows, next_url, next_params = [], base_url, params.copy()
 
     while next_url:
         def _do():
             return requests.get(next_url, params=next_params, timeout=60)
-
         resp = _retry_call(_do)
 
-        # Tenta decodificar a resposta
+        # tenta decodificar
         try:
             payload = resp.json()
         except Exception:
             payload = {"raw": resp.text}
 
-        # Tratamento de erro com mensagem clara na tela
+        # trata erro com mensagem clara na tela
         if resp.status_code != 200:
             err = (payload or {}).get("error", {})
-            code = err.get("code")
-            subcode = err.get("error_subcode")
-            msg = err.get("message")
-            fbtrace = err.get("fbtrace_id")
             st.error(
-                f"Graph API error {resp.status_code} | code={code} subcode={subcode}\n"
-                f"message: {msg}\nfbtrace_id: {fbtrace}"
+                f"Graph API error {resp.status_code} | code={err.get('code')} "
+                f"subcode={err.get('error_subcode')}\nmessage: {err.get('message')}\n"
+                f"fbtrace_id: {err.get('fbtrace_id')}"
             )
             raise RuntimeError(
-                f"Graph API error {resp.status_code}: {msg} (code={code}, subcode={subcode})"
+                f"Graph API error {resp.status_code}: {err.get('message')} "
+                f"(code={err.get('code')}, subcode={err.get('error_subcode')})"
             )
 
-        # Se chegou aqui, deu 200 OK — processa os registros
-        data = payload.get("data", [])
-        for rec in data:
+        # processa registros
+        for rec in payload.get("data", []):
             linha = {}
             linha["data"] = pd.to_datetime(rec.get("date_start"))
             linha["gasto"] = float(rec.get("spend", 0) or 0)
-            linha["faturamento"] = float(rec.get("purchase_conversion_value", 0) or 0)
-            linha["compras"] = float(rec.get("purchases", 0) or 0)
+            linha["compras"] = _get_action_value(rec, "actions", "purchase")            # contagem
+            linha["faturamento"] = _get_action_value(rec, "action_values", "purchase")  # valor
 
+            # nome conforme o level
             if level == "campaign":
                 linha["campanha"] = rec.get("campaign_name", "")
             elif level == "adset":
@@ -436,33 +448,41 @@ def pull_meta_insights_http(act_id: str, token: str, api_version: str, level: st
             else:
                 linha["campanha"] = rec.get("account_name", "")
 
-            linha["status"] = rec.get("effective_status", "")
+            # 'effective_status' não existe em insights
+            linha["status"] = ""
 
-            if "publisher_platform" in rec:
-                linha["veiculacao"] = rec["publisher_platform"]
-            else:
-                linha["veiculacao"] = ""
+            # veiculação via breakdown (ex.: publisher_platform)
+            linha["veiculacao"] = rec.get("publisher_platform", "")
 
+            # ids úteis
             for k in ["campaign_id","adset_id","ad_id","account_id","date_start","date_stop"]:
                 if k in rec:
                     linha[k] = rec[k]
 
+            # inclui colunas dos breakdowns selecionados
             for b in breakdowns or []:
                 if b in rec:
                     linha[b] = rec[b]
 
             rows.append(linha)
 
-        # Paginação
-        paging = payload.get("paging", {})
-        cursors = paging.get("cursors", {})
-        after = cursors.get("after")
+        # paginação
+        paging = (payload or {}).get("paging", {})
+        after = (paging.get("cursors") or {}).get("after")
         if after:
             next_url = base_url
             next_params = params.copy()
             next_params["after"] = after
         else:
             next_url = None
+
+    df = pd.DataFrame(rows)
+    if not df.empty and "data" in df.columns:
+        df = df.sort_values("data")
+    for c in ["gasto","faturamento","compras"]:
+        if c in df.columns:
+            df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0.0)
+    return df
 
 
     df = pd.DataFrame(rows)
