@@ -361,37 +361,77 @@ st.dataframe(sr, use_container_width=True, height=height)
 
 # ========= FUNIL por CAMPANHA =========
 st.subheader("Campanhas — Funil e Taxas (somatório no período)")
+
+# Agregados necessários
 agg_cols = ["spend","link_clicks","lpv","init_checkout","add_payment","purchases","revenue"]
 camp = df.groupby(["campaign_id","campaign_name"], as_index=False)[agg_cols].sum()
 
-# taxas por campanha (sequenciais)
-camp["LPV/Clique"]     = np.where(camp["link_clicks"]>0, camp["lpv"]/camp["link_clicks"], np.nan)
-camp["Fin/LPV"]        = np.where(camp["lpv"]>0, camp["init_checkout"]/camp["lpv"], np.nan)
-camp["AddPg/Fin"]      = np.where(camp["init_checkout"]>0, camp["add_payment"]/camp["init_checkout"], np.nan)
-camp["Compra/AddPg"]   = np.where(camp["add_payment"]>0, camp["purchases"]/camp["add_payment"], np.nan)
-camp["Compra/Clique"]  = np.where(camp["link_clicks"]>0, camp["purchases"]/camp["link_clicks"], np.nan)
-camp["ROAS"]           = np.where(camp["spend"]>0, camp["revenue"]/camp["spend"], np.nan)
+# Taxas PRINCIPAIS (mesmas do funil geral)
+camp["LPV/Cliques"]      = np.where(camp["link_clicks"]>0, camp["lpv"]/camp["link_clicks"], np.nan)
+camp["Checkout/LPV"]     = np.where(camp["lpv"]>0, camp["init_checkout"]/camp["lpv"], np.nan)
+camp["Compra/Checkout"]  = np.where(camp["init_checkout"]>0, camp["purchases"]/camp["init_checkout"], np.nan)
 
-camp_show = camp.copy()
+# ROAS continua útil
+camp["ROAS"]             = np.where(camp["spend"]>0, camp["revenue"]/camp["spend"], np.nan)
+
+# ---- Extras (só quando você quiser ver)
+extras_cols = {
+    "Add Pagto / Checkout":  np.where(camp["init_checkout"]>0, camp["add_payment"]/camp["init_checkout"], np.nan),
+    "Compra / Add Pagto":    np.where(camp["add_payment"]>0, camp["purchases"]/camp["add_payment"], np.nan),
+    "Compra / LPV":          np.where(camp["lpv"]>0, camp["purchases"]/camp["lpv"], np.nan),
+    "Compra / Cliques":      np.where(camp["link_clicks"]>0, camp["purchases"]/camp["link_clicks"], np.nan),
+    "Checkout / Cliques":    np.where(camp["link_clicks"]>0, camp["init_checkout"]/camp["link_clicks"], np.nan),
+    "Add Pagto / LPV":       np.where(camp["lpv"]>0, camp["add_payment"]/camp["lpv"], np.nan),
+}
+
+with st.expander("Comparar outras taxas (opcional)"):
+    extras_selected = st.multiselect(
+        "Escolha métricas adicionais:",
+        options=list(extras_cols.keys()),
+        default=[],
+    )
+
+# Monta a visão final (apenas as colunas principais + extras escolhidas)
+cols_base = [
+    "campaign_id","campaign_name",
+    "spend","revenue","ROAS",           # dinheiro/eficiência
+    "link_clicks","lpv","init_checkout","purchases",  # etapas do funil
+    "LPV/Cliques","Checkout/LPV","Compra/Checkout"    # taxas principais
+]
+camp_view = camp[cols_base].copy()
+
+# Anexa extras selecionadas
+for name in extras_selected:
+    camp_view[name] = extras_cols[name]
+
+# Formatação
 money_cols = ["spend","revenue"]
-for c in money_cols: camp_show[c] = camp_show[c].apply(_fmt_money_br)
-pct_cols = ["LPV/Clique","Fin/LPV","AddPg/Fin","Compra/AddPg","Compra/Clique","ROAS"]
+for c in money_cols:
+    camp_view[c] = camp_view[c].apply(_fmt_money_br)
+
+pct_cols = ["ROAS","LPV/Cliques","Checkout/LPV","Compra/Checkout"] + list(extras_selected)
 for c in pct_cols:
-    camp_show[c] = camp_show[c].map(lambda x: (f"{x*100:,.2f}%" if pd.notnull(x) else "")\
+    camp_view[c] = camp_view[c].map(lambda x: (f"{x*100:,.2f}%" if pd.notnull(x) else "")
                                     .replace(",", "X").replace(".", ",").replace("X", "."))
 
-camp_show = camp_show.rename(columns={
-    "campaign_id":"ID campanha",
-    "campaign_name":"Campanha",
-    "spend":"Valor usado",
-    "link_clicks":"Cliques",
-    "lpv":"LPV",
-    "init_checkout":"Finalização",
-    "add_payment":"Add Pagamento",
-    "purchases":"Compras",
-    "revenue":"Valor de conversão",
+# Renomeia para exibição
+camp_view = camp_view.rename(columns={
+    "campaign_id": "ID campanha",
+    "campaign_name": "Campanha",
+    "spend": "Valor usado",
+    "revenue": "Valor de conversão",
+    "link_clicks": "Cliques",
+    "lpv": "LPV",
+    "init_checkout": "Checkout",
+    "purchases": "Compras",
 })
-st.dataframe(camp_show.sort_values("Valor usado", ascending=False), use_container_width=True, height=520)
+
+# Ordenação padrão por investimento
+camp_view = camp_view.sort_values("Valor usado", ascending=False)
+
+# Altura adaptativa (linha base + extras)
+base_h = 520
+st.dataframe(camp_view, use_container_width=True, height=base_h)
 
 with st.expander("Dados diários (detalhe por campanha)"):
     dd = df.copy()
