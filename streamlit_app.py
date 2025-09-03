@@ -5,7 +5,8 @@ import numpy as np
 from datetime import datetime, timedelta
 import plotly.express as px
 import plotly.graph_objects as go 
-
+import time, json
+import requests
 # =========================
 # Config
 # =========================
@@ -133,6 +134,35 @@ with st.sidebar:
     include_weekends = st.checkbox("Metas consideram finais de semana", value=True, help="Se desmarcar, metas diárias ignoram sábados e domingos.")
 
     month_ref = st.date_input("Qualquer dia do mês da meta", value=datetime.today().date())
+
+        # =========================
+    # 🔌 Meta Marketing API
+    # =========================
+    st.subheader("🔌 Meta Marketing API")
+    act_id = st.text_input(
+        "Ad Account ID (ex.: act_1234567890)",
+        value="",
+        help="Formato: act_XXXX"
+    )
+    access_token = st.text_input(
+        "Access Token",
+        type="password",
+        value=st.secrets.get("FB_TOKEN", "") if hasattr(st, "secrets") else "",
+        help="Token com ads_read / ads_management"
+    )
+    api_version = st.text_input("API version", value="v23.0")
+
+    st.subheader("🗂️ Nível & Quebra")
+    level = st.selectbox("Level (agregação)", ["account","campaign","adset","ad"], index=1)
+    breakdowns = st.multiselect(
+        "Breakdowns (opcional)",
+        ["publisher_platform","platform_position","device_platform","age","gender","region"],
+        default=[]
+    )
+
+    st.subheader("📅 Intervalo de Datas (para a API)")
+    since_api = st.date_input("Desde (API)", value=(datetime.today() - timedelta(days=7)).date())
+    until_api = st.date_input("Até (API)", value=datetime.today().date())
 
     st.subheader("🎯 META MENSAL (base de tudo)")
     goal_type_m = st.radio("Definir por", ["Faturamento", "Compras"], index=0, horizontal=True)
@@ -307,15 +337,162 @@ def read_csv_flex(file):
 
     return df
 
+def _retry_call(fn, max_retries=5, base_wait=1.5):
+    """Retry exponencial simples para lidar com rate limit/transientes."""
+    for i in range(max_retries):
+        try:
+            return fn()
+        except Exception as e:
+            msg = str(e).lower()
+            if any(k in msg for k in ["rate limit", "retry", "temporarily unavailable", "timeout"]):
+                time.sleep(base_wait * (2 ** i))
+                continue
+            raise
+    raise RuntimeError("Falha após múltiplas tentativas.")
+
+@st.cache_data(show_spinner=True, ttl=60*10)
+def pull_meta_insights_http(act_id: str, token: str, api_version: str, level: str,
+                            since: datetime, until: datetime, breakdowns: list,
+                            daily_granularity: bool = True) -> pd.DataFrame:
+    """
+    Busca insights direto no Graph API (HTTP), pagina com 'after',
+    e normaliza para colunas do app: data, gasto, faturamento, compras, campanha, status, veiculacao (+breakdowns).
+    """
+    if not act_id or not token:
+        return pd.DataFrame()
+
+    base_url = f"https://graph.facebook.com/{api_version}/{act_id}/insights"
+    params = {
+        "access_token": token,
+        "level": level,
+        "time_range": json.dumps({
+            "since": since.strftime("%Y-%m-%d"),
+            "until": until.strftime("%Y-%m-%d"),
+        }),
+        "limit": 500,
+        "fields": ",".join([
+            "spend",
+            "purchases",
+            "purchase_conversion_value",
+            "date_start","date_stop",
+            "campaign_name","campaign_id",
+            "adset_name","adset_id",
+            "ad_name","ad_id",
+            "account_name","account_id",
+            "effective_status"
+        ]),
+    }
+    if breakdowns:
+        params["breakdowns"] = ",".join(breakdowns)
+    if daily_granularity:
+        params["time_increment"] = 1
+
+    rows = []
+    next_url = base_url
+    next_params = params.copy()
+
+    while next_url:
+        def _do():
+            return requests.get(next_url, params=next_params, timeout=60)
+        resp = _retry_call(_do)
+        if resp.status_code != 200:
+            raise RuntimeError(f"Graph error {resp.status_code}: {resp.text}")
+
+        payload = resp.json()
+        data = payload.get("data", [])
+        for rec in data:
+            linha = {}
+            # Data (um ponto por dia se time_increment=1)
+            linha["data"] = pd.to_datetime(rec.get("date_start"))
+
+            # Métricas
+            linha["gasto"] = float(rec.get("spend", 0) or 0)
+            linha["faturamento"] = float(rec.get("purchase_conversion_value", 0) or 0)
+            linha["compras"] = float(rec.get("purchases", 0) or 0)
+
+            # Nome em função do level
+            if level == "campaign":
+                linha["campanha"] = rec.get("campaign_name", "")
+            elif level == "adset":
+                linha["campanha"] = rec.get("adset_name", "")
+            elif level == "ad":
+                linha["campanha"] = rec.get("ad_name", "")
+            else:
+                linha["campanha"] = rec.get("account_name", "")
+
+            # Status
+            linha["status"] = rec.get("effective_status", "")
+
+            # Veiculação (ex: publisher_platform) se breakdown for escolhido
+            if "publisher_platform" in rec:
+                linha["veiculacao"] = rec["publisher_platform"]
+            else:
+                linha["veiculacao"] = ""
+
+            # Mantém ids úteis
+            for k in ["campaign_id","adset_id","ad_id","account_id","date_start","date_stop"]:
+                if k in rec:
+                    linha[k] = rec[k]
+
+            # Inclui colunas de breakdowns selecionados
+            for b in breakdowns or []:
+                if b in rec:
+                    linha[b] = rec[b]
+
+            rows.append(linha)
+
+        # paginação
+        paging = payload.get("paging", {})
+        cursors = paging.get("cursors", {})
+        after = cursors.get("after")
+        if after:
+            next_url = base_url
+            next_params = params.copy()
+            next_params["after"] = after
+        else:
+            next_url = None
+
+    df = pd.DataFrame(rows)
+    if not df.empty and "data" in df.columns:
+        df = df.sort_values("data")
+    # garante tipos
+    for c in ["gasto","faturamento","compras"]:
+        if c in df.columns:
+            df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0.0)
+    return df
+
+
 # =========================
-# Carregamento dos CSVs
+# Carregamento de Dados (API Meta → fallback CSV)
 # =========================
 df_daily = read_csv_flex(uploaded_daily)   if uploaded_daily   else pd.DataFrame()
 df_week  = read_csv_flex(uploaded_weekly)  if uploaded_weekly  else pd.DataFrame()
 df_month = read_csv_flex(uploaded_monthly) if uploaded_monthly else pd.DataFrame()
+df_csv_all = unify_frames([df_daily, df_week, df_month])
 
-df_all = unify_frames([df_daily, df_week, df_month])
-any_csv = not df_all.empty  # True se você enviou pelo menos 1 CSV
+df_api = pd.DataFrame()
+if act_id and access_token:
+    with st.spinner("Conectando ao Meta Ads e coletando insights..."):
+        df_api = pull_meta_insights_http(
+            act_id=act_id,
+            token=access_token,
+            api_version=api_version,
+            level=level,
+            since=datetime.combine(since_api, datetime.min.time()),
+            until=datetime.combine(until_api, datetime.min.time()),
+            breakdowns=breakdowns,
+            daily_granularity=True  # um ponto por dia
+        )
+
+# Preferir API se disponível; senão, CSV
+df_all = df_api if not df_api.empty else df_csv_all
+
+any_api = not df_api.empty
+any_csv = not df_csv_all.empty
+any_data = not df_all.empty
+
+if act_id and access_token and df_api.empty:
+    st.warning("Conectei, mas não vieram dados para o intervalo/level escolhido. Verifique permissões, datas, level e se há eventos atribuídos.")
 
 
 def classificar_funil(nome):
@@ -338,53 +515,44 @@ next_month_first = (month_first.replace(year=month_first.year+1, month=1)
                     if month_first.month == 12 else month_first.replace(month=month_first.month+1))
 month_last = next_month_first - timedelta(days=1)
 
-def count_days_between(d0, d1, include_weekends=True):
-    d = d0
-    n = 0
-    while d <= d1:
-        if include_weekends or d.weekday() < 5:
-            n += 1
-        d += timedelta(days=1)
-    return n
-
-def weeks_in_month(month_first, month_last, include_weekends=True):
-    """Divide a meta em semanas cheias e cria uma semana extra só se sobrarem dias."""
-    total_days = (month_last - month_first).days + 1
-    total_weeks = total_days // 7   # só semanas completas
-    dias_sobra = total_days % 7
+def weeks_in_month_alinhada(month_first, month_last, include_weekends=True):
+    """
+    Cria semanas alinhadas à 2ª feira (seg→dom) dentro do mês.
+    A primeira e/ou última podem ser “quebradas” nas bordas do mês.
+    """
+    # acha a primeira segunda >= month_first
+    offset = (0 - month_first.weekday()) % 7  # 0=segunda
+    first_monday = month_first + timedelta(days=offset)
 
     weeks = []
-    cur = month_first
 
-    # Semanas cheias
-    for i in range(total_weeks):
+    # bloco parcial antes da primeira segunda (se existir)
+    if month_first < first_monday <= month_last:
+        w_start = month_first
+        w_end = min(first_monday - timedelta(days=1), month_last)
+        days_considered = len(daterange(w_start, w_end, include_weekends=include_weekends))
+        weeks.append({"start": w_start, "end": w_end, "days_considered": days_considered})
+
+    # semanas cheias seg→dom
+    cur = first_monday
+    while cur <= month_last:
         w_start = cur
-        w_end = cur + timedelta(days=6)
-        weeks.append({
-            "start": w_start,
-            "end": w_end,
-            "days_considered": 7,
-            "share": 1 / total_weeks if total_weeks > 0 else 0
-        })
+        w_end = min(cur + timedelta(days=6), month_last)
+        days_considered = len(daterange(w_start, w_end, include_weekends=include_weekends))
+        weeks.append({"start": w_start, "end": w_end, "days_considered": days_considered})
         cur = w_end + timedelta(days=1)
 
-    # Semana extra se sobrarem dias (ex: 2 dias finais do mês)
-    if dias_sobra > 0:
-        w_start = cur
-        w_end = month_last
-        weeks.append({
-            "start": w_start,
-            "end": w_end,
-            "days_considered": dias_sobra,
-            "share": dias_sobra / (total_weeks * 7 + dias_sobra)
-        })
+    total_considered = sum(w["days_considered"] for w in weeks) or 1
+    for w in weeks:
+        w["share"] = w["days_considered"] / total_considered
 
     return weeks
+
 
 # Semana escolhida pelo usuário
 week_start_dt = datetime.combine(week_start, datetime.min.time())
 week_end_dt = week_start_dt + timedelta(days=6)
-week_days_all = daterange(week_start_dt.date(), week_end_dt.date(), include_weekends=True)
+week_days_all = daterange(week_start_dt.date(), week_end_dt.date(), include_weekends=include_weekends)
 
 # Distribuição de metas: primeiro definimos a meta MENSAL
 if goal_type_m == "Faturamento":
@@ -397,7 +565,7 @@ else:
 budget_goal_month = goal_rev_month / target_roas if target_roas > 0 else 0.0
 
 # Agora distribuímos por semanas do mês
-weeks = weeks_in_month(month_first, month_last, include_weekends=include_weekends)
+weeks = weeks_in_month_alinhada(month_first, month_last, include_weekends=include_weekends)
 
 # Acrescenta metas semanais a cada semana
 for w in weeks:
@@ -584,8 +752,8 @@ with tab_goals:
 # =========================
 with tab_perf:
     st.markdown("## 📥 Performance Real")
-    if not any_csv:
-        st.info("Envie ao menos um CSV (diário, semanal ou mensal) para ver os KPIs.")
+    if not any_data:
+        st.info("Conecte o Meta Ads (ID da conta + token) ou envie um CSV para ver os KPIs.")
     else:
         df = df_all.copy()
 
@@ -629,7 +797,7 @@ with tab_perf:
                .sort_values("_date")
         )
         if daily.empty:
-            st.info("⚠️ Seu CSV não tem coluna de data reconhecida para calcular KPIs diárias.")
+            st.info("⚠️ Não foi possível identificar dados diários (coluna de data) para calcular KPIs.")
         else:
             daily["ROAS"] = np.where(daily["gasto"] > 0, daily["faturamento"]/daily["gasto"], np.nan)
             daily["CPA"]  = np.where(daily["compras"] > 0, daily["gasto"]/daily["compras"], np.nan)
@@ -714,15 +882,15 @@ with tab_perf:
             fig_roas = make_line_glow(daily, x="_date", y_cols=["ROAS"], title="ROAS Diário")
             st.plotly_chart(fig_roas, use_container_width=True)
         else:
-            st.info("⚠️ Não foi possível identificar datas válidas no CSV para calcular o ROAS diário.")
-
+           st.info("⚠️ Não foi possível identificar dados diários (coluna de data) para calcular o ROAS.")
+            
 # =========================
 # Funil (volumes + taxas)
 # =========================
 with tab_funnel:
     st.markdown("### 🧭 Funil (volumes do filtro)")
 
-    if any_csv:
+    if any_data:
         if 'dff' not in locals():
             dff = df_all.copy()
 
@@ -771,7 +939,7 @@ with tab_funnel:
         else:
             st.info("⚠️ Não há volumes para montar o funil no filtro atual.")
     else:
-        st.warning("⚠️ Nenhum arquivo carregado. Envie ao menos um CSV para visualizar o funil.")
+        st.warning("⚠️ Sem dados. Conecte o Meta Ads ou envie um CSV para visualizar o funil.")
 
     st.markdown("---")
 
@@ -781,7 +949,7 @@ with tab_funnel:
 # =========================
 with tab_campaigns:
     st.markdown("### 🏆 Campanhas (Top 10 por ROAS)")
-    if any_csv:
+    if any_data:
         if 'dff' not in locals():
             dff = df_all.copy()
 
@@ -808,14 +976,14 @@ with tab_campaigns:
             })
             st.dataframe(friendly, use_container_width=True)
         else:
-            st.info("⚠️ O arquivo não contém a coluna 'campanha'.")
+            st.info("⚠️ A fonte atual não contém a coluna 'campanha'. Ajuste o nível da API (ex.: campaign/adset/ad) ou verifique o CSV.")
     else:
-        st.warning("⚠️ Nenhum arquivo carregado. Envie ao menos um CSV para visualizar o ranking.")
+        st.warning("⚠️ Sem dados. Conecte o Meta Ads ou envie um CSV para visualizar o ranking.")
 
     st.markdown("---")
 
     st.markdown("### 💵 Orçamento por Etapa (Planejado vs Realizado)")
-    if any_csv:
+    if any_data:
         if 'dff' not in locals():
             dff = df_all.copy()
 
@@ -878,7 +1046,7 @@ with tab_campaigns:
             fig_real.update_traces(textposition="inside", textinfo="percent+label")
             st.plotly_chart(style_fig(fig_real, "Distribuição Realizada por Etapa"), use_container_width=True)
     else:
-        st.warning("⚠️ Nenhum arquivo carregado. Envie ao menos um CSV para visualizar o orçamento por etapa.")
+        st.warning("⚠️ Sem dados. Conecte o Meta Ads ou envie um CSV para visualizar o orçamento por etapa.")
 
 # =========================
 # Bloco 3 — Acompanhamento Diário (enxuto, derivado da meta mensal)
@@ -1108,8 +1276,8 @@ with tab_pdf:
 
     # 5) ROAS diário — aplica tema/fundo branco e colorway
     fig_roas_pdf = None
-    if 't' in locals() and not t.empty and "ROAS" in t.columns:
-        fig_roas_pdf = px.line(t, x="_date", y="ROAS", title="ROAS Diário")
+    if 'daily' in locals() and not daily.empty and "ROAS" in daily.columns:
+        fig_roas_pdf = px.line(daily, x="_date", y="ROAS", title="ROAS Diário")
         fig_roas_pdf.update_traces(mode="lines+markers")
         fig_roas_pdf.update_yaxes(title="ROAS", tickformat=".2f")
         fig_roas_pdf.update_xaxes(title="Data")
