@@ -320,19 +320,46 @@ st.plotly_chart(
     use_container_width=True
 )
 
-# Tabela auxiliar de taxas (complemento)
-def _rate(a, b): return (a / b) if b > 0 else np.nan
-seq_rates = {
-    "LPV / Cliques": _rate(values_total[1], values_total[0]),
-    "Checkout / LPV": _rate(values_total[2], values_total[1]),
-    "Add Pagto / Checkout": _rate(values_total[3], values_total[2]),
-    "Compra / Add Pagto": _rate(values_total[4], values_total[3]),
-    "Compra / Cliques": _rate(values_total[4], values_total[0]),
+# Tabela de taxas — principais sempre visíveis + extras opcionais
+def _rate(a, b): 
+    return (a / b) if b and b > 0 else np.nan
+
+# ---- Principais (sempre)
+core_rows = [
+    ("LPV / Cliques",      _rate(values_total[1], values_total[0])),
+    ("Checkout / LPV",     _rate(values_total[2], values_total[1])),
+    ("Compra / LPV",       _rate(values_total[4], values_total[1])),
+]
+
+# ---- Extras (somente se você quiser ver)
+extras_def = {
+    "Add Pagto / Checkout": (_rate(values_total[3], values_total[2])),
+    "Compra / Add Pagto":   (_rate(values_total[4], values_total[3])),
+    "Compra / Cliques":     (_rate(values_total[4], values_total[0])),
+    "Checkout / Cliques":   (_rate(values_total[2], values_total[0])),
+    "Add Pagto / LPV":      (_rate(values_total[3], values_total[1])),
 }
-sr = pd.DataFrame([{"Taxa": k, "Valor": v} for k, v in seq_rates.items()])
+
+# UI para escolher comparações extras
+with st.expander("Comparar outras taxas (opcional)"):
+    extras_selected = st.multiselect(
+        "Escolha métricas adicionais para visualizar:",
+        options=list(extras_def.keys()),
+        default=[],
+    )
+
+# Monta a tabela final
+rows = core_rows + [(name, extras_def[name]) for name in extras_selected]
+sr = pd.DataFrame(rows, columns=["Taxa", "Valor"])
 sr["Valor"] = sr["Valor"].map(lambda x: f"{x*100:,.2f}%".replace(",", "X").replace(".", ",").replace("X", ".")
                               if pd.notnull(x) else "")
-st.dataframe(sr, use_container_width=True, height=240)
+
+# Altura ajustada: 3 linhas fixas + nº de extras
+base_h = 160
+row_h  = 36
+height = base_h + row_h * len(extras_selected)
+
+st.dataframe(sr, use_container_width=True, height=height)
 
 # ========= FUNIL por CAMPANHA =========
 st.subheader("Campanhas — Funil e Taxas (somatório no período)")
