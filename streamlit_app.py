@@ -143,53 +143,6 @@ def _safe_div(n, d):
     n = float(n or 0); d = float(d or 0)
     return (n / d) if d > 0 else np.nan
 
-def _drivers_decomp(clicksA, lpvA, chkA, purA, revA,
-                    clicksB, lpvB, chkB, purB, revB):
-    """
-    Decompõe ΔReceita (B - A) em 5 fatores multiplicativos:
-    Receita = Cliques * (LPV/Cliques) * (Checkout/LPV) * (Compra/Checkout) * (Receita/Compra)
-    Usa média de duas ordens (A→B e B→A) para reduzir viés.
-    """
-    # Fatores A
-    r1A = _safe_div(lpvA, clicksA)
-    r2A = _safe_div(chkA, lpvA)
-    r3A = _safe_div(purA, chkA)
-    aovA = _safe_div(revA, purA)
-
-    # Fatores B
-    r1B = _safe_div(lpvB, clicksB)
-    r2B = _safe_div(chkB, lpvB)
-    r3B = _safe_div(purB, chkB)
-    aovB = _safe_div(revB, purB)
-
-    fA = [clicksA, r1A, r2A, r3A, aovA]
-    fB = [clicksB, r1B, r2B, r3B, aovB]
-    labels = ["Cliques", "LPV/Cliques", "Checkout/LPV", "Compra/Checkout", "Ticket médio"]
-
-    def _step_contrib(f_from, f_to, order):
-        cur = f_from[:]
-        contrib = [0.0]*5
-        for idx in order:
-            before = np.prod([v for v in cur if pd.notnull(v)]) if all(pd.notnull(v) for v in cur) else 0.0
-            cur[idx] = f_to[idx]
-            after  = np.prod([v for v in cur if pd.notnull(v)]) if all(pd.notnull(v) for v in cur) else 0.0
-            contrib[idx] += (after - before)
-        return contrib
-
-    order1 = [0,1,2,3,4]
-    order2 = [4,3,2,1,0]
-    c1 = _step_contrib(fA[:], fB[:], order1)
-    c2 = _step_contrib(fA[:], fB[:], order2)
-    contrib = [(c1[i]+c2[i])/2 for i in range(5)]
-    return labels, contrib
-
-def _fmt_int_br(x):
-    try:
-        return f"{int(round(x)):,}".replace(",", ".")
-    except:
-        return ""
-
-
 # =============== Coleta (com fallback de campos extras) ===============
 @st.cache_data(ttl=600, show_spinner=True)
 def fetch_insights_daily(act_id: str, token: str, api_version: str,
@@ -515,34 +468,6 @@ else:
         st.dataframe(rates_styled, use_container_width=True, height=180)
 
         st.markdown("---")
-
-
-        # Driver analysis (waterfall) — por que a receita mudou?
-        labels_drv, contrib = _drivers_decomp(
-            A["clicks"], A["lpv"], A["checkout"], A["purchases"], A["revenue"],
-            B["clicks"], B["lpv"], B["checkout"], B["purchases"], B["revenue"]
-        )
-        revA = A["revenue"]; revB = B["revenue"]
-
-        fig = go.Figure(go.Waterfall(
-            x=["Período A"] + labels_drv + ["Período B"],
-            measure=["absolute"] + ["relative"]*len(labels_drv) + ["total"],
-            y=[revA] + contrib + [revB],
-            connector={"line": {"dash": "dot", "width": 1}},
-            textposition="outside"
-        ))
-        fig.update_layout(
-            title="O que explicou a mudança de receita?",
-            template="plotly_white",
-            margin=dict(l=20,r=20,t=50,b=20),
-            separators=".,",
-            yaxis=dict(tickprefix="R$ ")
-        )
-        st.plotly_chart(fig, use_container_width=True)
-
-        st.caption("Interpretação: barras positivas puxaram a receita; negativas derrubaram. "
-                   "Os fatores são volume (Cliques), qualidade/aderência (LPV/Cliques), avanço no funil "
-                   "(Checkout/LPV, Compra/Checkout) e ticket médio (Receita/Compra).")
 
 # ========= FUNIL (Período) — FUNIL VISUAL =========
 st.subheader("Funil do período (Total) — Cliques → LPV → Checkout → Add Pagamento → Compra")
