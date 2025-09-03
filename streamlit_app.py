@@ -49,6 +49,8 @@ def pull_meta_insights_http(act_id: str, token: str, api_version: str, level: st
     """
     Busca insights no Graph API e retorna colunas:
     data, gasto, faturamento (valor de purchase), compras (qtd), campanha (conforme level).
+    Agora conta compras/receita pelo DIA DA CONVERSÃO (action_report_time=conversion)
+    e usa a atribuição unificada do Ads Manager.
     """
     if not act_id or not token:
         return pd.DataFrame()
@@ -56,8 +58,8 @@ def pull_meta_insights_http(act_id: str, token: str, api_version: str, level: st
     base_url = f"https://graph.facebook.com/{api_version}/{act_id}/insights"
     fields = [
         "spend",
-        "actions",         # contagem de purchase
-        "action_values",   # valor de purchase
+        "actions",         # contagens (vêm várias action_type)
+        "action_values",   # valores (vêm várias action_type)
         "date_start","date_stop",
         "campaign_name","campaign_id",
         "adset_name","adset_id",
@@ -71,16 +73,20 @@ def pull_meta_insights_http(act_id: str, token: str, api_version: str, level: st
             "since": since.strftime("%Y-%m-%d"),
             "until": until.strftime("%Y-%m-%d"),
         }),
-        "time_increment": 1,      # diário
-        "limit": 500,
+        "time_increment": 1,                  # diário
         "fields": ",".join(fields),
-        "action_types": '["purchase"]',  # pedimos só purchase
+        # 👇 ESSENCIAL para “marcar certo” no filtro de datas
+        "action_report_time": "conversion",   # agrupa pelo dia da CONVERSÃO
+        "use_unified_attribution_setting": "true",  # usa a janela de atribuição padrão da conta
+        "limit": 500,
     }
+    # ⚠️ NÃO usar params["action_types"] aqui; vamos somar tudo que contenha "purchase"
 
-    def _sum_actions(rec_list) -> float:
+    def _sum_actions_with_purchase(rec_list) -> float:
         total = 0.0
         for it in rec_list or []:
-            if str(it.get("action_type","")).lower().find("purchase") != -1:
+            at = str(it.get("action_type", "")).lower()
+            if "purchase" in at:   # cobre omni_purchase, offsite_conversion.fb_pixel_purchase, etc.
                 try:
                     total += float(it.get("value", 0) or 0)
                 except:
@@ -112,8 +118,8 @@ def pull_meta_insights_http(act_id: str, token: str, api_version: str, level: st
             linha = {
                 "data": pd.to_datetime(rec.get("date_start")),
                 "gasto": float(rec.get("spend", 0) or 0),
-                "compras": _sum_actions(rec.get("actions")),
-                "faturamento": _sum_actions(rec.get("action_values")),
+                "compras": _sum_actions_with_purchase(rec.get("actions")),
+                "faturamento": _sum_actions_with_purchase(rec.get("action_values")),
             }
             # Nome conforme level
             if level == "campaign":
@@ -139,6 +145,7 @@ def pull_meta_insights_http(act_id: str, token: str, api_version: str, level: st
         for c in ["gasto","faturamento","compras"]:
             df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0.0)
     return df
+
 
 # =========================
 # Sidebar – só API e filtros
