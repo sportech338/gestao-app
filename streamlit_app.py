@@ -112,19 +112,18 @@ def funnel_fig(labels, values, title=None):
         go.Funnel(
             y=labels,
             x=values,
-            textinfo="value+label",        # mostra rótulo + número
+            textinfo="value",
             textposition="inside",
-            textfont=dict(size=20, color="black"),  # <<< aumenta tamanho e força cor preta
-            opacity=0.9,
+            opacity=0.95,
             connector={"line": {"dash": "dot", "width": 1}},
         )
     )
     fig.update_layout(
         title=title or "",
         margin=dict(l=12, r=12, t=40, b=12),
-        height=460,
+        height=440,
         template="plotly_white",
-        separators=",.",  
+        separators=",.",  # pt-BR
     )
     return fig
 
