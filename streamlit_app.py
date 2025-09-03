@@ -321,26 +321,26 @@ st.plotly_chart(
 )
 
 # Tabela de taxas — principais sempre visíveis + extras opcionais
-def _rate(a, b): 
+def _rate(a, b):
     return (a / b) if b and b > 0 else np.nan
 
 # ---- Principais (sempre)
 core_rows = [
     ("LPV / Cliques",      _rate(values_total[1], values_total[0])),
     ("Checkout / LPV",     _rate(values_total[2], values_total[1])),
-    ("Compra / LPV",       _rate(values_total[4], values_total[1])),
+    ("Compra / Checkout",  _rate(values_total[4], values_total[2])),
 ]
 
-# ---- Extras (somente se você quiser ver)
+# ---- Extras (opc.) — excluímos as três principais da lista
 extras_def = {
     "Add Pagto / Checkout": (_rate(values_total[3], values_total[2])),
     "Compra / Add Pagto":   (_rate(values_total[4], values_total[3])),
+    "Compra / LPV":         (_rate(values_total[4], values_total[1])),
     "Compra / Cliques":     (_rate(values_total[4], values_total[0])),
     "Checkout / Cliques":   (_rate(values_total[2], values_total[0])),
     "Add Pagto / LPV":      (_rate(values_total[3], values_total[1])),
 }
 
-# UI para escolher comparações extras
 with st.expander("Comparar outras taxas (opcional)"):
     extras_selected = st.multiselect(
         "Escolha métricas adicionais para visualizar:",
@@ -348,17 +348,15 @@ with st.expander("Comparar outras taxas (opcional)"):
         default=[],
     )
 
-# Monta a tabela final
 rows = core_rows + [(name, extras_def[name]) for name in extras_selected]
 sr = pd.DataFrame(rows, columns=["Taxa", "Valor"])
 sr["Valor"] = sr["Valor"].map(lambda x: f"{x*100:,.2f}%".replace(",", "X").replace(".", ",").replace("X", ".")
                               if pd.notnull(x) else "")
 
-# Altura ajustada: 3 linhas fixas + nº de extras
+# Altura ajusta conforme nº de extras
 base_h = 160
 row_h  = 36
 height = base_h + row_h * len(extras_selected)
-
 st.dataframe(sr, use_container_width=True, height=height)
 
 # ========= FUNIL por CAMPANHA =========
