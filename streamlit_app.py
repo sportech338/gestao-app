@@ -4,90 +4,71 @@ import numpy as np
 import requests, json, time
 from datetime import datetime, timedelta
 
-st.set_page_config(page_title="Performance Ads — Base", page_icon="📊", layout="wide")
-st.title("📊 Performance Ads — Base (somatórios + ROAS médio)")
-st.caption("Puxa dados da Meta (Graph API). Sempre soma Compras, Gasto e Faturamento no intervalo. ROAS pode ser média diária, média por campanha ou global (ponderado).")
+st.set_page_config(page_title="Meta Ads — Base Correta", page_icon="📊", layout="wide")
+st.title("📊 Meta Ads — Somatórios Corretos (Compras, Faturamento, Spend)")
 
-# -------------------------
-# Re-tentativa simples
-# -------------------------
+# -------------- helpers --------------
 def _retry_call(fn, max_retries=5, base_wait=1.5):
     for i in range(max_retries):
         try:
             return fn()
         except Exception as e:
             if any(k in str(e).lower() for k in ["rate limit","retry","temporarily unavailable","timeout"]):
-                time.sleep(base_wait * (2 ** i))
-                continue
+                time.sleep(base_wait * (2 ** i)); continue
             raise
     raise RuntimeError("Falha após múltiplas tentativas.")
 
-# -------------------------
-# Coleta da API (mínima e correta p/ compras e faturamento)
-# -------------------------
+def _sum_item(item: dict) -> float:
+    # soma qualquer valor numérico dentro do dict (p/ janelas 1d_click, 7d_click etc.)
+    if not isinstance(item, dict): 
+        try: return float(item or 0)
+        except: return 0.0
+    s=0.0
+    for k,v in item.items():
+        if k=="action_type": continue
+        try: s += float(v or 0)
+        except: pass
+    return s
+
+def _sum_list_by_type(lst, wanted_substr="purchase"):
+    """Soma valores de uma lista de dicts filtrando por action_type que contenha wanted_substr."""
+    tot=0.0
+    for it in (lst or []):
+        at = str(it.get("action_type") or "").lower()
+        if wanted_substr in at:
+            # preferir 'value' se existir; senão somar as janelas (1d_click etc.)
+            if "value" in it:
+                try: tot += float(it["value"] or 0)
+                except: pass
+            else:
+                tot += _sum_item(it)
+    return tot
+
+# -------------- coleta (APENAS actions/action_values) --------------
 @st.cache_data(ttl=600, show_spinner=True)
-def pull_insights(act_id: str, token: str, api_version: str,
-                  since: datetime, until: datetime, level: str = "campaign") -> pd.DataFrame:
+def pull_meta_insights(act_id: str, token: str, api_version: str,
+                       since: datetime, until: datetime,
+                       report_time: str) -> pd.DataFrame:
     """
-    Retorna linhas diárias com: data, gasto, compras, faturamento, campanha.
-    Compra e faturamento vêm de conversions/conversion_values (unified);
-    se não vier, caímos no fallback actions/action_values.
+    Retorna por dia: data, gasto (spend), compras (actions[purchase]), faturamento (action_values[purchase]),
+    campanha (nome). Usa atribuição unificada e report_time: 'impression' ou 'conversion'.
     """
     if not act_id or not token:
         return pd.DataFrame()
 
     base_url = f"https://graph.facebook.com/{api_version}/{act_id}/insights"
-    fields = [
-        "spend",
-        "conversions","conversion_values",   # preferido (unified attribution)
-        "actions","action_values",           # fallback
-        "date_start",
-        "campaign_name","account_name",
-    ]
+    fields = ["spend","actions","action_values","date_start","campaign_name","account_name"]
     params = {
         "access_token": token,
-        "level": level,
-        "time_range": json.dumps({
-            "since": since.strftime("%Y-%m-%d"),
-            "until": until.strftime("%Y-%m-%d"),
-        }),
-        "time_increment": 1,                 # diário
+        "level": "campaign",
+        "time_range": json.dumps({"since": since.strftime("%Y-%m-%d"), "until": until.strftime("%Y-%m-%d")}),
+        "time_increment": 1,
         "fields": ",".join(fields),
-        "action_report_time": "conversion",  # atribui na data da conversão
-        "use_unified_attribution_setting": "true",
         "limit": 500,
+        "use_unified_attribution_setting": "true",
+        "action_report_time": report_time,      # "impression" (padrão do Gerenciador) ou "conversion"
+        "action_types": '["purchase"]'          # filtra só PURCHASE já na API
     }
-
-    # preferências p/ tipos de evento de compra (ordem importa)
-    PREF = {"purchase": ["omni_purchase","purchase","offsite_conversion.fb_pixel_purchase"]}
-
-    def _item_value(item: dict) -> float:
-        # 'conversion_values' costuma ter 'value'; 'conversions' pode ter várias chaves
-        if "value" in (item or {}):
-            try: return float(item["value"] or 0)
-            except: return 0.0
-        s = 0.0
-        for k, v in (item or {}).items():
-            if k == "action_type": 
-                continue
-            try: s += float(v or 0)
-            except: pass
-        return s
-
-    def _best(list_of_dicts, keys) -> float:
-        if not list_of_dicts:
-            return 0.0
-        acc = {}
-        for it in list_of_dicts:
-            at = str(it.get("action_type") or "").lower()
-            acc[at] = acc.get(at, 0.0) + _item_value(it)
-        # tenta na ordem preferida
-        for k in keys:
-            if k in acc:
-                return acc[k]
-        # fallback amplo: se nada das chaves preferidas existir, soma tudo que contenha 'purchase'
-        tot = sum(v for k, v in acc.items() if "purchase" in k)
-        return tot
 
     rows = []
     next_url, next_params = base_url, params.copy()
@@ -96,55 +77,40 @@ def pull_insights(act_id: str, token: str, api_version: str,
         try:
             payload = resp.json()
         except Exception:
-            st.error("Falha ao decodificar resposta da API.")
-            return pd.DataFrame()
-
+            st.error("Não consegui decodificar a resposta da API."); return pd.DataFrame()
         if resp.status_code != 200:
             err = (payload or {}).get("error", {})
-            st.error(
-                f"Graph API error {resp.status_code} | code={err.get('code')} "
-                f"subcode={err.get('error_subcode')}\nmessage: {err.get('message')}\n"
-                f"fbtrace_id: {err.get('fbtrace_id')}"
-            )
+            st.error(f"Graph API error {resp.status_code} | code={err.get('code')} subcode={err.get('error_subcode')}\n"
+                     f"message: {err.get('message')}\nfbtrace_id: {err.get('fbtrace_id')}")
             return pd.DataFrame()
 
         for rec in payload.get("data", []):
             spend = float(rec.get("spend", 0) or 0)
-
-            # preferência unified (conversions/conversion_values)
-            compras = _best(rec.get("conversions"),       PREF["purchase"])
-            receita = _best(rec.get("conversion_values"), PREF["purchase"])
-
-            # fallback clássico (actions/action_values)
-            if compras == 0 and receita == 0:
-                compras = _best(rec.get("actions"),       PREF["purchase"])
-                receita = _best(rec.get("action_values"), PREF["purchase"])
+            # COMO CONTAMOS:
+            compras = _sum_list_by_type(rec.get("actions"), "purchase")
+            receita = _sum_list_by_type(rec.get("action_values"), "purchase")
 
             rows.append({
                 "data":        pd.to_datetime(rec.get("date_start")),
                 "gasto":       spend,
                 "compras":     float(compras),
                 "faturamento": float(receita),
-                "campanha":    rec.get("campaign_name") or rec.get("account_name") or "",
+                "campanha":    rec.get("campaign_name") or rec.get("account_name") or ""
             })
 
         after = ((payload.get("paging") or {}).get("cursors") or {}).get("after")
         if after:
-            next_url, next_params = base_url, params.copy()
-            next_params["after"] = after
+            next_url, next_params = base_url, params.copy(); next_params["after"] = after
         else:
             break
 
-    df = pd.DataFrame(rows)
+    df = pd.DataFrame(rows).sort_values("data") if rows else pd.DataFrame()
     if not df.empty:
-        df = df.sort_values("data")
         for c in ["gasto","faturamento","compras"]:
             df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0.0)
     return df
 
-# -------------------------
-# Sidebar (parâmetros)
-# -------------------------
+# -------------- UI --------------
 with st.sidebar:
     st.header("🔌 Meta Marketing API")
     act_id = st.text_input("Ad Account ID (ex.: act_1234567890)")
@@ -154,80 +120,51 @@ with st.sidebar:
     st.subheader("📅 Intervalo")
     since_api = st.date_input("Desde", value=(datetime.today()-timedelta(days=7)).date())
     until_api = st.date_input("Até", value=datetime.today().date())
+    if since_api > until_api:
+        since_api, until_api = until_api, since_api
 
-    st.subheader("📈 ROAS — como calcular")
-    roas_mode = st.radio(
-        "Escolha o cálculo do ROAS mostrado no card",
-        ["Média diária (simples)", "Média por campanha (simples)", "Global (ponderado)"],
+    st.subheader("🗓️ Reporting time (como o Gerenciador conta datas)")
+    report_mode = st.radio(
+        "Modo de data",
+        ["Impressão (igual ao Gerenciador)", "Conversão (quando ocorreu)"],
         index=0
     )
+    report_time = "impression" if "Impressão" in report_mode else "conversion"
 
-# -------------------------
-# Carregar dados
-# -------------------------
+# -------------- run --------------
 df = pd.DataFrame()
 if act_id and access_token:
-    with st.spinner("Conectando e puxando dados..."):
-        df = pull_insights(
+    with st.spinner("Puxando dados…"):
+        df = pull_meta_insights(
             act_id=act_id,
             token=access_token,
             api_version=api_version,
             since=datetime.combine(since_api, datetime.min.time()),
             until=datetime.combine(until_api, datetime.min.time()),
-            level="campaign"  # simples e útil para começar
+            report_time=report_time
         )
 
+st.subheader("Resultado do intervalo")
 if df.empty:
-    st.info("Informe conta, token e intervalo para carregar dados.")
+    st.info("Preencha conta/token/intervalo. Se vier vazio, cheque permissões, intervalo e se há compras atribuídas.")
 else:
-    # --- SOMATÓRIOS do período (sempre corretos) ---
+    # Somatórios corretos (intervalo)
     gasto_total = float(df["gasto"].sum())
     fat_total   = float(df["faturamento"].sum())
     comp_total  = float(df["compras"].sum())
+    roas_global = (fat_total / gasto_total) if gasto_total > 0 else 0.0
 
-    # --- ROAS médio conforme seleção ---
-    if roas_mode == "Média diária (simples)":
-        daily = df.groupby("data", as_index=False)[["gasto","faturamento"]].sum()
-        daily["ROAS"] = np.where(daily["gasto"]>0, daily["faturamento"]/daily["gasto"], np.nan)
-        roas_card = float(daily["ROAS"].replace([np.inf, -np.inf], np.nan).mean(skipna=True) or 0.0)
-        roas_hint = "Média aritmética do ROAS diário"
-    elif roas_mode == "Média por campanha (simples)":
-        per_camp = df.groupby("campanha", as_index=False)[["gasto","faturamento"]].sum()
-        per_camp = per_camp[per_camp["gasto"]>0]
-        per_camp["ROAS"] = per_camp["faturamento"]/per_camp["gasto"]
-        roas_card = float(per_camp["ROAS"].replace([np.inf, -np.inf], np.nan).mean(skipna=True) or 0.0)
-        roas_hint = "Média aritmética do ROAS por campanha"
-    else:  # Global (ponderado)
-        roas_card = (fat_total/gasto_total) if gasto_total>0 else 0.0
-        roas_hint = "Faturamento total ÷ Gasto total"
-
-    # --- Cards principais ---
-    c1, c2, c3, c4 = st.columns(4)
+    c1,c2,c3,c4 = st.columns(4)
     c1.metric("💰 Valor usado (soma)", f"R$ {gasto_total:,.0f}".replace(",", "."))
     c2.metric("🏪 Faturamento (soma)", f"R$ {fat_total:,.0f}".replace(",", "."))
     c3.metric("🛒 Compras (soma)", f"{comp_total:,.0f}".replace(",", "."))
-    c4.metric("📈 ROAS", f"{roas_card:,.2f}".replace(",", "."), help=roas_hint)
+    c4.metric("📈 ROAS (global)", f"{roas_global:,.2f}".replace(",", "."), help="Faturamento total ÷ Gasto total no intervalo")
 
-    st.markdown("---")
+    # ROAS médio diário (opcional, para comparação)
+    daily = df.groupby("data", as_index=False)[["gasto","faturamento"]].sum()
+    daily["ROAS"] = np.where(daily["gasto"]>0, daily["faturamento"]/daily["gasto"], np.nan)
+    roas_medio_dia = float(daily["ROAS"].replace([np.inf,-np.inf], np.nan).mean(skipna=True) or 0.0)
+    st.caption(f"ROAS médio diário (média aritmética dos dias): {roas_medio_dia:.2f}")
 
-    # Série diária (opcional para visual)
-    daily_view = df.groupby("data", as_index=False)[["gasto","faturamento","compras"]].sum()
-    if not daily_view.empty:
-        st.bar_chart(daily_view.set_index("data")[["gasto","faturamento"]])
-        roas_daily = np.where(daily_view["gasto"]>0, daily_view["faturamento"]/daily_view["gasto"], np.nan)
-        st.line_chart(pd.DataFrame({"ROAS": roas_daily}, index=daily_view["data"]))
-
-    # Tabela crua (para auditoria rápida)
-    with st.expander("Ver dados brutos (por dia x campanha)"):
-        st.dataframe(df, use_container_width=True)
-
-    # Resumo por campanha (útil pra gestão)
-    per_camp = df.groupby("campanha", as_index=False).agg(
-        gasto=("gasto","sum"), faturamento=("faturamento","sum"), compras=("compras","sum")
-    )
-    per_camp["ROAS"] = np.where(per_camp["gasto"]>0, per_camp["faturamento"]/per_camp["gasto"], np.nan)
-    per_camp["CPA"]  = np.where(per_camp["compras"]>0, per_camp["gasto"]/per_camp["compras"], np.nan)
-    st.markdown("### 📊 Resumo por campanha")
-    st.dataframe(per_camp.sort_values(["ROAS","faturamento","gasto"], ascending=[False, False, True]), use_container_width=True)
-
-    st.caption("Obs.: ROAS *Global (ponderado)* = Faturamento total ÷ Gasto total. ROAS *Médio* pode ser calculado por dia ou por campanha (média simples).")
+    with st.expander("Dados por dia (auditoria)"):
+        st.dataframe(df.sort_values(["data","campanha"]), use_container_width=True)
