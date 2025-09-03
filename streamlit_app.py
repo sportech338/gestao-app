@@ -49,10 +49,10 @@ def pull_meta_insights_http(act_id: str, token: str, api_version: str, level: st
     """
     Retorna por dia:
       data, gasto, faturamento (purchase), compras, roas,
-      cliques (link_clicks), lp_views (landing_page_views),
+      cliques (de actions: link_click), lp_views (de actions: landing_page_view),
       add_cart, ck_init, pay_info,
       impressoes, alcance, frequencia, cpm, cpc, ctr,
-      video_p25, video_p50, video_p75, video_p95,
+      vídeo quartis,
       campanha (nome conforme level)
     """
     if not act_id or not token:
@@ -60,16 +60,13 @@ def pull_meta_insights_http(act_id: str, token: str, api_version: str, level: st
 
     base_url = f"https://graph.facebook.com/{api_version}/{act_id}/insights"
     fields = [
-        # investimento / alcance / cliques
+        # investimento / alcance
         "spend","impressions","reach","frequency","cpm","cpc","ctr",
-        "link_clicks","landing_page_views",
         # vídeo (quartis)
         "video_p25_watched_actions","video_p50_watched_actions",
         "video_p75_watched_actions","video_p95_watched_actions",
-        # eventos de conversão (preferência)
-        "conversions","conversion_values",
-        # fallback antigo
-        "actions","action_values",
+        # conversões (preferência) + fallback antigo
+        "conversions","conversion_values","actions","action_values",
         # datas e identificação
         "date_start","date_stop",
         "campaign_name","campaign_id",
@@ -91,7 +88,7 @@ def pull_meta_insights_http(act_id: str, token: str, api_version: str, level: st
         "limit": 500,
     }
 
-    # ordem de preferência para evitar dupla contagem
+    # ordem de preferência
     PREF = {
         "purchase": [
             "omni_purchase",
@@ -108,32 +105,37 @@ def pull_meta_insights_http(act_id: str, token: str, api_version: str, level: st
         "link_click":        ["link_click"],
     }
 
-    def _sum_numeric_fields(item: dict) -> float:
+    def _num(x) -> float:
+        try:
+            return float(x or 0)
+        except:
+            return 0.0
+
+    def _item_value(item: dict) -> float:
+        """Usa 'value' se existir; senão soma janelas (1d/7d click/view etc.)."""
+        if not isinstance(item, dict):
+            return 0.0
+        if "value" in item and item["value"] not in (None, "", "0"):
+            return _num(item["value"])
         s = 0.0
-        for k, v in (item or {}).items():
+        for k, v in item.items():
             if k == "action_type":
                 continue
-            try:
-                s += float(v or 0)
-            except:
-                pass
+            s += _num(v)
         return s
 
     def _best_value(list_of_dicts, wanted_keys) -> float:
-        """Soma numérica das chaves em ordem de preferência; se não achar, soma qualquer *purchase*/*event* correspondente."""
+        """Soma por action_type e devolve na ordem de preferência; se não achar, tenta conter o termo base (ex.: 'purchase')."""
         if not list_of_dicts:
             return 0.0
         acc = {}
         for it in list_of_dicts:
             at = str(it.get("action_type") or "").lower()
-            acc[at] = acc.get(at, 0.0) + _sum_numeric_fields(it)
-
-        # tenta em ordem
+            acc[at] = acc.get(at, 0.0) + _item_value(it)
         for k in wanted_keys:
             if k in acc:
                 return acc[k]
-        # fallback amplo: qualquer que contenha o termo base (ex.: 'purchase')
-        base = wanted_keys[0].split("_")[ -1 ] if wanted_keys else ""
+        base = (wanted_keys[0] if wanted_keys else "").split("_")[-1]
         if base:
             tot = sum(v for k, v in acc.items() if base in k)
             if tot > 0:
@@ -141,10 +143,9 @@ def pull_meta_insights_http(act_id: str, token: str, api_version: str, level: st
         return 0.0
 
     def _video_total(list_of_dicts) -> float:
-        """Soma quartis de vídeo (lista de dicts com value e/ou janelas)."""
         if not list_of_dicts:
             return 0.0
-        return sum(_sum_numeric_fields(it) for it in list_of_dicts)
+        return sum(_item_value(it) for it in list_of_dicts)
 
     rows = []
     next_url, next_params = base_url, params.copy()
@@ -165,73 +166,57 @@ def pull_meta_insights_http(act_id: str, token: str, api_version: str, level: st
             return pd.DataFrame()
 
         for rec in payload.get("data", []):
-            spend = float(rec.get("spend", 0) or 0)
+            spend = _num(rec.get("spend"))
 
-            # Preferência: conversions / conversion_values
-            compras_cnt = _best_value(rec.get("conversions"),       PREF["purchase"])
-            fat_val     = _best_value(rec.get("conversion_values"), PREF["purchase"])
+            # Purchases / Revenue (preferência conversions; fallback actions)
+            compras = _best_value(rec.get("conversions"),       PREF["purchase"])
+            fat     = _best_value(rec.get("conversion_values"), PREF["purchase"])
+            if compras == 0 and fat == 0:
+                compras = _best_value(rec.get("actions"),       PREF["purchase"])
+                fat     = _best_value(rec.get("action_values"), PREF["purchase"])
 
-            # Fallback p/ actions / action_values
-            if compras_cnt == 0 and fat_val == 0:
-                compras_cnt = _best_value(rec.get("actions"),        PREF["purchase"])
-                fat_val     = _best_value(rec.get("action_values"),  PREF["purchase"])
+            # Funil
+            ck_init  = _best_value(rec.get("conversions"), PREF["initiate_checkout"]) or _best_value(rec.get("actions"), PREF["initiate_checkout"])
+            add_cart = _best_value(rec.get("conversions"), PREF["add_to_cart"])       or _best_value(rec.get("actions"), PREF["add_to_cart"])
+            pay_info = _best_value(rec.get("conversions"), PREF["add_payment_info"])  or _best_value(rec.get("actions"), PREF["add_payment_info"])
 
-            # Outros eventos do funil
-            ck_init = (
-                _best_value(rec.get("conversions"), PREF["initiate_checkout"])
-                or _best_value(rec.get("actions"),  PREF["initiate_checkout"])
-            )
-            add_cart = (
-                _best_value(rec.get("conversions"), PREF["add_to_cart"])
-                or _best_value(rec.get("actions"),  PREF["add_to_cart"])
-            )
-            pay_info = (
-                _best_value(rec.get("conversions"), PREF["add_payment_info"])
-                or _best_value(rec.get("actions"),  PREF["add_payment_info"])
-            )
+            # Cliques / LPV (via actions)
+            link_clicks = _best_value(rec.get("actions"), PREF["link_click"])
+            lp_views    = _best_value(rec.get("actions"), PREF["landing_page_view"])
 
-            # Cliques / LPV (usar campos diretos quando vierem)
-            link_clicks = float(rec.get("link_clicks") or 0)
-            if link_clicks == 0:
-                link_clicks = _best_value(rec.get("actions"), PREF["link_click"])
-
-            lp_views = float(rec.get("landing_page_views") or 0)
-            if lp_views == 0:
-                lp_views = _best_value(rec.get("actions"), PREF["landing_page_view"])
-
-            # Vídeo quartis
+            # Vídeo
             v25 = _video_total(rec.get("video_p25_watched_actions"))
             v50 = _video_total(rec.get("video_p50_watched_actions"))
             v75 = _video_total(rec.get("video_p75_watched_actions"))
             v95 = _video_total(rec.get("video_p95_watched_actions"))
 
             linha = {
-                "data":          pd.to_datetime(rec.get("date_start")),
-                "gasto":         spend,
-                "faturamento":   float(fat_val),
-                "compras":       float(compras_cnt),
-                "roas":          (float(fat_val)/spend) if spend > 0 else 0.0,
+                "data":        pd.to_datetime(rec.get("date_start")),
+                "gasto":       spend,
+                "faturamento": _num(fat),
+                "compras":     _num(compras),
+                "roas":        (_num(fat)/spend) if spend > 0 else 0.0,
 
-                "cliques":       float(link_clicks),
-                "lp_views":      float(lp_views),
-                "add_cart":      float(add_cart),
-                "ck_init":       float(ck_init),
-                "pay_info":      float(pay_info),
+                "cliques":     _num(link_clicks),
+                "lp_views":    _num(lp_views),
+                "add_cart":    _num(add_cart),
+                "ck_init":     _num(ck_init),
+                "pay_info":    _num(pay_info),
 
-                "impressoes":    float(rec.get("impressions") or 0),
-                "alcance":       float(rec.get("reach") or 0),
-                "frequencia":    float(rec.get("frequency") or 0),
-                "cpm":           float(rec.get("cpm") or 0),
-                "cpc":           float(rec.get("cpc") or 0),
-                "ctr":           float(rec.get("ctr") or 0),
+                "impressoes":  _num(rec.get("impressions")),
+                "alcance":     _num(rec.get("reach")),
+                "frequencia":  _num(rec.get("frequency")),
+                "cpm":         _num(rec.get("cpm")),
+                "cpc":         _num(rec.get("cpc")),
+                "ctr":         _num(rec.get("ctr")),
 
-                "video_p25":     float(v25),
-                "video_p50":     float(v50),
-                "video_p75":     float(v75),
-                "video_p95":     float(v95),
+                "video_p25":   _num(v25),
+                "video_p50":   _num(v50),
+                "video_p75":   _num(v75),
+                "video_p95":   _num(v95),
             }
 
-            # rótulo pelo level
+            # Rótulo pelo level
             if level == "campaign":
                 linha["campanha"] = rec.get("campaign_name", "")
             elif level == "adset":
@@ -253,7 +238,6 @@ def pull_meta_insights_http(act_id: str, token: str, api_version: str, level: st
     df = pd.DataFrame(rows)
     if not df.empty:
         df = df.sort_values("data")
-        # normaliza tipos numéricos
         for c in ["gasto","faturamento","compras","roas","cliques","lp_views",
                   "add_cart","ck_init","pay_info","impressoes","alcance","frequencia",
                   "cpm","cpc","ctr","video_p25","video_p50","video_p75","video_p95"]:
