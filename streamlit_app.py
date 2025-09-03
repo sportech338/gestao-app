@@ -394,23 +394,39 @@ def pull_meta_insights_http(act_id: str, token: str, api_version: str, level: st
     while next_url:
         def _do():
             return requests.get(next_url, params=next_params, timeout=60)
-        resp = _retry_call(_do)
-        if resp.status_code != 200:
-            raise RuntimeError(f"Graph error {resp.status_code}: {resp.text}")
 
-        payload = resp.json()
+        resp = _retry_call(_do)
+
+        # Tenta decodificar a resposta
+        try:
+            payload = resp.json()
+        except Exception:
+            payload = {"raw": resp.text}
+
+        # Tratamento de erro com mensagem clara na tela
+        if resp.status_code != 200:
+            err = (payload or {}).get("error", {})
+            code = err.get("code")
+            subcode = err.get("error_subcode")
+            msg = err.get("message")
+            fbtrace = err.get("fbtrace_id")
+            st.error(
+                f"Graph API error {resp.status_code} | code={code} subcode={subcode}\n"
+                f"message: {msg}\nfbtrace_id: {fbtrace}"
+            )
+            raise RuntimeError(
+                f"Graph API error {resp.status_code}: {msg} (code={code}, subcode={subcode})"
+            )
+
+        # Se chegou aqui, deu 200 OK — processa os registros
         data = payload.get("data", [])
         for rec in data:
             linha = {}
-            # Data (um ponto por dia se time_increment=1)
             linha["data"] = pd.to_datetime(rec.get("date_start"))
-
-            # Métricas
             linha["gasto"] = float(rec.get("spend", 0) or 0)
             linha["faturamento"] = float(rec.get("purchase_conversion_value", 0) or 0)
             linha["compras"] = float(rec.get("purchases", 0) or 0)
 
-            # Nome em função do level
             if level == "campaign":
                 linha["campanha"] = rec.get("campaign_name", "")
             elif level == "adset":
@@ -420,28 +436,24 @@ def pull_meta_insights_http(act_id: str, token: str, api_version: str, level: st
             else:
                 linha["campanha"] = rec.get("account_name", "")
 
-            # Status
             linha["status"] = rec.get("effective_status", "")
 
-            # Veiculação (ex: publisher_platform) se breakdown for escolhido
             if "publisher_platform" in rec:
                 linha["veiculacao"] = rec["publisher_platform"]
             else:
                 linha["veiculacao"] = ""
 
-            # Mantém ids úteis
             for k in ["campaign_id","adset_id","ad_id","account_id","date_start","date_stop"]:
                 if k in rec:
                     linha[k] = rec[k]
 
-            # Inclui colunas de breakdowns selecionados
             for b in breakdowns or []:
                 if b in rec:
                     linha[b] = rec[b]
 
             rows.append(linha)
 
-        # paginação
+        # Paginação
         paging = payload.get("paging", {})
         cursors = paging.get("cursors", {})
         after = cursors.get("after")
@@ -451,6 +463,7 @@ def pull_meta_insights_http(act_id: str, token: str, api_version: str, level: st
             next_params["after"] = after
         else:
             next_url = None
+
 
     df = pd.DataFrame(rows)
     if not df.empty and "data" in df.columns:
