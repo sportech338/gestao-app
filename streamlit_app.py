@@ -97,16 +97,26 @@ def _pick_purchase_totals(rows: list) -> float:
 def _fmt_money_br(v: float) -> str:
     return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
-def funnel_fig(labels, values, title=None):
+def funnel_fig(labels, values, title=None, show_percents=True):
+    # Mostra só valor ou valor + percentuais (do início e da etapa anterior)
+    textinfo = "value+percent initial+percent previous" if show_percents else "value"
     fig = go.Figure(
         go.Funnel(
             y=labels,
             x=values,
-            textinfo="value+percent initial+percent previous",  # valor, % do início e % da etapa anterior
+            textinfo=textinfo,
+            textposition="inside",                 # valores dentro das faixas
             opacity=0.95,
+            connector={"line": {"dash": "dot", "width": 1}},  # conexão sutil
         )
     )
-    fig.update_layout(title=title or "", margin=dict(l=20, r=20, t=40, b=20), height=420)
+    fig.update_layout(
+        title=title or "",
+        margin=dict(l=12, r=12, t=40, b=12),
+        height=440,
+        template="plotly_white",                  # visual clean
+        separators=",.",                          # pt-BR: milhar "." e decimal ","
+    )
     return fig
 
 def enforce_monotonic(values):
@@ -288,46 +298,43 @@ st.line_chart(daily.set_index("date")[["spend","revenue"]])
 st.caption("Linhas diárias de Valor usado e Valor de conversão. Vendas na tabela abaixo.")
 
 # ========= FUNIL (Período) — FUNIL VISUAL =========
-st.subheader("Funil do período (Total) — Cliques → LPV → Finalização → Add Pagamento → Compra")
+st.subheader("Funil do período (Total) — Cliques → LPV → Checkout → Add Pagamento → Compra")
 
+# Totais
 f_clicks = float(df["link_clicks"].sum())
 f_lpv    = float(df["lpv"].sum())
 f_ic     = float(df["init_checkout"].sum())
 f_api    = float(df["add_payment"].sum())
 f_pur    = float(df["purchases"].sum())
 
-labels_total = [
-    "Cliques (link_clicks)",
-    "LPV (landing_page_views)",
-    "Finalização (initiate_checkout)",
-    "Add Pagamento (add_payment_info)",
-    "Compra (purchase)",
-]
-values_total = [f_clicks, f_lpv, f_ic, f_api, f_pur]
+# RÓTULOS curtos e VALORES inteiros (legibilidade)
+labels_total = ["Cliques", "LPV", "Checkout", "Add Pagamento", "Compra"]
+values_total = [int(round(f_clicks)), int(round(f_lpv)), int(round(f_ic)),
+                int(round(f_api)), int(round(f_pur))]
 
-# Toggle para garantir o formato de funil no desenho
+# Toggle: manter forma de funil sempre decrescente só no desenho
 force_shape = st.checkbox("Forçar formato de funil (sempre decrescente)", value=True)
 values_plot = enforce_monotonic(values_total) if force_shape else values_total
 
+# Gráfico (com valores dentro das faixas)
 st.plotly_chart(
-    funnel_fig(labels_total, values_plot, title="Funil do período"),
+    funnel_fig(labels_total, values_plot, title="Funil do período", show_percents=True),
     use_container_width=True
 )
 
-# Tabela de taxas sequenciais (complemento do funil)
+# Tabela auxiliar de taxas (complemento)
 def _rate(a, b): return (a / b) if b > 0 else np.nan
 seq_rates = {
-    "LPV / Cliques": _rate(f_lpv, f_clicks),
-    "Finalização / LPV": _rate(f_ic, f_lpv),
-    "Add Pagto / Finalização": _rate(f_api, f_ic),
-    "Compra / Add Pagto": _rate(f_pur, f_api),
-    "Compra / Cliques": _rate(f_pur, f_clicks),
+    "LPV / Cliques": _rate(values_total[1], values_total[0]),
+    "Checkout / LPV": _rate(values_total[2], values_total[1]),
+    "Add Pagto / Checkout": _rate(values_total[3], values_total[2]),
+    "Compra / Add Pagto": _rate(values_total[4], values_total[3]),
+    "Compra / Cliques": _rate(values_total[4], values_total[0]),
 }
 sr = pd.DataFrame([{"Taxa": k, "Valor": v} for k, v in seq_rates.items()])
 sr["Valor"] = sr["Valor"].map(lambda x: f"{x*100:,.2f}%".replace(",", "X").replace(".", ",").replace("X", ".")
                               if pd.notnull(x) else "")
 st.dataframe(sr, use_container_width=True, height=240)
-
 
 # ========= FUNIL por CAMPANHA =========
 st.subheader("Campanhas — Funil e Taxas (somatório no período)")
