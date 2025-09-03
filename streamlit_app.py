@@ -139,6 +139,12 @@ def _fmt_ratio_br(x):  # ROAS "1,23x"
     return (f"{x:,.2f}x".replace(",", "X").replace(".", ",").replace("X", ".")
             if pd.notnull(x) else "")
 
+def _fmt_int_br(x):
+    try:
+        return f"{int(round(float(x))):,}".replace(",", ".")
+    except:
+        return ""
+
 def _safe_div(n, d):
     n = float(n or 0); d = float(d or 0)
     return (n / d) if d > 0 else np.nan
