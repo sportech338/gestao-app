@@ -4,6 +4,7 @@ import pandas as pd
 import numpy as np
 import requests, json, time
 from datetime import date, timedelta
+import plotly.graph_objects as go
 
 # =============== Config & Estilos ===============
 st.set_page_config(page_title="Meta Ads — Paridade + Funil", page_icon="📊", layout="wide")
@@ -95,6 +96,26 @@ def _pick_purchase_totals(rows: list) -> float:
 
 def _fmt_money_br(v: float) -> str:
     return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+def funnel_fig(labels, values, title=None):
+    fig = go.Figure(
+        go.Funnel(
+            y=labels,
+            x=values,
+            textinfo="value+percent initial+percent previous",  # valor, % do início e % da etapa anterior
+            opacity=0.95,
+        )
+    )
+    fig.update_layout(title=title or "", margin=dict(l=20, r=20, t=40, b=20), height=420)
+    return fig
+
+def enforce_monotonic(values):
+    """Garante formato de funil: cada etapa <= etapa anterior (só para o desenho)."""
+    out, cur = [], None
+    for v in values:
+        cur = v if cur is None else min(cur, v)
+        out.append(cur)
+    return out
 
 # =============== Coleta (com fallback de campos extras) ===============
 @st.cache_data(ttl=600, show_spinner=True)
@@ -266,27 +287,35 @@ daily = df.groupby("date", as_index=False)[["spend","revenue","purchases"]].sum(
 st.line_chart(daily.set_index("date")[["spend","revenue"]])
 st.caption("Linhas diárias de Valor usado e Valor de conversão. Vendas na tabela abaixo.")
 
-# ========= FUNIL (Período) =========
-st.subheader("Funil do período (Total)")
-funnel_total = {
-    "Cliques (link_clicks)": float(df["link_clicks"].sum()),
-    "LPV (landing_page_views)": float(df["lpv"].sum()),
-    "Finalização (initiate_checkout)": float(df["init_checkout"].sum()),
-    "Add Pagamento (add_payment_info)": float(df["add_payment"].sum()),
-    "Compra (purchase)": float(df["purchases"].sum()),
-}
-ft = pd.DataFrame({"Etapa": list(funnel_total.keys()), "Quantidade": list(funnel_total.values())})
+# ========= FUNIL (Período) — FUNIL VISUAL =========
+st.subheader("Funil do período (Total) — Cliques → LPV → Finalização → Add Pagamento → Compra")
 
-# taxas sequenciais
-def _rate(a,b):  # b -> a
-    return (a/b) if b>0 else np.nan
+f_clicks = float(df["link_clicks"].sum())
+f_lpv    = float(df["lpv"].sum())
+f_ic     = float(df["init_checkout"].sum())
+f_api    = float(df["add_payment"].sum())
+f_pur    = float(df["purchases"].sum())
 
-f_clicks = funnel_total["Cliques (link_clicks)"]
-f_lpv = funnel_total["LPV (landing_page_views)"]
-f_ic = funnel_total["Finalização (initiate_checkout)"]
-f_api = funnel_total["Add Pagamento (add_payment_info)"]
-f_pur = funnel_total["Compra (purchase)"]
+labels_total = [
+    "Cliques (link_clicks)",
+    "LPV (landing_page_views)",
+    "Finalização (initiate_checkout)",
+    "Add Pagamento (add_payment_info)",
+    "Compra (purchase)",
+]
+values_total = [f_clicks, f_lpv, f_ic, f_api, f_pur]
 
+# Toggle para garantir o formato de funil no desenho
+force_shape = st.checkbox("Forçar formato de funil (sempre decrescente)", value=True)
+values_plot = enforce_monotonic(values_total) if force_shape else values_total
+
+st.plotly_chart(
+    funnel_fig(labels_total, values_plot, title="Funil do período"),
+    use_container_width=True
+)
+
+# Tabela de taxas sequenciais (complemento do funil)
+def _rate(a, b): return (a / b) if b > 0 else np.nan
 seq_rates = {
     "LPV / Cliques": _rate(f_lpv, f_clicks),
     "Finalização / LPV": _rate(f_ic, f_lpv),
@@ -294,17 +323,11 @@ seq_rates = {
     "Compra / Add Pagto": _rate(f_pur, f_api),
     "Compra / Cliques": _rate(f_pur, f_clicks),
 }
-sr = pd.DataFrame([
-    {"Taxa": k, "Valor": v} for k, v in seq_rates.items()
-])
+sr = pd.DataFrame([{"Taxa": k, "Valor": v} for k, v in seq_rates.items()])
+sr["Valor"] = sr["Valor"].map(lambda x: f"{x*100:,.2f}%".replace(",", "X").replace(".", ",").replace("X", ".")
+                              if pd.notnull(x) else "")
+st.dataframe(sr, use_container_width=True, height=240)
 
-cA, cB = st.columns([1,1])
-with cA:
-    st.bar_chart(ft.set_index("Etapa"))
-with cB:
-    sr_fmt = sr.copy()
-    sr_fmt["Valor"] = sr_fmt["Valor"].map(lambda x: f"{x*100:,.2f}%".replace(",", "X").replace(".", ",").replace("X", ".") if pd.notnull(x) else "")
-    st.dataframe(sr_fmt, use_container_width=True, height=280)
 
 # ========= FUNIL por CAMPANHA =========
 st.subheader("Campanhas — Funil e Taxas (somatório no período)")
