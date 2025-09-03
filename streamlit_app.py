@@ -47,8 +47,10 @@ def _retry_call(fn, max_retries=5, base_wait=1.5):
 def pull_meta_insights_http(act_id: str, token: str, api_version: str, level: str,
                             since: datetime, until: datetime) -> pd.DataFrame:
     """
-    Busca insights no Graph API e retorna colunas:
+    Busca insights no Graph API e retorna:
     data, gasto, faturamento (valor de purchase), compras (qtd), campanha (conforme level).
+    Usa 'conversions'/'conversion_values' (preferido) e faz fallback para 'actions'/'action_values'.
+    Soma janelas (1d_click/7d_click/1d_view etc.) quando 'value' não existir.
     """
     if not act_id or not token:
         return pd.DataFrame()
@@ -56,8 +58,8 @@ def pull_meta_insights_http(act_id: str, token: str, api_version: str, level: st
     base_url = f"https://graph.facebook.com/{api_version}/{act_id}/insights"
     fields = [
         "spend",
-        "actions",
-        "action_values",
+        "conversions","conversion_values",  # preferível
+        "actions","action_values",          # fallback
         "date_start","date_stop",
         "campaign_name","campaign_id",
         "adset_name","adset_id",
@@ -78,19 +80,51 @@ def pull_meta_insights_http(act_id: str, token: str, api_version: str, level: st
         "limit": 500,
     }
 
-    def _sum_actions_with_purchase(rec_list) -> float:
-        total = 0.0
-        for it in rec_list or []:
-            at = str(it.get("action_type", "")).lower()
-            if "purchase" in at:
-                try:
-                    total += float(it.get("value", 0) or 0)
-                except:
-                    pass
-        return total
+    # preferências de tipos de compra (ordem importa para evitar dupla contagem)
+    PREFER_ORDER = [
+        "omni_purchase",
+        "purchase",
+        "offsite_conversion.fb_pixel_purchase",
+        "onsite_conversion.purchase",
+        "app_custom_event.fb_mobile_purchase",
+        "website_purchase",
+    ]
 
-    rows = []
-    next_url, next_params = base_url, params.copy()
+    def _sum_numeric_fields(item: dict) -> float:
+        """Soma todos os campos numéricos do item (value, 1d_click, 7d_click, 1d_view, etc.)."""
+        s = 0.0
+        for k, v in (item or {}).items():
+            if k == "action_type": 
+                continue
+            try:
+                s += float(v or 0)
+            except:
+                pass
+        return s
+
+    def _best_purchase_from(list_of_dicts) -> dict:
+        """
+        Monta um mapa action_type -> soma(números).
+        Retorna a melhor métrica seguindo a ordem de preferência.
+        Se não achar nenhum preferido, retorna o total de tudo que contenha 'purchase'.
+        """
+        acc = {}
+        for it in (list_of_dicts or []):
+            at = str(it.get("action_type") or "").lower()
+            if "purchase" not in at:
+                continue
+            acc[at] = acc.get(at, 0.0) + _sum_numeric_fields(it)
+
+        # prioriza
+        for key in PREFER_ORDER:
+            if key in acc:
+                return {"value": acc[key], "chosen": key}
+        # fallback: soma de todos os 'purchase'
+        if acc:
+            return {"value": sum(acc.values()), "chosen": "any_purchase"}
+        return {"value": 0.0, "chosen": None}
+
+    rows, next_url, next_params = [], base_url, params.copy()
     while next_url:
         def _do():
             return requests.get(next_url, params=next_params, timeout=60)
@@ -111,12 +145,25 @@ def pull_meta_insights_http(act_id: str, token: str, api_version: str, level: st
             return pd.DataFrame()
 
         for rec in payload.get("data", []):
+            spend = float(rec.get("spend", 0) or 0)
+
+            # 1) Tenta conversions/conversion_values (preferido)
+            conv_cnt   = _best_purchase_from(rec.get("conversions"))
+            conv_value = _best_purchase_from(rec.get("conversion_values"))
+
+            # 2) Se não veio nada ali, faz fallback p/ actions/action_values
+            if conv_cnt["value"] == 0 and conv_value["value"] == 0:
+                conv_cnt   = _best_purchase_from(rec.get("actions"))
+                conv_value = _best_purchase_from(rec.get("action_values"))
+
             linha = {
                 "data": pd.to_datetime(rec.get("date_start")),
-                "gasto": float(rec.get("spend", 0) or 0),
-                "compras": _sum_actions_with_purchase(rec.get("actions")),
-                "faturamento": _sum_actions_with_purchase(rec.get("action_values")),
+                "gasto": spend,
+                "compras": float(conv_cnt["value"]),
+                "faturamento": float(conv_value["value"]),
             }
+
+            # nome conforme o level
             if level == "campaign":
                 linha["campanha"] = rec.get("campaign_name", "")
             elif level == "adset":
@@ -125,8 +172,10 @@ def pull_meta_insights_http(act_id: str, token: str, api_version: str, level: st
                 linha["campanha"] = rec.get("ad_name", "")
             else:
                 linha["campanha"] = rec.get("account_name", "")
+
             rows.append(linha)
 
+        # paginação
         after = ((payload.get("paging") or {}).get("cursors") or {}).get("after")
         if after:
             next_url, next_params = base_url, params.copy()
@@ -140,6 +189,7 @@ def pull_meta_insights_http(act_id: str, token: str, api_version: str, level: st
         for c in ["gasto","faturamento","compras"]:
             df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0.0)
     return df
+
 
 # =========================
 # Sidebar
