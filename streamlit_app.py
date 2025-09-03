@@ -114,6 +114,7 @@ def funnel_fig(labels, values, title=None):
             x=values,
             textinfo="value",
             textposition="inside",
+            textfont=dict(size=26),  # <<< aumenta o tamanho dos números
             opacity=0.95,
             connector={"line": {"dash": "dot", "width": 1}},
         )
@@ -123,7 +124,7 @@ def funnel_fig(labels, values, title=None):
         margin=dict(l=12, r=12, t=40, b=12),
         height=440,
         template="plotly_white",
-        separators=",.",  # pt-BR
+        separators=",.",
     )
     return fig
 
