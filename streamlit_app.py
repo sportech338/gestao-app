@@ -1,11 +1,35 @@
+# app.py
 import streamlit as st
 import pandas as pd
 import numpy as np
 import requests, json, time
-from datetime import datetime, timedelta
+from datetime import date, timedelta
 
-# -------------------- helpers --------------------
-def _retry_call(fn, max_retries=5, base_wait=1.5):
+# =========================
+# Config
+# =========================
+st.set_page_config(
+    page_title="Meta Ads — Dashboard Limpo",
+    page_icon="📈",
+    layout="wide",
+)
+
+# =========================
+# Estilos leves
+# =========================
+st.markdown("""
+<style>
+.small-muted { color:#6b7280; font-size:12px; }
+.big-number { font-size:28px; font-weight:700; }
+.kpi-card { padding:14px 16px; border:1px solid #e5e7eb; border-radius:14px; background:#fff; }
+</style>
+""", unsafe_allow_html=True)
+
+# =========================
+# Helpers
+# =========================
+def _retry_call(fn, max_retries=5, base_wait=1.3):
+    """Retry exponencial para chamadas HTTP instáveis."""
     for i in range(max_retries):
         try:
             return fn()
@@ -17,13 +41,9 @@ def _retry_call(fn, max_retries=5, base_wait=1.5):
             raise
     raise RuntimeError("Falha após múltiplas tentativas.")
 
-# Preferências de tipos de compra (vamos somar "omni" e "específicos" e usar o MAIOR)
-PURCHASE_OMNI = ["omni_purchase"]
-PURCHASE_SPECIFIC = [
-    "purchase",
-    "onsite_conversion.purchase",
-    "offsite_conversion.fb_pixel_purchase",
-]
+def _ensure_act_prefix(ad_account_id: str) -> str:
+    s = (ad_account_id or "").strip()
+    return s if s.startswith("act_") else f"act_{s}"
 
 def _to_float(x):
     try:
@@ -31,191 +51,277 @@ def _to_float(x):
     except:
         return 0.0
 
-def _sum_windows_or_value(item: dict) -> float:
+def _sum_actions_generic(rows, contains: str) -> float:
     """
-    Alguns itens trazem 'value' (total agregado).
-    Outros trazem por janelas (ex.: '7d_click', '1d_view', etc.).
-    Vamos priorizar 'value' se existir, senão somar todas as chaves numéricas.
+    Soma qualquer item de 'actions'/'action_values' cujo action_type contenha a substring (ex.: 'purchase').
+    Se houver 'value', usa; caso contrário soma chaves numéricas (ex.: '7d_click', '1d_view', etc.).
     """
-    if not isinstance(item, dict):
-        return _to_float(item)
-    if "value" in item:
-        return _to_float(item.get("value"))
-
-    s = 0.0
-    for k, v in item.items():
-        # soma apenas números (ex.: '7d_click', '1d_view', '28d_click'...).
-        s += _to_float(v)
-    return s
-
-def _sum_by_types(rows: list, types: list) -> float:
-    """Soma total para uma lista de action_types."""
+    total = 0.0
     if not rows:
         return 0.0
-    acc = 0.0
     for it in rows:
-        at = str(it.get("action_type") or "").lower()
-        if any(at == t for t in types):
-            acc += _sum_windows_or_value(it)
-    # fallback: se lista vazia, tenta qualquer 'purchase'
-    if acc == 0.0:
-        for it in rows:
-            if "purchase" in str(it.get("action_type", "")).lower():
-                acc += _sum_windows_or_value(it)
-    return float(acc)
+        at = str(it.get("action_type", "")).lower()
+        if contains in at:
+            if "value" in it:
+                total += _to_float(it.get("value"))
+            else:
+                # soma apenas valores numéricos possíveis (janelas)
+                for k, v in it.items():
+                    if k not in ("action_type", "action_target", "action_carousel_card_id",
+                                 "action_destination", "action_device", "action_channel", "value"):
+                        total += _to_float(v)
+    return float(total)
 
-def _ensure_act_prefix(ad_account_id: str) -> str:
-    s = ad_account_id.strip()
-    return s if s.startswith("act_") else f"act_{s}"
+def _fmt_money_br(v: float) -> str:
+    return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
-# -------------------- coleta da API --------------------
 @st.cache_data(ttl=600, show_spinner=True)
-def pull_meta_insights_correct(act_id: str, token: str, api_version: str,
-                               since: datetime, until: datetime,
-                               report_time: str = "conversion",
-                               audit: bool = False) -> pd.DataFrame:
+def fetch_insights_daily(act_id: str,
+                         token: str,
+                         api_version: str,
+                         since_str: str,
+                         until_str: str,
+                         level: str = "campaign",
+                         try_extra_fields: bool = True) -> pd.DataFrame:
     """
-    Retorna por dia: data, gasto, compras (qtd), faturamento (R$), campanha.
-    Usa a Atribuição Unificada do conjunto.
-    'report_time': 'conversion' (recomendado) ou 'impression'.
+    Busca insights diários no padrão dos dashboards prontos:
+      - use_unified_attribution_setting=true
+      - action_report_time=conversion
+      - sem 'action_types' no request (não cortamos vendas)
+      - level fixo (default: 'campaign')
+      - time_increment=1
+    Fallback automático: se erro #100, refaz sem campos extras.
     """
-    if not act_id or not token:
-        return pd.DataFrame()
-
     act_id = _ensure_act_prefix(act_id)
     base_url = f"https://graph.facebook.com/{api_version}/{act_id}/insights"
 
-    fields = [
+    base_fields = [
         "spend",
+        "impressions",
+        "clicks",
         "actions",
         "action_values",
+        "account_currency",
         "date_start",
+        "campaign_id",
         "campaign_name",
-        "account_name",
     ]
+    extra_fields = ["link_clicks", "landing_page_views"]  # podem falhar em combinações específicas (#100)
 
+    fields = base_fields + (extra_fields if try_extra_fields else [])
     params = {
         "access_token": token,
-        "level": "campaign",
-        "time_range": json.dumps({
-            "since": since.strftime("%Y-%m-%d"),
-            "until": until.strftime("%Y-%m-%d"),
-        }),
+        "level": level,  # "campaign" recomendado
+        "time_range": json.dumps({"since": since_str, "until": until_str}),
         "time_increment": 1,
         "fields": ",".join(fields),
         "limit": 500,
         "use_unified_attribution_setting": "true",
-        "action_report_time": report_time,  # 'conversion' bate com o dia da compra
-        # IMPORTANTE: NÃO usar 'action_types' aqui; filtraremos no cliente.
-        # IMPORTANTE: NÃO enviar 'action_attribution_windows' quando unified=true.
+        "action_report_time": "conversion",
+        # IMPORTANTE: não enviar action_attribution_windows quando unified=true.
+        # IMPORTANTE: não enviar action_types — filtramos no cliente.
     }
 
-    # Modo auditoria: queremos ver por action_type também
-    if audit:
-        params["action_breakdowns"] = "action_type"
+    rows = []
+    next_url = base_url
+    next_params = params.copy()
 
-    rows, next_url, next_params = [], base_url, params.copy()
     while next_url:
-        resp = _retry_call(lambda: requests.get(next_url, params=next_params, timeout=120))
+        resp = _retry_call(lambda: requests.get(next_url, params=next_params, timeout=90))
         try:
             payload = resp.json()
         except Exception:
-            st.error("Resposta inválida da Graph API.")
-            return pd.DataFrame()
+            raise RuntimeError("Resposta inválida da Graph API.")
 
         if resp.status_code != 200:
             err = (payload or {}).get("error", {})
-            st.error(
-                f"Graph API error {resp.status_code} | code={err.get('code')} "
-                f"subcode={err.get('error_subcode')}\nmessage: {err.get('message')}\n"
-                f"fbtrace_id: {err.get('fbtrace_id')}"
-            )
-            return pd.DataFrame()
+            code = err.get("code")
+            sub = err.get("error_subcode")
+            msg = err.get("message")
+            # Fallback: se fields extras quebraram (#100), refaça sem extras uma única vez
+            if code == 100 and try_extra_fields:
+                return fetch_insights_daily(
+                    act_id=act_id, token=token, api_version=api_version,
+                    since_str=since_str, until_str=until_str,
+                    level=level, try_extra_fields=False
+                )
+            raise RuntimeError(f"Graph API error {resp.status_code} | code={code} subcode={sub} | {msg}")
 
         for rec in payload.get("data", []):
             spend = _to_float(rec.get("spend"))
             actions = rec.get("actions") or []
             action_values = rec.get("action_values") or []
 
-            # QUANTIDADE de compras
-            omni_cnt = _sum_by_types(actions, PURCHASE_OMNI)
-            spec_cnt = _sum_by_types(actions, PURCHASE_SPECIFIC)
-            purchases_cnt = max(omni_cnt, spec_cnt)
-
-            # VALOR de compras (faturamento)
-            omni_rev = _sum_by_types(action_values, PURCHASE_OMNI)
-            spec_rev = _sum_by_types(action_values, PURCHASE_SPECIFIC)
-            revenue_val = max(omni_rev, spec_rev)
+            purchases_cnt = _sum_actions_generic(actions, "purchase")
+            revenue_val   = _sum_actions_generic(action_values, "purchase")
 
             rows.append({
-                "data":        pd.to_datetime(rec.get("date_start")),
-                "gasto":       spend,
-                "compras":     float(purchases_cnt),
-                "faturamento": float(revenue_val),
-                "campanha":    rec.get("campaign_name") or rec.get("account_name") or "",
-                "_raw_actions": actions if audit else None,
-                "_raw_action_values": action_values if audit else None,
+                "date":           pd.to_datetime(rec.get("date_start")),
+                "spend":          spend,
+                "purchases":      purchases_cnt,
+                "revenue":        revenue_val,
+                "impressions":    _to_float(rec.get("impressions")),
+                "clicks":         _to_float(rec.get("clicks")),
+                "link_clicks":    _to_float(rec.get("link_clicks")) if "link_clicks" in rec else np.nan,
+                "lpv":            _to_float(rec.get("landing_page_views")) if "landing_page_views" in rec else np.nan,
+                "currency":       rec.get("account_currency", "BRL"),
+                "campaign_id":    rec.get("campaign_id", ""),
+                "campaign_name":  rec.get("campaign_name", ""),
             })
 
         after = ((payload.get("paging") or {}).get("cursors") or {}).get("after")
         if after:
-            next_url, next_params = base_url, params.copy()
+            next_url = base_url
+            next_params = params.copy()
             next_params["after"] = after
         else:
             break
 
     df = pd.DataFrame(rows)
-    if not df.empty:
-        df = df.sort_values("data")
-        for c in ["gasto", "compras", "faturamento"]:
+    if df.empty:
+        return df
+
+    # Tipagem e métricas derivadas
+    num_cols = ["spend", "purchases", "revenue", "impressions", "clicks", "link_clicks", "lpv"]
+    for c in num_cols:
+        if c in df.columns:
             df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0.0)
+
+    df["roas"] = np.where(df["spend"] > 0, df["revenue"] / df["spend"], np.nan)
+    df["cpa"]  = np.where(df["purchases"] > 0, df["spend"] / df["purchases"], np.nan)
+    df = df.sort_values("date")
     return df
 
-# -------------------- exemplo de uso / somatórios --------------------
-if __name__ == "__main__":
-    st.header("Teste rápido (somatórios do intervalo)")
+# =========================
+# Sidebar — parâmetros
+# =========================
+st.sidebar.header("Configuração")
+act_id = st.sidebar.text_input("Ad Account ID", placeholder="ex.: act_1234567890")
+token = st.sidebar.text_input("Access Token", type="password")
+api_version = st.sidebar.text_input("API Version", value="v23.0")
+level = st.sidebar.selectbox("Nível (recomendado: campaign)", options=["campaign", "account"], index=0)
 
-    with st.sidebar:
-        act_id = st.text_input("Ad Account ID (ex.: act_1234567890)")
-        access_token = st.text_input("Access Token", type="password")
-        api_version = st.text_input("API version", value="v23.0")
-        since_api = st.date_input("Desde", value=(datetime.today() - timedelta(days=7)).date())
-        until_api = st.date_input("Até", value=datetime.today().date())
-        mode = st.radio("Modo de data", ["Conversão (recomendado)", "Impressão"], index=0)
-        report_time = "conversion" if mode.startswith("Conversão") else "impression"
-        audit_mode = st.checkbox("Auditar por action_type (debug)", value=False)
+today = date.today()
+since = st.sidebar.date_input("Desde", value=today - timedelta(days=7))
+until = st.sidebar.date_input("Até", value=today)
 
-    df = pd.DataFrame()
-    if act_id and access_token:
-        with st.spinner("Buscando…"):
-            df = pull_meta_insights_correct(
+do_fetch = st.sidebar.button("Atualizar dados", type="primary")
+
+# =========================
+# Busca e UI
+# =========================
+st.title("📈 Meta Ads — Dashboard (Paridade com Ads Manager)")
+st.caption("Padrão: use_unified_attribution_setting=true • action_report_time=conversion • sem action_types no request.")
+
+if do_fetch:
+    if not act_id or not token:
+        st.error("Informe **Ad Account ID** e **Access Token**.")
+        st.stop()
+
+    with st.spinner("Buscando dados da Meta…"):
+        try:
+            df = fetch_insights_daily(
                 act_id=act_id,
-                token=access_token,
+                token=token,
                 api_version=api_version,
-                since=datetime.combine(since_api, datetime.min.time()),
-                until=datetime.combine(until_api, datetime.min.time()),
-                report_time=report_time,
-                audit=audit_mode
+                since_str=str(since),
+                until_str=str(until),
+                level=level,
+                try_extra_fields=True,  # se der #100, o código refaz sem extras
             )
+        except Exception as e:
+            st.error(f"Erro na coleta: {e}")
+            st.stop()
 
     if df.empty:
-        st.info("Informe conta/token/intervalo. Se vier vazio, verifique permissões, intervalo e se há compras atribuídas.")
-    else:
-        # Somatórios do intervalo
-        gasto_total = float(df["gasto"].sum())
-        comp_total  = float(df["compras"].sum())
-        fat_total   = float(df["faturamento"].sum())
-        roas_global = (fat_total / gasto_total) if gasto_total > 0 else 0.0
+        st.info("Nenhum dado retornado para o período. Verifique permissões, conta, intervalo e eventos de Purchase (valor/moeda).")
+        st.stop()
 
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("💰 Valor usado (R$)", f"R$ {gasto_total:,.0f}".replace(",", "."))
-        c2.metric("🛒 Compras (qtd)", f"{comp_total:,.0f}".replace(",", "."))
-        c3.metric("🏪 Faturamento (R$)", f"R$ {fat_total:,.0f}".replace(",", "."))
-        c4.metric("📈 ROAS (global)", f"{roas_global:,.2f}".replace(",", "."))
+    # =========================
+    # KPIs do período
+    # =========================
+    tot_spend = float(df["spend"].sum())
+    tot_purch = float(df["purchases"].sum())
+    tot_rev   = float(df["revenue"].sum())
+    roas_g    = (tot_rev / tot_spend) if tot_spend > 0 else 0.0
 
-        with st.expander("Amostra (por dia e campanha)"):
-            st.dataframe(df.drop(columns=[c for c in df.columns if c.startswith("_raw")]), use_container_width=True)
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        st.markdown('<div class="kpi-card"><div class="small-muted">Investimento</div>'
+                    f'<div class="big-number">{_fmt_money_br(tot_spend)}</div></div>', unsafe_allow_html=True)
+    with c2:
+        st.markdown('<div class="kpi-card"><div class="small-muted">Compras</div>'
+                    f'<div class="big-number">{int(round(tot_purch)):,}</div></div>'.replace(",", "."),
+                    unsafe_allow_html=True)
+    with c3:
+        st.markdown('<div class="kpi-card"><div class="small-muted">Faturamento</div>'
+                    f'<div class="big-number">{_fmt_money_br(tot_rev)}</div></div>', unsafe_allow_html=True)
+    with c4:
+        st.markdown('<div class="kpi-card"><div class="small-muted">ROAS</div>'
+                    f'<div class="big-number">{roas_g:,.2f}</div></div>'.replace(",", "X").replace(".", ",").replace("X", "."),
+                    unsafe_allow_html=True)
 
-        if audit_mode:
-            st.warning("Auditoria ligada: use para comparar tipos de compra (omni vs específicos).")
-            st.caption("Se houver divergência, é comum ver 1 compra num tipo específico e não no 'omni' ou vice-versa.")
+    st.divider()
+
+    # =========================
+    # Curvas diárias
+    # =========================
+    daily = df.groupby("date", as_index=False)[["spend", "revenue", "purchases"]].sum()
+    st.subheader("Série diária")
+    st.line_chart(daily.set_index("date")[["spend", "revenue"]])
+    st.caption("Curva diária de investimento e faturamento. Compras exibidas na tabela abaixo.")
+
+    # =========================
+    # Agregação por campanha
+    # =========================
+    st.subheader("Campanhas (somatório no período)")
+    agg_cols = ["spend", "purchases", "revenue", "impressions", "clicks", "link_clicks", "lpv"]
+    by_campaign = df.groupby(["campaign_id", "campaign_name"], as_index=False)[agg_cols].sum()
+    by_campaign["roas"] = np.where(by_campaign["spend"] > 0, by_campaign["revenue"] / by_campaign["spend"], np.nan)
+    by_campaign["cpa"]  = np.where(by_campaign["purchases"] > 0, by_campaign["spend"] / by_campaign["purchases"], np.nan)
+
+    # Ordena por gasto (principal driver em auditoria)
+    by_campaign = by_campaign.sort_values(["spend"], ascending=False)
+
+    # Formatação amigável
+    show = by_campaign.copy()
+    show["spend"] = show["spend"].apply(_fmt_money_br)
+    show["revenue"] = show["revenue"].apply(_fmt_money_br)
+    show["roas"] = show["roas"].map(lambda x: f"{x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") if pd.notnull(x) else "")
+    show["cpa"] = show["cpa"].apply(lambda x: _fmt_money_br(x) if pd.notnull(x) else "")
+
+    st.dataframe(
+        show.rename(columns={
+            "campaign_id": "ID da campanha",
+            "campaign_name": "Campanha",
+            "spend": "Investimento",
+            "purchases": "Compras",
+            "revenue": "Faturamento",
+            "roas": "ROAS",
+            "cpa": "CPA",
+            "impressions": "Impr.",
+            "clicks": "Cliques",
+            "link_clicks": "Link Clicks",
+            "lpv": "LPV",
+        }),
+        use_container_width=True,
+        height=520
+    )
+
+    with st.expander("Ver dados diários (detalhe)"):
+        dd = df.copy()
+        dd["date"] = dd["date"].dt.date
+        dd_fmt = dd[["date","campaign_name","spend","purchases","revenue","impressions","clicks","link_clicks","lpv","roas","cpa"]].copy()
+        dd_fmt["spend"] = dd_fmt["spend"].apply(_fmt_money_br)
+        dd_fmt["revenue"] = dd_fmt["revenue"].apply(_fmt_money_br)
+        dd_fmt["roas"] = dd_fmt["roas"].map(lambda x: f"{x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") if pd.notnull(x) else "")
+        dd_fmt["cpa"] = dd_fmt["cpa"].apply(lambda x: _fmt_money_br(x) if pd.notnull(x) else "")
+        st.dataframe(dd_fmt, use_container_width=True)
+
+else:
+    st.info("Preencha a conta/token, selecione o período e clique **Atualizar dados**.")
+    st.markdown(
+        "<span class='small-muted'>Padrões para bater com o Ads Manager: "
+        "<b>use_unified_attribution_setting=true</b>, <b>action_report_time=conversion</b>, "
+        "sem <b>action_types</b> no request e agregação no cliente.</span>", unsafe_allow_html=True
+    )
