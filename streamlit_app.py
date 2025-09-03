@@ -316,7 +316,7 @@ values_plot = enforce_monotonic(values_total) if force_shape else values_total
 
 # Gráfico (com valores dentro das faixas)
 st.plotly_chart(
-    funnel_fig(labels_total, values_plot, title="Funil do período", show_percents=True),
+    funnel_fig(labels_total, values_plot, title="Funil do período"),
     use_container_width=True
 )
 
