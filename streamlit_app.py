@@ -421,9 +421,8 @@ kpi_df = pd.DataFrame(kpi_rows, columns=["Métrica", "Período A", "Período B",
 st.markdown("**KPIs do período (A vs B)**")
 st.dataframe(kpi_df, use_container_width=True, height=260)
 
-
-        st.markdown("---")
-
+st.markdown("---")
+        
         # Taxas do funil (as 3 principais)
         rates = pd.DataFrame({
             "Taxa": ["LPV/Cliques", "Checkout/LPV", "Compra/Checkout"],
