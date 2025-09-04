@@ -114,21 +114,22 @@ def funnel_fig(labels, values, title=None):
             x=values,
             textinfo="value",
             textposition="inside",
-            texttemplate="<b>%{value}</b>",     # <<< negrito nos números
-            textfont=dict(size=30),             # <<< aumenta o tamanho do número
+            texttemplate="<b>%{value}</b>",  # deixa o número em negrito
+            textfont=dict(size=34),          # <<< AUMENTE AQUI (ex.: 32–40)
             opacity=0.95,
             connector={"line": {"dash": "dot", "width": 1}},
         )
     )
     fig.update_layout(
         title=title or "",
-        margin=dict(l=8, r=8, t=48, b=8),      # <<< margens menores = mais área útil
-        height=560,                             # <<< funil mais alto
+        margin=dict(l=10, r=10, t=48, b=10),
+        height=640,                         # <<< AUMENTE AQUI (ex.: 600–720)
         template="plotly_white",
-        separators=",.",                        # pt-BR
-        uniformtext=dict(minsize=12, mode="show")  # evita sumir texto em etapas pequenas
+        separators=",.",                    # pt-BR
+        uniformtext=dict(minsize=12, mode="show")
     )
     return fig
+
 
 
 def enforce_monotonic(values):
