@@ -15,6 +15,7 @@ st.markdown("""
 .kpi-card .big-number { font-size:28px; font-weight:700; color:#000 !important; }
 </style>
 """, unsafe_allow_html=True)
+ATTR_KEYS = ["7d_click", "1d_view"]
 
 # =============== Helpers de rede/parse ===============
 def _retry_call(fn, max_retries=5, base_wait=1.2):
@@ -38,53 +39,50 @@ def _to_float(x):
     except:
         return 0.0
 
-def _sum_item(item: dict) -> float:
-    """Usa 'value' quando existir; senão soma chaves numéricas (ex.: 7d_click, 1d_view...)."""
+def _sum_item(item, allowed_keys=None):
+    """Usa 'value' quando existir; senão soma SOMENTE as chaves permitidas (ex.: 7d_click, 1d_view)."""
     if not isinstance(item, dict):
         return _to_float(item)
     if "value" in item:
         return _to_float(item.get("value"))
+    keys = allowed_keys or ATTR_KEYS
     s = 0.0
-    for k, v in item.items():
-        if k not in {
-            "action_type", "action_target", "action_destination", "action_device",
-            "action_channel", "action_canvas_component_name", "action_reaction", "value"
-        }:
-            s += _to_float(v)
+    for k in keys:
+        s += _to_float(item.get(k))
     return s
 
-def _sum_actions_exact(rows: list, exact_names: list) -> float:
-    """Soma totals de actions pelos nomes exatos (case-insensitive)."""
+def _sum_actions_exact(rows, exact_names, allowed_keys=None) -> float:
+    """Soma totals de actions pelos nomes exatos (case-insensitive), respeitando a janela (allowed_keys)."""
     if not rows:
         return 0.0
-    names = {n.lower() for n in exact_names}
+    names = {str(n).lower() for n in exact_names}
     tot = 0.0
     for r in rows:
         at = str(r.get("action_type", "")).lower()
         if at in names:
-            tot += _sum_item(r)
+            tot += _sum_item(r, allowed_keys)
     return float(tot)
 
-def _sum_actions_contains(rows: list, substrs: list) -> float:
-    """Soma totals de actions que CONTENHAM qualquer substring (fallback)."""
+def _sum_actions_contains(rows, substrs, allowed_keys=None) -> float:
+    """Soma totals de actions que CONTENHAM qualquer substring, respeitando a janela (allowed_keys)."""
     if not rows:
         return 0.0
-    ss = [s.lower() for s in substrs]
+    ss = [str(s).lower() for s in substrs]
     tot = 0.0
     for r in rows:
         at = str(r.get("action_type", "")).lower()
         if any(s in at for s in ss):
-            tot += _sum_item(r)
+            tot += _sum_item(r, allowed_keys)
     return float(tot)
 
-def _pick_purchase_totals(rows: list) -> float:
-    """Prioriza omni_purchase; se ausente, pega o MAIOR entre tipos específicos para evitar duplicação."""
+def _pick_purchase_totals(rows, allowed_keys=None) -> float:
+    """Prioriza omni_purchase; senão pega o MAIOR entre tipos específicos (sem duplicar janelas)."""
     if not rows:
         return 0.0
     rows = [{**r, "action_type": str(r.get("action_type", "")).lower()} for r in rows]
     omni = [r for r in rows if r["action_type"] == "omni_purchase"]
     if omni:
-        return float(sum(_sum_item(r) for r in omni))
+        return float(sum(_sum_item(r, allowed_keys) for r in omni))
     candidates = {
         "purchase": 0.0,
         "onsite_conversion.purchase": 0.0,
@@ -93,15 +91,15 @@ def _pick_purchase_totals(rows: list) -> float:
     for r in rows:
         at = r["action_type"]
         if at in candidates:
-            candidates[at] += _sum_item(r)
+            candidates[at] += _sum_item(r, allowed_keys)
     if any(v > 0 for v in candidates.values()):
         return float(max(candidates.values()))
-    # fallback amplo
+    # fallback amplo (respeitando allowed_keys)
     grp = {}
     for r in rows:
         if "purchase" in r["action_type"]:
             grp.setdefault(r["action_type"], 0.0)
-            grp[r["action_type"]] += _sum_item(r)
+            grp[r["action_type"]] += _sum_item(r, allowed_keys)
     return float(max(grp.values()) if grp else 0.0)
 
 def _fmt_money_br(v: float) -> str:
@@ -184,7 +182,7 @@ def fetch_insights_daily(act_id: str, token: str, api_version: str,
     """
     - time_range (since/until) + time_increment=1
     - level único ('campaign' recomendado)
-    - NÃO envia action_types/action_attribution_windows
+    - Usa action_report_time=conversion e action_attribution_windows fixos (paridade com Ads Manager)
     - Traz fields extras (link_clicks, landing_page_views) e faz fallback se houver erro #100.
     """
     act_id = _ensure_act_prefix(act_id)
@@ -204,6 +202,9 @@ def fetch_insights_daily(act_id: str, token: str, api_version: str,
         "time_increment": 1,
         "fields": ",".join(fields),
         "limit": 500,
+    # >>> Fixos para paridade com o Ads Manager
+        "action_report_time": "conversion",
+        "action_attribution_windows": ",".join(ATTR_KEYS),  # "7d_click,1d_view"
     }
 
     rows, next_url, next_params = [], base_url, params.copy()
@@ -226,27 +227,26 @@ def fetch_insights_daily(act_id: str, token: str, api_version: str,
             actions = rec.get("actions") or []
             action_values = rec.get("action_values") or []
 
-            # Cliques (preferir field; fallback 'link_click')
+            # Cliques em link (preferir field; fallback action com janela)
             link_clicks = rec.get("link_clicks", None)
             if link_clicks is None:
-                link_clicks = _sum_actions_exact(actions, ["link_click"])
+                link_clicks = _sum_actions_exact(actions, ["link_click"], allowed_keys=ATTR_KEYS)
 
-            # LPV (preferir field; fallback 'landing_page_view' ou 'view_content')
+            # LPV (preferir field; fallback landing_page_view → view_content → contains "landing_page")
             lpv = rec.get("landing_page_views", None)
             if lpv is None:
-                lpv = _sum_actions_exact(actions, ["landing_page_view"])
+                lpv = _sum_actions_exact(actions, ["landing_page_view"], allowed_keys=ATTR_KEYS)
                 if lpv == 0:
-                    lpv = _sum_actions_exact(actions, ["view_content"]) or _sum_actions_contains(actions, ["landing_page"])
+                    lpv = (_sum_actions_exact(actions, ["view_content"], allowed_keys=ATTR_KEYS)
+                           or _sum_actions_contains(actions, ["landing_page"], allowed_keys=ATTR_KEYS))
 
-            # Iniciar checkout
-            ic = _sum_actions_exact(actions, ["initiate_checkout"])
+            # Iniciar checkout / add payment info com janela definida
+            ic  = _sum_actions_exact(actions, ["initiate_checkout"], allowed_keys=ATTR_KEYS)
+            api = _sum_actions_exact(actions, ["add_payment_info"], allowed_keys=ATTR_KEYS)
 
-            # Add payment info
-            api = _sum_actions_exact(actions, ["add_payment_info"])
-
-            # Purchase (qtd) e Revenue (valor)
-            purchases_cnt = _pick_purchase_totals(actions)
-            revenue_val   = _pick_purchase_totals(action_values)
+            # Purchase (qtd) e Revenue (valor) respeitando janela
+            purchases_cnt = _pick_purchase_totals(actions, allowed_keys=ATTR_KEYS)
+            revenue_val   = _pick_purchase_totals(action_values, allowed_keys=ATTR_KEYS)
 
             rows.append({
                 "date":           pd.to_datetime(rec.get("date_start")),
@@ -267,6 +267,7 @@ def fetch_insights_daily(act_id: str, token: str, api_version: str,
                 "purchases":      _to_float(purchases_cnt),
                 "revenue":        _to_float(revenue_val),
             })
+
 
         after = ((payload.get("paging") or {}).get("cursors") or {}).get("after")
         if after:
