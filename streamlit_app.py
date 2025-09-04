@@ -303,19 +303,21 @@ preset = st.sidebar.radio(
 )
 
 def _range_from_preset(p):
+    # fim sempre em "ontem", igual ao que a Meta mostra
+    base_end = today - timedelta(days=1)
+
     if p == "Hoje":
         return today, today
     if p == "Ontem":
-        d = today - timedelta(days=1)
-        return d, d
+        return base_end, base_end
     if p == "Últimos 7 dias":
-        return today - timedelta(days=6), today
+        return base_end - timedelta(days=6), base_end    # 7 dias terminando ontem
     if p == "Últimos 14 dias":
-        return today - timedelta(days=13), today
+        return base_end - timedelta(days=13), base_end   # 14 dias terminando ontem
     if p == "Últimos 30 dias":
-        return today - timedelta(days=29), today
-    # Personalizado: valor inicial sugerido
-    return today - timedelta(days=7), today
+        return base_end - timedelta(days=29), base_end   # 30 dias terminando ontem
+    # Personalizado (sugestão inicial)
+    return base_end - timedelta(days=6), base_end
 
 _since_auto, _until_auto = _range_from_preset(preset)
 
