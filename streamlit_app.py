@@ -1,3 +1,4 @@
+
 # app.py — Meta Ads com Funil completo
 import streamlit as st
 import pandas as pd
@@ -115,7 +116,7 @@ def funnel_fig(labels, values, title=None):
             textinfo="value",
             textposition="inside",
             texttemplate="<b>%{value}</b>",  # deixa o número em negrito
-            textfont=dict(size=35),
+            textfont=dict(size=25),
             opacity=0.95,
             connector={"line": {"dash": "dot", "width": 1}},
         )
