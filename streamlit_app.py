@@ -204,7 +204,6 @@ def fetch_insights_daily(act_id: str, token: str, api_version: str,
         "time_increment": 1,
         "fields": ",".join(fields),
         "limit": 500,
-        "action_attribution_windows": ["7d_click", "1d_view"],
     }
 
     rows, next_url, next_params = [], base_url, params.copy()
@@ -304,7 +303,7 @@ preset = st.sidebar.radio(
 )
 
 def _range_from_preset(p):
-    # fim sempre em "ontem", para bater com a UI da Meta
+    # fim sempre em "ontem", igual ao que a Meta mostra
     base_end = today - timedelta(days=1)
 
     if p == "Hoje":
@@ -312,11 +311,11 @@ def _range_from_preset(p):
     if p == "Ontem":
         return base_end, base_end
     if p == "Últimos 7 dias":
-        return base_end - timedelta(days=6), base_end
+        return base_end - timedelta(days=6), base_end    # 7 dias terminando ontem
     if p == "Últimos 14 dias":
-        return base_end - timedelta(days=13), base_end
+        return base_end - timedelta(days=13), base_end   # 14 dias terminando ontem
     if p == "Últimos 30 dias":
-        return base_end - timedelta(days=29), base_end
+        return base_end - timedelta(days=29), base_end   # 30 dias terminando ontem
     # Personalizado (sugestão inicial)
     return base_end - timedelta(days=6), base_end
 
@@ -466,42 +465,27 @@ st.dataframe(sr, use_container_width=True, height=height)
 with st.expander("Comparativos — Período A vs Período B (opcional)", expanded=False):
     st.subheader("Comparativos — descubra o que mudou e por quê")
 
-    # comprimento do período atual (dias inteiros)
+    # Período anterior com mesmo tamanho
     period_len = (until - since).days + 1
     default_sinceA = since - timedelta(days=period_len)
     default_untilA = since - timedelta(days=1)
 
-    # nonce força o Streamlit a recriar os widgets quando preset/since/until mudam
-    nonce = f"{preset}-{since}-{until}"
-
     colA, colB = st.columns(2)
     with colA:
         st.markdown("**Período A**")
-        sinceA = st.date_input("Desde (A)", value=default_sinceA, key=f"sinceA_{nonce}")
-        untilA = st.date_input("Até (A)",   value=default_untilA, key=f"untilA_{nonce}")
+        sinceA = st.date_input("Desde (A)", value=default_sinceA, key="sinceA")
+        untilA = st.date_input("Até (A)",   value=default_untilA, key="untilA")
     with colB:
         st.markdown("**Período B**")
-        sinceB = st.date_input("Desde (B)", value=since, key=f"sinceB_{nonce}")
-        untilB = st.date_input("Até (B)",   value=until, key=f"untilB_{nonce}")
+        sinceB = st.date_input("Desde (B)", value=since, key="sinceB")
+        untilB = st.date_input("Até (B)",   value=until, key="untilB")
 
     if sinceA > untilA or sinceB > untilB:
         st.warning("Confira as datas: 'Desde' não pode ser maior que 'Até'.")
     else:
-        # garante formato ISO para a Graph API
-        def _iso(d): return d.strftime("%Y-%m-%d")
-
-        try:
-            with st.spinner("Comparando períodos…"):
-                dfA = fetch_insights_daily(act_id, token, api_version, _iso(sinceA), _iso(untilA), level)
-                dfB = fetch_insights_daily(act_id, token, api_version, _iso(sinceB), _iso(untilB), level)
-        except RuntimeError as e:
-            st.error(
-                "Não foi possível carregar os dados da Meta para o comparativo.\n\n"
-                "Verifique se as datas são válidas (AAAA-MM-DD), se 'Desde' ≤ 'Até' e "
-                "se o período não é longo demais. Tente reduzir o intervalo ou alterar o preset."
-            )
-            st.caption(f"Detalhe técnico: {e}")
-            st.stop()
+        with st.spinner("Comparando períodos…"):
+            dfA = fetch_insights_daily(act_id, token, api_version, str(sinceA), str(untilA), level)
+            dfB = fetch_insights_daily(act_id, token, api_version, str(sinceB), str(untilB), level)
 
         if dfA.empty or dfB.empty:
             st.info("Sem dados em um dos períodos selecionados.")
@@ -520,7 +504,7 @@ with st.expander("Comparativos — Período A vs Período B (opcional)", expande
 
             A = _agg(dfA); B = _agg(dfB)
 
-            # === KPIs calculados (necessários para a tabela) ===
+            # === KPIs calculados (necessários para o CSV) ===
             roasA = _safe_div(A["revenue"], A["spend"])
             roasB = _safe_div(B["revenue"], B["spend"])
             cpaA  = _safe_div(A["spend"], A["purchases"])
@@ -556,9 +540,8 @@ with st.expander("Comparativos — Período A vs Período B (opcional)", expande
                                  _fmt_money_br(cpcB) if pd.notnull(cpcB) else "",
                                  _fmt_money_br(cpcB - cpcA) if pd.notnull(cpcA) and pd.notnull(cpcB) else ""),
                 ("CPA",         _fmt_money_br(cpaA) if pd.notnull(cpaA) else "",
-                                _fmt_money_br(cpaB) if pd.notnull(cpaB) else "",
-                                _fmt_money_br(cpaB - cpaA) if pd.notnull(cpaA) and pd.notnull(cpaB) else ""),
-
+                                 _fmt_money_br(cpaB) if pd.notnull(cpaB) else "",
+                                 _fmt_money_br(cpaB - cpaA) if pd.notnull(cpaA) and pd.notnull(cpaB) else ""),
             ]
             kpi_df_disp = pd.DataFrame(kpi_rows, columns=["Métrica", "Período A", "Período B", "Δ (B - A)"])
 
@@ -697,6 +680,7 @@ with st.expander("Comparativos — Período A vs Período B (opcional)", expande
             st.dataframe(delta_disp.style.apply(_style_delta_counts, axis=1), use_container_width=True, height=240)
 
             st.markdown("---")
+
 
 # ========= FUNIL por CAMPANHA =========
 st.subheader("Campanhas — Funil e Taxas (somatório no período)")
