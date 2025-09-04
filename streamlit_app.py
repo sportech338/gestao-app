@@ -78,32 +78,31 @@ def _sum_actions_contains(rows: list, substrs: list) -> float:
     return float(tot)
 
 def _pick_purchase_totals(rows: list) -> float:
-    """
-    Prioriza agregados para espelhar a UI:
-    1) 'purchase' (agregado)
-    2) 'omni_purchase'
-    3) Fallback: maior grupo específico contendo 'purchase' (evita somar em dobro)
-    """
+    """Prioriza omni_purchase; se ausente, pega o MAIOR entre tipos específicos para evitar duplicação."""
     if not rows:
         return 0.0
     rows = [{**r, "action_type": str(r.get("action_type", "")).lower()} for r in rows]
-
-    agg = [r for r in rows if r["action_type"] == "purchase"]
-    if agg:
-        return float(sum(_sum_item(r) for r in agg))
-
     omni = [r for r in rows if r["action_type"] == "omni_purchase"]
     if omni:
         return float(sum(_sum_item(r) for r in omni))
-
-    grouped = {}
+    candidates = {
+        "purchase": 0.0,
+        "onsite_conversion.purchase": 0.0,
+        "offsite_conversion.fb_pixel_purchase": 0.0,
+    }
     for r in rows:
         at = r["action_type"]
-        if "purchase" in at:
-            grouped.setdefault(at, 0.0)
-            grouped[at] += _sum_item(r)
-
-    return float(max(grouped.values()) if grouped else 0.0)
+        if at in candidates:
+            candidates[at] += _sum_item(r)
+    if any(v > 0 for v in candidates.values()):
+        return float(max(candidates.values()))
+    # fallback amplo
+    grp = {}
+    for r in rows:
+        if "purchase" in r["action_type"]:
+            grp.setdefault(r["action_type"], 0.0)
+            grp[r["action_type"]] += _sum_item(r)
+    return float(max(grp.values()) if grp else 0.0)
 
 def _fmt_money_br(v: float) -> str:
     return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
@@ -181,31 +180,23 @@ def _safe_div(n, d):
 def fetch_insights_daily(act_id: str, token: str, api_version: str,
                          since_str: str, until_str: str,
                          level: str = "campaign",
-                         try_extra_fields: bool = True,
-                         report_time: str = "conversion",            # <-- NOVO
-                         use_unified: bool = True) -> pd.DataFrame:   # <-- NOVO
+                         try_extra_fields: bool = True) -> pd.DataFrame:
     """
-    Coleta diária com paridade ao Ads Manager:
-    - 'report_time': 'conversion' ou 'impression'
-    - 'use_unified': usa a atribuição unificada (nível ad set) para casar com a UI
     - time_range (since/until) + time_increment=1
-    - janelas de atribuição só são enviadas se NÃO estiver unificado
+    - level único ('campaign' recomendado)
+    - NÃO envia action_types/action_attribution_windows
+    - Traz fields extras (link_clicks, landing_page_views) e faz fallback se houver erro #100.
     """
     act_id = _ensure_act_prefix(act_id)
     base_url = f"https://graph.facebook.com/{api_version}/{act_id}/insights"
 
     base_fields = [
         "spend", "impressions", "clicks", "actions", "action_values",
-        "account_currency", "date_start", "date_stop",
-        "campaign_id", "campaign_name"
+        "account_currency", "date_start", "campaign_id", "campaign_name"
     ]
-    # retorna o campo de atribuição quando unificado (útil p/ debug)
-    if use_unified:
-        base_fields.append("attribution_setting")
-
     extra_fields = ["link_clicks", "landing_page_views"]
-    fields = base_fields + (extra_fields if try_extra_fields else [])
 
+    fields = base_fields + (extra_fields if try_extra_fields else [])
     params = {
         "access_token": token,
         "level": level,
@@ -213,12 +204,7 @@ def fetch_insights_daily(act_id: str, token: str, api_version: str,
         "time_increment": 1,
         "fields": ",".join(fields),
         "limit": 500,
-        "action_report_time": report_time,  # <-- chave p/ paridade com UI
     }
-    if use_unified:
-        params["use_unified_attribution_setting"] = "true"
-    else:
-        params["action_attribution_windows"] = "7d_click,1d_view"
 
     rows, next_url, next_params = [], base_url, params.copy()
     while next_url:
@@ -231,53 +217,56 @@ def fetch_insights_daily(act_id: str, token: str, api_version: str,
         if resp.status_code != 200:
             err = (payload or {}).get("error", {})
             code, sub, msg = err.get("code"), err.get("error_subcode"), err.get("message")
-            # se campo extra não existir no versionamento, refaz sem extras
             if code == 100 and try_extra_fields:
-                return fetch_insights_daily(act_id, token, api_version,
-                                            since_str, until_str, level,
-                                            try_extra_fields=False,
-                                            report_time=report_time,
-                                            use_unified=use_unified)
+                # refaz sem extras
+                return fetch_insights_daily(act_id, token, api_version, since_str, until_str, level, try_extra_fields=False)
             raise RuntimeError(f"Graph API error {resp.status_code} | code={code} subcode={sub} | {msg}")
 
         for rec in payload.get("data", []):
             actions = rec.get("actions") or []
             action_values = rec.get("action_values") or []
 
-            # Paridade estrita: SEM fallback/inferência.
-            # Se a API não devolver, fica 0.
-            link_clicks = rec.get("link_clicks")
+            # Cliques (preferir field; fallback 'link_click')
+            link_clicks = rec.get("link_clicks", None)
             if link_clicks is None:
-                link_clicks = 0
+                link_clicks = _sum_actions_exact(actions, ["link_click"])
 
-            landing_page_views = rec.get("landing_page_views")
-            if landing_page_views is None:
-                landing_page_views = 0
+            # LPV (preferir field; fallback 'landing_page_view' ou 'view_content')
+            lpv = rec.get("landing_page_views", None)
+            if lpv is None:
+                lpv = _sum_actions_exact(actions, ["landing_page_view"])
+                if lpv == 0:
+                    lpv = _sum_actions_exact(actions, ["view_content"]) or _sum_actions_contains(actions, ["landing_page"])
 
-            # Demais ações direto do array 'actions' (sem heurística)
-            ic  = _sum_actions_exact(actions, ["initiate_checkout"])
+            # Iniciar checkout
+            ic = _sum_actions_exact(actions, ["initiate_checkout"])
+
+            # Add payment info
             api = _sum_actions_exact(actions, ["add_payment_info"])
 
-            # Compras e Valor: prioriza 'purchase' (agregado)
+            # Purchase (qtd) e Revenue (valor)
             purchases_cnt = _pick_purchase_totals(actions)
             revenue_val   = _pick_purchase_totals(action_values)
 
             rows.append({
-                "date":           pd.to_datetime(rec.get("date_stop")),
+                "date":           pd.to_datetime(rec.get("date_start")),
                 "currency":       rec.get("account_currency", "BRL"),
                 "campaign_id":    rec.get("campaign_id", ""),
                 "campaign_name":  rec.get("campaign_name", ""),
+
+                # métricas básicas
                 "spend":          _to_float(rec.get("spend")),
                 "impressions":    _to_float(rec.get("impressions")),
                 "clicks":         _to_float(rec.get("clicks")),
+
+                # funil
                 "link_clicks":    _to_float(link_clicks),
-                "lpv":            _to_float(landing_page_views),
+                "lpv":            _to_float(lpv),
                 "init_checkout":  _to_float(ic),
                 "add_payment":    _to_float(api),
                 "purchases":      _to_float(purchases_cnt),
                 "revenue":        _to_float(revenue_val),
             })
-
 
         after = ((payload.get("paging") or {}).get("cursors") or {}).get("after")
         if after:
@@ -290,79 +279,55 @@ def fetch_insights_daily(act_id: str, token: str, api_version: str,
     if df.empty:
         return df
 
-    num_cols = ["spend", "impressions", "clicks", "link_clicks", "lpv",
-                "init_checkout", "add_payment", "purchases", "revenue"]
+    num_cols = ["spend", "impressions", "clicks", "link_clicks", "lpv", "init_checkout", "add_payment", "purchases", "revenue"]
     for c in num_cols:
         df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0.0)
 
+    # Métricas derivadas (do período/dia; taxas serão calculadas em agregações)
     df["roas"] = np.where(df["spend"] > 0, df["revenue"] / df["spend"], np.nan)
     df = df.sort_values("date")
     return df
-                             
+
 # =============== Sidebar (filtros) ===============
 st.sidebar.header("Configuração")
 act_id = st.sidebar.text_input("Ad Account ID", placeholder="ex.: act_1234567890")
 token = st.sidebar.text_input("Access Token", type="password")
 api_version = st.sidebar.text_input("API Version", value="v23.0")
 level = st.sidebar.selectbox("Nível (recomendado: campaign)", ["campaign", "account"], index=0)
-
-st.sidebar.subheader("Atribuição e tempo de relatório")
-report_time_label = st.sidebar.selectbox(
-    "Relatar por",
-    ["Tempo da conversão (recomendado)", "Tempo da impressão"],
-    index=0,
-    help="Isso deve bater com a opção da UI do Ads Manager."
-)
-report_time = "conversion" if report_time_label.startswith("Tempo da conversão") else "impression"
-
-use_unified = st.sidebar.checkbox(
-    "Usar atribuição UNIFICADA (nível do conjunto de anúncios)",
-    value=True,
-    help="Ativa `use_unified_attribution_setting=true` para casar com a UI."
-)
-
-st.sidebar.subheader("Período")
 today = date.today()
-include_today = st.sidebar.checkbox(
-    "Incluir o dia de hoje nos presets",
-    value=True,
-    help="Na UI da Meta, 'Últimos 7/14/30 dias' normalmente inclui hoje."
-)
 
 preset = st.sidebar.radio(
     "Período rápido",
     ["Hoje", "Ontem", "Últimos 7 dias", "Últimos 14 dias", "Últimos 30 dias", "Personalizado"],
-    index=2,
+    index=2,  # "Últimos 7 dias"
 )
 
-def _range_from_preset(p, include_today: bool):
-    # fim padrão: hoje ou ontem, conforme toggle
-    base_end = today if include_today else (today - timedelta(days=1))
+def _range_from_preset(p):
+    # fim sempre em "ontem", igual ao que a Meta mostra
+    base_end = today - timedelta(days=1)
+
     if p == "Hoje":
-        return (today, today) if include_today else (base_end, base_end)
+        return today, today
     if p == "Ontem":
-        return (today - timedelta(days=1), today - timedelta(days=1))
+        return base_end, base_end
     if p == "Últimos 7 dias":
-        return base_end - timedelta(days=6), base_end
+        return base_end - timedelta(days=6), base_end    # 7 dias terminando ontem
     if p == "Últimos 14 dias":
-        return base_end - timedelta(days=13), base_end
+        return base_end - timedelta(days=13), base_end   # 14 dias terminando ontem
     if p == "Últimos 30 dias":
-        return base_end - timedelta(days=29), base_end
+        return base_end - timedelta(days=29), base_end   # 30 dias terminando ontem
     # Personalizado (sugestão inicial)
     return base_end - timedelta(days=6), base_end
 
-_since_auto, _until_auto = _range_from_preset(preset, include_today)
+_since_auto, _until_auto = _range_from_preset(preset)
 
 if preset == "Personalizado":
     since = st.sidebar.date_input("Desde", value=_since_auto, key="since_custom")
     until = st.sidebar.date_input("Até",   value=_until_auto, key="until_custom")
 else:
+    # Mostra as datas calculadas, bloqueadas (só leitura)
     since = st.sidebar.date_input("Desde", value=_since_auto, disabled=True, key="since_auto")
     until = st.sidebar.date_input("Até",   value=_until_auto, disabled=True, key="until_auto")
-
-# Correção mínima se since > until
-if isinstance(since, date) and isinstance(until, date) and since > until:
-    since = until
 
 ready = bool(act_id and token)
 
@@ -377,8 +342,7 @@ if not ready:
 with st.spinner("Buscando dados da Meta…"):
     df = fetch_insights_daily(
         act_id=act_id, token=token, api_version=api_version,
-        since_str=str(since), until_str=str(until), level=level,
-        report_time=report_time, use_unified=use_unified
+        since_str=str(since), until_str=str(until), level=level
     )
 
 if df.empty:
@@ -389,7 +353,7 @@ if df.empty:
 currency_detected = (df["currency"].dropna().iloc[0] if "currency" in df.columns and not df["currency"].dropna().empty else "BRL")
 col_curA, col_curB = st.columns([1, 2])
 with col_curA:
-    use_brl_display = st.checkbox("Fixar exibição em BRL (símbolo R$)", value=False)
+    use_brl_display = st.checkbox("Fixar exibição em BRL (símbolo R$)", value=True)
 currency_label = "BRL" if use_brl_display else currency_detected
 
 st.caption(f"Moeda da conta detectada: **{currency_detected}** — Exibindo como: **{currency_label}**")
@@ -501,44 +465,27 @@ st.dataframe(sr, use_container_width=True, height=height)
 with st.expander("Comparativos — Período A vs Período B (opcional)", expanded=False):
     st.subheader("Comparativos — descubra o que mudou e por quê")
 
-    # comprimento do período atual (dias inteiros)
+    # Período anterior com mesmo tamanho
     period_len = (until - since).days + 1
     default_sinceA = since - timedelta(days=period_len)
     default_untilA = since - timedelta(days=1)
 
-    # nonce força o Streamlit a recriar os widgets quando preset/since/until mudam
-    nonce = f"{preset}-{since}-{until}"
-
     colA, colB = st.columns(2)
     with colA:
         st.markdown("**Período A**")
-        sinceA = st.date_input("Desde (A)", value=default_sinceA, key=f"sinceA_{nonce}")
-        untilA = st.date_input("Até (A)",   value=default_untilA, key=f"untilA_{nonce}")
+        sinceA = st.date_input("Desde (A)", value=default_sinceA, key="sinceA")
+        untilA = st.date_input("Até (A)",   value=default_untilA, key="untilA")
     with colB:
         st.markdown("**Período B**")
-        sinceB = st.date_input("Desde (B)", value=since, key=f"sinceB_{nonce}")
-        untilB = st.date_input("Até (B)",   value=until, key=f"untilB_{nonce}")
+        sinceB = st.date_input("Desde (B)", value=since, key="sinceB")
+        untilB = st.date_input("Até (B)",   value=until, key="untilB")
 
     if sinceA > untilA or sinceB > untilB:
         st.warning("Confira as datas: 'Desde' não pode ser maior que 'Até'.")
     else:
-        # garante formato ISO para a Graph API
-        def _iso(d): return d.strftime("%Y-%m-%d")
-
-        try:
-            with st.spinner("Comparando períodos…"):
-                dfA = fetch_insights_daily(act_id, token, api_version, _iso(sinceA), _iso(untilA), level,
-                           report_time=report_time, use_unified=use_unified)
-                dfB = fetch_insights_daily(act_id, token, api_version, _iso(sinceB), _iso(untilB), level,
-                           report_time=report_time, use_unified=use_unified)
-        except RuntimeError as e:
-            st.error(
-                "Não foi possível carregar os dados da Meta para o comparativo.\n\n"
-                "Verifique se as datas são válidas (AAAA-MM-DD), se 'Desde' ≤ 'Até' e "
-                "se o período não é longo demais. Tente reduzir o intervalo ou alterar o preset."
-            )
-            st.caption(f"Detalhe técnico: {e}")
-            st.stop()
+        with st.spinner("Comparando períodos…"):
+            dfA = fetch_insights_daily(act_id, token, api_version, str(sinceA), str(untilA), level)
+            dfB = fetch_insights_daily(act_id, token, api_version, str(sinceB), str(untilB), level)
 
         if dfA.empty or dfB.empty:
             st.info("Sem dados em um dos períodos selecionados.")
@@ -557,7 +504,7 @@ with st.expander("Comparativos — Período A vs Período B (opcional)", expande
 
             A = _agg(dfA); B = _agg(dfB)
 
-            # === KPIs calculados (necessários para a tabela) ===
+            # === KPIs calculados (necessários para o CSV) ===
             roasA = _safe_div(A["revenue"], A["spend"])
             roasB = _safe_div(B["revenue"], B["spend"])
             cpaA  = _safe_div(A["spend"], A["purchases"])
@@ -593,9 +540,8 @@ with st.expander("Comparativos — Período A vs Período B (opcional)", expande
                                  _fmt_money_br(cpcB) if pd.notnull(cpcB) else "",
                                  _fmt_money_br(cpcB - cpcA) if pd.notnull(cpcA) and pd.notnull(cpcB) else ""),
                 ("CPA",         _fmt_money_br(cpaA) if pd.notnull(cpaA) else "",
-                                _fmt_money_br(cpaB) if pd.notnull(cpaB) else "",
-                                _fmt_money_br(cpaB - cpaA) if pd.notnull(cpaA) and pd.notnull(cpaB) else ""),
-
+                                 _fmt_money_br(cpaB) if pd.notnull(cpaB) else "",
+                                 _fmt_money_br(cpaB - cpaA) if pd.notnull(cpaA) and pd.notnull(cpaB) else ""),
             ]
             kpi_df_disp = pd.DataFrame(kpi_rows, columns=["Métrica", "Período A", "Período B", "Δ (B - A)"])
 
@@ -734,6 +680,7 @@ with st.expander("Comparativos — Período A vs Período B (opcional)", expande
             st.dataframe(delta_disp.style.apply(_style_delta_counts, axis=1), use_container_width=True, height=240)
 
             st.markdown("---")
+
 
 # ========= FUNIL por CAMPANHA =========
 st.subheader("Campanhas — Funil e Taxas (somatório no período)")
