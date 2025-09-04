@@ -929,6 +929,35 @@ with tab_daypart:
 
         st.markdown("---")
 
+                # ============== 3) APANHADO GERAL POR HORA (no período) ==============
+        st.subheader("📦 Apanhado geral por hora (período selecionado)")
+        cube_hr = d.groupby("hour", as_index=False)[
+            ["spend","revenue","purchases","link_clicks","lpv","init_checkout","add_payment"]
+        ].sum()
+        cube_hr["ROAS"] = np.where(cube_hr["spend"]>0, cube_hr["revenue"]/cube_hr["spend"], np.nan)
+        if min_spend > 0:
+            cube_hr = cube_hr[cube_hr["spend"] >= min_spend]
+
+        top_hr = cube_hr.sort_values(["purchases","ROAS"], ascending=[False,False]).copy()
+        show_cols = ["hour","purchases","ROAS","spend","revenue","link_clicks","lpv","init_checkout","add_payment"]
+        disp_top = top_hr[show_cols].rename(columns={
+            "hour":"Hora","purchases":"Compras","spend":"Valor usado","revenue":"Valor de conversão"
+        })
+        disp_top["Valor usado"] = disp_top["Valor usado"].apply(_fmt_money_br)
+        disp_top["Valor de conversão"] = disp_top["Valor de conversão"].apply(_fmt_money_br)
+        disp_top["ROAS"] = disp_top["ROAS"].map(_fmt_ratio_br)
+        st.dataframe(disp_top, use_container_width=True, height=360)
+
+        fig_bar = go.Figure(go.Bar(x=cube_hr.sort_values("hour")["hour"], y=cube_hr.sort_values("hour")["purchases"]))
+        fig_bar.update_layout(
+            title="Compras por hora (total do período)",
+            xaxis_title="Hora do dia", yaxis_title="Compras",
+            height=380, template="plotly_white", margin=dict(l=10,r=10,t=48,b=10),
+        )
+        st.plotly_chart(fig_bar, use_container_width=True)
+
+        st.info("Dica: use o 'Gasto mínimo' para filtrar horas com investimento muito baixo e evitar falsos positivos.")
+
         # ============== 2) COMPARAR DOIS DIAS (A vs B) ==============
         st.subheader("🆚 Comparar dois dias (A vs B) — hora a hora")
 
@@ -1005,32 +1034,3 @@ with tab_daypart:
             st.plotly_chart(fig_cmp, use_container_width=True)
 
         st.markdown("---")
-
-        # ============== 3) APANHADO GERAL POR HORA (no período) ==============
-        st.subheader("📦 Apanhado geral por hora (período selecionado)")
-        cube_hr = d.groupby("hour", as_index=False)[
-            ["spend","revenue","purchases","link_clicks","lpv","init_checkout","add_payment"]
-        ].sum()
-        cube_hr["ROAS"] = np.where(cube_hr["spend"]>0, cube_hr["revenue"]/cube_hr["spend"], np.nan)
-        if min_spend > 0:
-            cube_hr = cube_hr[cube_hr["spend"] >= min_spend]
-
-        top_hr = cube_hr.sort_values(["purchases","ROAS"], ascending=[False,False]).copy()
-        show_cols = ["hour","purchases","ROAS","spend","revenue","link_clicks","lpv","init_checkout","add_payment"]
-        disp_top = top_hr[show_cols].rename(columns={
-            "hour":"Hora","purchases":"Compras","spend":"Valor usado","revenue":"Valor de conversão"
-        })
-        disp_top["Valor usado"] = disp_top["Valor usado"].apply(_fmt_money_br)
-        disp_top["Valor de conversão"] = disp_top["Valor de conversão"].apply(_fmt_money_br)
-        disp_top["ROAS"] = disp_top["ROAS"].map(_fmt_ratio_br)
-        st.dataframe(disp_top, use_container_width=True, height=360)
-
-        fig_bar = go.Figure(go.Bar(x=cube_hr.sort_values("hour")["hour"], y=cube_hr.sort_values("hour")["purchases"]))
-        fig_bar.update_layout(
-            title="Compras por hora (total do período)",
-            xaxis_title="Hora do dia", yaxis_title="Compras",
-            height=380, template="plotly_white", margin=dict(l=10,r=10,t=48,b=10),
-        )
-        st.plotly_chart(fig_bar, use_container_width=True)
-
-        st.info("Dica: use o 'Gasto mínimo' para filtrar horas com investimento muito baixo e evitar falsos positivos.")
