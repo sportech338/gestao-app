@@ -17,6 +17,20 @@ st.markdown("""
 """, unsafe_allow_html=True)
 ATTR_KEYS = ["7d_click", "1d_view"]
 
+# --- ADD: constantes e parser para breakdown por hora
+HOUR_BREAKDOWN = "hourly_stats_aggregated_by_advertiser_time_zone"
+
+def _parse_hour_bucket(h):
+    """Normaliza bucket de hora ('0'..'23' ou '00:00'..'23:00') para int [0..23]."""
+    if h is None:
+        return None
+    try:
+        s = str(h).strip()
+        val = int(s.split(":")[0]) if ":" in s else int(float(s))
+        return max(0, min(23, val))
+    except Exception:
+        return None
+
 # =============== Helpers de rede/parse ===============
 def _retry_call(fn, max_retries=5, base_wait=1.2):
     for i in range(max_retries):
@@ -280,7 +294,9 @@ def fetch_insights_daily(act_id: str, token: str, api_version: str,
     if df.empty:
         return df
 
-    num_cols = ["spend", "impressions", "clicks", "link_clicks", "lpv", "init_checkout", "add_payment", "purchases", "revenue"]
+    # >>> mantenha estes 4 passos DENTRO da função diária
+    num_cols = ["spend", "impressions", "clicks", "link_clicks",
+                "lpv", "init_checkout", "add_payment", "purchases", "revenue"]
     for c in num_cols:
         df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0.0)
 
@@ -288,6 +304,93 @@ def fetch_insights_daily(act_id: str, token: str, api_version: str,
     df["roas"] = np.where(df["spend"] > 0, df["revenue"] / df["spend"], np.nan)
     df = df.sort_values("date")
     return df
+
+# --- ADD: coleta por hora (dayparting)
+@st.cache_data(ttl=600, show_spinner=True)
+def fetch_insights_hourly(act_id: str, token: str, api_version: str,
+                          since_str: str, until_str: str,
+                          level: str = "campaign") -> pd.DataFrame:
+    act_id = _ensure_act_prefix(act_id)
+    url = f"https://graph.facebook.com/{api_version}/{act_id}/insights"
+    fields = ["spend","impressions","clicks","actions","action_values",
+              "account_currency","date_start","campaign_id","campaign_name","link_clicks","landing_page_views"]
+    params = {
+        "access_token": token,
+        "level": level,
+        "time_range": json.dumps({"since": since_str, "until": until_str}),
+        "time_increment": 1,
+        "fields": ",".join(fields),
+        "limit": 500,
+        "action_report_time": "conversion",
+        "action_attribution_windows": ",".join(ATTR_KEYS),
+        "breakdowns": HOUR_BREAKDOWN,  # <- chave para hora×dia
+    }
+
+    rows, next_url, next_params = [], url, params.copy()
+    while next_url:
+        resp = _retry_call(lambda: requests.get(next_url, params=next_params, timeout=90))
+        try:
+            payload = resp.json()
+        except:
+            raise RuntimeError("Resposta inválida da Graph API (hourly).")
+
+        if resp.status_code != 200:
+            # Se não houver permissão para breakdown por hora, devolve vazio
+            return pd.DataFrame()
+
+        for rec in payload.get("data", []):
+            actions = rec.get("actions") or []
+            action_values = rec.get("action_values") or []
+            hour_bucket = _parse_hour_bucket(rec.get(HOUR_BREAKDOWN))
+
+            link_clicks = rec.get("link_clicks")
+            if link_clicks is None:
+                link_clicks = _sum_actions_exact(actions, ["link_click"], allowed_keys=ATTR_KEYS)
+
+            lpv = rec.get("landing_page_views")
+            if lpv is None:
+                lpv = (_sum_actions_exact(actions, ["landing_page_view"], allowed_keys=ATTR_KEYS)
+                       or _sum_actions_exact(actions, ["view_content"], allowed_keys=ATTR_KEYS)
+                       or _sum_actions_contains(actions, ["landing_page"], allowed_keys=ATTR_KEYS))
+
+            ic   = _sum_actions_exact(actions, ["initiate_checkout"], allowed_keys=ATTR_KEYS)
+            api_ = _sum_actions_exact(actions, ["add_payment_info"], allowed_keys=ATTR_KEYS)
+            pur  = _pick_purchase_totals(actions, allowed_keys=ATTR_KEYS)
+            rev  = _pick_purchase_totals(action_values, allowed_keys=ATTR_KEYS)
+
+            rows.append({
+                "date":          pd.to_datetime(rec.get("date_start")),
+                "hour":          hour_bucket,  # 0..23
+                "currency":      rec.get("account_currency","BRL"),
+                "campaign_id":   rec.get("campaign_id",""),
+                "campaign_name": rec.get("campaign_name",""),
+                "spend":         _to_float(rec.get("spend")),
+                "impressions":   _to_float(rec.get("impressions")),
+                "clicks":        _to_float(rec.get("clicks")),
+                "link_clicks":   _to_float(link_clicks),
+                "lpv":           _to_float(lpv),
+                "init_checkout": _to_float(ic),
+                "add_payment":   _to_float(api_),
+                "purchases":     _to_float(pur),
+                "revenue":       _to_float(rev),
+            })
+
+        after = ((payload.get("paging") or {}).get("cursors") or {}).get("after")
+        if after:
+            next_url, next_params = url, params.copy()
+            next_params["after"] = after
+        else:
+            break
+
+    df = pd.DataFrame(rows)
+    if df.empty:
+        return df
+
+    df["dow"] = df["date"].dt.dayofweek
+    order = {0:"Seg",1:"Ter",2:"Qua",3:"Qui",4:"Sex",5:"Sáb",6:"Dom"}
+    df["dow_label"] = df["dow"].map(order)
+    df["roas"] = np.where(df["spend"]>0, df["revenue"]/df["spend"], np.nan)
+    return df.sort_values(["date","hour"])
 
 # =============== Sidebar (filtros) ===============
 st.sidebar.header("Configuração")
@@ -340,429 +443,495 @@ if not ready:
     st.info("Informe **Ad Account ID** e **Access Token** para iniciar.")
     st.stop()
 
+# ===================== NOVO LAYOUT COM ABAS =====================
 with st.spinner("Buscando dados da Meta…"):
-    df = fetch_insights_daily(
+    df_daily = fetch_insights_daily(
+        act_id=act_id, token=token, api_version=api_version,
+        since_str=str(since), until_str=str(until), level=level
+    )
+    df_hourly = fetch_insights_hourly(
         act_id=act_id, token=token, api_version=api_version,
         since_str=str(since), until_str=str(until), level=level
     )
 
-if df.empty:
+if df_daily.empty and (df_hourly is None or df_hourly.empty):
     st.warning("Sem dados para o período. Verifique permissões, conta e se há eventos de Purchase (value/currency).")
     st.stop()
 
-# === Moeda detectada e override opcional ===
-currency_detected = (df["currency"].dropna().iloc[0] if "currency" in df.columns and not df["currency"].dropna().empty else "BRL")
-col_curA, col_curB = st.columns([1, 2])
-with col_curA:
-    use_brl_display = st.checkbox("Fixar exibição em BRL (símbolo R$)", value=True)
-currency_label = "BRL" if use_brl_display else currency_detected
+tab_daily, tab_daypart = st.tabs(["📅 Visão diária", "⏱️ Dayparting (Hora × Dia)"])
 
-st.caption(f"Moeda da conta detectada: **{currency_detected}** — Exibindo como: **{currency_label}**")
+# -------------------- ABA 1: VISÃO DIÁRIA (seu conteúdo atual) --------------------
+with tab_daily:
+    # === Moeda detectada e override opcional ===
+    currency_detected = (df_daily["currency"].dropna().iloc[0]
+                         if "currency" in df_daily.columns and not df_daily["currency"].dropna().empty else "BRL")
+    col_curA, col_curB = st.columns([1, 2])
+    with col_curA:
+        use_brl_display = st.checkbox("Fixar exibição em BRL (símbolo R$)", value=True)
 
-# ========= KPIs do período =========
-tot_spend = float(df["spend"].sum())
-tot_purch = float(df["purchases"].sum())
-tot_rev   = float(df["revenue"].sum())
-roas_g    = (tot_rev / tot_spend) if tot_spend > 0 else 0.0
+    currency_label = "BRL" if use_brl_display else currency_detected
 
-c1, c2, c3, c4 = st.columns(4)
-with c1:
-    st.markdown('<div class="kpi-card"><div class="small-muted">Valor usado</div>'
-                f'<div class="big-number">{_fmt_money_br(tot_spend)}</div></div>', unsafe_allow_html=True)
-with c2:
-    st.markdown('<div class="kpi-card"><div class="small-muted">Vendas</div>'
-                f'<div class="big-number">{int(round(tot_purch)):,}</div></div>'.replace(",", "."),
-                unsafe_allow_html=True)
-with c3:
-    st.markdown('<div class="kpi-card"><div class="small-muted">Valor de conversão</div>'
-                f'<div class="big-number">{_fmt_money_br(tot_rev)}</div></div>', unsafe_allow_html=True)
-with c4:
-    st.markdown('<div class="kpi-card"><div class="small-muted">ROAS</div>'
-                f'<div class="big-number">{roas_g:,.2f}</div></div>'.replace(",", "X").replace(".", ",").replace("X", "."),
-                unsafe_allow_html=True)
+    with col_curB:
+        if use_brl_display and currency_detected != "BRL":
+            st.caption("⚠️ Exibindo com símbolo **R$** apenas para **formatação visual**. "
+                       "Os valores permanecem na moeda da conta.")
 
-st.divider()
-
-# ========= Série diária =========
-st.subheader("Série diária — Investimento e Conversão")
-
-# agrega por dia
-daily = df.groupby("date", as_index=False)[["spend", "revenue", "purchases"]].sum()
-
-# renomeia para PT-BR (legenda do gráfico usa os nomes das colunas)
-daily_pt = daily.rename(columns={"spend": "Gasto", "revenue": "Receita"})
-
-# plota com legendas em português
-st.line_chart(daily_pt.set_index("date")[["Receita", "Gasto"]])
-
-st.caption("Linhas diárias de Receita e Gasto. Vendas na tabela abaixo.")
+    st.caption(f"Moeda da conta detectada: **{currency_detected}** — Exibindo como: **{currency_label}**")
 
 
-# ========= FUNIL (Período) — FUNIL VISUAL =========
-st.subheader("Funil do período (Total) — Cliques → LPV → Checkout → Add Pagamento → Compra")
+    # ========= KPIs do período =========
+    tot_spend = float(df_daily["spend"].sum())
+    tot_purch = float(df_daily["purchases"].sum())
+    tot_rev   = float(df_daily["revenue"].sum())
+    roas_g    = (tot_rev / tot_spend) if tot_spend > 0 else np.nan
 
-# Totais
-f_clicks = float(df["link_clicks"].sum())
-f_lpv    = float(df["lpv"].sum())
-f_ic     = float(df["init_checkout"].sum())
-f_api    = float(df["add_payment"].sum())
-f_pur    = float(df["purchases"].sum())
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        st.markdown('<div class="kpi-card"><div class="small-muted">Valor usado</div>'
+                    f'<div class="big-number">{_fmt_money_br(tot_spend)}</div></div>', unsafe_allow_html=True)
+    with c2:
+        st.markdown('<div class="kpi-card"><div class="small-muted">Vendas</div>'
+                    f'<div class="big-number">{int(round(tot_purch)):,}</div></div>'.replace(",", "."),
+                    unsafe_allow_html=True)
+    with c3:
+        st.markdown('<div class="kpi-card"><div class="small-muted">Valor de conversão</div>'
+                    f'<div class="big-number">{_fmt_money_br(tot_rev)}</div></div>', unsafe_allow_html=True)
+    with c4:
+        roas_txt = (f"{roas_g:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                    if pd.notnull(roas_g) else "—")
+        st.markdown('<div class="kpi-card"><div class="small-muted">ROAS</div>'
+                    f'<div class="big-number">{roas_txt}</div></div>',
+                    unsafe_allow_html=True)
+                    
+    st.divider()
 
-# RÓTULOS curtos e VALORES inteiros (legibilidade)
-labels_total = ["Cliques", "LPV", "Checkout", "Add Pagamento", "Compra"]
-values_total = [
-    int(round(f_clicks)),
-    int(round(f_lpv)),
-    int(round(f_ic)),
-    int(round(f_api)),
-    int(round(f_pur)),
-]
+    # ========= Série diária =========
+    st.subheader("Série diária — Investimento e Conversão")
 
-# Toggle: manter forma de funil sempre decrescente só no desenho
-force_shape = st.checkbox("Forçar formato de funil (sempre decrescente)", value=True)
-values_plot = enforce_monotonic(values_total) if force_shape else values_total
+    daily = df_daily.groupby("date", as_index=False)[["spend", "revenue", "purchases"]].sum()
+    daily_pt = daily.rename(columns={"spend": "Gasto", "revenue": "Receita"})
+    st.line_chart(daily_pt.set_index("date")[["Receita", "Gasto"]])
+    st.caption("Linhas diárias de Receita e Gasto. Vendas na tabela abaixo.")
 
-# Gráfico (com valores dentro das faixas)
-st.plotly_chart(
-    funnel_fig(labels_total, values_plot, title="Funil do período"),
-    use_container_width=True
-)
+    # ========= FUNIL (Período) — FUNIL VISUAL =========
+    st.subheader("Funil do período (Total) — Cliques → LPV → Checkout → Add Pagamento → Compra")
 
-# Tabela de taxas — principais sempre visíveis + extras opcionais
-core_rows = [
-    ("LPV / Cliques",     _rate(values_total[1], values_total[0])),
-    ("Checkout / LPV",    _rate(values_total[2], values_total[1])),
-    ("Compra / Checkout", _rate(values_total[4], values_total[2])),
-]
+    f_clicks = float(df_daily["link_clicks"].sum())
+    f_lpv    = float(df_daily["lpv"].sum())
+    f_ic     = float(df_daily["init_checkout"].sum())
+    f_api    = float(df_daily["add_payment"].sum())
+    f_pur    = float(df_daily["purchases"].sum())
 
-extras_def = {
-    "Add Pagto / Checkout": _rate(values_total[3], values_total[2]),
-    "Compra / Add Pagto":   _rate(values_total[4], values_total[3]),
-    "Compra / LPV":         _rate(values_total[4], values_total[1]),
-    "Compra / Cliques":     _rate(values_total[4], values_total[0]),
-    "Checkout / Cliques":   _rate(values_total[2], values_total[0]),
-    "Add Pagto / LPV":      _rate(values_total[3], values_total[1]),
-}
+    labels_total = ["Cliques", "LPV", "Checkout", "Add Pagamento", "Compra"]
+    values_total = [int(round(f_clicks)), int(round(f_lpv)), int(round(f_ic)), int(round(f_api)), int(round(f_pur))]
 
-with st.expander("Comparar outras taxas (opcional)"):
-    extras_selected = st.multiselect(
-        "Escolha métricas adicionais para visualizar:",
-        options=list(extras_def.keys()),
-        default=[],
+    force_shape = st.checkbox("Forçar formato de funil (sempre decrescente)", value=True)
+    values_plot = enforce_monotonic(values_total) if force_shape else values_total
+
+    st.plotly_chart(
+        funnel_fig(labels_total, values_plot, title="Funil do período"),
+        use_container_width=True
     )
 
-rows = core_rows + [(name, extras_def[name]) for name in extras_selected]
-sr = pd.DataFrame(rows, columns=["Taxa", "Valor"])
-sr["Valor"] = sr["Valor"].map(lambda x: f"{x*100:,.2f}%".replace(",", "X").replace(".", ",").replace("X", ".")
-                              if pd.notnull(x) else "")
+    core_rows = [
+        ("LPV / Cliques",     _rate(values_total[1], values_total[0])),
+        ("Checkout / LPV",    _rate(values_total[2], values_total[1])),
+        ("Compra / Checkout", _rate(values_total[4], values_total[2])),
+    ]
+    extras_def = {
+        "Add Pagto / Checkout": _rate(values_total[3], values_total[2]),
+        "Compra / Add Pagto":   _rate(values_total[4], values_total[3]),
+        "Compra / LPV":         _rate(values_total[4], values_total[1]),
+        "Compra / Cliques":     _rate(values_total[4], values_total[0]),
+        "Checkout / Cliques":   _rate(values_total[2], values_total[0]),
+        "Add Pagto / LPV":      _rate(values_total[3], values_total[1]),
+    }
 
-# Altura ajusta conforme nº de extras
-base_h = 160
-row_h  = 36
-height = base_h + row_h * len(extras_selected)
-st.dataframe(sr, use_container_width=True, height=height)
+    with st.expander("Comparar outras taxas (opcional)"):
+        extras_selected = st.multiselect(
+            "Escolha métricas adicionais para visualizar:",
+            options=list(extras_def.keys()),
+            default=[],
+        )
+    rows = core_rows + [(name, extras_def[name]) for name in extras_selected]
+    sr = pd.DataFrame(rows, columns=["Taxa", "Valor"])
+    sr["Valor"] = sr["Valor"].map(lambda x: f"{x*100:,.2f}%".replace(",", "X").replace(".", ",").replace("X", ".")
+                                  if pd.notnull(x) else "")
+    base_h, row_h = 160, 36
+    height = base_h + row_h * len(extras_selected)
+    st.dataframe(sr, use_container_width=True, height=height)
 
-# ========= COMPARATIVOS (Período A vs Período B) — (opcional, após o Funil do período) =========
-with st.expander("Comparativos — Período A vs Período B (opcional)", expanded=False):
-    st.subheader("Comparativos — descubra o que mudou e por quê")
+    # ========= COMPARATIVOS (Período A vs Período B) =========
+    with st.expander("Comparativos — Período A vs Período B (opcional)", expanded=False):
+        st.subheader("Comparativos — descubra o que mudou e por quê")
 
-    # Período anterior com mesmo tamanho
-    period_len = (until - since).days + 1
-    default_sinceA = since - timedelta(days=period_len)
-    default_untilA = since - timedelta(days=1)
+        period_len = (until - since).days + 1
+        default_sinceA = since - timedelta(days=period_len)
+        default_untilA = since - timedelta(days=1)
 
-    colA, colB = st.columns(2)
-    with colA:
-        st.markdown("**Período A**")
-        sinceA = st.date_input("Desde (A)", value=default_sinceA, key="sinceA")
-        untilA = st.date_input("Até (A)",   value=default_untilA, key="untilA")
-    with colB:
-        st.markdown("**Período B**")
-        sinceB = st.date_input("Desde (B)", value=since, key="sinceB")
-        untilB = st.date_input("Até (B)",   value=until, key="untilB")
+        colA, colB = st.columns(2)
+        with colA:
+            st.markdown("**Período A**")
+            sinceA = st.date_input("Desde (A)", value=default_sinceA, key="sinceA")
+            untilA = st.date_input("Até (A)",   value=default_untilA, key="untilA")
+        with colB:
+            st.markdown("**Período B**")
+            sinceB = st.date_input("Desde (B)", value=since, key="sinceB")
+            untilB = st.date_input("Até (B)",   value=until, key="untilB")
 
-    if sinceA > untilA or sinceB > untilB:
-        st.warning("Confira as datas: 'Desde' não pode ser maior que 'Até'.")
-    else:
-        with st.spinner("Comparando períodos…"):
-            dfA = fetch_insights_daily(act_id, token, api_version, str(sinceA), str(untilA), level)
-            dfB = fetch_insights_daily(act_id, token, api_version, str(sinceB), str(untilB), level)
-
-        if dfA.empty or dfB.empty:
-            st.info("Sem dados em um dos períodos selecionados.")
+        if sinceA > untilA or sinceB > untilB:
+            st.warning("Confira as datas: 'Desde' não pode ser maior que 'Até'.")
         else:
-            # Agregados por período (inclui add_payment)
-            def _agg(d):
-                return {
-                    "spend": d["spend"].sum(),
-                    "revenue": d["revenue"].sum(),
-                    "purchases": d["purchases"].sum(),
-                    "clicks": d["link_clicks"].sum(),
-                    "lpv": d["lpv"].sum(),
-                    "checkout": d["init_checkout"].sum(),
-                    "add_payment": d["add_payment"].sum(),
+            with st.spinner("Comparando períodos…"):
+                dfA = fetch_insights_daily(act_id, token, api_version, str(sinceA), str(untilA), level)
+                dfB = fetch_insights_daily(act_id, token, api_version, str(sinceB), str(untilB), level)
+
+            if dfA.empty or dfB.empty:
+                st.info("Sem dados em um dos períodos selecionados.")
+            else:
+                def _agg(d):
+                    return {
+                        "spend": d["spend"].sum(),
+                        "revenue": d["revenue"].sum(),
+                        "purchases": d["purchases"].sum(),
+                        "clicks": d["link_clicks"].sum(),
+                        "lpv": d["lpv"].sum(),
+                        "checkout": d["init_checkout"].sum(),
+                        "add_payment": d["add_payment"].sum(),
+                    }
+
+                A = _agg(dfA); B = _agg(dfB)
+
+                roasA = _safe_div(A["revenue"], A["spend"])
+                roasB = _safe_div(B["revenue"], B["spend"])
+                cpaA  = _safe_div(A["spend"], A["purchases"])
+                cpaB  = _safe_div(B["spend"], B["purchases"])
+                cpcA  = _safe_div(A["spend"], A["clicks"])
+                cpcB  = _safe_div(B["spend"], B["clicks"])
+
+                dir_map = {
+                    "Valor usado": "neutral",
+                    "Faturamento": "higher",
+                    "Vendas":      "higher",
+                    "ROAS":        "higher",
+                    "CPC":         "lower",
+                    "CPA":         "lower",
+                }
+                delta_map = {
+                    "Valor usado":  B["spend"] - A["spend"],
+                    "Faturamento":  B["revenue"] - A["revenue"],
+                    "Vendas":       B["purchases"] - A["purchases"],
+                    "ROAS":         (roasB - roasA) if pd.notnull(roasA) and pd.notnull(roasB) else np.nan,
+                    "CPC":          (cpcB - cpcA)   if pd.notnull(cpcA) and pd.notnull(cpcB) else np.nan,
+                    "CPA":          (cpaB - cpaA)   if pd.notnull(cpaA) and pd.notnull(cpaB) else np.nan,
                 }
 
-            A = _agg(dfA); B = _agg(dfB)
+                kpi_rows = [
+                    ("Valor usado", _fmt_money_br(A["spend"]),   _fmt_money_br(B["spend"]),   _fmt_money_br(B["spend"] - A["spend"])),
+                    ("Faturamento", _fmt_money_br(A["revenue"]), _fmt_money_br(B["revenue"]), _fmt_money_br(B["revenue"] - A["revenue"])),
+                    ("Vendas",      _fmt_int_br(A["purchases"]), _fmt_int_br(B["purchases"]), _fmt_int_br(B["purchases"] - A["purchases"])),
+                    ("ROAS",        _fmt_ratio_br(roasA),        _fmt_ratio_br(roasB),
+                                     (_fmt_ratio_br(roasB - roasA) if pd.notnull(roasA) and pd.notnull(roasB) else "")),
+                    ("CPC",         _fmt_money_br(cpcA) if pd.notnull(cpcA) else "",
+                                     _fmt_money_br(cpcB) if pd.notnull(cpcB) else "",
+                                     _fmt_money_br(cpcB - cpcA) if pd.notnull(cpcA) and pd.notnull(cpcB) else ""),
+                    ("CPA",         _fmt_money_br(cpaA) if pd.notnull(cpaA) else "",
+                                     _fmt_money_br(cpaB) if pd.notnull(cpaB) else "",
+                                     _fmt_money_br(cpaB - cpaA) if pd.notnull(cpaA) and pd.notnull(cpaB) else ""),
+                ]
+                kpi_df_disp = pd.DataFrame(kpi_rows, columns=["Métrica", "Período A", "Período B", "Δ (B - A)"])
 
-            # === KPIs calculados (necessários para o CSV) ===
-            roasA = _safe_div(A["revenue"], A["spend"])
-            roasB = _safe_div(B["revenue"], B["spend"])
-            cpaA  = _safe_div(A["spend"], A["purchases"])
-            cpaB  = _safe_div(B["spend"], B["purchases"])
-            cpcA  = _safe_div(A["spend"], A["clicks"])
-            cpcB  = _safe_div(B["spend"], B["clicks"])
-
-            dir_map = {
-                "Valor usado": "neutral",
-                "Faturamento": "higher",
-                "Vendas":      "higher",
-                "ROAS":        "higher",
-                "CPC":         "lower",
-                "CPA":         "lower",
-            }
-
-            delta_map = {
-                "Valor usado":  B["spend"] - A["spend"],
-                "Faturamento":  B["revenue"] - A["revenue"],
-                "Vendas":       B["purchases"] - A["purchases"],
-                "ROAS":         (roasB - roasA) if pd.notnull(roasA) and pd.notnull(roasB) else np.nan,
-                "CPC":          (cpcB - cpcA)   if pd.notnull(cpcA) and pd.notnull(cpcB) else np.nan,
-                "CPA":          (cpaB - cpaA)   if pd.notnull(cpaA) and pd.notnull(cpaB) else np.nan,
-            }
-
-            kpi_rows = [
-                ("Valor usado", _fmt_money_br(A["spend"]),   _fmt_money_br(B["spend"]),   _fmt_money_br(B["spend"] - A["spend"])),
-                ("Faturamento", _fmt_money_br(A["revenue"]), _fmt_money_br(B["revenue"]), _fmt_money_br(B["revenue"] - A["revenue"])),
-                ("Vendas",      _fmt_int_br(A["purchases"]), _fmt_int_br(B["purchases"]), _fmt_int_br(B["purchases"] - A["purchases"])),
-                ("ROAS",        _fmt_ratio_br(roasA),        _fmt_ratio_br(roasB),
-                                 (_fmt_ratio_br(roasB - roasA) if pd.notnull(roasA) and pd.notnull(roasB) else "")),
-                ("CPC",         _fmt_money_br(cpcA) if pd.notnull(cpcA) else "",
-                                 _fmt_money_br(cpcB) if pd.notnull(cpcB) else "",
-                                 _fmt_money_br(cpcB - cpcA) if pd.notnull(cpcA) and pd.notnull(cpcB) else ""),
-                ("CPA",         _fmt_money_br(cpaA) if pd.notnull(cpaA) else "",
-                                 _fmt_money_br(cpaB) if pd.notnull(cpaB) else "",
-                                 _fmt_money_br(cpaB - cpaA) if pd.notnull(cpaA) and pd.notnull(cpaB) else ""),
-            ]
-            kpi_df_disp = pd.DataFrame(kpi_rows, columns=["Métrica", "Período A", "Período B", "Δ (B - A)"])
-
-            def _style_kpi(row):
-                metric = row["Métrica"]
-                d      = delta_map.get(metric, np.nan)
-                rule   = dir_map.get(metric, "neutral")
-                styles = [""] * len(row)
-                try:
-                    idxB = list(row.index).index("Período B")
-                    idxD = list(row.index).index("Δ (B - A)")
-                except Exception:
+                def _style_kpi(row):
+                    metric = row["Métrica"]
+                    d      = delta_map.get(metric, np.nan)
+                    rule   = dir_map.get(metric, "neutral")
+                    styles = [""] * len(row)
+                    try:
+                        idxB = list(row.index).index("Período B")
+                        idxD = list(row.index).index("Δ (B - A)")
+                    except Exception:
+                        return styles
+                    if pd.isna(d) or rule == "neutral" or d == 0:
+                        return styles
+                    better = (d > 0) if rule == "higher" else (d < 0)
+                    color  = "#16a34a" if better else "#dc2626"
+                    weight = "700"
+                    styles[idxB] = f"color:{color}; font-weight:{weight};"
+                    styles[idxD] = f"color:{color}; font-weight:{weight};"
                     return styles
-                if pd.isna(d) or rule == "neutral" or d == 0:
+
+                st.markdown("**KPIs do período (A vs B)**")
+                st.dataframe(kpi_df_disp.style.apply(_style_kpi, axis=1), use_container_width=True, height=260)
+
+                st.markdown("---")
+
+                # Taxas do funil
+                rates_num = pd.DataFrame({
+                    "Taxa": ["LPV/Cliques", "Checkout/LPV", "Compra/Checkout"],
+                    "Período A": [
+                        _safe_div(A["lpv"], A["clicks"]),
+                        _safe_div(A["checkout"], A["lpv"]),
+                        _safe_div(A["purchases"], A["checkout"]),
+                    ],
+                    "Período B": [
+                        _safe_div(B["lpv"], B["clicks"]),
+                        _safe_div(B["checkout"], B["lpv"]),
+                        _safe_div(B["purchases"], B["checkout"]),
+                    ],
+                })
+                rates_num["Δ"] = rates_num["Período B"] - rates_num["Período A"]
+
+                rates_disp = rates_num.copy()
+                for col in ["Período A", "Período B", "Δ"]:
+                    rates_disp[col] = rates_disp[col].map(_fmt_pct_br)
+
+                delta_by_taxa = dict(zip(rates_num["Taxa"], rates_num["Δ"]))
+
+                def _style_rate(row):
+                    taxa = row["Taxa"]
+                    d    = delta_by_taxa.get(taxa, np.nan)
+                    styles = [""] * len(row)
+                    try:
+                        idxB = list(row.index).index("Período B")
+                        idxD = list(row.index).index("Δ")
+                    except Exception:
+                        return styles
+                    if pd.isna(d) or d == 0:
+                        return styles
+                    better = d > 0
+                    color  = "#16a34a" if better else "#dc2626"
+                    weight = "700"
+                    styles[idxB] = f"color:{color}; font-weight:{weight};"
+                    styles[idxD] = f"color:{color}; font-weight:{weight};"
                     return styles
-                better = (d > 0) if rule == "higher" else (d < 0)
-                color  = "#16a34a" if better else "#dc2626"
-                weight = "700"
-                styles[idxB] = f"color:{color}; font-weight:{weight};"
-                styles[idxD] = f"color:{color}; font-weight:{weight};"
-                return styles
 
-            st.markdown("**KPIs do período (A vs B)**")
-            st.dataframe(kpi_df_disp.style.apply(_style_kpi, axis=1), use_container_width=True, height=260)
+                st.markdown("**Taxas do funil (A vs B)**")
+                st.dataframe(rates_disp.style.apply(_style_rate, axis=1), use_container_width=True, height=180)
 
-            st.markdown("---")
+                # Funis lado a lado
+                labels_funnel = ["Cliques", "LPV", "Checkout", "Add Pagamento", "Compra"]
+                valsA = [int(round(A["clicks"])), int(round(A["lpv"])), int(round(A["checkout"])),
+                         int(round(A["add_payment"])), int(round(A["purchases"]))]
+                valsB = [int(round(B["clicks"])), int(round(B["lpv"])), int(round(B["checkout"])),
+                         int(round(B["add_payment"])), int(round(B["purchases"]))]
+                valsA_plot = enforce_monotonic(valsA)
+                valsB_plot = enforce_monotonic(valsB)
 
-            # Taxas do funil (as 3 principais)
-            rates_num = pd.DataFrame({
-                "Taxa": ["LPV/Cliques", "Checkout/LPV", "Compra/Checkout"],
-                "Período A": [
-                    _safe_div(A["lpv"], A["clicks"]),
-                    _safe_div(A["checkout"], A["lpv"]),
-                    _safe_div(A["purchases"], A["checkout"]),
-                ],
-                "Período B": [
-                    _safe_div(B["lpv"], B["clicks"]),
-                    _safe_div(B["checkout"], B["lpv"]),
-                    _safe_div(B["purchases"], B["checkout"]),
-                ],
-            })
-            rates_num["Δ"] = rates_num["Período B"] - rates_num["Período A"]
+                cA, cB = st.columns(2)
+                with cA:
+                    st.plotly_chart(
+                        funnel_fig(labels_funnel, valsA_plot, title=f"Funil — Período A ({sinceA} a {untilA})"),
+                        use_container_width=True
+                    )
+                with cB:
+                    st.plotly_chart(
+                        funnel_fig(labels_funnel, valsB_plot, title=f"Funil — Período B ({sinceB} a {untilB})"),
+                        use_container_width=True
+                    )
 
-            rates_disp = rates_num.copy()
-            for col in ["Período A", "Período B", "Δ"]:
-                rates_disp[col] = rates_disp[col].map(_fmt_pct_br)
+                # Δ por etapa
+                delta_counts = [b - a for a, b in zip(valsA, valsB)]
+                delta_df = pd.DataFrame({
+                    "Etapa": labels_funnel,
+                    "Período A": valsA,
+                    "Período B": valsB,
+                    "Δ (B - A)": delta_counts,
+                })
+                delta_disp = delta_df.copy()
+                delta_disp["Período A"]  = delta_disp["Período A"].map(_fmt_int_br)
+                delta_disp["Período B"]  = delta_disp["Período B"].map(_fmt_int_br)
+                delta_disp["Δ (B - A)"]  = delta_disp["Δ (B - A)"].map(_fmt_int_signed_br)
 
-            delta_by_taxa = dict(zip(rates_num["Taxa"], rates_num["Δ"]))
+                delta_by_stage = dict(zip(delta_df["Etapa"], delta_df["Δ (B - A)"]))
 
-            def _style_rate(row):
-                taxa = row["Taxa"]
-                d    = delta_by_taxa.get(taxa, np.nan)
-                styles = [""] * len(row)
-                try:
-                    idxB = list(row.index).index("Período B")
-                    idxD = list(row.index).index("Δ")
-                except Exception:
+                def _style_delta_counts(row):
+                    d = delta_by_stage.get(row["Etapa"], np.nan)
+                    styles = [""] * len(row)
+                    try:
+                        idxB = list(row.index).index("Período B")
+                        idxD = list(row.index).index("Δ (B - A)")
+                    except Exception:
+                        return styles
+                    if pd.isna(d) or d == 0:
+                        return styles
+                    color  = "#16a34a" if d > 0 else "#dc2626"
+                    weight = "700"
+                    styles[idxB] = f"color:{color}; font-weight:{weight};"
+                    styles[idxD] = f"color:{color}; font-weight:{weight};"
                     return styles
-                if pd.isna(d) or d == 0:
-                    return styles
-                better = d > 0
-                color  = "#16a34a" if better else "#dc2626"
-                weight = "700"
-                styles[idxB] = f"color:{color}; font-weight:{weight};"
-                styles[idxD] = f"color:{color}; font-weight:{weight};"
-                return styles
 
-            st.markdown("**Taxas do funil (A vs B)**")
-            st.dataframe(rates_disp.style.apply(_style_rate, axis=1), use_container_width=True, height=180)
+                st.markdown("**Pessoas a mais/menos em cada etapa (B − A)**")
+                st.dataframe(delta_disp.style.apply(_style_delta_counts, axis=1), use_container_width=True, height=240)
 
-            # === Funis lado a lado (A x B) com contagens absolutas ===
-            labels_funnel = ["Cliques", "LPV", "Checkout", "Add Pagamento", "Compra"]
+                st.markdown("---")
 
-            valsA = [
-                int(round(A["clicks"])),
-                int(round(A["lpv"])),
-                int(round(A["checkout"])),
-                int(round(A["add_payment"])),
-                int(round(A["purchases"])),
-            ]
-            valsB = [
-                int(round(B["clicks"])),
-                int(round(B["lpv"])),
-                int(round(B["checkout"])),
-                int(round(B["add_payment"])),
-                int(round(B["purchases"])),
-            ]
+    # ========= FUNIL por CAMPANHA =========
+    if level == "campaign":
+        st.subheader("Campanhas — Funil e Taxas (somatório no período)")
 
-            valsA_plot = enforce_monotonic(valsA)
-            valsB_plot = enforce_monotonic(valsB)
+        agg_cols = ["spend", "link_clicks", "lpv", "init_checkout", "add_payment", "purchases", "revenue"]
+        camp = df_daily.groupby(["campaign_id", "campaign_name"], as_index=False)[agg_cols].sum()
 
-            cA, cB = st.columns(2)
-            with cA:
-                st.plotly_chart(
-                    funnel_fig(labels_funnel, valsA_plot, title=f"Funil — Período A ({sinceA} a {untilA})"),
-                    use_container_width=True
-                )
-            with cB:
-                st.plotly_chart(
-                    funnel_fig(labels_funnel, valsB_plot, title=f"Funil — Período B ({sinceB} a {untilB})"),
-                    use_container_width=True
-                )
+        # Taxas principais
+        camp["LPV/Cliques"]     = np.where(camp["link_clicks"] > 0, camp["lpv"] / camp["link_clicks"], np.nan)
+        camp["Checkout/LPV"]    = np.where(camp["lpv"] > 0, camp["init_checkout"] / camp["lpv"], np.nan)
+        camp["Compra/Checkout"] = np.where(camp["init_checkout"] > 0, camp["purchases"] / camp["init_checkout"], np.nan)
+        camp["ROAS"]            = np.where(camp["spend"] > 0, camp["revenue"] / camp["spend"], np.nan)
 
-            # Tabela de perdas/ganhos por etapa (Δ pessoas)
-            delta_counts = [b - a for a, b in zip(valsA, valsB)]
-            delta_df = pd.DataFrame({
-                "Etapa": labels_funnel,
-                "Período A": valsA,
-                "Período B": valsB,
-                "Δ (B - A)": delta_counts,
-            })
-            delta_disp = delta_df.copy()
-            delta_disp["Período A"]  = delta_disp["Período A"].map(_fmt_int_br)
-            delta_disp["Período B"]  = delta_disp["Período B"].map(_fmt_int_br)
-            delta_disp["Δ (B - A)"]  = delta_disp["Δ (B - A)"].map(_fmt_int_signed_br)
+        extras_cols = {
+            "Add Pagto / Checkout":  np.where(camp["init_checkout"] > 0, camp["add_payment"] / camp["init_checkout"], np.nan),
+            "Compra / Add Pagto":    np.where(camp["add_payment"] > 0, camp["purchases"] / camp["add_payment"], np.nan),
+            "Compra / LPV":          np.where(camp["lpv"] > 0, camp["purchases"] / camp["lpv"], np.nan),
+            "Compra / Cliques":      np.where(camp["link_clicks"] > 0, camp["purchases"] / camp["link_clicks"], np.nan),
+            "Checkout / Cliques":    np.where(camp["link_clicks"] > 0, camp["init_checkout"] / camp["link_clicks"], np.nan),
+            "Add Pagto / LPV":       np.where(camp["lpv"] > 0, camp["add_payment"] / camp["lpv"], np.nan),
+        }
 
-            delta_by_stage = dict(zip(delta_df["Etapa"], delta_df["Δ (B - A)"]))
+        with st.expander("Comparar outras taxas (opcional)"):
+            extras_selected = st.multiselect(
+                "Escolha métricas adicionais:",
+                options=list(extras_cols.keys()),
+                default=[],
+            )
 
-            def _style_delta_counts(row):
-                d = delta_by_stage.get(row["Etapa"], np.nan)
-                styles = [""] * len(row)
-                try:
-                    idxB = list(row.index).index("Período B")
-                    idxD = list(row.index).index("Δ (B - A)")
-                except Exception:
-                    return styles
-                if pd.isna(d) or d == 0:
-                    return styles
-                color  = "#16a34a" if d > 0 else "#dc2626"
-                weight = "700"
-                styles[idxB] = f"color:{color}; font-weight:{weight};"
-                styles[idxD] = f"color:{color}; font-weight:{weight};"
-                return styles
+        cols_base = [
+            "campaign_id", "campaign_name",
+            "spend", "revenue", "ROAS",
+            "link_clicks", "lpv", "init_checkout", "purchases",
+            "LPV/Cliques", "Checkout/LPV", "Compra/Checkout"
+        ]
+        camp_view = camp[cols_base].copy()
 
-            st.markdown("**Pessoas a mais/menos em cada etapa (B − A)**")
-            st.dataframe(delta_disp.style.apply(_style_delta_counts, axis=1), use_container_width=True, height=240)
+        for name in extras_selected:
+            camp_view[name] = extras_cols[name]
 
-            st.markdown("---")
+        # Ordena ANTES de formatar moeda
+        camp_view = camp_view.sort_values("spend", ascending=False)
 
+        # Formatação
+        for c in ["spend", "revenue"]:
+            camp_view[c] = camp_view[c].apply(_fmt_money_br)
 
-# ========= FUNIL por CAMPANHA =========
-st.subheader("Campanhas — Funil e Taxas (somatório no período)")
+        pct_cols = ["LPV/Cliques", "Checkout/LPV", "Compra/Checkout"] + list(extras_selected)
+        for c in pct_cols:
+            camp_view[c] = camp_view[c].map(lambda x: (f"{x*100:,.2f}%" if pd.notnull(x) else "")
+                                            .replace(",", "X").replace(".", ",").replace("X", "."))
 
-agg_cols = ["spend", "link_clicks", "lpv", "init_checkout", "add_payment", "purchases", "revenue"]
-camp = df.groupby(["campaign_id", "campaign_name"], as_index=False)[agg_cols].sum()
+        camp_view["ROAS"] = camp_view["ROAS"].map(
+            lambda x: (f"{x:,.2f}x" if pd.notnull(x) else "").replace(",", "X").replace(".", ",").replace("X", ".")
+        )
 
-# Taxas PRINCIPAIS
-camp["LPV/Cliques"]     = np.where(camp["link_clicks"] > 0, camp["lpv"] / camp["link_clicks"], np.nan)
-camp["Checkout/LPV"]    = np.where(camp["lpv"] > 0, camp["init_checkout"] / camp["lpv"], np.nan)
-camp["Compra/Checkout"] = np.where(camp["init_checkout"] > 0, camp["purchases"] / camp["init_checkout"], np.nan)
+        camp_view = camp_view.rename(columns={
+            "campaign_id": "ID campanha",
+            "campaign_name": "Campanha",
+            "spend": "Valor usado",
+            "revenue": "Valor de conversão",
+            "link_clicks": "Cliques",
+            "lpv": "LPV",
+            "init_checkout": "Checkout",
+            "purchases": "Compras",
+        })
 
-# ROAS
-camp["ROAS"]            = np.where(camp["spend"] > 0, camp["revenue"] / camp["spend"], np.nan)
+        st.dataframe(camp_view, use_container_width=True, height=520)
 
-extras_cols = {
-    "Add Pagto / Checkout":  np.where(camp["init_checkout"] > 0, camp["add_payment"] / camp["init_checkout"], np.nan),
-    "Compra / Add Pagto":    np.where(camp["add_payment"] > 0, camp["purchases"] / camp["add_payment"], np.nan),
-    "Compra / LPV":          np.where(camp["lpv"] > 0, camp["purchases"] / camp["lpv"], np.nan),
-    "Compra / Cliques":      np.where(camp["link_clicks"] > 0, camp["purchases"] / camp["link_clicks"], np.nan),
-    "Checkout / Cliques":    np.where(camp["link_clicks"] > 0, camp["init_checkout"] / camp["link_clicks"], np.nan),
-    "Add Pagto / LPV":       np.where(camp["lpv"] > 0, camp["add_payment"] / camp["lpv"], np.nan),
-}
+        with st.expander("Dados diários (detalhe por campanha)"):
+            dd = df_daily.copy()
+            dd["date"] = dd["date"].dt.date
+            cols = ["date", "campaign_name", "spend", "link_clicks", "lpv", "init_checkout", "add_payment", "purchases", "revenue", "roas"]
+            dd["roas"] = np.where(dd["spend"]>0, dd["revenue"]/dd["spend"], np.nan)
+            dd_fmt = dd[cols].copy()
+            dd_fmt["spend"]   = dd_fmt["spend"].apply(_fmt_money_br)
+            dd_fmt["revenue"] = dd_fmt["revenue"].apply(_fmt_money_br)
+            dd_fmt["roas"]    = dd_fmt["roas"].map(lambda x: f"{x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") if pd.notnull(x) else "")
+            st.dataframe(dd_fmt.rename(columns={
+                "date": "Data", "campaign_name": "Campanha", "spend": "Valor usado",
+                "link_clicks": "Cliques", "lpv": "LPV", "init_checkout": "Finalização",
+                "add_payment": "Add Pagamento", "purchases": "Compras",
+                "revenue": "Valor de conversão", "roas": "ROAS"
+            }), use_container_width=True)
+    else:
+        st.info("Troque o nível para 'campaign' para ver o detalhamento por campanha.")
 
-with st.expander("Comparar outras taxas (opcional)"):
-    extras_selected = st.multiselect(
-        "Escolha métricas adicionais:",
-        options=list(extras_cols.keys()),
-        default=[],
-    )
+# -------------------- ABA 2: DAYPARTING (Hora × Dia) --------------------
+with tab_daypart:
+    st.caption("Melhores horários por dia da semana e visão cruzada Hora × Dia.")
+    if df_hourly is None or df_hourly.empty:
+        st.info("A conta/período não retornou breakdown por hora. Use a visão diária.")
+    else:
+        min_spend = st.slider("Gasto mínimo para considerar o horário (R$)", 0.0, 1000.0, 0.0, 10.0)
 
-cols_base = [
-    "campaign_id", "campaign_name",
-    "spend", "revenue", "ROAS",
-    "link_clicks", "lpv", "init_checkout", "purchases",
-    "LPV/Cliques", "Checkout/LPV", "Compra/Checkout"
-]
-camp_view = camp[cols_base].copy()
+        d = df_hourly.copy()
+        d = d.dropna(subset=["hour"])
+        d["hour"] = d["hour"].astype(int).clip(0, 23)
+        cube = d.groupby(["dow_label","hour"], as_index=False)[
+            ["spend","revenue","purchases","link_clicks","lpv","init_checkout","add_payment"]
+        ].sum()
+        cube["roas"] = np.where(cube["spend"]>0, cube["revenue"]/cube["spend"], np.nan)
 
-for name in extras_selected:
-    camp_view[name] = extras_cols[name]
+        if min_spend > 0:
+            cube = cube[cube["spend"] >= min_spend]
 
-# Formatação
-for c in ["spend", "revenue"]:
-    camp_view[c] = camp_view[c].apply(_fmt_money_br)
+        # 1) Top horários por dia
+        st.subheader("🏆 Top horários por dia da semana")
+        best_by_day = (cube.sort_values(["dow_label","purchases","roas"], ascending=[True,False,False])
+                            .groupby("dow_label")
+                            .head(5))
+        show_cols = ["dow_label","hour","purchases","roas","spend","revenue"]
+        st.dataframe(
+            best_by_day[show_cols].rename(columns={
+                "dow_label":"Dia","hour":"Hora","purchases":"Compras",
+                "roas":"ROAS","spend":"Valor usado","revenue":"Valor de conversão"
+            }),
+            use_container_width=True, height=300
+        )
 
-pct_cols = ["LPV/Cliques", "Checkout/LPV", "Compra/Checkout"] + list(extras_selected)
-for c in pct_cols:
-    camp_view[c] = camp_view[c].map(lambda x: (f"{x*100:,.2f}%" if pd.notnull(x) else "")
-                                    .replace(",", "X").replace(".", ",").replace("X", "."))
+        # 2) Heatmap Hora × Dia
+        st.subheader("📆 Heatmap — Hora × Dia")
+        metric = st.selectbox("Métrica", ["Compras","Receita","Gasto","ROAS"], index=0)
+        mcol = {"Compras":"purchases","Receita":"revenue","Gasto":"spend","ROAS":"roas"}[metric]
 
-camp_view["ROAS"] = camp_view["ROAS"].map(
-    lambda x: (f"{x:,.2f}x" if pd.notnull(x) else "").replace(",", "X").replace(".", ",").replace("X", ".")
-)
+        if mcol == "roas":
+            pvt = cube.groupby(["dow_label","hour"], as_index=False)[mcol].mean()
+        else:
+            pvt = cube.groupby(["dow_label","hour"], as_index=False)[mcol].sum()
 
-camp_view = camp_view.rename(columns={
-    "campaign_id": "ID campanha",
-    "campaign_name": "Campanha",
-    "spend": "Valor usado",
-    "revenue": "Valor de conversão",
-    "link_clicks": "Cliques",
-    "lpv": "LPV",
-    "init_checkout": "Checkout",
-    "purchases": "Compras",
-})
+        order = ["Seg","Ter","Qua","Qui","Sex","Sáb","Dom"]
+        pvt["dow_label"] = pd.Categorical(pvt["dow_label"], categories=order, ordered=True)
+        pvt = pvt.sort_values(["dow_label","hour"])
+        heat = pvt.pivot(index="dow_label", columns="hour", values=mcol).fillna(0)
 
-camp_view = camp_view.sort_values("Valor usado", ascending=False)
-st.dataframe(camp_view, use_container_width=True, height=520)
+        # Garante colunas 0..23 na ordem correta e dtype int
+        hours_full = list(range(24))
+        heat = heat.reindex(columns=hours_full, fill_value=0)
+        heat.columns = list(range(24))
 
-with st.expander("Dados diários (detalhe por campanha)"):
-    dd = df.copy()
-    dd["date"] = dd["date"].dt.date
-    cols = ["date", "campaign_name", "spend", "link_clicks", "lpv", "init_checkout", "add_payment", "purchases", "revenue", "roas"]
-    dd_fmt = dd[cols].copy()
-    dd_fmt["spend"]   = dd_fmt["spend"].apply(_fmt_money_br)
-    dd_fmt["revenue"] = dd_fmt["revenue"].apply(_fmt_money_br)
-    dd_fmt["roas"]    = dd_fmt["roas"].map(lambda x: f"{x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") if pd.notnull(x) else "")
-    st.dataframe(dd_fmt.rename(columns={
-        "date": "Data", "campaign_name": "Campanha", "spend": "Valor usado",
-        "link_clicks": "Cliques", "lpv": "LPV", "init_checkout": "Finalização",
-        "add_payment": "Add Pagamento", "purchases": "Compras",
-        "revenue": "Valor de conversão", "roas": "ROAS"
-    }), use_container_width=True)
-    
+        
+        fig = go.Figure(data=go.Heatmap(
+            z=heat.values, x=heat.columns, y=heat.index,
+            colorbar=dict(title=metric),
+            hovertemplate="Dia: %{y}<br>Hora: %{x}h<br>"+metric+": %{z}<extra></extra>"
+        ))
+        fig.update_layout(height=520, margin=dict(l=10,r=10,t=10,b=10), template="plotly_white")
+        st.plotly_chart(fig, use_container_width=True)
+
+        # 3) Resumo por Dia da Semana
+        st.subheader("📊 Resumo por Dia da Semana (dia inteiro)")
+        by_day = d.groupby("dow_label", as_index=False)[["spend","revenue","purchases"]].sum()
+        by_day["ROAS"] = np.where(by_day["spend"]>0, by_day["revenue"]/by_day["spend"], np.nan)
+        st.dataframe(
+            by_day.rename(columns={"dow_label":"Dia","spend":"Valor usado","revenue":"Valor de conversão","purchases":"Compras"}),
+            use_container_width=True, height=260
+        )
+
+        # 4) Top horários consolidados
+        st.subheader("⏫ Top horários (sem distinguir dia)")
+        by_hour = d.groupby("hour", as_index=False)[["spend","revenue","purchases"]].sum()
+        by_hour["ROAS"] = np.where(by_hour["spend"]>0, by_hour["revenue"]/by_hour["spend"], np.nan)
+        st.dataframe(
+            by_hour.sort_values(["purchases","ROAS"], ascending=[False,False]).rename(columns={
+                "hour":"Hora","spend":"Valor usado","revenue":"Valor de conversão","purchases":"Compras"
+            }),
+            use_container_width=True, height=300
+        )
+
+        st.info("Use o 'Gasto mínimo' para evitar falsos positivos em horários com pouco investimento.")
