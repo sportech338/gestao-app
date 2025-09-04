@@ -314,8 +314,7 @@ def fetch_insights_hourly(act_id: str, token: str, api_version: str,
     base_url = f"https://graph.facebook.com/{api_version}/{act_id}/insights"
     fields = [
         "spend","impressions","clicks","actions","action_values",
-        "account_currency","date_start","campaign_id","campaign_name",
-        "link_clicks","landing_page_views"
+        "account_currency","date_start","campaign_id","campaign_name"
     ]
 
     def _run_hourly(action_rt: str) -> pd.DataFrame:
