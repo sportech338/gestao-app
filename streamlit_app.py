@@ -295,8 +295,38 @@ token = st.sidebar.text_input("Access Token", type="password")
 api_version = st.sidebar.text_input("API Version", value="v23.0")
 level = st.sidebar.selectbox("Nível (recomendado: campaign)", ["campaign", "account"], index=0)
 today = date.today()
-since = st.sidebar.date_input("Desde", value=today - timedelta(days=7))
-until = st.sidebar.date_input("Até", value=today)
+
+preset = st.sidebar.radio(
+    "Período rápido",
+    ["Hoje", "Ontem", "Últimos 7 dias", "Últimos 14 dias", "Últimos 30 dias", "Personalizado"],
+    index=2,  # "Últimos 7 dias"
+)
+
+def _range_from_preset(p):
+    if p == "Hoje":
+        return today, today
+    if p == "Ontem":
+        d = today - timedelta(days=1)
+        return d, d
+    if p == "Últimos 7 dias":
+        return today - timedelta(days=6), today
+    if p == "Últimos 14 dias":
+        return today - timedelta(days=13), today
+    if p == "Últimos 30 dias":
+        return today - timedelta(days=29), today
+    # Personalizado: valor inicial sugerido
+    return today - timedelta(days=7), today
+
+_since_auto, _until_auto = _range_from_preset(preset)
+
+if preset == "Personalizado":
+    since = st.sidebar.date_input("Desde", value=_since_auto, key="since_custom")
+    until = st.sidebar.date_input("Até",   value=_until_auto, key="until_custom")
+else:
+    # Mostra as datas calculadas, bloqueadas (só leitura)
+    since = st.sidebar.date_input("Desde", value=_since_auto, disabled=True, key="since_auto")
+    until = st.sidebar.date_input("Até",   value=_until_auto, disabled=True, key="until_auto")
+
 ready = bool(act_id and token)
 
 # =============== Tela ===============
@@ -316,6 +346,22 @@ with st.spinner("Buscando dados da Meta…"):
 if df.empty:
     st.warning("Sem dados para o período. Verifique permissões, conta e se há eventos de Purchase (value/currency).")
     st.stop()
+
+# === Moeda detectada e override opcional ===
+currency_detected = (df["currency"].dropna().iloc[0] if "currency" in df.columns and not df["currency"].dropna().empty else "BRL")
+col_curA, col_curB = st.columns([1, 2])
+with col_curA:
+    use_brl_display = st.checkbox("Fixar exibição em BRL (símbolo R$)", value=True)
+currency_label = "BRL" if use_brl_display else currency_detected
+
+st.caption(f"Moeda da conta detectada: **{currency_detected}** — Exibindo como: **{currency_label}**")
+
+st.download_button(
+    "⬇️ Exportar CSV — Diário (df)",
+    data=df.to_csv(index=False).encode("utf-8"),
+    file_name="meta_insights_diario.csv",
+    mime="text/csv",
+)
 
 # ========= KPIs do período =========
 tot_spend = float(df["spend"].sum())
@@ -454,13 +500,46 @@ with st.expander("Comparativos — Período A vs Período B (opcional)", expande
 
             A = _agg(dfA); B = _agg(dfB)
 
-            # KPIs arrumados — tabela A x B x Δ
+            # === KPIs calculados (necessários para o CSV) ===
             roasA = _safe_div(A["revenue"], A["spend"])
             roasB = _safe_div(B["revenue"], B["spend"])
             cpaA  = _safe_div(A["spend"], A["purchases"])
             cpaB  = _safe_div(B["spend"], B["purchases"])
             cpcA  = _safe_div(A["spend"], A["clicks"])
             cpcB  = _safe_div(B["spend"], B["clicks"])
+
+            # === Exports dos comparativos (A vs B) ===
+            kpi_export = pd.DataFrame([
+                {"Métrica": "Valor usado", "A": A["spend"],     "B": B["spend"],     "Delta": B["spend"] - A["spend"]},
+                {"Métrica": "Faturamento", "A": A["revenue"],   "B": B["revenue"],   "Delta": B["revenue"] - A["revenue"]},
+                {"Métrica": "Vendas",      "A": A["purchases"], "B": B["purchases"], "Delta": B["purchases"] - A["purchases"]},
+                {"Métrica": "ROAS",        "A": roasA,          "B": roasB,          "Delta": (roasB - roasA) if pd.notnull(roasA) and pd.notnull(roasB) else np.nan},
+                {"Métrica": "CPC",         "A": cpcA,           "B": cpcB,           "Delta": (cpcB - cpcA) if pd.notnull(cpcA) and pd.notnull(cpcB) else np.nan},
+                {"Métrica": "CPA",         "A": cpaA,           "B": cpaB,           "Delta": (cpaB - cpaA) if pd.notnull(cpaA) and pd.notnull(cpaB) else np.nan},
+            ])
+
+            col_exp1, col_exp2, col_exp3 = st.columns(3)
+            with col_exp1:
+                st.download_button(
+                    "⬇️ CSV — KPIs (A vs B)",
+                    data=kpi_export.to_csv(index=False).encode("utf-8"),
+                    file_name="comparativo_kpis.csv",
+                    mime="text/csv",
+                )
+            with col_exp2:
+                st.download_button(
+                    "⬇️ CSV — Período A (diário)",
+                    data=dfA.to_csv(index=False).encode("utf-8"),
+                    file_name=f"comparativo_periodo_A_{sinceA}_a_{untilA}.csv",
+                    mime="text/csv",
+                )
+            with col_exp3:
+                st.download_button(
+                    "⬇️ CSV — Período B (diário)",
+                    data=dfB.to_csv(index=False).encode("utf-8"),
+                    file_name=f"comparativo_periodo_B_{sinceB}_a_{untilB}.csv",
+                    mime="text/csv",
+                )
 
             dir_map = {
                 "Valor usado": "neutral",
@@ -699,6 +778,15 @@ camp_view = camp_view.rename(columns={
 
 camp_view = camp_view.sort_values("Valor usado", ascending=False)
 st.dataframe(camp_view, use_container_width=True, height=520)
+
+st.download_button(
+    "⬇️ Exportar CSV — Campanhas (camp_view)",
+    data=camp_view.to_csv(index=False).encode("utf-8"),
+    file_name="meta_insights_campanhas.csv",
+    mime="text/csv",
+)
+
+
 
 with st.expander("Dados diários (detalhe por campanha)"):
     dd = df.copy()
