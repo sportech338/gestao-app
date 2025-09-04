@@ -78,31 +78,32 @@ def _sum_actions_contains(rows: list, substrs: list) -> float:
     return float(tot)
 
 def _pick_purchase_totals(rows: list) -> float:
-    """Prioriza omni_purchase; se ausente, pega o MAIOR entre tipos específicos para evitar duplicação."""
+    """
+    Prioriza agregados para espelhar a UI:
+    1) 'purchase' (agregado)
+    2) 'omni_purchase'
+    3) Fallback: maior grupo específico contendo 'purchase' (evita somar em dobro)
+    """
     if not rows:
         return 0.0
     rows = [{**r, "action_type": str(r.get("action_type", "")).lower()} for r in rows]
+
+    agg = [r for r in rows if r["action_type"] == "purchase"]
+    if agg:
+        return float(sum(_sum_item(r) for r in agg))
+
     omni = [r for r in rows if r["action_type"] == "omni_purchase"]
     if omni:
         return float(sum(_sum_item(r) for r in omni))
-    candidates = {
-        "purchase": 0.0,
-        "onsite_conversion.purchase": 0.0,
-        "offsite_conversion.fb_pixel_purchase": 0.0,
-    }
+
+    grouped = {}
     for r in rows:
         at = r["action_type"]
-        if at in candidates:
-            candidates[at] += _sum_item(r)
-    if any(v > 0 for v in candidates.values()):
-        return float(max(candidates.values()))
-    # fallback amplo
-    grp = {}
-    for r in rows:
-        if "purchase" in r["action_type"]:
-            grp.setdefault(r["action_type"], 0.0)
-            grp[r["action_type"]] += _sum_item(r)
-    return float(max(grp.values()) if grp else 0.0)
+        if "purchase" in at:
+            grouped.setdefault(at, 0.0)
+            grouped[at] += _sum_item(r)
+
+    return float(max(grouped.values()) if grouped else 0.0)
 
 def _fmt_money_br(v: float) -> str:
     return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
@@ -180,24 +181,31 @@ def _safe_div(n, d):
 def fetch_insights_daily(act_id: str, token: str, api_version: str,
                          since_str: str, until_str: str,
                          level: str = "campaign",
-                         try_extra_fields: bool = True) -> pd.DataFrame:
+                         try_extra_fields: bool = True,
+                         report_time: str = "conversion",            # <-- NOVO
+                         use_unified: bool = True) -> pd.DataFrame:   # <-- NOVO
     """
-    Coleta diária com paridade de datas do Ads Manager:
-    - Usa date_stop (fim do dia) para a coluna 'date'
+    Coleta diária com paridade ao Ads Manager:
+    - 'report_time': 'conversion' ou 'impression'
+    - 'use_unified': usa a atribuição unificada (nível ad set) para casar com a UI
     - time_range (since/until) + time_increment=1
-    - action_report_time=conversion e janelas 7d_click,1d_view
-    - Puxa link_clicks/landing_page_views com fallback
+    - janelas de atribuição só são enviadas se NÃO estiver unificado
     """
     act_id = _ensure_act_prefix(act_id)
     base_url = f"https://graph.facebook.com/{api_version}/{act_id}/insights"
 
     base_fields = [
         "spend", "impressions", "clicks", "actions", "action_values",
-        "account_currency", "date_start", "date_stop", "campaign_id", "campaign_name"
+        "account_currency", "date_start", "date_stop",
+        "campaign_id", "campaign_name"
     ]
-    extra_fields = ["link_clicks", "landing_page_views"]
+    # retorna o campo de atribuição quando unificado (útil p/ debug)
+    if use_unified:
+        base_fields.append("attribution_setting")
 
+    extra_fields = ["link_clicks", "landing_page_views"]
     fields = base_fields + (extra_fields if try_extra_fields else [])
+
     params = {
         "access_token": token,
         "level": level,
@@ -205,9 +213,12 @@ def fetch_insights_daily(act_id: str, token: str, api_version: str,
         "time_increment": 1,
         "fields": ",".join(fields),
         "limit": 500,
-        "action_report_time": "conversion",
-        "action_attribution_windows": "7d_click,1d_view",
+        "action_report_time": report_time,  # <-- chave p/ paridade com UI
     }
+    if use_unified:
+        params["use_unified_attribution_setting"] = "true"
+    else:
+        params["action_attribution_windows"] = "7d_click,1d_view"
 
     rows, next_url, next_params = [], base_url, params.copy()
     while next_url:
@@ -220,32 +231,39 @@ def fetch_insights_daily(act_id: str, token: str, api_version: str,
         if resp.status_code != 200:
             err = (payload or {}).get("error", {})
             code, sub, msg = err.get("code"), err.get("error_subcode"), err.get("message")
+            # se campo extra não existir no versionamento, refaz sem extras
             if code == 100 and try_extra_fields:
-                return fetch_insights_daily(act_id, token, api_version, since_str, until_str, level, try_extra_fields=False)
+                return fetch_insights_daily(act_id, token, api_version,
+                                            since_str, until_str, level,
+                                            try_extra_fields=False,
+                                            report_time=report_time,
+                                            use_unified=use_unified)
             raise RuntimeError(f"Graph API error {resp.status_code} | code={code} subcode={sub} | {msg}")
 
         for rec in payload.get("data", []):
             actions = rec.get("actions") or []
             action_values = rec.get("action_values") or []
 
-            link_clicks = rec.get("link_clicks", None)
+            # Paridade estrita: SEM fallback/inferência.
+            # Se a API não devolver, fica 0.
+            link_clicks = rec.get("link_clicks")
             if link_clicks is None:
-                link_clicks = _sum_actions_exact(actions, ["link_click"])
+                link_clicks = 0
 
-            lpv = rec.get("landing_page_views", None)
-            if lpv is None:
-                lpv = _sum_actions_exact(actions, ["landing_page_view"])
-                if lpv == 0:
-                    lpv = _sum_actions_exact(actions, ["view_content"]) or _sum_actions_contains(actions, ["landing_page"])
+            landing_page_views = rec.get("landing_page_views")
+            if landing_page_views is None:
+                landing_page_views = 0
 
+            # Demais ações direto do array 'actions' (sem heurística)
             ic  = _sum_actions_exact(actions, ["initiate_checkout"])
             api = _sum_actions_exact(actions, ["add_payment_info"])
 
+            # Compras e Valor: prioriza 'purchase' (agregado)
             purchases_cnt = _pick_purchase_totals(actions)
             revenue_val   = _pick_purchase_totals(action_values)
 
             rows.append({
-                "date":           pd.to_datetime(rec.get("date_stop")),  # usa date_stop
+                "date":           pd.to_datetime(rec.get("date_stop")),
                 "currency":       rec.get("account_currency", "BRL"),
                 "campaign_id":    rec.get("campaign_id", ""),
                 "campaign_name":  rec.get("campaign_name", ""),
@@ -253,12 +271,13 @@ def fetch_insights_daily(act_id: str, token: str, api_version: str,
                 "impressions":    _to_float(rec.get("impressions")),
                 "clicks":         _to_float(rec.get("clicks")),
                 "link_clicks":    _to_float(link_clicks),
-                "lpv":            _to_float(lpv),
+                "lpv":            _to_float(landing_page_views),
                 "init_checkout":  _to_float(ic),
                 "add_payment":    _to_float(api),
                 "purchases":      _to_float(purchases_cnt),
                 "revenue":        _to_float(revenue_val),
             })
+
 
         after = ((payload.get("paging") or {}).get("cursors") or {}).get("after")
         if after:
@@ -279,31 +298,50 @@ def fetch_insights_daily(act_id: str, token: str, api_version: str,
     df["roas"] = np.where(df["spend"] > 0, df["revenue"] / df["spend"], np.nan)
     df = df.sort_values("date")
     return df
-
-
-
+                             
 # =============== Sidebar (filtros) ===============
 st.sidebar.header("Configuração")
 act_id = st.sidebar.text_input("Ad Account ID", placeholder="ex.: act_1234567890")
 token = st.sidebar.text_input("Access Token", type="password")
 api_version = st.sidebar.text_input("API Version", value="v23.0")
 level = st.sidebar.selectbox("Nível (recomendado: campaign)", ["campaign", "account"], index=0)
+
+st.sidebar.subheader("Atribuição e tempo de relatório")
+report_time_label = st.sidebar.selectbox(
+    "Relatar por",
+    ["Tempo da conversão (recomendado)", "Tempo da impressão"],
+    index=0,
+    help="Isso deve bater com a opção da UI do Ads Manager."
+)
+report_time = "conversion" if report_time_label.startswith("Tempo da conversão") else "impression"
+
+use_unified = st.sidebar.checkbox(
+    "Usar atribuição UNIFICADA (nível do conjunto de anúncios)",
+    value=True,
+    help="Ativa `use_unified_attribution_setting=true` para casar com a UI."
+)
+
+st.sidebar.subheader("Período")
 today = date.today()
+include_today = st.sidebar.checkbox(
+    "Incluir o dia de hoje nos presets",
+    value=True,
+    help="Na UI da Meta, 'Últimos 7/14/30 dias' normalmente inclui hoje."
+)
 
 preset = st.sidebar.radio(
     "Período rápido",
     ["Hoje", "Ontem", "Últimos 7 dias", "Últimos 14 dias", "Últimos 30 dias", "Personalizado"],
-    index=2,  # "Últimos 7 dias"
+    index=2,
 )
 
-def _range_from_preset(p):
-    # fim sempre em "ontem", para bater com a UI da Meta
-    base_end = today - timedelta(days=1)
-
+def _range_from_preset(p, include_today: bool):
+    # fim padrão: hoje ou ontem, conforme toggle
+    base_end = today if include_today else (today - timedelta(days=1))
     if p == "Hoje":
-        return today, today
+        return (today, today) if include_today else (base_end, base_end)
     if p == "Ontem":
-        return base_end, base_end
+        return (today - timedelta(days=1), today - timedelta(days=1))
     if p == "Últimos 7 dias":
         return base_end - timedelta(days=6), base_end
     if p == "Últimos 14 dias":
@@ -313,21 +351,16 @@ def _range_from_preset(p):
     # Personalizado (sugestão inicial)
     return base_end - timedelta(days=6), base_end
 
-_since_auto, _until_auto = _range_from_preset(preset)
+_since_auto, _until_auto = _range_from_preset(preset, include_today)
 
 if preset == "Personalizado":
     since = st.sidebar.date_input("Desde", value=_since_auto, key="since_custom")
     until = st.sidebar.date_input("Até",   value=_until_auto, key="until_custom")
 else:
-    # Mostra as datas calculadas, bloqueadas (só leitura)
     since = st.sidebar.date_input("Desde", value=_since_auto, disabled=True, key="since_auto")
     until = st.sidebar.date_input("Até",   value=_until_auto, disabled=True, key="until_auto")
 
-# Garantia de paridade com a UI: nunca incluir o dia de hoje
-if isinstance(until, date) and until >= date.today():
-    until = date.today() - timedelta(days=1)
-
-# Se 'since' acabar maior que 'until' (ex.: preset "Hoje"), corrija o intervalo
+# Correção mínima se since > until
 if isinstance(since, date) and isinstance(until, date) and since > until:
     since = until
 
@@ -344,7 +377,8 @@ if not ready:
 with st.spinner("Buscando dados da Meta…"):
     df = fetch_insights_daily(
         act_id=act_id, token=token, api_version=api_version,
-        since_str=str(since), until_str=str(until), level=level
+        since_str=str(since), until_str=str(until), level=level,
+        report_time=report_time, use_unified=use_unified
     )
 
 if df.empty:
@@ -355,7 +389,7 @@ if df.empty:
 currency_detected = (df["currency"].dropna().iloc[0] if "currency" in df.columns and not df["currency"].dropna().empty else "BRL")
 col_curA, col_curB = st.columns([1, 2])
 with col_curA:
-    use_brl_display = st.checkbox("Fixar exibição em BRL (símbolo R$)", value=True)
+    use_brl_display = st.checkbox("Fixar exibição em BRL (símbolo R$)", value=False)
 currency_label = "BRL" if use_brl_display else currency_detected
 
 st.caption(f"Moeda da conta detectada: **{currency_detected}** — Exibindo como: **{currency_label}**")
@@ -493,8 +527,10 @@ with st.expander("Comparativos — Período A vs Período B (opcional)", expande
 
         try:
             with st.spinner("Comparando períodos…"):
-                dfA = fetch_insights_daily(act_id, token, api_version, _iso(sinceA), _iso(untilA), level)
-                dfB = fetch_insights_daily(act_id, token, api_version, _iso(sinceB), _iso(untilB), level)
+                dfA = fetch_insights_daily(act_id, token, api_version, _iso(sinceA), _iso(untilA), level,
+                           report_time=report_time, use_unified=use_unified)
+                dfB = fetch_insights_daily(act_id, token, api_version, _iso(sinceB), _iso(untilB), level,
+                           report_time=report_time, use_unified=use_unified)
         except RuntimeError as e:
             st.error(
                 "Não foi possível carregar os dados da Meta para o comparativo.\n\n"
