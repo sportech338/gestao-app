@@ -115,7 +115,7 @@ def funnel_fig(labels, values, title=None):
             textinfo="value",
             textposition="inside",
             texttemplate="<b>%{value}</b>",  # deixa o número em negrito
-            textfont=dict(size=22),
+            textfont=dict(size=21),
             opacity=0.95,
             connector={"line": {"dash": "dot", "width": 1}},
         )
