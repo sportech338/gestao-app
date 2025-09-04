@@ -360,26 +360,43 @@ currency_label = "BRL" if use_brl_display else currency_detected
 st.caption(f"Moeda da conta detectada: **{currency_detected}** — Exibindo como: **{currency_label}**")
 
 # ========= KPIs do período =========
-tot_spend = float(df["spend"].sum())
-tot_purch = float(df["purchases"].sum())
-tot_rev   = float(df["revenue"].sum())
-roas_g    = (tot_rev / tot_spend) if tot_spend > 0 else 0.0
+tot_spend  = float(df["spend"].sum())
+tot_purch  = float(df["purchases"].sum())
+tot_rev    = float(df["revenue"].sum())
+tot_clicks = float(df["clicks"].sum())
 
-c1, c2, c3, c4 = st.columns(4)
+roas_g = (tot_rev / tot_spend) if tot_spend > 0 else 0.0
+cpc_g  = _safe_div(tot_spend, tot_clicks)
+cpa_g  = _safe_div(tot_spend, tot_purch)
+
+c1, c2, c3, c4, c5, c6 = st.columns(6)
+
 with c1:
     st.markdown('<div class="kpi-card"><div class="small-muted">Valor usado</div>'
                 f'<div class="big-number">{_fmt_money_br(tot_spend)}</div></div>', unsafe_allow_html=True)
+
 with c2:
     st.markdown('<div class="kpi-card"><div class="small-muted">Vendas</div>'
                 f'<div class="big-number">{int(round(tot_purch)):,}</div></div>'.replace(",", "."),
                 unsafe_allow_html=True)
+
 with c3:
     st.markdown('<div class="kpi-card"><div class="small-muted">Valor de conversão</div>'
                 f'<div class="big-number">{_fmt_money_br(tot_rev)}</div></div>', unsafe_allow_html=True)
+
 with c4:
     st.markdown('<div class="kpi-card"><div class="small-muted">ROAS</div>'
-                f'<div class="big-number">{roas_g:,.2f}</div></div>'.replace(",", "X").replace(".", ",").replace("X", "."),
+                f'<div class="big-number">{roas_g:,.2f}</div></div>'
+                .replace(",", "X").replace(".", ",").replace("X", "."),
                 unsafe_allow_html=True)
+
+with c5:
+    st.markdown('<div class="kpi-card"><div class="small-muted">CPC médio</div>'
+                f'<div class="big-number">{_fmt_money_br(cpc_g)}</div></div>', unsafe_allow_html=True)
+
+with c6:
+    st.markdown('<div class="kpi-card"><div class="small-muted">CPA médio</div>'
+                f'<div class="big-number">{_fmt_money_br(cpa_g)}</div></div>', unsafe_allow_html=True)
 
 st.divider()
 
