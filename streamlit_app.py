@@ -382,9 +382,18 @@ st.divider()
 
 # ========= Série diária =========
 st.subheader("Série diária — Investimento e Conversão")
+
+# agrega por dia
 daily = df.groupby("date", as_index=False)[["spend", "revenue", "purchases"]].sum()
-st.line_chart(daily.set_index("date")[["spend", "revenue"]])
-st.caption("Linhas diárias de Valor usado e Valor de conversão. Vendas na tabela abaixo.")
+
+# renomeia para PT-BR (legenda do gráfico usa os nomes das colunas)
+daily_pt = daily.rename(columns={"spend": "Gasto", "revenue": "Receita"})
+
+# plota com legendas em português
+st.line_chart(daily_pt.set_index("date")[["Receita", "Gasto"]])
+
+st.caption("Linhas diárias de Receita e Gasto. Vendas na tabela abaixo.")
+
 
 # ========= FUNIL (Período) — FUNIL VISUAL =========
 st.subheader("Funil do período (Total) — Cliques → LPV → Checkout → Add Pagamento → Compra")
