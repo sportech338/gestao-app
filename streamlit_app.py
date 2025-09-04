@@ -256,30 +256,43 @@ def fetch_insights_daily(act_id: str, token: str, api_version: str,
             api = _sum_actions_exact(actions, ["add_payment_info"], allowed_keys=attr_keys)
 
             # Purchase (qtd) e Revenue (valor) exatamente como no Gerenciador, conforme seleção
+            def _sum_if_present(rows, name):
+                return _sum_purchases_by_names(rows, [name], allowed_keys=attr_keys)
+
             if purchase_mode.startswith("Website"):
-                # Compras do site (pixel)
-                purchases_cnt = _sum_purchases_by_names(
-                    actions, ["offsite_conversion.fb_pixel_purchase"], allowed_keys=attr_keys
-                )
-                revenue_val = _sum_purchases_by_names(
-                    action_values, ["offsite_conversion.fb_pixel_purchase"], allowed_keys=attr_keys
-                )
+                # Preferir evento do pixel; se ausente no dia, cair no 'purchase' genérico
+                if _sum_if_present(actions, "offsite_conversion.fb_pixel_purchase") > 0:
+                    purchases_cnt = _sum_if_present(actions, "offsite_conversion.fb_pixel_purchase")
+                    revenue_val   = _sum_if_present(action_values, "offsite_conversion.fb_pixel_purchase")
+                else:
+                    purchases_cnt = _sum_if_present(actions, "purchase")
+                    revenue_val   = _sum_if_present(action_values, "purchase")
+
             elif purchase_mode.startswith("Onsite"):
-                # Compras Onsite (Shop)
-                purchases_cnt = _sum_purchases_by_names(
-                    actions, ["onsite_conversion.purchase"], allowed_keys=attr_keys
-                )
-                revenue_val = _sum_purchases_by_names(
-                    action_values, ["onsite_conversion.purchase"], allowed_keys=attr_keys
-                )
+                # Preferir evento de Shop; se ausente no dia, cair no 'purchase' genérico
+                if _sum_if_present(actions, "onsite_conversion.purchase") > 0:
+                    purchases_cnt = _sum_if_present(actions, "onsite_conversion.purchase")
+                    revenue_val   = _sum_if_present(action_values, "onsite_conversion.purchase")
+                else:
+                    purchases_cnt = _sum_if_present(actions, "purchase")
+                    revenue_val   = _sum_if_present(action_values, "purchase")
+
             else:
-                # Omni (todas as origens)
-                purchases_cnt = _sum_purchases_by_names(
-                    actions, ["omni_purchase"], allowed_keys=attr_keys
-                )
-                revenue_val = _sum_purchases_by_names(
-                    action_values, ["omni_purchase"], allowed_keys=attr_keys
-                )
+                # Omni (todas as origens) — preferir 'omni_purchase'; se ausente, usar o MAIOR disponível
+                if _sum_if_present(actions, "omni_purchase") > 0:
+                    purchases_cnt = _sum_if_present(actions, "omni_purchase")
+                    revenue_val   = _sum_if_present(action_values, "omni_purchase")
+                else:
+                    purchases_cnt = max(
+                        _sum_if_present(actions, "offsite_conversion.fb_pixel_purchase"),
+                        _sum_if_present(actions, "onsite_conversion.purchase"),
+                        _sum_if_present(actions, "purchase"),
+                    )
+                    revenue_val = max(
+                        _sum_if_present(action_values, "offsite_conversion.fb_pixel_purchase"),
+                        _sum_if_present(action_values, "onsite_conversion.purchase"),
+                        _sum_if_present(action_values, "purchase"),
+                    )
 
 
             rows.append({
