@@ -1,4 +1,3 @@
-
 # app.py — Meta Ads com Funil completo
 import streamlit as st
 import pandas as pd
@@ -205,6 +204,7 @@ def fetch_insights_daily(act_id: str, token: str, api_version: str,
         "time_increment": 1,
         "fields": ",".join(fields),
         "limit": 500,
+        "action_attribution_windows": ["7d_click", "1d_view"],
     }
 
     rows, next_url, next_params = [], base_url, params.copy()
