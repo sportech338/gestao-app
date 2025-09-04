@@ -328,6 +328,10 @@ else:
     # Não renderiza nada aqui; usa as datas calculadas internamente
     since, until = _since_auto, _until_auto
 
+# limpa chaves de widgets antigos que criavam o bloco de cima
+for k in ("since_auto", "until_auto"):
+    if k in st.session_state:
+        del st.session_state[k]
 
 ready = bool(act_id and token)
 
