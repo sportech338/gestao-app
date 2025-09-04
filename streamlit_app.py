@@ -114,19 +114,22 @@ def funnel_fig(labels, values, title=None):
             x=values,
             textinfo="value",
             textposition="inside",
-            textfont=dict(size=26),  # <<< aumenta o tamanho dos números
+            texttemplate="<b>%{value}</b>",     # <<< negrito nos números
+            textfont=dict(size=30),             # <<< aumenta o tamanho do número
             opacity=0.95,
             connector={"line": {"dash": "dot", "width": 1}},
         )
     )
     fig.update_layout(
         title=title or "",
-        margin=dict(l=12, r=12, t=40, b=12),
-        height=440,
+        margin=dict(l=8, r=8, t=48, b=8),      # <<< margens menores = mais área útil
+        height=560,                             # <<< funil mais alto
         template="plotly_white",
-        separators=",.",
+        separators=",.",                        # pt-BR
+        uniformtext=dict(minsize=12, mode="show")  # evita sumir texto em etapas pequenas
     )
     return fig
+
 
 def enforce_monotonic(values):
     """Garante formato de funil: cada etapa <= etapa anterior (só para o desenho)."""
