@@ -485,7 +485,7 @@ if df_daily.empty and (df_hourly is None or df_hourly.empty):
     st.warning("Sem dados para o período. Verifique permissões, conta e se há eventos de Purchase (value/currency).")
     st.stop()
 
-tab_daypart, tab_daily = st.tabs(["⏱️ Horários (principal)", "📅 Visão diária"])
+tab_daily, tab_daypart = st.tabs(["📅 Visão diária", "⏱️ Horários (principal)"])
 
 # -------------------- ABA 1: VISÃO DIÁRIA (seu conteúdo atual) --------------------
 with tab_daily:
