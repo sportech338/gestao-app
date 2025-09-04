@@ -1,3 +1,4 @@
+
 # app.py — Meta Ads com Funil completo
 import streamlit as st
 import pandas as pd
@@ -114,23 +115,19 @@ def funnel_fig(labels, values, title=None):
             x=values,
             textinfo="value",
             textposition="inside",
-            texttemplate="<b>%{value}</b>",  # deixa o número em negrito
-            textfont=dict(size=34),          # <<< AUMENTE AQUI (ex.: 32–40)
+            textfont=dict(size=26),  # <<< aumenta o tamanho dos números
             opacity=0.95,
             connector={"line": {"dash": "dot", "width": 1}},
         )
     )
     fig.update_layout(
         title=title or "",
-        margin=dict(l=10, r=10, t=48, b=10),
-        height=540,                         # <<< AUMENTE AQUI (ex.: 600–720)
+        margin=dict(l=12, r=12, t=40, b=12),
+        height=440,
         template="plotly_white",
-        separators=",.",                    # pt-BR
-        uniformtext=dict(minsize=12, mode="show")
+        separators=",.",
     )
     return fig
-
-
 
 def enforce_monotonic(values):
     """Garante formato de funil: cada etapa <= etapa anterior (só para o desenho)."""
