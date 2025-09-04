@@ -294,7 +294,6 @@ act_id = st.sidebar.text_input("Ad Account ID", placeholder="ex.: act_1234567890
 token = st.sidebar.text_input("Access Token", type="password")
 api_version = st.sidebar.text_input("API Version", value="v23.0")
 level = st.sidebar.selectbox("Nível (recomendado: campaign)", ["campaign", "account"], index=0)
-today = date.today()
 
 preset = st.sidebar.radio(
     "Período rápido",
@@ -325,7 +324,7 @@ if preset == "Personalizado":
     since = st.sidebar.date_input("Desde", value=_since_auto, key="since_custom")
     until = st.sidebar.date_input("Até",   value=_until_auto, key="until_custom")
 else:
-    # Não renderiza inputs duplicados; usa as datas calculadas silenciosamente
+    # Não renderiza inputs no topo; usa as datas calculadas internamente
     since, until = _since_auto, _until_auto
 
 
