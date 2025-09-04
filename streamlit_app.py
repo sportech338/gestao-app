@@ -765,3 +765,4 @@ with st.expander("Dados diários (detalhe por campanha)"):
         "add_payment": "Add Pagamento", "purchases": "Compras",
         "revenue": "Valor de conversão", "roas": "ROAS"
     }), use_container_width=True)
+    
