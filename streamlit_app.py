@@ -15,7 +15,6 @@ st.markdown("""
 .kpi-card .big-number { font-size:28px; font-weight:700; color:#000 !important; }
 </style>
 """, unsafe_allow_html=True)
-ATTR_KEYS = ["7d_click", "1d_view"]
 
 # =============== Helpers de rede/parse ===============
 def _retry_call(fn, max_retries=5, base_wait=1.2):
@@ -39,50 +38,53 @@ def _to_float(x):
     except:
         return 0.0
 
-def _sum_item(item, allowed_keys=None):
-    """Usa 'value' quando existir; senão soma SOMENTE as chaves permitidas (ex.: 7d_click, 1d_view)."""
+def _sum_item(item: dict) -> float:
+    """Usa 'value' quando existir; senão soma chaves numéricas (ex.: 7d_click, 1d_view...)."""
     if not isinstance(item, dict):
         return _to_float(item)
     if "value" in item:
         return _to_float(item.get("value"))
-    keys = allowed_keys or ATTR_KEYS
     s = 0.0
-    for k in keys:
-        s += _to_float(item.get(k))
+    for k, v in item.items():
+        if k not in {
+            "action_type", "action_target", "action_destination", "action_device",
+            "action_channel", "action_canvas_component_name", "action_reaction", "value"
+        }:
+            s += _to_float(v)
     return s
 
-def _sum_actions_exact(rows, exact_names, allowed_keys=None) -> float:
-    """Soma totals de actions pelos nomes exatos (case-insensitive), respeitando a janela (allowed_keys)."""
+def _sum_actions_exact(rows: list, exact_names: list) -> float:
+    """Soma totals de actions pelos nomes exatos (case-insensitive)."""
     if not rows:
         return 0.0
-    names = {str(n).lower() for n in exact_names}
+    names = {n.lower() for n in exact_names}
     tot = 0.0
     for r in rows:
         at = str(r.get("action_type", "")).lower()
         if at in names:
-            tot += _sum_item(r, allowed_keys)
+            tot += _sum_item(r)
     return float(tot)
 
-def _sum_actions_contains(rows, substrs, allowed_keys=None) -> float:
-    """Soma totals de actions que CONTENHAM qualquer substring, respeitando a janela (allowed_keys)."""
+def _sum_actions_contains(rows: list, substrs: list) -> float:
+    """Soma totals de actions que CONTENHAM qualquer substring (fallback)."""
     if not rows:
         return 0.0
-    ss = [str(s).lower() for s in substrs]
+    ss = [s.lower() for s in substrs]
     tot = 0.0
     for r in rows:
         at = str(r.get("action_type", "")).lower()
         if any(s in at for s in ss):
-            tot += _sum_item(r, allowed_keys)
+            tot += _sum_item(r)
     return float(tot)
 
-def _pick_purchase_totals(rows, allowed_keys=None) -> float:
-    """Prioriza omni_purchase; senão pega o MAIOR entre tipos específicos (sem duplicar janelas)."""
+def _pick_purchase_totals(rows: list) -> float:
+    """Prioriza omni_purchase; se ausente, pega o MAIOR entre tipos específicos para evitar duplicação."""
     if not rows:
         return 0.0
     rows = [{**r, "action_type": str(r.get("action_type", "")).lower()} for r in rows]
     omni = [r for r in rows if r["action_type"] == "omni_purchase"]
     if omni:
-        return float(sum(_sum_item(r, allowed_keys) for r in omni))
+        return float(sum(_sum_item(r) for r in omni))
     candidates = {
         "purchase": 0.0,
         "onsite_conversion.purchase": 0.0,
@@ -91,15 +93,15 @@ def _pick_purchase_totals(rows, allowed_keys=None) -> float:
     for r in rows:
         at = r["action_type"]
         if at in candidates:
-            candidates[at] += _sum_item(r, allowed_keys)
+            candidates[at] += _sum_item(r)
     if any(v > 0 for v in candidates.values()):
         return float(max(candidates.values()))
-    # fallback amplo (respeitando allowed_keys)
+    # fallback amplo
     grp = {}
     for r in rows:
         if "purchase" in r["action_type"]:
             grp.setdefault(r["action_type"], 0.0)
-            grp[r["action_type"]] += _sum_item(r, allowed_keys)
+            grp[r["action_type"]] += _sum_item(r)
     return float(max(grp.values()) if grp else 0.0)
 
 def _fmt_money_br(v: float) -> str:
@@ -128,16 +130,7 @@ def funnel_fig(labels, values, title=None):
     )
     return fig
 
-def _sum_purchases_by_names(rows, names, allowed_keys=None):
-    """Soma APENAS os action_types indicados (ex.: website pixel)."""
-    if not rows:
-        return 0.0
-    names_lc = {str(n).lower() for n in names}
-    tot = 0.0
-    for r in rows:
-        if str(r.get("action_type", "")).lower() in names_lc:
-            tot += _sum_item(r, allowed_keys)
-    return float(tot)
+
 
 def enforce_monotonic(values):
     """Garante formato de funil: cada etapa <= etapa anterior (só para o desenho)."""
@@ -187,13 +180,11 @@ def _safe_div(n, d):
 def fetch_insights_daily(act_id: str, token: str, api_version: str,
                          since_str: str, until_str: str,
                          level: str = "campaign",
-                         try_extra_fields: bool = True,
-                         attr_keys: tuple = ("7d_click", "1d_view"),
-                         purchase_mode: str = "Website (pixel)") -> pd.DataFrame:
+                         try_extra_fields: bool = True) -> pd.DataFrame:
     """
     - time_range (since/until) + time_increment=1
     - level único ('campaign' recomendado)
-    - Usa action_report_time=conversion e action_attribution_windows fixos (paridade com Ads Manager)
+    - NÃO envia action_types/action_attribution_windows
     - Traz fields extras (link_clicks, landing_page_views) e faz fallback se houver erro #100.
     """
     act_id = _ensure_act_prefix(act_id)
@@ -213,9 +204,6 @@ def fetch_insights_daily(act_id: str, token: str, api_version: str,
         "time_increment": 1,
         "fields": ",".join(fields),
         "limit": 500,
-    # >>> Fixos para paridade com o Ads Manager
-        "action_report_time": "conversion",
-        "action_attribution_windows": ",".join(attr_keys),
     }
 
     rows, next_url, next_params = [], base_url, params.copy()
@@ -238,49 +226,27 @@ def fetch_insights_daily(act_id: str, token: str, api_version: str,
             actions = rec.get("actions") or []
             action_values = rec.get("action_values") or []
 
-            # Cliques em link (preferir field; fallback action com janela)
+            # Cliques (preferir field; fallback 'link_click')
             link_clicks = rec.get("link_clicks", None)
             if link_clicks is None:
-                link_clicks = _sum_actions_exact(actions, ["link_click"], allowed_keys=attr_keys)
+                link_clicks = _sum_actions_exact(actions, ["link_click"])
 
-            # LPV (preferir field; fallback landing_page_view → view_content → contains "landing_page")
+            # LPV (preferir field; fallback 'landing_page_view' ou 'view_content')
             lpv = rec.get("landing_page_views", None)
             if lpv is None:
-                lpv = _sum_actions_exact(actions, ["landing_page_view"], allowed_keys=attr_keys)
+                lpv = _sum_actions_exact(actions, ["landing_page_view"])
                 if lpv == 0:
-                    lpv = (_sum_actions_exact(actions, ["view_content"], allowed_keys=attr_keys)
-                           or _sum_actions_contains(actions, ["landing_page"], allowed_keys=attr_keys))
+                    lpv = _sum_actions_exact(actions, ["view_content"]) or _sum_actions_contains(actions, ["landing_page"])
 
-            # Iniciar checkout / add payment info com janela definida
-            ic  = _sum_actions_exact(actions, ["initiate_checkout"], allowed_keys=attr_keys)
-            api = _sum_actions_exact(actions, ["add_payment_info"], allowed_keys=attr_keys)
+            # Iniciar checkout
+            ic = _sum_actions_exact(actions, ["initiate_checkout"])
 
-            # Purchase (qtd) e Revenue (valor) exatamente como no Gerenciador, conforme seleção
-            if purchase_mode.startswith("Website"):
-                # Compras do site (pixel)
-                purchases_cnt = _sum_purchases_by_names(
-                    actions, ["offsite_conversion.fb_pixel_purchase"], allowed_keys=attr_keys
-                )
-                revenue_val = _sum_purchases_by_names(
-                    action_values, ["offsite_conversion.fb_pixel_purchase"], allowed_keys=attr_keys
-                )
-            elif purchase_mode.startswith("Onsite"):
-                # Compras Onsite (Shop)
-                purchases_cnt = _sum_purchases_by_names(
-                    actions, ["onsite_conversion.purchase"], allowed_keys=attr_keys
-                )
-                revenue_val = _sum_purchases_by_names(
-                    action_values, ["onsite_conversion.purchase"], allowed_keys=attr_keys
-                )
-            else:
-                # Omni (todas as origens)
-                purchases_cnt = _sum_purchases_by_names(
-                    actions, ["omni_purchase"], allowed_keys=attr_keys
-                )
-                revenue_val = _sum_purchases_by_names(
-                    action_values, ["omni_purchase"], allowed_keys=attr_keys
-                )
+            # Add payment info
+            api = _sum_actions_exact(actions, ["add_payment_info"])
 
+            # Purchase (qtd) e Revenue (valor)
+            purchases_cnt = _pick_purchase_totals(actions)
+            revenue_val   = _pick_purchase_totals(action_values)
 
             rows.append({
                 "date":           pd.to_datetime(rec.get("date_start")),
@@ -301,7 +267,6 @@ def fetch_insights_daily(act_id: str, token: str, api_version: str,
                 "purchases":      _to_float(purchases_cnt),
                 "revenue":        _to_float(revenue_val),
             })
-
 
         after = ((payload.get("paging") or {}).get("cursors") or {}).get("after")
         if after:
@@ -337,45 +302,20 @@ preset = st.sidebar.radio(
     index=2,  # "Últimos 7 dias"
 )
 
-# ---- Paridade com o Gerenciador (controles) ----
-purchase_metric = st.sidebar.selectbox(
-    "Tipo de compra (igual ao Gerenciador)",
-    ["Website (pixel)", "Omni (todas as origens)", "Onsite (Shop)"],
-    index=0  # "Website (pixel)" costuma ser o que aparece em "Compras do site" no UI
-)
-
-attr_choice = st.sidebar.selectbox(
-    "Janela de atribuição",
-    ["7d clique + 1d view", "7d somente clique"],
-    index=0
-)
-
-include_today = st.sidebar.checkbox(
-    "Incluir HOJE nos presets (ex.: Últimos 14)",
-    value=False  # marque se seu UI estiver incluindo o dia atual
-)
-
-# Ajusta ATTR_KEYS global conforme escolha
-if attr_choice == "7d somente clique":
-    ATTR_KEYS[:] = ["7d_click"]
-else:
-    ATTR_KEYS[:] = ["7d_click", "1d_view"]
-
-
 def _range_from_preset(p):
-    # encerra hoje ou ontem conforme o toggle
-    base_end = today if include_today else (today - timedelta(days=1))
+    # fim sempre em "ontem", igual ao que a Meta mostra
+    base_end = today - timedelta(days=1)
 
     if p == "Hoje":
         return today, today
     if p == "Ontem":
-        return (today - timedelta(days=1)), (today - timedelta(days=1))
+        return base_end, base_end
     if p == "Últimos 7 dias":
-        return base_end - timedelta(days=6), base_end
+        return base_end - timedelta(days=6), base_end    # 7 dias terminando ontem
     if p == "Últimos 14 dias":
-        return base_end - timedelta(days=13), base_end
+        return base_end - timedelta(days=13), base_end   # 14 dias terminando ontem
     if p == "Últimos 30 dias":
-        return base_end - timedelta(days=29), base_end
+        return base_end - timedelta(days=29), base_end   # 30 dias terminando ontem
     # Personalizado (sugestão inicial)
     return base_end - timedelta(days=6), base_end
 
@@ -402,9 +342,7 @@ if not ready:
 with st.spinner("Buscando dados da Meta…"):
     df = fetch_insights_daily(
         act_id=act_id, token=token, api_version=api_version,
-        since_str=str(since), until_str=str(until), level=level,
-        attr_keys=tuple(ATTR_KEYS),
-        purchase_mode=purchase_metric,
+        since_str=str(since), until_str=str(until), level=level
     )
 
 if df.empty:
@@ -546,16 +484,8 @@ with st.expander("Comparativos — Período A vs Período B (opcional)", expande
         st.warning("Confira as datas: 'Desde' não pode ser maior que 'Até'.")
     else:
         with st.spinner("Comparando períodos…"):
-            dfA = fetch_insights_daily(
-                act_id, token, api_version, str(sinceA), str(untilA), level,
-                attr_keys=tuple(ATTR_KEYS),
-                purchase_mode=purchase_metric,
-    )
-            dfB = fetch_insights_daily(
-                act_id, token, api_version, str(sinceB), str(untilB), level,
-                attr_keys=tuple(ATTR_KEYS),
-                purchase_mode=purchase_metric,
-    )
+            dfA = fetch_insights_daily(act_id, token, api_version, str(sinceA), str(untilA), level)
+            dfB = fetch_insights_daily(act_id, token, api_version, str(sinceB), str(untilB), level)
 
         if dfA.empty or dfB.empty:
             st.info("Sem dados em um dos períodos selecionados.")
