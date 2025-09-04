@@ -1,4 +1,3 @@
-
 # app.py — Meta Ads com Funil completo
 import streamlit as st
 import pandas as pd
@@ -304,21 +303,19 @@ preset = st.sidebar.radio(
 )
 
 def _range_from_preset(p):
-    # fim sempre em "ontem", igual ao que a Meta mostra
-    base_end = today - timedelta(days=1)
-
     if p == "Hoje":
         return today, today
     if p == "Ontem":
-        return base_end, base_end
+        d = today - timedelta(days=1)
+        return d, d
     if p == "Últimos 7 dias":
-        return base_end - timedelta(days=6), base_end    # 7 dias terminando ontem
+        return today - timedelta(days=6), today
     if p == "Últimos 14 dias":
-        return base_end - timedelta(days=13), base_end   # 14 dias terminando ontem
+        return today - timedelta(days=13), today
     if p == "Últimos 30 dias":
-        return base_end - timedelta(days=29), base_end   # 30 dias terminando ontem
-    # Personalizado (sugestão inicial)
-    return base_end - timedelta(days=6), base_end
+        return today - timedelta(days=29), today
+    # Personalizado: valor inicial sugerido
+    return today - timedelta(days=7), today
 
 _since_auto, _until_auto = _range_from_preset(preset)
 
