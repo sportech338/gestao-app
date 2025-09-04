@@ -15,6 +15,7 @@ st.markdown("""
 .kpi-card .big-number { font-size:28px; font-weight:700; color:#000 !important; }
 </style>
 """, unsafe_allow_html=True)
+ATTR_KEYS = ["7d_click", "1d_view"]
 
 # =============== Helpers de rede/parse ===============
 def _retry_call(fn, max_retries=5, base_wait=1.2):
@@ -23,7 +24,8 @@ def _retry_call(fn, max_retries=5, base_wait=1.2):
             return fn()
         except Exception as e:
             if any(k in str(e).lower() for k in ["rate limit","retry","temporarily unavailable","timeout"]):
-                time.sleep(base_wait * (2 ** i)); continue
+                time.sleep(base_wait * (2 ** i))
+                continue
             raise
     raise RuntimeError("Falha após múltiplas tentativas.")
 
@@ -32,49 +34,55 @@ def _ensure_act_prefix(ad_account_id: str) -> str:
     return s if s.startswith("act_") else f"act_{s}"
 
 def _to_float(x):
-    try: return float(x or 0)
-    except: return 0.0
+    try:
+        return float(x or 0)
+    except:
+        return 0.0
 
-def _sum_item(item: dict) -> float:
-    """Usa 'value' quando existir; senão soma chaves numéricas (ex.: 7d_click, 1d_view...)."""
-    if not isinstance(item, dict): return _to_float(item)
-    if "value" in item: return _to_float(item.get("value"))
+def _sum_item(item, allowed_keys=None):
+    """Usa 'value' quando existir; senão soma SOMENTE as chaves permitidas (ex.: 7d_click, 1d_view)."""
+    if not isinstance(item, dict):
+        return _to_float(item)
+    if "value" in item:
+        return _to_float(item.get("value"))
+    keys = allowed_keys or ATTR_KEYS
     s = 0.0
-    for k, v in item.items():
-        if k not in {"action_type","action_target","action_destination","action_device","action_channel",
-                     "action_canvas_component_name","action_reaction","value"}:
-            s += _to_float(v)
+    for k in keys:
+        s += _to_float(item.get(k))
     return s
 
-def _sum_actions_exact(rows: list, exact_names: list) -> float:
-    """Soma totals de actions pelos nomes exatos (case-insensitive)."""
-    if not rows: return 0.0
-    names = {n.lower() for n in exact_names}
+def _sum_actions_exact(rows, exact_names, allowed_keys=None) -> float:
+    """Soma totals de actions pelos nomes exatos (case-insensitive), respeitando a janela (allowed_keys)."""
+    if not rows:
+        return 0.0
+    names = {str(n).lower() for n in exact_names}
     tot = 0.0
     for r in rows:
-        at = str(r.get("action_type","")).lower()
+        at = str(r.get("action_type", "")).lower()
         if at in names:
-            tot += _sum_item(r)
+            tot += _sum_item(r, allowed_keys)
     return float(tot)
 
-def _sum_actions_contains(rows: list, substrs: list) -> float:
-    """Soma totals de actions que CONTENHAM qualquer substring (fallback)."""
-    if not rows: return 0.0
-    ss = [s.lower() for s in substrs]
+def _sum_actions_contains(rows, substrs, allowed_keys=None) -> float:
+    """Soma totals de actions que CONTENHAM qualquer substring, respeitando a janela (allowed_keys)."""
+    if not rows:
+        return 0.0
+    ss = [str(s).lower() for s in substrs]
     tot = 0.0
     for r in rows:
-        at = str(r.get("action_type","")).lower()
+        at = str(r.get("action_type", "")).lower()
         if any(s in at for s in ss):
-            tot += _sum_item(r)
+            tot += _sum_item(r, allowed_keys)
     return float(tot)
 
-def _pick_purchase_totals(rows: list) -> float:
-    """Prioriza omni_purchase; se ausente, pega o MAIOR entre tipos específicos para evitar duplicação."""
-    if not rows: return 0.0
-    rows = [{**r, "action_type": str(r.get("action_type","")).lower()} for r in rows]
+def _pick_purchase_totals(rows, allowed_keys=None) -> float:
+    """Prioriza omni_purchase; senão pega o MAIOR entre tipos específicos (sem duplicar janelas)."""
+    if not rows:
+        return 0.0
+    rows = [{**r, "action_type": str(r.get("action_type", "")).lower()} for r in rows]
     omni = [r for r in rows if r["action_type"] == "omni_purchase"]
     if omni:
-        return float(sum(_sum_item(r) for r in omni))
+        return float(sum(_sum_item(r, allowed_keys) for r in omni))
     candidates = {
         "purchase": 0.0,
         "onsite_conversion.purchase": 0.0,
@@ -83,15 +91,15 @@ def _pick_purchase_totals(rows: list) -> float:
     for r in rows:
         at = r["action_type"]
         if at in candidates:
-            candidates[at] += _sum_item(r)
+            candidates[at] += _sum_item(r, allowed_keys)
     if any(v > 0 for v in candidates.values()):
         return float(max(candidates.values()))
-    # fallback bem amplo
+    # fallback amplo (respeitando allowed_keys)
     grp = {}
     for r in rows:
         if "purchase" in r["action_type"]:
             grp.setdefault(r["action_type"], 0.0)
-            grp[r["action_type"]] += _sum_item(r)
+            grp[r["action_type"]] += _sum_item(r, allowed_keys)
     return float(max(grp.values()) if grp else 0.0)
 
 def _fmt_money_br(v: float) -> str:
@@ -102,22 +110,34 @@ def funnel_fig(labels, values, title=None):
         go.Funnel(
             y=labels,
             x=values,
-            textinfo="value",             # <<< mostra só os valores
+            textinfo="value",
             textposition="inside",
+            texttemplate="<b>%{value}</b>",  # deixa o número em negrito
+            textfont=dict(size=35),
             opacity=0.95,
             connector={"line": {"dash": "dot", "width": 1}},
         )
     )
     fig.update_layout(
         title=title or "",
-        margin=dict(l=12, r=12, t=40, b=12),
-        height=440,
+        margin=dict(l=10, r=10, t=48, b=10),
+        height=540,                         # <<< AUMENTE AQUI (ex.: 600–720)
         template="plotly_white",
-        separators=",.",                  # pt-BR
+        separators=",.",                    # pt-BR
+        uniformtext=dict(minsize=12, mode="show")
     )
     return fig
 
-
+def _sum_purchases_by_names(rows, names, allowed_keys=None):
+    """Soma APENAS os action_types indicados (ex.: website pixel)."""
+    if not rows:
+        return 0.0
+    names_lc = {str(n).lower() for n in names}
+    tot = 0.0
+    for r in rows:
+        if str(r.get("action_type", "")).lower() in names_lc:
+            tot += _sum_item(r, allowed_keys)
+    return float(tot)
 
 def enforce_monotonic(values):
     """Garante formato de funil: cada etapa <= etapa anterior (só para o desenho)."""
@@ -127,17 +147,21 @@ def enforce_monotonic(values):
         out.append(cur)
     return out
 
-# ==== Helpers de comparação ====
+# ==== Helpers de comparação/formatos ====
 def _rate(a, b):
     return (a / b) if b and b > 0 else np.nan
 
 def _fmt_pct_br(x):
-    return (f"{x*100:,.2f}%".replace(",", "X").replace(".", ",").replace("X", ".")
-            if pd.notnull(x) else "")
+    return (
+        f"{x*100:,.2f}%".replace(",", "X").replace(".", ",").replace("X", ".")
+        if pd.notnull(x) else ""
+    )
 
 def _fmt_ratio_br(x):  # ROAS "1,23x"
-    return (f"{x:,.2f}x".replace(",", "X").replace(".", ",").replace("X", ".")
-            if pd.notnull(x) else "")
+    return (
+        f"{x:,.2f}x".replace(",", "X").replace(".", ",").replace("X", ".")
+        if pd.notnull(x) else ""
+    )
 
 def _fmt_int_br(x):
     try:
@@ -145,8 +169,17 @@ def _fmt_int_br(x):
     except:
         return ""
 
+def _fmt_int_signed_br(x):
+    try:
+        v = int(round(float(x)))
+        s = f"{abs(v):,}".replace(",", ".")
+        return f"+{s}" if v > 0 else (f"-{s}" if v < 0 else "0")
+    except:
+        return ""
+
 def _safe_div(n, d):
-    n = float(n or 0); d = float(d or 0)
+    n = float(n or 0)
+    d = float(d or 0)
     return (n / d) if d > 0 else np.nan
 
 # =============== Coleta (com fallback de campos extras) ===============
@@ -154,21 +187,23 @@ def _safe_div(n, d):
 def fetch_insights_daily(act_id: str, token: str, api_version: str,
                          since_str: str, until_str: str,
                          level: str = "campaign",
-                         try_extra_fields: bool = True) -> pd.DataFrame:
+                         try_extra_fields: bool = True,
+                         attr_keys: tuple = ("7d_click", "1d_view"),
+                         purchase_mode: str = "Website (pixel)") -> pd.DataFrame:
     """
     - time_range (since/until) + time_increment=1
     - level único ('campaign' recomendado)
-    - NÃO envia action_types/action_attribution_windows
+    - Usa action_report_time=conversion e action_attribution_windows fixos (paridade com Ads Manager)
     - Traz fields extras (link_clicks, landing_page_views) e faz fallback se houver erro #100.
     """
     act_id = _ensure_act_prefix(act_id)
     base_url = f"https://graph.facebook.com/{api_version}/{act_id}/insights"
 
     base_fields = [
-        "spend","impressions","clicks","actions","action_values",
-        "account_currency","date_start","campaign_id","campaign_name"
+        "spend", "impressions", "clicks", "actions", "action_values",
+        "account_currency", "date_start", "campaign_id", "campaign_name"
     ]
-    extra_fields = ["link_clicks","landing_page_views"]  # alguns setups dão #100; se der, refazemos sem eles
+    extra_fields = ["link_clicks", "landing_page_views"]
 
     fields = base_fields + (extra_fields if try_extra_fields else [])
     params = {
@@ -178,6 +213,9 @@ def fetch_insights_daily(act_id: str, token: str, api_version: str,
         "time_increment": 1,
         "fields": ",".join(fields),
         "limit": 500,
+    # >>> Fixos para paridade com o Ads Manager
+        "action_report_time": "conversion",
+        "action_attribution_windows": ",".join(attr_keys),
     }
 
     rows, next_url, next_params = [], base_url, params.copy()
@@ -187,6 +225,7 @@ def fetch_insights_daily(act_id: str, token: str, api_version: str,
             payload = resp.json()
         except Exception:
             raise RuntimeError("Resposta inválida da Graph API.")
+
         if resp.status_code != 200:
             err = (payload or {}).get("error", {})
             code, sub, msg = err.get("code"), err.get("error_subcode"), err.get("message")
@@ -199,27 +238,49 @@ def fetch_insights_daily(act_id: str, token: str, api_version: str,
             actions = rec.get("actions") or []
             action_values = rec.get("action_values") or []
 
-            # ---- Cliques (preferir field; fallback via actions: 'link_click')
+            # Cliques em link (preferir field; fallback action com janela)
             link_clicks = rec.get("link_clicks", None)
             if link_clicks is None:
-                link_clicks = _sum_actions_exact(actions, ["link_click"])
+                link_clicks = _sum_actions_exact(actions, ["link_click"], allowed_keys=attr_keys)
 
-            # ---- LPV (preferir field; fallback via actions: 'landing_page_view' ou 'view_content')
+            # LPV (preferir field; fallback landing_page_view → view_content → contains "landing_page")
             lpv = rec.get("landing_page_views", None)
             if lpv is None:
-                lpv = _sum_actions_exact(actions, ["landing_page_view"])
+                lpv = _sum_actions_exact(actions, ["landing_page_view"], allowed_keys=attr_keys)
                 if lpv == 0:
-                    lpv = _sum_actions_exact(actions, ["view_content"]) or _sum_actions_contains(actions, ["landing_page"])
+                    lpv = (_sum_actions_exact(actions, ["view_content"], allowed_keys=attr_keys)
+                           or _sum_actions_contains(actions, ["landing_page"], allowed_keys=attr_keys))
 
-            # ---- Initiate Checkout (finalização de compra)
-            ic = _sum_actions_exact(actions, ["initiate_checkout"])
+            # Iniciar checkout / add payment info com janela definida
+            ic  = _sum_actions_exact(actions, ["initiate_checkout"], allowed_keys=attr_keys)
+            api = _sum_actions_exact(actions, ["add_payment_info"], allowed_keys=attr_keys)
 
-            # ---- Add Payment Info (add informações de pagamento)
-            api = _sum_actions_exact(actions, ["add_payment_info"])
+            # Purchase (qtd) e Revenue (valor) exatamente como no Gerenciador, conforme seleção
+            if purchase_mode.startswith("Website"):
+                # Compras do site (pixel)
+                purchases_cnt = _sum_purchases_by_names(
+                    actions, ["offsite_conversion.fb_pixel_purchase"], allowed_keys=attr_keys
+                )
+                revenue_val = _sum_purchases_by_names(
+                    action_values, ["offsite_conversion.fb_pixel_purchase"], allowed_keys=attr_keys
+                )
+            elif purchase_mode.startswith("Onsite"):
+                # Compras Onsite (Shop)
+                purchases_cnt = _sum_purchases_by_names(
+                    actions, ["onsite_conversion.purchase"], allowed_keys=attr_keys
+                )
+                revenue_val = _sum_purchases_by_names(
+                    action_values, ["onsite_conversion.purchase"], allowed_keys=attr_keys
+                )
+            else:
+                # Omni (todas as origens)
+                purchases_cnt = _sum_purchases_by_names(
+                    actions, ["omni_purchase"], allowed_keys=attr_keys
+                )
+                revenue_val = _sum_purchases_by_names(
+                    action_values, ["omni_purchase"], allowed_keys=attr_keys
+                )
 
-            # ---- Purchase (qtd) e Revenue (valor)
-            purchases_cnt = _pick_purchase_totals(actions)
-            revenue_val   = _pick_purchase_totals(action_values)
 
             rows.append({
                 "date":           pd.to_datetime(rec.get("date_start")),
@@ -241,6 +302,7 @@ def fetch_insights_daily(act_id: str, token: str, api_version: str,
                 "revenue":        _to_float(revenue_val),
             })
 
+
         after = ((payload.get("paging") or {}).get("cursors") or {}).get("after")
         if after:
             next_url, next_params = base_url, params.copy()
@@ -249,14 +311,15 @@ def fetch_insights_daily(act_id: str, token: str, api_version: str,
             break
 
     df = pd.DataFrame(rows)
-    if df.empty: return df
+    if df.empty:
+        return df
 
-    num_cols = ["spend","impressions","clicks","link_clicks","lpv","init_checkout","add_payment","purchases","revenue"]
+    num_cols = ["spend", "impressions", "clicks", "link_clicks", "lpv", "init_checkout", "add_payment", "purchases", "revenue"]
     for c in num_cols:
         df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0.0)
 
     # Métricas derivadas (do período/dia; taxas serão calculadas em agregações)
-    df["roas"] = np.where(df["spend"]>0, df["revenue"]/df["spend"], np.nan)
+    df["roas"] = np.where(df["spend"] > 0, df["revenue"] / df["spend"], np.nan)
     df = df.sort_values("date")
     return df
 
@@ -265,10 +328,67 @@ st.sidebar.header("Configuração")
 act_id = st.sidebar.text_input("Ad Account ID", placeholder="ex.: act_1234567890")
 token = st.sidebar.text_input("Access Token", type="password")
 api_version = st.sidebar.text_input("API Version", value="v23.0")
-level = st.sidebar.selectbox("Nível (recomendado: campaign)", ["campaign","account"], index=0)
+level = st.sidebar.selectbox("Nível (recomendado: campaign)", ["campaign", "account"], index=0)
 today = date.today()
-since = st.sidebar.date_input("Desde", value=today - timedelta(days=7))
-until = st.sidebar.date_input("Até", value=today)
+
+preset = st.sidebar.radio(
+    "Período rápido",
+    ["Hoje", "Ontem", "Últimos 7 dias", "Últimos 14 dias", "Últimos 30 dias", "Personalizado"],
+    index=2,  # "Últimos 7 dias"
+)
+
+# ---- Paridade com o Gerenciador (controles) ----
+purchase_metric = st.sidebar.selectbox(
+    "Tipo de compra (igual ao Gerenciador)",
+    ["Website (pixel)", "Omni (todas as origens)", "Onsite (Shop)"],
+    index=0  # "Website (pixel)" costuma ser o que aparece em "Compras do site" no UI
+)
+
+attr_choice = st.sidebar.selectbox(
+    "Janela de atribuição",
+    ["7d clique + 1d view", "7d somente clique"],
+    index=0
+)
+
+include_today = st.sidebar.checkbox(
+    "Incluir HOJE nos presets (ex.: Últimos 14)",
+    value=False  # marque se seu UI estiver incluindo o dia atual
+)
+
+# Ajusta ATTR_KEYS global conforme escolha
+if attr_choice == "7d somente clique":
+    ATTR_KEYS[:] = ["7d_click"]
+else:
+    ATTR_KEYS[:] = ["7d_click", "1d_view"]
+
+
+def _range_from_preset(p):
+    # encerra hoje ou ontem conforme o toggle
+    base_end = today if include_today else (today - timedelta(days=1))
+
+    if p == "Hoje":
+        return today, today
+    if p == "Ontem":
+        return (today - timedelta(days=1)), (today - timedelta(days=1))
+    if p == "Últimos 7 dias":
+        return base_end - timedelta(days=6), base_end
+    if p == "Últimos 14 dias":
+        return base_end - timedelta(days=13), base_end
+    if p == "Últimos 30 dias":
+        return base_end - timedelta(days=29), base_end
+    # Personalizado (sugestão inicial)
+    return base_end - timedelta(days=6), base_end
+
+_since_auto, _until_auto = _range_from_preset(preset)
+
+if preset == "Personalizado":
+    since = st.sidebar.date_input("Desde", value=_since_auto, key="since_custom")
+    until = st.sidebar.date_input("Até",   value=_until_auto, key="until_custom")
+else:
+    # Mostra as datas calculadas, bloqueadas (só leitura)
+    since = st.sidebar.date_input("Desde", value=_since_auto, disabled=True, key="since_auto")
+    until = st.sidebar.date_input("Até",   value=_until_auto, disabled=True, key="until_auto")
+
 ready = bool(act_id and token)
 
 # =============== Tela ===============
@@ -282,20 +402,31 @@ if not ready:
 with st.spinner("Buscando dados da Meta…"):
     df = fetch_insights_daily(
         act_id=act_id, token=token, api_version=api_version,
-        since_str=str(since), until_str=str(until), level=level
+        since_str=str(since), until_str=str(until), level=level,
+        attr_keys=tuple(ATTR_KEYS),
+        purchase_mode=purchase_metric,
     )
 
 if df.empty:
     st.warning("Sem dados para o período. Verifique permissões, conta e se há eventos de Purchase (value/currency).")
     st.stop()
 
+# === Moeda detectada e override opcional ===
+currency_detected = (df["currency"].dropna().iloc[0] if "currency" in df.columns and not df["currency"].dropna().empty else "BRL")
+col_curA, col_curB = st.columns([1, 2])
+with col_curA:
+    use_brl_display = st.checkbox("Fixar exibição em BRL (símbolo R$)", value=True)
+currency_label = "BRL" if use_brl_display else currency_detected
+
+st.caption(f"Moeda da conta detectada: **{currency_detected}** — Exibindo como: **{currency_label}**")
+
 # ========= KPIs do período =========
 tot_spend = float(df["spend"].sum())
 tot_purch = float(df["purchases"].sum())
 tot_rev   = float(df["revenue"].sum())
-roas_g    = (tot_rev/tot_spend) if tot_spend>0 else 0.0
+roas_g    = (tot_rev / tot_spend) if tot_spend > 0 else 0.0
 
-c1,c2,c3,c4 = st.columns(4)
+c1, c2, c3, c4 = st.columns(4)
 with c1:
     st.markdown('<div class="kpi-card"><div class="small-muted">Valor usado</div>'
                 f'<div class="big-number">{_fmt_money_br(tot_spend)}</div></div>', unsafe_allow_html=True)
@@ -315,166 +446,18 @@ st.divider()
 
 # ========= Série diária =========
 st.subheader("Série diária — Investimento e Conversão")
-daily = df.groupby("date", as_index=False)[["spend","revenue","purchases"]].sum()
-st.line_chart(daily.set_index("date")[["spend","revenue"]])
-st.caption("Linhas diárias de Valor usado e Valor de conversão. Vendas na tabela abaixo.")
 
-# ========= COMPARATIVOS (Período A vs Período B) =========
-st.subheader("Comparativos — descubra o que mudou e por quê")
+# agrega por dia
+daily = df.groupby("date", as_index=False)[["spend", "revenue", "purchases"]].sum()
 
-# Deduzi o tamanho do período atual para propor um período anterior de mesmo tamanho
-period_len = (until - since).days + 1
-default_sinceA = since - timedelta(days=period_len)
-default_untilA = since - timedelta(days=1)
+# renomeia para PT-BR (legenda do gráfico usa os nomes das colunas)
+daily_pt = daily.rename(columns={"spend": "Gasto", "revenue": "Receita"})
 
-colA, colB = st.columns(2)
-with colA:
-    st.markdown("**Período A**")
-    sinceA = st.date_input("Desde (A)", value=default_sinceA, key="sinceA")
-    untilA = st.date_input("Até (A)",   value=default_untilA, key="untilA")
-with colB:
-    st.markdown("**Período B**")
-    sinceB = st.date_input("Desde (B)", value=since, key="sinceB")
-    untilB = st.date_input("Até (B)",   value=until, key="untilB")
+# plota com legendas em português
+st.line_chart(daily_pt.set_index("date")[["Receita", "Gasto"]])
 
-if sinceA > untilA or sinceB > untilB:
-    st.warning("Confira as datas: 'Desde' não pode ser maior que 'Até'.")
-else:
-    with st.spinner("Comparando períodos…"):
-        dfA = fetch_insights_daily(act_id, token, api_version, str(sinceA), str(untilA), level)
-        dfB = fetch_insights_daily(act_id, token, api_version, str(sinceB), str(untilB), level)
+st.caption("Linhas diárias de Receita e Gasto. Vendas na tabela abaixo.")
 
-    if dfA.empty or dfB.empty:
-        st.info("Sem dados em um dos períodos selecionados.")
-    else:
-        # Agregados por período
-        def _agg(d):
-            return {
-                "spend": d["spend"].sum(),
-                "revenue": d["revenue"].sum(),
-                "purchases": d["purchases"].sum(),
-                "clicks": d["link_clicks"].sum(),
-                "lpv": d["lpv"].sum(),
-                "checkout": d["init_checkout"].sum(),
-            }
-        A = _agg(dfA); B = _agg(dfB)
-
-        # KPIs arrumados — tabela A x B x Δ
-        # KPIs arrumados — tabela A x B x Δ (com cores)
-        roasA = _safe_div(A["revenue"], A["spend"])
-        roasB = _safe_div(B["revenue"], B["spend"])
-        cpaA  = _safe_div(A["spend"], A["purchases"])
-        cpaB  = _safe_div(B["spend"], B["purchases"])
-        cpcA  = _safe_div(A["spend"], A["clicks"])
-        cpcB  = _safe_div(B["spend"], B["clicks"])
-
-        # Mapa de direção (sua regra)
-        dir_map = {
-            "Valor usado":    "neutral",  # indiferente
-            "Faturamento":    "higher",   # quanto maior melhor
-            "Vendas":         "higher",
-            "ROAS":           "higher",
-            "CPC":            "lower",    # quanto menor melhor
-            "CPA":            "lower",
-        }
-
-        # Deltas numéricos para a lógica de cor
-        delta_map = {
-            "Valor usado":  B["spend"] - A["spend"],
-            "Faturamento":  B["revenue"] - A["revenue"],
-            "Vendas":       B["purchases"] - A["purchases"],
-            "ROAS":         (roasB - roasA) if pd.notnull(roasA) and pd.notnull(roasB) else np.nan,
-            "CPC":          (cpcB - cpcA)   if pd.notnull(cpcA) and pd.notnull(cpcB) else np.nan,
-            "CPA":          (cpaB - cpaA)   if pd.notnull(cpaA) and pd.notnull(cpaB) else np.nan,
-        }
-
-        # Tabela formatada para exibir
-        kpi_rows = [
-            ("Valor usado",      _fmt_money_br(A["spend"]),     _fmt_money_br(B["spend"]),     _fmt_money_br(B["spend"]-A["spend"])),
-            ("Faturamento",      _fmt_money_br(A["revenue"]),   _fmt_money_br(B["revenue"]),   _fmt_money_br(B["revenue"]-A["revenue"])),
-            ("Vendas",           _fmt_int_br(A["purchases"]),   _fmt_int_br(B["purchases"]),   _fmt_int_br(B["purchases"]-A["purchases"])),
-            ("ROAS",             _fmt_ratio_br(roasA),          _fmt_ratio_br(roasB),          (_fmt_ratio_br(roasB-roasA) if pd.notnull(roasA) and pd.notnull(roasB) else "")),
-            ("CPC",              _fmt_money_br(cpcA) if pd.notnull(cpcA) else "", _fmt_money_br(cpcB) if pd.notnull(cpcB) else "", _fmt_money_br(cpcB-cpcA) if pd.notnull(cpcA) and pd.notnull(cpcB) else ""),
-            ("CPA",              _fmt_money_br(cpaA) if pd.notnull(cpaA) else "", _fmt_money_br(cpaB) if pd.notnull(cpaB) else "", _fmt_money_br(cpaB-cpaA) if pd.notnull(cpaA) and pd.notnull(cpaB) else ""),
-        ]
-        kpi_df_disp = pd.DataFrame(kpi_rows, columns=["Métrica", "Período A", "Período B", "Δ (B - A)"])
-
-
-        # Styler para colorir Δ e também o valor do Período B
-        def _style_kpi(row):
-            metric = row["Métrica"]
-            d      = delta_map.get(metric, np.nan)
-            rule   = dir_map.get(metric, "neutral")
-            # default sem cor
-            styles = [""] * len(row)
-            try:
-                idxB = list(row.index).index("Período B")
-                idxD = list(row.index).index("Δ (B - A)")
-            except Exception:
-                return styles
-            if pd.isna(d) or rule == "neutral" or d == 0:
-                return styles
-            better = (d > 0) if rule == "higher" else (d < 0)
-            color  = "#16a34a" if better else "#dc2626"  # verde / vermelho (Tailwind)
-            weight = "700"
-            styles[idxB] = f"color:{color}; font-weight:{weight};"
-            styles[idxD] = f"color:{color}; font-weight:{weight};"
-            return styles
-
-        kpi_styled = kpi_df_disp.style.apply(_style_kpi, axis=1)
-        st.markdown("**KPIs do período (A vs B)**")
-        st.dataframe(kpi_styled, use_container_width=True, height=260)
-
-        st.markdown("---")
-
-
-        # Taxas do funil (as 3 principais) — com cores no Δ e no Período B
-        rates_num = pd.DataFrame({
-            "Taxa": ["LPV/Cliques", "Checkout/LPV", "Compra/Checkout"],
-            "Período A": [
-                _safe_div(A["lpv"], A["clicks"]),
-                _safe_div(A["checkout"], A["lpv"]),
-                _safe_div(A["purchases"], A["checkout"]),
-            ],
-            "Período B": [
-                _safe_div(B["lpv"], B["clicks"]),
-                _safe_div(B["checkout"], B["lpv"]),
-                _safe_div(B["purchases"], B["checkout"]),
-            ],
-        })
-        rates_num["Δ"] = rates_num["Período B"] - rates_num["Período A"]
-
-        # Tabela exibida (formatada em %)
-        rates_disp = rates_num.copy()
-        for col in ["Período A","Período B","Δ"]:
-            rates_disp[col] = rates_disp[col].map(_fmt_pct_br)
-        st.markdown("**Taxas do funil (A vs B)**")
-
-        # Styler: maior é melhor para todas estas taxas
-        delta_by_taxa = dict(zip(rates_num["Taxa"], rates_num["Δ"]))
-
-        def _style_rate(row):
-            taxa = row["Taxa"]
-            d    = delta_by_taxa.get(taxa, np.nan)
-            styles = [""] * len(row)
-            try:
-                idxB = list(row.index).index("Período B")
-                idxD = list(row.index).index("Δ")
-            except Exception:
-                return styles
-            if pd.isna(d) or d == 0:
-                return styles
-            better = d > 0   # higher is better
-            color  = "#16a34a" if better else "#dc2626"
-            weight = "700"
-            styles[idxB] = f"color:{color}; font-weight:{weight};"
-            styles[idxD] = f"color:{color}; font-weight:{weight};"
-            return styles
-
-        rates_styled = rates_disp.style.apply(_style_rate, axis=1)
-        st.dataframe(rates_styled, use_container_width=True, height=180)
-
-        st.markdown("---")
 
 # ========= FUNIL (Período) — FUNIL VISUAL =========
 st.subheader("Funil do período (Total) — Cliques → LPV → Checkout → Add Pagamento → Compra")
@@ -488,8 +471,13 @@ f_pur    = float(df["purchases"].sum())
 
 # RÓTULOS curtos e VALORES inteiros (legibilidade)
 labels_total = ["Cliques", "LPV", "Checkout", "Add Pagamento", "Compra"]
-values_total = [int(round(f_clicks)), int(round(f_lpv)), int(round(f_ic)),
-                int(round(f_api)), int(round(f_pur))]
+values_total = [
+    int(round(f_clicks)),
+    int(round(f_lpv)),
+    int(round(f_ic)),
+    int(round(f_api)),
+    int(round(f_pur)),
+]
 
 # Toggle: manter forma de funil sempre decrescente só no desenho
 force_shape = st.checkbox("Forçar formato de funil (sempre decrescente)", value=True)
@@ -502,24 +490,19 @@ st.plotly_chart(
 )
 
 # Tabela de taxas — principais sempre visíveis + extras opcionais
-def _rate(a, b):
-    return (a / b) if b and b > 0 else np.nan
-
-# ---- Principais (sempre)
 core_rows = [
-    ("LPV / Cliques",      _rate(values_total[1], values_total[0])),
-    ("Checkout / LPV",     _rate(values_total[2], values_total[1])),
-    ("Compra / Checkout",  _rate(values_total[4], values_total[2])),
+    ("LPV / Cliques",     _rate(values_total[1], values_total[0])),
+    ("Checkout / LPV",    _rate(values_total[2], values_total[1])),
+    ("Compra / Checkout", _rate(values_total[4], values_total[2])),
 ]
 
-# ---- Extras (opc.) — excluímos as três principais da lista
 extras_def = {
-    "Add Pagto / Checkout": (_rate(values_total[3], values_total[2])),
-    "Compra / Add Pagto":   (_rate(values_total[4], values_total[3])),
-    "Compra / LPV":         (_rate(values_total[4], values_total[1])),
-    "Compra / Cliques":     (_rate(values_total[4], values_total[0])),
-    "Checkout / Cliques":   (_rate(values_total[2], values_total[0])),
-    "Add Pagto / LPV":      (_rate(values_total[3], values_total[1])),
+    "Add Pagto / Checkout": _rate(values_total[3], values_total[2]),
+    "Compra / Add Pagto":   _rate(values_total[4], values_total[3]),
+    "Compra / LPV":         _rate(values_total[4], values_total[1]),
+    "Compra / Cliques":     _rate(values_total[4], values_total[0]),
+    "Checkout / Cliques":   _rate(values_total[2], values_total[0]),
+    "Add Pagto / LPV":      _rate(values_total[3], values_total[1]),
 }
 
 with st.expander("Comparar outras taxas (opcional)"):
@@ -540,29 +523,256 @@ row_h  = 36
 height = base_h + row_h * len(extras_selected)
 st.dataframe(sr, use_container_width=True, height=height)
 
+# ========= COMPARATIVOS (Período A vs Período B) — (opcional, após o Funil do período) =========
+with st.expander("Comparativos — Período A vs Período B (opcional)", expanded=False):
+    st.subheader("Comparativos — descubra o que mudou e por quê")
+
+    # Período anterior com mesmo tamanho
+    period_len = (until - since).days + 1
+    default_sinceA = since - timedelta(days=period_len)
+    default_untilA = since - timedelta(days=1)
+
+    colA, colB = st.columns(2)
+    with colA:
+        st.markdown("**Período A**")
+        sinceA = st.date_input("Desde (A)", value=default_sinceA, key="sinceA")
+        untilA = st.date_input("Até (A)",   value=default_untilA, key="untilA")
+    with colB:
+        st.markdown("**Período B**")
+        sinceB = st.date_input("Desde (B)", value=since, key="sinceB")
+        untilB = st.date_input("Até (B)",   value=until, key="untilB")
+
+    if sinceA > untilA or sinceB > untilB:
+        st.warning("Confira as datas: 'Desde' não pode ser maior que 'Até'.")
+    else:
+        with st.spinner("Comparando períodos…"):
+            dfA = fetch_insights_daily(
+                act_id, token, api_version, str(sinceA), str(untilA), level,
+                attr_keys=tuple(ATTR_KEYS),
+                purchase_mode=purchase_metric,
+    )
+            dfB = fetch_insights_daily(
+                act_id, token, api_version, str(sinceB), str(untilB), level,
+                attr_keys=tuple(ATTR_KEYS),
+                purchase_mode=purchase_metric,
+    )
+
+        if dfA.empty or dfB.empty:
+            st.info("Sem dados em um dos períodos selecionados.")
+        else:
+            # Agregados por período (inclui add_payment)
+            def _agg(d):
+                return {
+                    "spend": d["spend"].sum(),
+                    "revenue": d["revenue"].sum(),
+                    "purchases": d["purchases"].sum(),
+                    "clicks": d["link_clicks"].sum(),
+                    "lpv": d["lpv"].sum(),
+                    "checkout": d["init_checkout"].sum(),
+                    "add_payment": d["add_payment"].sum(),
+                }
+
+            A = _agg(dfA); B = _agg(dfB)
+
+            # === KPIs calculados (necessários para o CSV) ===
+            roasA = _safe_div(A["revenue"], A["spend"])
+            roasB = _safe_div(B["revenue"], B["spend"])
+            cpaA  = _safe_div(A["spend"], A["purchases"])
+            cpaB  = _safe_div(B["spend"], B["purchases"])
+            cpcA  = _safe_div(A["spend"], A["clicks"])
+            cpcB  = _safe_div(B["spend"], B["clicks"])
+
+            dir_map = {
+                "Valor usado": "neutral",
+                "Faturamento": "higher",
+                "Vendas":      "higher",
+                "ROAS":        "higher",
+                "CPC":         "lower",
+                "CPA":         "lower",
+            }
+
+            delta_map = {
+                "Valor usado":  B["spend"] - A["spend"],
+                "Faturamento":  B["revenue"] - A["revenue"],
+                "Vendas":       B["purchases"] - A["purchases"],
+                "ROAS":         (roasB - roasA) if pd.notnull(roasA) and pd.notnull(roasB) else np.nan,
+                "CPC":          (cpcB - cpcA)   if pd.notnull(cpcA) and pd.notnull(cpcB) else np.nan,
+                "CPA":          (cpaB - cpaA)   if pd.notnull(cpaA) and pd.notnull(cpaB) else np.nan,
+            }
+
+            kpi_rows = [
+                ("Valor usado", _fmt_money_br(A["spend"]),   _fmt_money_br(B["spend"]),   _fmt_money_br(B["spend"] - A["spend"])),
+                ("Faturamento", _fmt_money_br(A["revenue"]), _fmt_money_br(B["revenue"]), _fmt_money_br(B["revenue"] - A["revenue"])),
+                ("Vendas",      _fmt_int_br(A["purchases"]), _fmt_int_br(B["purchases"]), _fmt_int_br(B["purchases"] - A["purchases"])),
+                ("ROAS",        _fmt_ratio_br(roasA),        _fmt_ratio_br(roasB),
+                                 (_fmt_ratio_br(roasB - roasA) if pd.notnull(roasA) and pd.notnull(roasB) else "")),
+                ("CPC",         _fmt_money_br(cpcA) if pd.notnull(cpcA) else "",
+                                 _fmt_money_br(cpcB) if pd.notnull(cpcB) else "",
+                                 _fmt_money_br(cpcB - cpcA) if pd.notnull(cpcA) and pd.notnull(cpcB) else ""),
+                ("CPA",         _fmt_money_br(cpaA) if pd.notnull(cpaA) else "",
+                                 _fmt_money_br(cpaB) if pd.notnull(cpaB) else "",
+                                 _fmt_money_br(cpaB - cpaA) if pd.notnull(cpaA) and pd.notnull(cpaB) else ""),
+            ]
+            kpi_df_disp = pd.DataFrame(kpi_rows, columns=["Métrica", "Período A", "Período B", "Δ (B - A)"])
+
+            def _style_kpi(row):
+                metric = row["Métrica"]
+                d      = delta_map.get(metric, np.nan)
+                rule   = dir_map.get(metric, "neutral")
+                styles = [""] * len(row)
+                try:
+                    idxB = list(row.index).index("Período B")
+                    idxD = list(row.index).index("Δ (B - A)")
+                except Exception:
+                    return styles
+                if pd.isna(d) or rule == "neutral" or d == 0:
+                    return styles
+                better = (d > 0) if rule == "higher" else (d < 0)
+                color  = "#16a34a" if better else "#dc2626"
+                weight = "700"
+                styles[idxB] = f"color:{color}; font-weight:{weight};"
+                styles[idxD] = f"color:{color}; font-weight:{weight};"
+                return styles
+
+            st.markdown("**KPIs do período (A vs B)**")
+            st.dataframe(kpi_df_disp.style.apply(_style_kpi, axis=1), use_container_width=True, height=260)
+
+            st.markdown("---")
+
+            # Taxas do funil (as 3 principais)
+            rates_num = pd.DataFrame({
+                "Taxa": ["LPV/Cliques", "Checkout/LPV", "Compra/Checkout"],
+                "Período A": [
+                    _safe_div(A["lpv"], A["clicks"]),
+                    _safe_div(A["checkout"], A["lpv"]),
+                    _safe_div(A["purchases"], A["checkout"]),
+                ],
+                "Período B": [
+                    _safe_div(B["lpv"], B["clicks"]),
+                    _safe_div(B["checkout"], B["lpv"]),
+                    _safe_div(B["purchases"], B["checkout"]),
+                ],
+            })
+            rates_num["Δ"] = rates_num["Período B"] - rates_num["Período A"]
+
+            rates_disp = rates_num.copy()
+            for col in ["Período A", "Período B", "Δ"]:
+                rates_disp[col] = rates_disp[col].map(_fmt_pct_br)
+
+            delta_by_taxa = dict(zip(rates_num["Taxa"], rates_num["Δ"]))
+
+            def _style_rate(row):
+                taxa = row["Taxa"]
+                d    = delta_by_taxa.get(taxa, np.nan)
+                styles = [""] * len(row)
+                try:
+                    idxB = list(row.index).index("Período B")
+                    idxD = list(row.index).index("Δ")
+                except Exception:
+                    return styles
+                if pd.isna(d) or d == 0:
+                    return styles
+                better = d > 0
+                color  = "#16a34a" if better else "#dc2626"
+                weight = "700"
+                styles[idxB] = f"color:{color}; font-weight:{weight};"
+                styles[idxD] = f"color:{color}; font-weight:{weight};"
+                return styles
+
+            st.markdown("**Taxas do funil (A vs B)**")
+            st.dataframe(rates_disp.style.apply(_style_rate, axis=1), use_container_width=True, height=180)
+
+            # === Funis lado a lado (A x B) com contagens absolutas ===
+            labels_funnel = ["Cliques", "LPV", "Checkout", "Add Pagamento", "Compra"]
+
+            valsA = [
+                int(round(A["clicks"])),
+                int(round(A["lpv"])),
+                int(round(A["checkout"])),
+                int(round(A["add_payment"])),
+                int(round(A["purchases"])),
+            ]
+            valsB = [
+                int(round(B["clicks"])),
+                int(round(B["lpv"])),
+                int(round(B["checkout"])),
+                int(round(B["add_payment"])),
+                int(round(B["purchases"])),
+            ]
+
+            valsA_plot = enforce_monotonic(valsA)
+            valsB_plot = enforce_monotonic(valsB)
+
+            cA, cB = st.columns(2)
+            with cA:
+                st.plotly_chart(
+                    funnel_fig(labels_funnel, valsA_plot, title=f"Funil — Período A ({sinceA} a {untilA})"),
+                    use_container_width=True
+                )
+            with cB:
+                st.plotly_chart(
+                    funnel_fig(labels_funnel, valsB_plot, title=f"Funil — Período B ({sinceB} a {untilB})"),
+                    use_container_width=True
+                )
+
+            # Tabela de perdas/ganhos por etapa (Δ pessoas)
+            delta_counts = [b - a for a, b in zip(valsA, valsB)]
+            delta_df = pd.DataFrame({
+                "Etapa": labels_funnel,
+                "Período A": valsA,
+                "Período B": valsB,
+                "Δ (B - A)": delta_counts,
+            })
+            delta_disp = delta_df.copy()
+            delta_disp["Período A"]  = delta_disp["Período A"].map(_fmt_int_br)
+            delta_disp["Período B"]  = delta_disp["Período B"].map(_fmt_int_br)
+            delta_disp["Δ (B - A)"]  = delta_disp["Δ (B - A)"].map(_fmt_int_signed_br)
+
+            delta_by_stage = dict(zip(delta_df["Etapa"], delta_df["Δ (B - A)"]))
+
+            def _style_delta_counts(row):
+                d = delta_by_stage.get(row["Etapa"], np.nan)
+                styles = [""] * len(row)
+                try:
+                    idxB = list(row.index).index("Período B")
+                    idxD = list(row.index).index("Δ (B - A)")
+                except Exception:
+                    return styles
+                if pd.isna(d) or d == 0:
+                    return styles
+                color  = "#16a34a" if d > 0 else "#dc2626"
+                weight = "700"
+                styles[idxB] = f"color:{color}; font-weight:{weight};"
+                styles[idxD] = f"color:{color}; font-weight:{weight};"
+                return styles
+
+            st.markdown("**Pessoas a mais/menos em cada etapa (B − A)**")
+            st.dataframe(delta_disp.style.apply(_style_delta_counts, axis=1), use_container_width=True, height=240)
+
+            st.markdown("---")
+
+
 # ========= FUNIL por CAMPANHA =========
 st.subheader("Campanhas — Funil e Taxas (somatório no período)")
 
-# Agregados necessários
-agg_cols = ["spend","link_clicks","lpv","init_checkout","add_payment","purchases","revenue"]
-camp = df.groupby(["campaign_id","campaign_name"], as_index=False)[agg_cols].sum()
+agg_cols = ["spend", "link_clicks", "lpv", "init_checkout", "add_payment", "purchases", "revenue"]
+camp = df.groupby(["campaign_id", "campaign_name"], as_index=False)[agg_cols].sum()
 
-# Taxas PRINCIPAIS (mesmas do funil geral)
-camp["LPV/Cliques"]      = np.where(camp["link_clicks"]>0, camp["lpv"]/camp["link_clicks"], np.nan)
-camp["Checkout/LPV"]     = np.where(camp["lpv"]>0, camp["init_checkout"]/camp["lpv"], np.nan)
-camp["Compra/Checkout"]  = np.where(camp["init_checkout"]>0, camp["purchases"]/camp["init_checkout"], np.nan)
+# Taxas PRINCIPAIS
+camp["LPV/Cliques"]     = np.where(camp["link_clicks"] > 0, camp["lpv"] / camp["link_clicks"], np.nan)
+camp["Checkout/LPV"]    = np.where(camp["lpv"] > 0, camp["init_checkout"] / camp["lpv"], np.nan)
+camp["Compra/Checkout"] = np.where(camp["init_checkout"] > 0, camp["purchases"] / camp["init_checkout"], np.nan)
 
-# ROAS continua útil
-camp["ROAS"]             = np.where(camp["spend"]>0, camp["revenue"]/camp["spend"], np.nan)
+# ROAS
+camp["ROAS"]            = np.where(camp["spend"] > 0, camp["revenue"] / camp["spend"], np.nan)
 
-# ---- Extras (só quando você quiser ver)
 extras_cols = {
-    "Add Pagto / Checkout":  np.where(camp["init_checkout"]>0, camp["add_payment"]/camp["init_checkout"], np.nan),
-    "Compra / Add Pagto":    np.where(camp["add_payment"]>0, camp["purchases"]/camp["add_payment"], np.nan),
-    "Compra / LPV":          np.where(camp["lpv"]>0, camp["purchases"]/camp["lpv"], np.nan),
-    "Compra / Cliques":      np.where(camp["link_clicks"]>0, camp["purchases"]/camp["link_clicks"], np.nan),
-    "Checkout / Cliques":    np.where(camp["link_clicks"]>0, camp["init_checkout"]/camp["link_clicks"], np.nan),
-    "Add Pagto / LPV":       np.where(camp["lpv"]>0, camp["add_payment"]/camp["lpv"], np.nan),
+    "Add Pagto / Checkout":  np.where(camp["init_checkout"] > 0, camp["add_payment"] / camp["init_checkout"], np.nan),
+    "Compra / Add Pagto":    np.where(camp["add_payment"] > 0, camp["purchases"] / camp["add_payment"], np.nan),
+    "Compra / LPV":          np.where(camp["lpv"] > 0, camp["purchases"] / camp["lpv"], np.nan),
+    "Compra / Cliques":      np.where(camp["link_clicks"] > 0, camp["purchases"] / camp["link_clicks"], np.nan),
+    "Checkout / Cliques":    np.where(camp["link_clicks"] > 0, camp["init_checkout"] / camp["link_clicks"], np.nan),
+    "Add Pagto / LPV":       np.where(camp["lpv"] > 0, camp["add_payment"] / camp["lpv"], np.nan),
 }
 
 with st.expander("Comparar outras taxas (opcional)"):
@@ -572,36 +782,30 @@ with st.expander("Comparar outras taxas (opcional)"):
         default=[],
     )
 
-# Monta a visão final (apenas as colunas principais + extras escolhidas)
 cols_base = [
-    "campaign_id","campaign_name",
-    "spend","revenue","ROAS",           # dinheiro/eficiência
-    "link_clicks","lpv","init_checkout","purchases",  # etapas do funil
-    "LPV/Cliques","Checkout/LPV","Compra/Checkout"    # taxas principais
+    "campaign_id", "campaign_name",
+    "spend", "revenue", "ROAS",
+    "link_clicks", "lpv", "init_checkout", "purchases",
+    "LPV/Cliques", "Checkout/LPV", "Compra/Checkout"
 ]
 camp_view = camp[cols_base].copy()
 
-# Anexa extras selecionadas
 for name in extras_selected:
     camp_view[name] = extras_cols[name]
 
 # Formatação
-money_cols = ["spend","revenue"]
-for c in money_cols:
+for c in ["spend", "revenue"]:
     camp_view[c] = camp_view[c].apply(_fmt_money_br)
 
-# Percentuais (APENAS as taxas do funil)
-pct_cols = ["LPV/Cliques","Checkout/LPV","Compra/Checkout"] + list(extras_selected)
+pct_cols = ["LPV/Cliques", "Checkout/LPV", "Compra/Checkout"] + list(extras_selected)
 for c in pct_cols:
     camp_view[c] = camp_view[c].map(lambda x: (f"{x*100:,.2f}%" if pd.notnull(x) else "")
                                     .replace(",", "X").replace(".", ",").replace("X", "."))
 
-# ROAS como valor (razão), ex.: 1,23x
 camp_view["ROAS"] = camp_view["ROAS"].map(
     lambda x: (f"{x:,.2f}x" if pd.notnull(x) else "").replace(",", "X").replace(".", ",").replace("X", ".")
 )
 
-# Renomeia para exibição
 camp_view = camp_view.rename(columns={
     "campaign_id": "ID campanha",
     "campaign_name": "Campanha",
@@ -613,23 +817,20 @@ camp_view = camp_view.rename(columns={
     "purchases": "Compras",
 })
 
-# Ordenação padrão por investimento
 camp_view = camp_view.sort_values("Valor usado", ascending=False)
-
-# Altura adaptativa (linha base + extras)
-base_h = 520
-st.dataframe(camp_view, use_container_width=True, height=base_h)
+st.dataframe(camp_view, use_container_width=True, height=520)
 
 with st.expander("Dados diários (detalhe por campanha)"):
     dd = df.copy()
     dd["date"] = dd["date"].dt.date
-    cols = ["date","campaign_name","spend","link_clicks","lpv","init_checkout","add_payment","purchases","revenue","roas"]
+    cols = ["date", "campaign_name", "spend", "link_clicks", "lpv", "init_checkout", "add_payment", "purchases", "revenue", "roas"]
     dd_fmt = dd[cols].copy()
-    dd_fmt["spend"] = dd_fmt["spend"].apply(_fmt_money_br)
+    dd_fmt["spend"]   = dd_fmt["spend"].apply(_fmt_money_br)
     dd_fmt["revenue"] = dd_fmt["revenue"].apply(_fmt_money_br)
-    dd_fmt["roas"] = dd_fmt["roas"].map(lambda x: f"{x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") if pd.notnull(x) else "")
+    dd_fmt["roas"]    = dd_fmt["roas"].map(lambda x: f"{x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") if pd.notnull(x) else "")
     st.dataframe(dd_fmt.rename(columns={
-        "date":"Data","campaign_name":"Campanha","spend":"Valor usado",
-        "link_clicks":"Cliques","lpv":"LPV","init_checkout":"Finalização",
-        "add_payment":"Add Pagamento","purchases":"Compras","revenue":"Valor de conversão","roas":"ROAS"
+        "date": "Data", "campaign_name": "Campanha", "spend": "Valor usado",
+        "link_clicks": "Cliques", "lpv": "LPV", "init_checkout": "Finalização",
+        "add_payment": "Add Pagamento", "purchases": "Compras",
+        "revenue": "Valor de conversão", "roas": "ROAS"
     }), use_container_width=True)
