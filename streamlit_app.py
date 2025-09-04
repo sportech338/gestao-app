@@ -958,96 +958,79 @@ with tab_daypart:
 
         st.info("Dica: use o 'Gasto mínimo' para filtrar horas com investimento muito baixo e evitar falsos positivos.")
 
-# ============== 2) COMPARAR DOIS DIAS (A vs B) ==============
-st.subheader("🆚 Comparar dois dias (A vs B) — hora a hora")
+        # ============== 2) COMPARAR DOIS DIAS (A vs B) ==============
+        st.subheader("🆚 Comparar dois dias (A vs B) — hora a hora")
 
-dates_avail = sorted(d["date_only"].unique())
-if len(dates_avail) < 2:
-    st.info("Preciso de pelo menos 2 dias no período para comparar.")
-else:
-    min_day, max_day = dates_avail[0], dates_avail[-1]
-    # defaults: penúltimo e último dia com dados
-    default_A = dates_avail[-2] if len(dates_avail) >= 2 else dates_avail[0]
-    default_B = dates_avail[-1]
+        dates_avail = sorted(d["date_only"].unique())
+        if len(dates_avail) < 2:
+            st.info("Preciso de pelo menos 2 dias no período para comparar.")
+        else:
+            colA, colB, colC = st.columns([1,1,1.6])
+            with colA:
+                dateA = st.selectbox("Dia A", options=dates_avail, index=max(len(dates_avail)-2, 0), key="cmpA_top")
+            with colB:
+                dateB = st.selectbox("Dia B", options=dates_avail, index=len(dates_avail)-1, key="cmpB_top")
+            with colC:
+                metric_cmp = st.selectbox("Métrica do gráfico", ["Compras","Receita","Gasto","ROAS"], index=0, key="cmp_metric_top")
 
-    colA, colB, colC = st.columns([1,1,1.6])
-    with colA:
-        dateA = st.date_input("Dia A", value=default_A, min_value=min_day, max_value=max_day, key="cmpA_date")
-    with colB:
-        dateB = st.date_input("Dia B", value=default_B, min_value=min_day, max_value=max_day, key="cmpB_date")
-    with colC:
-        metric_cmp = st.selectbox("Métrica do gráfico", ["Compras","Receita","Gasto","ROAS"], index=0, key="cmp_metric_top")
+            datA = d[d["date_only"] == dateA]
+            datB = d[d["date_only"] == dateB]
 
-    # garante tipo date
-    if hasattr(dateA, "date"): dateA = dateA
-    if hasattr(dateB, "date"): dateB = dateB
+            agg_cols = ["spend","revenue","purchases","link_clicks","lpv","init_checkout","add_payment"]
+            gA = datA.groupby("hour", as_index=False)[agg_cols].sum()
+            gB = datB.groupby("hour", as_index=False)[agg_cols].sum()
+            gA["ROAS"] = np.where(gA["spend"]>0, gA["revenue"]/gA["spend"], np.nan)
+            gB["ROAS"] = np.where(gB["spend"]>0, gB["revenue"]/gB["spend"], np.nan)
 
-    datA = d[d["date_only"] == dateA]
-    datB = d[d["date_only"] == dateB]
+            if min_spend > 0:
+                gA = gA[gA["spend"] >= min_spend]
+                gB = gB[gB["spend"] >= min_spend]
 
-    if datA.empty or datB.empty:
-        faltando = []
-        if datA.empty: faltando.append(f"**{dateA}**")
-        if datB.empty: faltando.append(f"**{dateB}**")
-        st.warning(f"Sem dados para {', '.join(faltando)} no período carregado. "
-                   "Escolha dias dentro do intervalo com dados exibido no calendário.")
-    else:
-        agg_cols = ["spend","revenue","purchases","link_clicks","lpv","init_checkout","add_payment"]
-        gA = datA.groupby("hour", as_index=False)[agg_cols].sum()
-        gB = datB.groupby("hour", as_index=False)[agg_cols].sum()
-        gA["ROAS"] = np.where(gA["spend"]>0, gA["revenue"]/gA["spend"], np.nan)
-        gB["ROAS"] = np.where(gB["spend"]>0, gB["revenue"]/gB["spend"], np.nan)
+            merged = pd.merge(gA, gB, on="hour", how="outer", suffixes=(" (A)", " (B)")).fillna(0.0)
+            for side in ["A", "B"]:
+                s = merged[f"spend ({side})"]; r = merged[f"revenue ({side})"]
+                merged[f"ROAS ({side})"] = np.where(s>0, r/s, np.nan)
 
-        if min_spend > 0:
-            gA = gA[gA["spend"] >= min_spend]
-            gB = gB[gB["spend"] >= min_spend]
+            merged["Δ Compras (B−A)"] = merged["purchases (B)"] - merged["purchases (A)"]
+            merged["Δ Receita (B−A)"] = merged["revenue (B)"]   - merged["revenue (A)"]
+            merged["Δ Gasto (B−A)"]   = merged["spend (B)"]     - merged["spend (A)"]
+            merged["Δ ROAS (p.p.)"]   = merged["ROAS (B)"]      - merged["ROAS (A)"]
+            merged = merged.sort_values("hour").reset_index(drop=True)
 
-        merged = pd.merge(gA, gB, on="hour", how="outer", suffixes=(" (A)", " (B)")).fillna(0.0)
-        for side in ["A", "B"]:
-            s = merged[f"spend ({side})"]; r = merged[f"revenue ({side})"]
-            merged[f"ROAS ({side})"] = np.where(s>0, r/s, np.nan)
+            disp = merged[[
+                "hour",
+                "purchases (A)","purchases (B)","Δ Compras (B−A)",
+                "revenue (A)","revenue (B)","Δ Receita (B−A)",
+                "spend (A)","spend (B)","Δ Gasto (B−A)",
+                "ROAS (A)","ROAS (B)","Δ ROAS (p.p.)"
+            ]].copy()
 
-        merged["Δ Compras (B−A)"] = merged["purchases (B)"] - merged["purchases (A)"]
-        merged["Δ Receita (B−A)"] = merged["revenue (B)"]   - merged["revenue (A)"]
-        merged["Δ Gasto (B−A)"]   = merged["spend (B)"]     - merged["spend (A)"]
-        merged["Δ ROAS (p.p.)"]   = merged["ROAS (B)"]      - merged["ROAS (A)"]
-        merged = merged.sort_values("hour").reset_index(drop=True)
+            disp["revenue (A)"] = disp["revenue (A)"].apply(_fmt_money_br)
+            disp["revenue (B)"] = disp["revenue (B)"].apply(_fmt_money_br)
+            disp["Δ Receita (B−A)"] = disp["Δ Receita (B−A)"].apply(_fmt_money_br)
+            disp["spend (A)"]   = disp["spend (A)"].apply(_fmt_money_br)
+            disp["spend (B)"]   = disp["spend (B)"].apply(_fmt_money_br)
+            disp["Δ Gasto (B−A)"] = disp["Δ Gasto (B−A)"].apply(_fmt_money_br)
+            disp["ROAS (A)"]    = disp["ROAS (A)"].map(_fmt_ratio_br)
+            disp["ROAS (B)"]    = disp["ROAS (B)"].map(_fmt_ratio_br)
+            disp["Δ ROAS (p.p.)"] = disp["Δ ROAS (p.p.)"].map(_fmt_ratio_br)
 
-        disp = merged[[
-            "hour",
-            "purchases (A)","purchases (B)","Δ Compras (B−A)",
-            "revenue (A)","revenue (B)","Δ Receita (B−A)",
-            "spend (A)","spend (B)","Δ Gasto (B−A)",
-            "ROAS (A)","ROAS (B)","Δ ROAS (p.p.)"
-        ]].copy()
+            disp = disp.rename(columns={"hour":"Hora","purchases (A)":"Compras (A)","purchases (B)":"Compras (B)"})
+            st.dataframe(disp, use_container_width=True, height=420)
 
-        disp["revenue (A)"] = disp["revenue (A)"].apply(_fmt_money_br)
-        disp["revenue (B)"] = disp["revenue (B)"].apply(_fmt_money_br)
-        disp["Δ Receita (B−A)"] = disp["Δ Receita (B−A)"].apply(_fmt_money_br)
-        disp["spend (A)"]   = disp["spend (A)"].apply(_fmt_money_br)
-        disp["spend (B)"]   = disp["spend (B)"].apply(_fmt_money_br)
-        disp["Δ Gasto (B−A)"] = disp["Δ Gasto (B−A)"].apply(_fmt_money_br)
-        disp["ROAS (A)"]    = disp["ROAS (A)"].map(_fmt_ratio_br)
-        disp["ROAS (B)"]    = disp["ROAS (B)"].map(_fmt_ratio_br)
-        disp["Δ ROAS (p.p.)"] = disp["Δ ROAS (p.p.)"].map(_fmt_ratio_br)
+            mcol_map = {"Compras":"purchases", "Receita":"revenue", "Gasto":"spend", "ROAS":"ROAS"}
+            mcol = mcol_map[metric_cmp]
+            x = merged["hour"].astype(int)
+            yA = merged[f"{mcol} (A)"]; yB = merged[f"{mcol} (B)"]
 
-        disp = disp.rename(columns={"hour":"Hora","purchases (A)":"Compras (A)","purchases (B)":"Compras (B)"})
-        st.dataframe(disp, use_container_width=True, height=420)
-
-        mcol_map = {"Compras":"purchases", "Receita":"revenue", "Gasto":"spend", "ROAS":"ROAS"}
-        mcol = mcol_map[metric_cmp]
-        x = merged["hour"].astype(int)
-        yA = merged[f"{mcol} (A)"]; yB = merged[f"{mcol} (B)"]
-
-        fig_cmp = go.Figure()
-        fig_cmp.add_trace(go.Scatter(x=x, y=yA, mode="lines+markers", name=f"{metric_cmp} — {dateA}"))
-        fig_cmp.add_trace(go.Scatter(x=x, y=yB, mode="lines+markers", name=f"{metric_cmp} — {dateB}"))
-        fig_cmp.update_layout(
-            title=f"Comparativo por hora — {metric_cmp}",
-            xaxis_title="Hora do dia", yaxis_title=metric_cmp,
-            height=420, template="plotly_white", margin=dict(l=10,r=10,t=48,b=10),
-        )
-        st.plotly_chart(fig_cmp, use_container_width=True)
-
+            fig_cmp = go.Figure()
+            fig_cmp.add_trace(go.Scatter(x=x, y=yA, mode="lines+markers", name=f"{metric_cmp} — {dateA}"))
+            fig_cmp.add_trace(go.Scatter(x=x, y=yB, mode="lines+markers", name=f"{metric_cmp} — {dateB}"))
+            fig_cmp.update_layout(
+                title=f"Comparativo por hora — {metric_cmp}",
+                xaxis_title="Hora do dia", yaxis_title=metric_cmp,
+                height=420, template="plotly_white", margin=dict(l=10,r=10,t=48,b=10),
+            )
+            st.plotly_chart(fig_cmp, use_container_width=True)
 
         st.markdown("---")
