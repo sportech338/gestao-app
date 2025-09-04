@@ -295,44 +295,8 @@ token = st.sidebar.text_input("Access Token", type="password")
 api_version = st.sidebar.text_input("API Version", value="v23.0")
 level = st.sidebar.selectbox("Nível (recomendado: campaign)", ["campaign", "account"], index=0)
 today = date.today()
-
-preset = st.sidebar.radio(
-    "Período rápido",
-    ["Hoje", "Ontem", "Últimos 7 dias", "Últimos 14 dias", "Últimos 30 dias", "Personalizado"],
-    index=2,  # "Últimos 7 dias"
-)
-
-def _range_from_preset(p):
-    # fim sempre em "ontem", igual ao que a Meta mostra
-    base_end = today - timedelta(days=1)
-
-    if p == "Hoje":
-        return today, today
-    if p == "Ontem":
-        return base_end, base_end
-    if p == "Últimos 7 dias":
-        return base_end - timedelta(days=6), base_end    # 7 dias terminando ontem
-    if p == "Últimos 14 dias":
-        return base_end - timedelta(days=13), base_end   # 14 dias terminando ontem
-    if p == "Últimos 30 dias":
-        return base_end - timedelta(days=29), base_end   # 30 dias terminando ontem
-    # Personalizado (sugestão inicial)
-    return base_end - timedelta(days=6), base_end
-
-_since_auto, _until_auto = _range_from_preset(preset)
-
-if preset == "Personalizado":
-    since = st.sidebar.date_input("Desde", value=_since_auto, key="since_custom")
-    until = st.sidebar.date_input("Até",   value=_until_auto, key="until_custom")
-else:
-    # Não renderiza nada aqui; usa as datas calculadas internamente
-    since, until = _since_auto, _until_auto
-
-# limpa chaves de widgets antigos que criavam o bloco de cima
-for k in ("since_auto", "until_auto"):
-    if k in st.session_state:
-        del st.session_state[k]
-
+since = st.sidebar.date_input("Desde", value=today - timedelta(days=7))
+until = st.sidebar.date_input("Até", value=today)
 ready = bool(act_id and token)
 
 # =============== Tela ===============
@@ -352,15 +316,6 @@ with st.spinner("Buscando dados da Meta…"):
 if df.empty:
     st.warning("Sem dados para o período. Verifique permissões, conta e se há eventos de Purchase (value/currency).")
     st.stop()
-
-# === Moeda detectada e override opcional ===
-currency_detected = (df["currency"].dropna().iloc[0] if "currency" in df.columns and not df["currency"].dropna().empty else "BRL")
-col_curA, col_curB = st.columns([1, 2])
-with col_curA:
-    use_brl_display = st.checkbox("Fixar exibição em BRL (símbolo R$)", value=True)
-currency_label = "BRL" if use_brl_display else currency_detected
-
-st.caption(f"Moeda da conta detectada: **{currency_detected}** — Exibindo como: **{currency_label}**")
 
 # ========= KPIs do período =========
 tot_spend = float(df["spend"].sum())
@@ -388,18 +343,9 @@ st.divider()
 
 # ========= Série diária =========
 st.subheader("Série diária — Investimento e Conversão")
-
-# agrega por dia
 daily = df.groupby("date", as_index=False)[["spend", "revenue", "purchases"]].sum()
-
-# renomeia para PT-BR (legenda do gráfico usa os nomes das colunas)
-daily_pt = daily.rename(columns={"spend": "Gasto", "revenue": "Receita"})
-
-# plota com legendas em português
-st.line_chart(daily_pt.set_index("date")[["Receita", "Gasto"]])
-
-st.caption("Linhas diárias de Receita e Gasto. Vendas na tabela abaixo.")
-
+st.line_chart(daily.set_index("date")[["spend", "revenue"]])
+st.caption("Linhas diárias de Valor usado e Valor de conversão. Vendas na tabela abaixo.")
 
 # ========= FUNIL (Período) — FUNIL VISUAL =========
 st.subheader("Funil do período (Total) — Cliques → LPV → Checkout → Add Pagamento → Compra")
@@ -508,7 +454,7 @@ with st.expander("Comparativos — Período A vs Período B (opcional)", expande
 
             A = _agg(dfA); B = _agg(dfB)
 
-            # === KPIs calculados (necessários para o CSV) ===
+            # KPIs arrumados — tabela A x B x Δ
             roasA = _safe_div(A["revenue"], A["spend"])
             roasB = _safe_div(B["revenue"], B["spend"])
             cpaA  = _safe_div(A["spend"], A["purchases"])
