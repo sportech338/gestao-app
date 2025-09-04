@@ -311,86 +311,114 @@ def fetch_insights_hourly(act_id: str, token: str, api_version: str,
                           since_str: str, until_str: str,
                           level: str = "campaign") -> pd.DataFrame:
     act_id = _ensure_act_prefix(act_id)
-    url = f"https://graph.facebook.com/{api_version}/{act_id}/insights"
-    fields = ["spend","impressions","clicks","actions","action_values",
-              "account_currency","date_start","campaign_id","campaign_name","link_clicks","landing_page_views"]
-    params = {
-        "access_token": token,
-        "level": level,
-        "time_range": json.dumps({"since": since_str, "until": until_str}),
-        "time_increment": 1,
-        "fields": ",".join(fields),
-        "limit": 500,
-        "action_report_time": "conversion",
-        "action_attribution_windows": ",".join(ATTR_KEYS),
-        "breakdowns": HOUR_BREAKDOWN,  # <- chave para hora×dia
-    }
+    base_url = f"https://graph.facebook.com/{api_version}/{act_id}/insights"
+    fields = [
+        "spend","impressions","clicks","actions","action_values",
+        "account_currency","date_start","campaign_id","campaign_name",
+        "link_clicks","landing_page_views"
+    ]
 
-    rows, next_url, next_params = [], url, params.copy()
-    while next_url:
-        resp = _retry_call(lambda: requests.get(next_url, params=next_params, timeout=90))
-        try:
-            payload = resp.json()
-        except:
-            raise RuntimeError("Resposta inválida da Graph API (hourly).")
+    def _run_hourly(action_rt: str) -> pd.DataFrame:
+        params = {
+            "access_token": token,
+            "level": level,
+            "time_range": json.dumps({"since": since_str, "until": until_str}),
+            "time_increment": 1,
+            "fields": ",".join(fields),
+            "limit": 500,
+            "action_report_time": action_rt,            # conversion (primeira tentativa) ou impression (fallback)
+            "action_attribution_windows": ",".join(ATTR_KEYS),
+            "breakdowns": HOUR_BREAKDOWN,
+        }
+        rows, next_url, next_params = [], base_url, params.copy()
+        while next_url:
+            resp = _retry_call(lambda: requests.get(next_url, params=next_params, timeout=90))
+            try:
+                payload = resp.json()
+            except Exception:
+                raise RuntimeError("Resposta inválida da Graph API (hourly).")
 
-        if resp.status_code != 200:
-            # Se não houver permissão para breakdown por hora, devolve vazio
-            return pd.DataFrame()
+            if resp.status_code != 200:
+                # Propaga o erro para o chamador decidir fallback
+                err = (payload or {}).get("error", {})
+                code, sub, msg = err.get("code"), err.get("error_subcode"), err.get("message")
+                raise RuntimeError(f"Graph API error hourly | code={code} subcode={sub} | {msg}")
 
-        for rec in payload.get("data", []):
-            actions = rec.get("actions") or []
-            action_values = rec.get("action_values") or []
-            hour_bucket = _parse_hour_bucket(rec.get(HOUR_BREAKDOWN))
+            for rec in payload.get("data", []):
+                actions = rec.get("actions") or []
+                action_values = rec.get("action_values") or []
+                hour_bucket = _parse_hour_bucket(rec.get(HOUR_BREAKDOWN))
 
-            link_clicks = rec.get("link_clicks")
-            if link_clicks is None:
-                link_clicks = _sum_actions_exact(actions, ["link_click"], allowed_keys=ATTR_KEYS)
+                link_clicks = rec.get("link_clicks")
+                if link_clicks is None:
+                    link_clicks = _sum_actions_exact(actions, ["link_click"], allowed_keys=ATTR_KEYS)
 
-            lpv = rec.get("landing_page_views")
-            if lpv is None:
-                lpv = (_sum_actions_exact(actions, ["landing_page_view"], allowed_keys=ATTR_KEYS)
-                       or _sum_actions_exact(actions, ["view_content"], allowed_keys=ATTR_KEYS)
-                       or _sum_actions_contains(actions, ["landing_page"], allowed_keys=ATTR_KEYS))
+                lpv = rec.get("landing_page_views")
+                if lpv is None:
+                    lpv = (_sum_actions_exact(actions, ["landing_page_view"], allowed_keys=ATTR_KEYS)
+                           or _sum_actions_exact(actions, ["view_content"], allowed_keys=ATTR_KEYS)
+                           or _sum_actions_contains(actions, ["landing_page"], allowed_keys=ATTR_KEYS))
 
-            ic   = _sum_actions_exact(actions, ["initiate_checkout"], allowed_keys=ATTR_KEYS)
-            api_ = _sum_actions_exact(actions, ["add_payment_info"], allowed_keys=ATTR_KEYS)
-            pur  = _pick_purchase_totals(actions, allowed_keys=ATTR_KEYS)
-            rev  = _pick_purchase_totals(action_values, allowed_keys=ATTR_KEYS)
+                ic   = _sum_actions_exact(actions, ["initiate_checkout"], allowed_keys=ATTR_KEYS)
+                api_ = _sum_actions_exact(actions, ["add_payment_info"], allowed_keys=ATTR_KEYS)
+                pur  = _pick_purchase_totals(actions, allowed_keys=ATTR_KEYS)
+                rev  = _pick_purchase_totals(action_values, allowed_keys=ATTR_KEYS)
 
-            rows.append({
-                "date":          pd.to_datetime(rec.get("date_start")),
-                "hour":          hour_bucket,  # 0..23
-                "currency":      rec.get("account_currency","BRL"),
-                "campaign_id":   rec.get("campaign_id",""),
-                "campaign_name": rec.get("campaign_name",""),
-                "spend":         _to_float(rec.get("spend")),
-                "impressions":   _to_float(rec.get("impressions")),
-                "clicks":        _to_float(rec.get("clicks")),
-                "link_clicks":   _to_float(link_clicks),
-                "lpv":           _to_float(lpv),
-                "init_checkout": _to_float(ic),
-                "add_payment":   _to_float(api_),
-                "purchases":     _to_float(pur),
-                "revenue":       _to_float(rev),
-            })
+                rows.append({
+                    "date":          pd.to_datetime(rec.get("date_start")),
+                    "hour":          hour_bucket,
+                    "currency":      rec.get("account_currency","BRL"),
+                    "campaign_id":   rec.get("campaign_id",""),
+                    "campaign_name": rec.get("campaign_name",""),
+                    "spend":         _to_float(rec.get("spend")),
+                    "impressions":   _to_float(rec.get("impressions")),
+                    "clicks":        _to_float(rec.get("clicks")),
+                    "link_clicks":   _to_float(link_clicks),
+                    "lpv":           _to_float(lpv),
+                    "init_checkout": _to_float(ic),
+                    "add_payment":   _to_float(api_),
+                    "purchases":     _to_float(pur),
+                    "revenue":       _to_float(rev),
+                })
 
-        after = ((payload.get("paging") or {}).get("cursors") or {}).get("after")
-        if after:
-            next_url, next_params = url, params.copy()
-            next_params["after"] = after
-        else:
-            break
+            # paginação: preferir paging.next; senão usar cursor.after
+            paging = payload.get("paging") or {}
+            next_link = paging.get("next")
+            if next_link:
+                next_url, next_params = next_link, None
+            else:
+                after = ((paging.get("cursors") or {}).get("after"))
+                if after:
+                    next_url, next_params = base_url, params.copy()
+                    next_params["after"] = after
+                else:
+                    break
 
-    df = pd.DataFrame(rows)
-    if df.empty:
-        return df
+        df = pd.DataFrame(rows)
+        if df.empty:
+            return df
+        df["dow"] = df["date"].dt.dayofweek
+        order = {0:"Seg",1:"Ter",2:"Qua",3:"Qui",4:"Sex",5:"Sáb",6:"Dom"}
+        df["dow_label"] = df["dow"].map(order)
+        df["roas"] = np.where(df["spend"]>0, df["revenue"]/df["spend"], np.nan)
+        return df.sort_values(["date","hour"])
 
-    df["dow"] = df["date"].dt.dayofweek
-    order = {0:"Seg",1:"Ter",2:"Qua",3:"Qui",4:"Sex",5:"Sáb",6:"Dom"}
-    df["dow_label"] = df["dow"].map(order)
-    df["roas"] = np.where(df["spend"]>0, df["revenue"]/df["spend"], np.nan)
-    return df.sort_values(["date","hour"])
+    # 1ª tentativa: conversion
+    try:
+        df = _run_hourly("conversion")
+        if not df.empty:
+            return df
+    except Exception as e1:
+        # mostra aviso com o erro real
+        st.warning(f"Hour breakdown (conversion) falhou: {e1}")
+
+    # fallback: impression
+    try:
+        st.info("Tentando breakdown por hora com `action_report_time=impression`…")
+        return _run_hourly("impression")
+    except Exception as e2:
+        st.error(f"Hour breakdown (impression) também falhou: {e2}")
+        return pd.DataFrame()
 
 # =============== Sidebar (filtros) ===============
 st.sidebar.header("Configuração")
