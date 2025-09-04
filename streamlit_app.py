@@ -356,6 +356,13 @@ currency_label = "BRL" if use_brl_display else currency_detected
 
 st.caption(f"Moeda da conta detectada: **{currency_detected}** — Exibindo como: **{currency_label}**")
 
+st.download_button(
+    "⬇️ Exportar CSV — Diário (df)",
+    data=df.to_csv(index=False).encode("utf-8"),
+    file_name="meta_insights_diario.csv",
+    mime="text/csv",
+)
+
 # ========= KPIs do período =========
 tot_spend = float(df["spend"].sum())
 tot_purch = float(df["purchases"].sum())
@@ -382,18 +389,9 @@ st.divider()
 
 # ========= Série diária =========
 st.subheader("Série diária — Investimento e Conversão")
-
-# agrega por dia
 daily = df.groupby("date", as_index=False)[["spend", "revenue", "purchases"]].sum()
-
-# renomeia para PT-BR (legenda do gráfico usa os nomes das colunas)
-daily_pt = daily.rename(columns={"spend": "Gasto", "revenue": "Receita"})
-
-# plota com legendas em português
-st.line_chart(daily_pt.set_index("date")[["Receita", "Gasto"]])
-
-st.caption("Linhas diárias de Receita e Gasto. Vendas na tabela abaixo.")
-
+st.line_chart(daily.set_index("date")[["spend", "revenue"]])
+st.caption("Linhas diárias de Valor usado e Valor de conversão. Vendas na tabela abaixo.")
 
 # ========= FUNIL (Período) — FUNIL VISUAL =========
 st.subheader("Funil do período (Total) — Cliques → LPV → Checkout → Add Pagamento → Compra")
@@ -509,6 +507,39 @@ with st.expander("Comparativos — Período A vs Período B (opcional)", expande
             cpaB  = _safe_div(B["spend"], B["purchases"])
             cpcA  = _safe_div(A["spend"], A["clicks"])
             cpcB  = _safe_div(B["spend"], B["clicks"])
+
+            # === Exports dos comparativos (A vs B) ===
+            kpi_export = pd.DataFrame([
+                {"Métrica": "Valor usado", "A": A["spend"],     "B": B["spend"],     "Delta": B["spend"] - A["spend"]},
+                {"Métrica": "Faturamento", "A": A["revenue"],   "B": B["revenue"],   "Delta": B["revenue"] - A["revenue"]},
+                {"Métrica": "Vendas",      "A": A["purchases"], "B": B["purchases"], "Delta": B["purchases"] - A["purchases"]},
+                {"Métrica": "ROAS",        "A": roasA,          "B": roasB,          "Delta": (roasB - roasA) if pd.notnull(roasA) and pd.notnull(roasB) else np.nan},
+                {"Métrica": "CPC",         "A": cpcA,           "B": cpcB,           "Delta": (cpcB - cpcA) if pd.notnull(cpcA) and pd.notnull(cpcB) else np.nan},
+                {"Métrica": "CPA",         "A": cpaA,           "B": cpaB,           "Delta": (cpaB - cpaA) if pd.notnull(cpaA) and pd.notnull(cpaB) else np.nan},
+            ])
+
+            col_exp1, col_exp2, col_exp3 = st.columns(3)
+            with col_exp1:
+                st.download_button(
+                    "⬇️ CSV — KPIs (A vs B)",
+                    data=kpi_export.to_csv(index=False).encode("utf-8"),
+                    file_name="comparativo_kpis.csv",
+                    mime="text/csv",
+                )
+            with col_exp2:
+                st.download_button(
+                    "⬇️ CSV — Período A (diário)",
+                    data=dfA.to_csv(index=False).encode("utf-8"),
+                    file_name=f"comparativo_periodo_A_{sinceA}_a_{untilA}.csv",
+                    mime="text/csv",
+                )
+            with col_exp3:
+                st.download_button(
+                    "⬇️ CSV — Período B (diário)",
+                    data=dfB.to_csv(index=False).encode("utf-8"),
+                    file_name=f"comparativo_periodo_B_{sinceB}_a_{untilB}.csv",
+                    mime="text/csv",
+                )
 
             dir_map = {
                 "Valor usado": "neutral",
@@ -747,6 +778,15 @@ camp_view = camp_view.rename(columns={
 
 camp_view = camp_view.sort_values("Valor usado", ascending=False)
 st.dataframe(camp_view, use_container_width=True, height=520)
+
+st.download_button(
+    "⬇️ Exportar CSV — Campanhas (camp_view)",
+    data=camp_view.to_csv(index=False).encode("utf-8"),
+    file_name="meta_insights_campanhas.csv",
+    mime="text/csv",
+)
+
+
 
 with st.expander("Dados diários (detalhe por campanha)"):
     dd = df.copy()
