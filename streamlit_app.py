@@ -182,17 +182,18 @@ def fetch_insights_daily(act_id: str, token: str, api_version: str,
                          level: str = "campaign",
                          try_extra_fields: bool = True) -> pd.DataFrame:
     """
+    Coleta diária com paridade de datas do Ads Manager:
+    - Usa date_stop (fim do dia) para a coluna 'date'
     - time_range (since/until) + time_increment=1
-    - level único ('campaign' recomendado)
-    - NÃO envia action_types/action_attribution_windows
-    - Traz fields extras (link_clicks, landing_page_views) e faz fallback se houver erro #100.
+    - action_report_time=conversion e janelas 7d_click,1d_view
+    - Puxa link_clicks/landing_page_views com fallback
     """
     act_id = _ensure_act_prefix(act_id)
     base_url = f"https://graph.facebook.com/{api_version}/{act_id}/insights"
 
     base_fields = [
         "spend", "impressions", "clicks", "actions", "action_values",
-        "account_currency", "date_start", "campaign_id", "campaign_name"
+        "account_currency", "date_start", "date_stop", "campaign_id", "campaign_name"
     ]
     extra_fields = ["link_clicks", "landing_page_views"]
 
@@ -204,7 +205,8 @@ def fetch_insights_daily(act_id: str, token: str, api_version: str,
         "time_increment": 1,
         "fields": ",".join(fields),
         "limit": 500,
-        "action_attribution_windows": ["7d_click", "1d_view"],
+        "action_report_time": "conversion",
+        "action_attribution_windows": "7d_click,1d_view",
     }
 
     rows, next_url, next_params = [], base_url, params.copy()
@@ -219,7 +221,6 @@ def fetch_insights_daily(act_id: str, token: str, api_version: str,
             err = (payload or {}).get("error", {})
             code, sub, msg = err.get("code"), err.get("error_subcode"), err.get("message")
             if code == 100 and try_extra_fields:
-                # refaz sem extras
                 return fetch_insights_daily(act_id, token, api_version, since_str, until_str, level, try_extra_fields=False)
             raise RuntimeError(f"Graph API error {resp.status_code} | code={code} subcode={sub} | {msg}")
 
@@ -227,40 +228,30 @@ def fetch_insights_daily(act_id: str, token: str, api_version: str,
             actions = rec.get("actions") or []
             action_values = rec.get("action_values") or []
 
-            # Cliques (preferir field; fallback 'link_click')
             link_clicks = rec.get("link_clicks", None)
             if link_clicks is None:
                 link_clicks = _sum_actions_exact(actions, ["link_click"])
 
-            # LPV (preferir field; fallback 'landing_page_view' ou 'view_content')
             lpv = rec.get("landing_page_views", None)
             if lpv is None:
                 lpv = _sum_actions_exact(actions, ["landing_page_view"])
                 if lpv == 0:
                     lpv = _sum_actions_exact(actions, ["view_content"]) or _sum_actions_contains(actions, ["landing_page"])
 
-            # Iniciar checkout
-            ic = _sum_actions_exact(actions, ["initiate_checkout"])
-
-            # Add payment info
+            ic  = _sum_actions_exact(actions, ["initiate_checkout"])
             api = _sum_actions_exact(actions, ["add_payment_info"])
 
-            # Purchase (qtd) e Revenue (valor)
             purchases_cnt = _pick_purchase_totals(actions)
             revenue_val   = _pick_purchase_totals(action_values)
 
             rows.append({
-                "date":           pd.to_datetime(rec.get("date_start")),
+                "date":           pd.to_datetime(rec.get("date_stop")),  # usa date_stop
                 "currency":       rec.get("account_currency", "BRL"),
                 "campaign_id":    rec.get("campaign_id", ""),
                 "campaign_name":  rec.get("campaign_name", ""),
-
-                # métricas básicas
                 "spend":          _to_float(rec.get("spend")),
                 "impressions":    _to_float(rec.get("impressions")),
                 "clicks":         _to_float(rec.get("clicks")),
-
-                # funil
                 "link_clicks":    _to_float(link_clicks),
                 "lpv":            _to_float(lpv),
                 "init_checkout":  _to_float(ic),
@@ -280,14 +271,16 @@ def fetch_insights_daily(act_id: str, token: str, api_version: str,
     if df.empty:
         return df
 
-    num_cols = ["spend", "impressions", "clicks", "link_clicks", "lpv", "init_checkout", "add_payment", "purchases", "revenue"]
+    num_cols = ["spend", "impressions", "clicks", "link_clicks", "lpv",
+                "init_checkout", "add_payment", "purchases", "revenue"]
     for c in num_cols:
         df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0.0)
 
-    # Métricas derivadas (do período/dia; taxas serão calculadas em agregações)
     df["roas"] = np.where(df["spend"] > 0, df["revenue"] / df["spend"], np.nan)
     df = df.sort_values("date")
     return df
+
+
 
 # =============== Sidebar (filtros) ===============
 st.sidebar.header("Configuração")
@@ -329,6 +322,14 @@ else:
     # Mostra as datas calculadas, bloqueadas (só leitura)
     since = st.sidebar.date_input("Desde", value=_since_auto, disabled=True, key="since_auto")
     until = st.sidebar.date_input("Até",   value=_until_auto, disabled=True, key="until_auto")
+
+# Garantia de paridade com a UI: nunca incluir o dia de hoje
+if isinstance(until, date) and until >= date.today():
+    until = date.today() - timedelta(days=1)
+
+# Se 'since' acabar maior que 'until' (ex.: preset "Hoje"), corrija o intervalo
+if isinstance(since, date) and isinstance(until, date) and since > until:
+    since = until
 
 ready = bool(act_id and token)
 
