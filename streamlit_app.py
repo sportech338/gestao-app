@@ -123,7 +123,7 @@ def funnel_fig(labels, values, title=None):
     fig.update_layout(
         title=title or "",
         margin=dict(l=10, r=10, t=48, b=10),
-        height=740,                         # <<< AUMENTE AQUI (ex.: 600–720)
+        height=540,                         # <<< AUMENTE AQUI (ex.: 600–720)
         template="plotly_white",
         separators=",.",                    # pt-BR
         uniformtext=dict(minsize=12, mode="show")
