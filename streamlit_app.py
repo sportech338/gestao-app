@@ -879,72 +879,95 @@ with tab_daily:
     else:
         st.info("Troque o nível para 'campaign' para ver o detalhamento por campanha.")
 
-# -------------------- ABA DE HORÁRIOS (principal) --------------------
+# -------------------- ABA DE HORÁRIOS (Heatmap no topo) --------------------
 with tab_daypart:
-    st.caption("Explore desempenho por hora: comparação de dias e apanhado geral.")
+    st.caption("Explore desempenho por hora: Heatmap no topo, depois comparação de dias e apanhado geral.")
     if df_hourly is None or df_hourly.empty:
         st.info("A conta/período não retornou breakdown por hora. Use a visão diária.")
     else:
-        # ---------------- Filtros gerais ----------------
+        # ---------------- Filtros + base ----------------
         min_spend = st.slider("Gasto mínimo para considerar o horário (R$)", 0.0, 1000.0, 0.0, 10.0)
         d = df_hourly.copy()
         d = d.dropna(subset=["hour"])
         d["hour"] = d["hour"].astype(int).clip(0, 23)
         d["date_only"] = d["date"].dt.date
 
-        # ============== 1) COMPARAR DOIS DIAS (A vs B) ==============
+        # ============== 1) HEATMAP HORA × DIA (TOPO) ==============
+        st.subheader("📆 Heatmap — Hora × Dia")
+        cube_hm = d.groupby(["dow_label","hour"], as_index=False)[
+            ["spend","revenue","purchases","link_clicks","lpv","init_checkout","add_payment"]
+        ].sum()
+        cube_hm["roas"] = np.where(cube_hm["spend"]>0, cube_hm["revenue"]/cube_hm["spend"], np.nan)
+
+        if min_spend > 0:
+            cube_hm = cube_hm[cube_hm["spend"] >= min_spend]
+
+        metric_hm = st.selectbox("Métrica para o heatmap", ["Compras","Receita","Gasto","ROAS"], index=0, key="hm_metric_top")
+        mcol_hm = {"Compras":"purchases","Receita":"revenue","Gasto":"spend","ROAS":"roas"}[metric_hm]
+
+        if mcol_hm == "roas":
+            pvt = cube_hm.groupby(["dow_label","hour"], as_index=False)[mcol_hm].mean()
+        else:
+            pvt = cube_hm.groupby(["dow_label","hour"], as_index=False)[mcol_hm].sum()
+
+        order = ["Seg","Ter","Qua","Qui","Sex","Sáb","Dom"]
+        pvt["dow_label"] = pd.Categorical(pvt["dow_label"], categories=order, ordered=True)
+        pvt = pvt.sort_values(["dow_label","hour"])
+        heat = pvt.pivot(index="dow_label", columns="hour", values=mcol_hm).fillna(0)
+
+        hours_full = list(range(24))
+        heat = heat.reindex(columns=hours_full, fill_value=0)
+        heat.columns = list(range(24))
+
+        fig_hm = go.Figure(data=go.Heatmap(
+            z=heat.values, x=heat.columns, y=heat.index,
+            colorbar=dict(title=metric_hm),
+            hovertemplate="Dia: %{y}<br>Hora: %{x}h<br>"+metric_hm+": %{z}<extra></extra>"
+        ))
+        fig_hm.update_layout(height=520, margin=dict(l=10,r=10,t=10,b=10), template="plotly_white")
+        st.plotly_chart(fig_hm, use_container_width=True)
+
+        st.markdown("---")
+
+        # ============== 2) COMPARAR DOIS DIAS (A vs B) ==============
         st.subheader("🆚 Comparar dois dias (A vs B) — hora a hora")
 
         dates_avail = sorted(d["date_only"].unique())
         if len(dates_avail) < 2:
             st.info("Preciso de pelo menos 2 dias no período para comparar.")
         else:
-            # defaults: dois últimos dias disponíveis
-            def_last = dates_avail[-1]
-            def_prev = dates_avail[-2]
-
             colA, colB, colC = st.columns([1,1,1.6])
             with colA:
-                dateA = st.selectbox("Dia A", options=dates_avail, index=len(dates_avail)-2, key="cmpA")
+                dateA = st.selectbox("Dia A", options=dates_avail, index=max(len(dates_avail)-2, 0), key="cmpA_top")
             with colB:
-                dateB = st.selectbox("Dia B", options=dates_avail, index=len(dates_avail)-1, key="cmpB")
+                dateB = st.selectbox("Dia B", options=dates_avail, index=len(dates_avail)-1, key="cmpB_top")
             with colC:
-                metric_cmp = st.selectbox("Métrica do gráfico", ["Compras","Receita","Gasto","ROAS"], index=0)
+                metric_cmp = st.selectbox("Métrica do gráfico", ["Compras","Receita","Gasto","ROAS"], index=0, key="cmp_metric_top")
 
             datA = d[d["date_only"] == dateA]
             datB = d[d["date_only"] == dateB]
 
-            # agrega por hora
             agg_cols = ["spend","revenue","purchases","link_clicks","lpv","init_checkout","add_payment"]
             gA = datA.groupby("hour", as_index=False)[agg_cols].sum()
             gB = datB.groupby("hour", as_index=False)[agg_cols].sum()
-
             gA["ROAS"] = np.where(gA["spend"]>0, gA["revenue"]/gA["spend"], np.nan)
             gB["ROAS"] = np.where(gB["spend"]>0, gB["revenue"]/gB["spend"], np.nan)
 
-            # aplica gasto mínimo
             if min_spend > 0:
                 gA = gA[gA["spend"] >= min_spend]
                 gB = gB[gB["spend"] >= min_spend]
 
-            # junta lado a lado e calcula Δ
             merged = pd.merge(gA, gB, on="hour", how="outer", suffixes=(" (A)", " (B)")).fillna(0.0)
-            # re-calcula ROAS se tiver zeros vindos do merge
             for side in ["A", "B"]:
-                s = merged[f"spend ({side})"]
-                r = merged[f"revenue ({side})"]
+                s = merged[f"spend ({side})"]; r = merged[f"revenue ({side})"]
                 merged[f"ROAS ({side})"] = np.where(s>0, r/s, np.nan)
 
-            # deltas numéricos
-            merged["Δ Compras (B−A)"]  = merged["purchases (B)"] - merged["purchases (A)"]
-            merged["Δ Receita (B−A)"]  = merged["revenue (B)"]   - merged["revenue (A)"]
-            merged["Δ Gasto (B−A)"]    = merged["spend (B)"]     - merged["spend (A)"]
-            merged["Δ ROAS (p.p.)"]    = merged["ROAS (B)"]      - merged["ROAS (A)"]
-
-            # ordena por hora 0..23
+            merged["Δ Compras (B−A)"] = merged["purchases (B)"] - merged["purchases (A)"]
+            merged["Δ Receita (B−A)"] = merged["revenue (B)"]   - merged["revenue (A)"]
+            merged["Δ Gasto (B−A)"]   = merged["spend (B)"]     - merged["spend (A)"]
+            merged["Δ ROAS (p.p.)"]   = merged["ROAS (B)"]      - merged["ROAS (A)"]
             merged = merged.sort_values("hour").reset_index(drop=True)
 
-            # exibição formatada
             disp = merged[[
                 "hour",
                 "purchases (A)","purchases (B)","Δ Compras (B−A)",
@@ -953,7 +976,6 @@ with tab_daypart:
                 "ROAS (A)","ROAS (B)","Δ ROAS (p.p.)"
             ]].copy()
 
-            # formatações
             disp["revenue (A)"] = disp["revenue (A)"].apply(_fmt_money_br)
             disp["revenue (B)"] = disp["revenue (B)"].apply(_fmt_money_br)
             disp["Δ Receita (B−A)"] = disp["Δ Receita (B−A)"].apply(_fmt_money_br)
@@ -967,102 +989,48 @@ with tab_daypart:
             disp = disp.rename(columns={"hour":"Hora","purchases (A)":"Compras (A)","purchases (B)":"Compras (B)"})
             st.dataframe(disp, use_container_width=True, height=420)
 
-            # gráfico comparativo (linha) da métrica escolhida
             mcol_map = {"Compras":"purchases", "Receita":"revenue", "Gasto":"spend", "ROAS":"ROAS"}
             mcol = mcol_map[metric_cmp]
-
             x = merged["hour"].astype(int)
-            yA = merged[f"{mcol} (A)"]
-            yB = merged[f"{mcol} (B)"]
+            yA = merged[f"{mcol} (A)"]; yB = merged[f"{mcol} (B)"]
 
             fig_cmp = go.Figure()
             fig_cmp.add_trace(go.Scatter(x=x, y=yA, mode="lines+markers", name=f"{metric_cmp} — {dateA}"))
             fig_cmp.add_trace(go.Scatter(x=x, y=yB, mode="lines+markers", name=f"{metric_cmp} — {dateB}"))
             fig_cmp.update_layout(
                 title=f"Comparativo por hora — {metric_cmp}",
-                xaxis_title="Hora do dia",
-                yaxis_title=metric_cmp,
-                height=420,
-                template="plotly_white",
-                margin=dict(l=10,r=10,t=48,b=10),
+                xaxis_title="Hora do dia", yaxis_title=metric_cmp,
+                height=420, template="plotly_white", margin=dict(l=10,r=10,t=48,b=10),
             )
             st.plotly_chart(fig_cmp, use_container_width=True)
 
         st.markdown("---")
 
-        # ============== 2) APANHADO GERAL POR HORA (no período) ==============
+        # ============== 3) APANHADO GERAL POR HORA (no período) ==============
         st.subheader("📦 Apanhado geral por hora (período selecionado)")
-
         cube_hr = d.groupby("hour", as_index=False)[
             ["spend","revenue","purchases","link_clicks","lpv","init_checkout","add_payment"]
         ].sum()
-
         cube_hr["ROAS"] = np.where(cube_hr["spend"]>0, cube_hr["revenue"]/cube_hr["spend"], np.nan)
         if min_spend > 0:
             cube_hr = cube_hr[cube_hr["spend"] >= min_spend]
 
-        # ordena por ‘Compras’ desc para destacar principais horas
         top_hr = cube_hr.sort_values(["purchases","ROAS"], ascending=[False,False]).copy()
-
         show_cols = ["hour","purchases","ROAS","spend","revenue","link_clicks","lpv","init_checkout","add_payment"]
         disp_top = top_hr[show_cols].rename(columns={
-            "hour":"Hora","purchases":"Compras","spend":"Valor usado",
-            "revenue":"Valor de conversão"
+            "hour":"Hora","purchases":"Compras","spend":"Valor usado","revenue":"Valor de conversão"
         })
-
-        # formatações básicas
         disp_top["Valor usado"] = disp_top["Valor usado"].apply(_fmt_money_br)
         disp_top["Valor de conversão"] = disp_top["Valor de conversão"].apply(_fmt_money_br)
         disp_top["ROAS"] = disp_top["ROAS"].map(_fmt_ratio_br)
-
         st.dataframe(disp_top, use_container_width=True, height=360)
 
-        # gráfico de barras de Compras por hora (visão geral)
         fig_bar = go.Figure(go.Bar(x=cube_hr.sort_values("hour")["hour"], y=cube_hr.sort_values("hour")["purchases"]))
         fig_bar.update_layout(
             title="Compras por hora (total do período)",
-            xaxis_title="Hora do dia",
-            yaxis_title="Compras",
-            height=380,
-            template="plotly_white",
-            margin=dict(l=10,r=10,t=48,b=10),
+            xaxis_title="Hora do dia", yaxis_title="Compras",
+            height=380, template="plotly_white", margin=dict(l=10,r=10,t=48,b=10),
         )
         st.plotly_chart(fig_bar, use_container_width=True)
-
-        st.markdown("---")
-
-        # ============== 3) HEATMAP HORA × DIA (já conhecido) ==============
-        st.subheader("📆 Heatmap — Hora × Dia")
-        cube = d.groupby(["dow_label","hour"], as_index=False)[
-            ["spend","revenue","purchases","link_clicks","lpv","init_checkout","add_payment"]
-        ].sum()
-        cube["roas"] = np.where(cube["spend"]>0, cube["revenue"]/cube["spend"], np.nan)
-
-        if min_spend > 0:
-            cube = cube[cube["spend"] >= min_spend]
-
-        metric = st.selectbox("Métrica para o heatmap", ["Compras","Receita","Gasto","ROAS"], index=0, key="hm_metric")
-        mcol = {"Compras":"purchases","Receita":"revenue","Gasto":"spend","ROAS":"roas"}[metric]
-
-        if mcol == "roas":
-            pvt = cube.groupby(["dow_label","hour"], as_index=False)[mcol].mean()
-        else:
-            pvt = cube.groupby(["dow_label","hour"], as_index=False)[mcol].sum()
-
-        order = ["Seg","Ter","Qua","Qui","Sex","Sáb","Dom"]
-        pvt["dow_label"] = pd.Categorical(pvt["dow_label"], categories=order, ordered=True)
-        pvt = pvt.sort_values(["dow_label","hour"])
-        heat = pvt.pivot(index="dow_label", columns="hour", values=mcol).fillna(0)
-        hours_full = list(range(24))
-        heat = heat.reindex(columns=hours_full, fill_value=0)
-        heat.columns = list(range(24))
-
-        fig_hm = go.Figure(data=go.Heatmap(
-            z=heat.values, x=heat.columns, y=heat.index,
-            colorbar=dict(title=metric),
-            hovertemplate="Dia: %{y}<br>Hora: %{x}h<br>"+metric+": %{z}<extra></extra>"
-        ))
-        fig_hm.update_layout(height=520, margin=dict(l=10,r=10,t=10,b=10), template="plotly_white")
-        st.plotly_chart(fig_hm, use_container_width=True)
 
         st.info("Dica: use o 'Gasto mínimo' para filtrar horas com investimento muito baixo e evitar falsos positivos.")
