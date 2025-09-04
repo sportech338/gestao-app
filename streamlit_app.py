@@ -325,9 +325,9 @@ if preset == "Personalizado":
     since = st.sidebar.date_input("Desde", value=_since_auto, key="since_custom")
     until = st.sidebar.date_input("Até",   value=_until_auto, key="until_custom")
 else:
-    # Mostra as datas calculadas, bloqueadas (só leitura)
-    since = st.sidebar.date_input("Desde", value=_since_auto, disabled=True, key="since_auto")
-    until = st.sidebar.date_input("Até",   value=_until_auto, disabled=True, key="until_auto")
+    # Não renderiza inputs duplicados; usa as datas calculadas silenciosamente
+    since, until = _since_auto, _until_auto
+
 
 ready = bool(act_id and token)
 
