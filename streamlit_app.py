@@ -1,5 +1,3 @@
-
-# app.py — Meta Ads com Funil completo
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -190,6 +188,46 @@ def _safe_div(n, d):
     n = float(n or 0)
     d = float(d or 0)
     return (n / d) if d > 0 else np.nan
+
+# --- Parsers de Produto e Etapa (a partir do campaign_name)
+import re
+
+STAGE_TAGS = ["Teste/Criativo", "Teste/Público", "Escala", "Remarketing"]
+
+def _parse_stage_from_name(name: str) -> str:
+    if not name:
+        return "Sem etapa"
+    # procura por [Teste/Criativo] etc.
+    m = re.search(r"\[([^\]]+)\]", name)
+    if m:
+        tag = m.group(1).strip()
+        if tag in STAGE_TAGS:
+            return tag
+    # fallback por palavras-chave
+    low = name.lower()
+    if "teste" in low and "criativo" in low:  return "Teste/Criativo"
+    if "teste" in low and "público" in low:   return "Teste/Público"
+    if "escala" in low:                       return "Escala"
+    if "remarketing" in low or "rmkt" in low: return "Remarketing"
+    return "Sem etapa"
+
+KNOWN_PRODUCTS = ["Flexlive", "KneePro"]
+
+def _parse_product_from_name(name: str) -> str:
+    if not name:
+        return "Outro"
+    for p in KNOWN_PRODUCTS:
+        if p.lower() in name.lower():
+            return p
+    # tenta pegar após " | "
+    parts = [s.strip() for s in re.split(r"\|", name)]
+    if len(parts) >= 2:
+        cand = parts[1]
+        # remove “— …” se existir
+        cand = cand.split("—")[0].strip()
+        if len(cand) >= 3:
+            return cand
+    return "Outro"
 
 # =============== Coleta (com fallback de campos extras) ===============
 @st.cache_data(ttl=600, show_spinner=True)
@@ -466,6 +504,13 @@ else:
     since = st.sidebar.date_input("Desde", value=_since_auto, disabled=True, key="since_auto")
     until = st.sidebar.date_input("Até",   value=_until_auto, disabled=True, key="until_auto")
 
+# Filtro de Produto (usado no bloco "Etapas do Funil")
+prod_options = ["Todos"]
+if 'df_daily' in locals() and not df_daily.empty and "product" in df_daily.columns:
+    unique_products = sorted([p for p in df_daily["product"].dropna().unique().tolist() if p])
+    prod_options = ["Todos"] + unique_products
+produto_sel = st.sidebar.selectbox("Produto (para análise por etapa)", prod_options, index=0)
+
 ready = bool(act_id and token)
 
 # =============== Tela ===============
@@ -486,6 +531,12 @@ with st.spinner("Buscando dados da Meta…"):
         act_id=act_id, token=token, api_version=api_version,
         since_str=str(since), until_str=str(until), level=level
     )
+
+# Enriquecimento com Produto e Etapa
+if not df_daily.empty:
+    df_daily["stage"]   = df_daily["campaign_name"].map(_parse_stage_from_name)
+    df_daily["product"] = df_daily["campaign_name"].map(_parse_product_from_name)
+
 
 if df_daily.empty and (df_hourly is None or df_hourly.empty):
     st.warning("Sem dados para o período. Verifique permissões, conta e se há eventos de Purchase (value/currency).")
@@ -593,6 +644,95 @@ with tab_daily:
     base_h, row_h = 160, 36
     height = base_h + row_h * len(extras_selected)
     st.dataframe(sr, use_container_width=True, height=height)
+
+        # ================== ETAPAS DO FUNIL (POR PRODUTO) ==================
+    st.subheader("🧭 Etapas do Funil (por produto)")
+
+    # Controles do diagnóstico
+    colm1, colm2, colm3 = st.columns([1,1,1])
+    with colm1:
+        roas_target = st.number_input("Meta de ROAS (alvo)", min_value=0.1, value=2.0, step=0.1, format="%.2f")
+    with colm2:
+        min_purch_stage = st.number_input("Mínimo de compras p/ escalar", min_value=0, value=5, step=1)
+    with colm3:
+        min_spend_stage = st.number_input("Gasto mínimo p/ avaliar (R$)", min_value=0.0, value=50.0, step=10.0, format="%.2f")
+
+    d0 = df_daily.copy()
+    if produto_sel and produto_sel != "Todos":
+        d0 = d0[d0["product"].str.lower() == produto_sel.lower()]
+
+    if d0.empty:
+        st.info("Sem dados para o produto/período selecionado.")
+    else:
+        agg = d0.groupby("stage", as_index=False)[
+            ["spend","revenue","purchases","link_clicks","lpv","init_checkout","add_payment"]
+        ].sum()
+
+        # Métricas derivadas
+        agg["ROAS"] = np.where(agg["spend"]>0, agg["revenue"]/agg["spend"], np.nan)
+        agg["CPA"]  = np.where(agg["purchases"]>0, agg["spend"]/agg["purchases"], np.nan)
+        agg["CPC"]  = np.where(agg["link_clicks"]>0, agg["spend"]/agg["link_clicks"], np.nan)
+
+        # Taxas de funil
+        agg["LPV/Clique"]      = np.where(agg["link_clicks"]>0, agg["lpv"]/agg["link_clicks"], np.nan)
+        agg["Checkout/LPV"]    = np.where(agg["lpv"]>0, agg["init_checkout"]/agg["lpv"], np.nan)
+        agg["Compra/Checkout"] = np.where(agg["init_checkout"]>0, agg["purchases"]/agg["init_checkout"], np.nan)
+
+        # Regras de decisão
+        def _signal_row(r):
+            spend_ok = r["spend"] >= float(min_spend_stage)
+            roas = r["ROAS"]; purch = r["purchases"]
+            if pd.notnull(roas) and roas >= float(roas_target) and purch >= int(min_purch_stage):
+                return "🟢 Escalar"
+            if (purch >= 1 and purch < int(min_purch_stage)) or (pd.notnull(roas) and roas >= 0.8*float(roas_target)):
+                return "🟡 Observar/Testar"
+            if spend_ok and (pd.isna(roas) or roas < 0.8*float(roas_target) or purch == 0):
+                return "🔴 Corrigir"
+            return "—"
+
+        agg["Sinal"] = agg.apply(_signal_row, axis=1)
+
+        # Ordenação por prioridade
+        order_key = {"🟢 Escalar":0, "🟡 Observar/Testar":1, "🔴 Corrigir":2, "—":3}
+        agg["_ord"] = agg["Sinal"].map(order_key).fillna(3)
+        agg = agg.sort_values(["_ord","purchases","ROAS"], ascending=[True, False, False]).drop(columns=["_ord"])
+
+        # Formatação
+        disp = agg.rename(columns={
+            "stage":"Etapa", "spend":"Valor usado", "revenue":"Faturamento", "purchases":"Compras"
+        }).copy()
+
+        for c in ["Valor usado","Faturamento","CPA","CPC"]:
+            disp[c] = disp[c].apply(lambda x: _fmt_money_br(float(x)) if pd.notnull(x) else "")
+        disp["ROAS"] = disp["ROAS"].map(lambda x: _fmt_ratio_br(x) if pd.notnull(x) else "")
+        for c in ["LPV/Clique","Checkout/LPV","Compra/Checkout"]:
+            disp[c] = disp[c].map(lambda x: _fmt_pct_br(x) if pd.notnull(x) else "")
+
+        st.dataframe(
+            disp[[
+                "Etapa","Sinal","Valor usado","Faturamento","Compras","ROAS","CPA","CPC",
+                "LPV/Clique","Checkout/LPV","Compra/Checkout"
+            ]],
+            use_container_width=True, height=320
+        )
+
+        with st.expander("Sugestões automáticas por gargalo"):
+            tips = []
+            for _, r in agg.iterrows():
+                etapa = r["stage"]
+                ts = []
+                if pd.notnull(r["LPV/Clique"]) and r["LPV/Clique"] < 0.3:
+                    ts.append("LPV/Clique baixo → **Teste de criativo/landing**.")
+                if pd.notnull(r["Checkout/LPV"]) and r["Checkout/LPV"] < 0.2:
+                    ts.append("Checkout/LPV baixo → **Teste de público/segmentação**.")
+                if pd.notnull(r["Compra/Checkout"]) and r["Compra/Checkout"] < 0.35:
+                    ts.append("Compra/Checkout baixo → **Revisar checkout/pagamento/oferta**.")
+                if not ts and r["Sinal"] == "🟢 Escalar":
+                    ts.append("Desempenho sólido → **Aumente orçamento gradualmente**.")
+                if ts:
+                    tips.append(f"- **{etapa}**: " + " ".join(ts))
+            st.markdown("\n".join(tips) if tips else "Sem gargalos claros para este período.")
+
 
     # ========= COMPARATIVOS (Período A vs Período B) =========
     with st.expander("Comparativos — Período A vs Período B (opcional)", expanded=False):
