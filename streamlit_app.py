@@ -1025,55 +1025,92 @@ with tab_daypart:
                     if merged.empty:
                         st.info("Após o filtro de gasto mínimo, não sobraram horas para comparar.")
                     else:
-                        # ---------- GRÁFICO COMBINADO ----------
+                        # ---------- GRÁFICOS SEPARADOS: Período A e Período B ----------
                         x = merged["hour"].astype(int)
-                        fig_combo = make_subplots(specs=[[{"secondary_y": True}]])
 
-                        # Barras empilhadas — Período A
-                        fig_combo.add_trace(
-                            go.Bar(name="Gasto (A)", x=x, y=merged["spend (A)"],
-                                   offsetgroup="A", legendgroup="A"),
+                        # ===== Gráfico do Período A =====
+                        fig_A = make_subplots(specs=[[{"secondary_y": True}]])
+                        fig_A.add_trace(
+                            go.Bar(
+                                name="Gasto (A)",
+                                x=x, y=merged["spend (A)"],
+                                legendgroup="A", offsetgroup="A",
+                                hovertemplate="Hora: %{x}h<br>Gasto: R$ %{y:,.2f}<extra></extra>"
+                            ),
                             secondary_y=False
                         )
-                        fig_combo.add_trace(
-                            go.Bar(name="Receita (A)", x=x, y=merged["revenue (A)"],
-                                   offsetgroup="A", legendgroup="A"),
+                        fig_A.add_trace(
+                            go.Bar(
+                                name="Receita (A)",
+                                x=x, y=merged["revenue (A)"],
+                                legendgroup="A", offsetgroup="A",
+                                hovertemplate="Hora: %{x}h<br>Receita: R$ %{y:,.2f}<extra></extra>"
+                            ),
                             secondary_y=False
                         )
-
-                        # Barras empilhadas — Período B (lado a lado de A)
-                        fig_combo.add_trace(
-                            go.Bar(name="Gasto (B)", x=x, y=merged["spend (B)"],
-                                   offsetgroup="B", legendgroup="B"),
-                            secondary_y=False
-                        )
-                        fig_combo.add_trace(
-                            go.Bar(name="Receita (B)", x=x, y=merged["revenue (B)"],
-                                   offsetgroup="B", legendgroup="B"),
-                            secondary_y=False
-                        )
-
-                        # Linhas — Compras (eixo secundário)
-                        fig_combo.add_trace(
-                            go.Scatter(name=f"Compras (A) — {period_sinceA} a {period_untilA}",
-                                       x=x, y=merged["purchases (A)"], mode="lines+markers", legendgroup="A"),
+                        fig_A.add_trace(
+                            go.Scatter(
+                                name=f"Compras (A) — {period_sinceA} a {period_untilA}",
+                                x=x, y=merged["purchases (A)"],
+                                mode="lines+markers", legendgroup="A",
+                                hovertemplate="Hora: %{x}h<br>Compras: %{y}<extra></extra>"
+                            ),
                             secondary_y=True
                         )
-                        fig_combo.add_trace(
-                            go.Scatter(name=f"Compras (B) — {period_sinceB} a {period_untilB}",
-                                       x=x, y=merged["purchases (B)"], mode="lines+markers", legendgroup="B"),
-                            secondary_y=True
-                        )
-
-                        fig_combo.update_layout(
-                            title="Comparativo por hora — Barras empilhadas (Gasto+Receita) + linha de Compras",
-                            barmode="relative",              # empilha Gasto e Receita dentro de cada período
+                        fig_A.update_layout(
+                            title=f"Período A — {period_sinceA} a {period_untilA} (Gasto+Receita empilhados + Compras em linha)",
+                            barmode="stack",
                             bargap=0.15, bargroupgap=0.12,
                             template="plotly_white",
-                            height=520, margin=dict(l=10, r=10, t=48, b=10),
+                            height=460, margin=dict(l=10, r=10, t=48, b=10),
+                            legend_title_text=""
                         )
-                        fig_combo.update_xaxes(title_text="Hora do dia")
-                        fig_combo.update_yaxes(title_text="Valores (R$)", secondary_y=False)
-                        fig_combo.update_yaxes(title_text="Compras (unid.)", secondary_y=True)
+                        fig_A.update_xaxes(title_text="Hora do dia", tickmode="linear")
+                        fig_A.update_yaxes(title_text="Valores (R$)", secondary_y=False)
+                        fig_A.update_yaxes(title_text="Compras (unid.)", secondary_y=True)
 
-                        st.plotly_chart(fig_combo, use_container_width=True)
+                        st.plotly_chart(fig_A, use_container_width=True)
+
+                        # ===== Gráfico do Período B =====
+                        fig_B = make_subplots(specs=[[{"secondary_y": True}]])
+                        fig_B.add_trace(
+                            go.Bar(
+                                name="Gasto (B)",
+                                x=x, y=merged["spend (B)"],
+                                legendgroup="B", offsetgroup="B",
+                                hovertemplate="Hora: %{x}h<br>Gasto: R$ %{y:,.2f}<extra></extra>"
+                            ),
+                            secondary_y=False
+                        )
+                        fig_B.add_trace(
+                            go.Bar(
+                                name="Receita (B)",
+                                x=x, y=merged["revenue (B)"],
+                                legendgroup="B", offsetgroup="B",
+                                hovertemplate="Hora: %{x}h<br>Receita: R$ %{y:,.2f}<extra></extra>"
+                            ),
+                            secondary_y=False
+                        )
+                        fig_B.add_trace(
+                            go.Scatter(
+                                name=f"Compras (B) — {period_sinceB} a {period_untilB}",
+                                x=x, y=merged["purchases (B)"],
+                                mode="lines+markers", legendgroup="B",
+                                hovertemplate="Hora: %{x}h<br>Compras: %{y}<extra></extra>"
+                            ),
+                            secondary_y=True
+                        )
+                        fig_B.update_layout(
+                            title=f"Período B — {period_sinceB} a {period_untilB} (Gasto+Receita empilhados + Compras em linha)",
+                            barmode="stack",
+                            bargap=0.15, bargroupgap=0.12,
+                            template="plotly_white",
+                            height=460, margin=dict(l=10, r=10, t=48, b=10),
+                            legend_title_text=""
+                        )
+                        fig_B.update_xaxes(title_text="Hora do dia", tickmode="linear")
+                        fig_B.update_yaxes(title_text="Valores (R$)", secondary_y=False)
+                        fig_B.update_yaxes(title_text="Compras (unid.)", secondary_y=True)
+
+                        st.plotly_chart(fig_B, use_container_width=True)
+
