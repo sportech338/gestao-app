@@ -891,7 +891,7 @@ with st.expander("🔎 Análise por produto (opcional)", expanded=False):
     # Lista de produtos (adicione/edite conforme for lançando mais)
     produtos = ["Flexlive", "KneePro", "NasalFlex", "Meniscus"]
     
-    produto_sel = st.selectbox("Selecione um produto", ["(Todos)"] + produtos)
+    produto_sel = st.selectbox("Selecione um produto", produtos)
 
     if produto_sel != "(Todos)":
         # filtra campanhas cujo nome contenha o nome do produto
@@ -945,8 +945,6 @@ with st.expander("🔎 Análise por produto (opcional)", expanded=False):
         sr = pd.DataFrame(core_rows, columns=["Taxa", "Valor"])
         sr["Valor"] = sr["Valor"].map(_fmt_pct_br)
         st.dataframe(sr, use_container_width=True, height=160)
-    else:
-        st.info("Selecione um produto para ver a análise detalhada.")
 
 # -------------------- ABA DE HORÁRIOS (Heatmap no topo) --------------------
 with tab_daypart:
