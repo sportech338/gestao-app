@@ -465,10 +465,9 @@ def _range_from_preset(p):
     if p == "Últimos 90 dias":
         return base_end - timedelta(days=89), base_end
     if p == "Máximo":
-        # Força uma data bem antiga para capturar tudo (ex.: 2015)
-        return date(2015, 1, 1), base_end
-    return base_end - timedelta(days=6), base_end
-
+        # Usa limite seguro de 2 anos atrás
+        start_max = local_today - timedelta(days=730)
+        return start_max, base_end
 
 _since_auto, _until_auto = _range_from_preset(preset)
 
