@@ -1077,7 +1077,7 @@ with tab_daypart:
                                 x=x, y=merged["spend (A)"],
                                 legendgroup="A", offsetgroup="A",
                                 hovertemplate="Hora: %{x}h<br>Gasto: R$ %{y:,.2f}<extra></extra>",
-                                marker_color="red"
+                                marker_color="#e23131"
                             ),
                             secondary_y=False
                         )
@@ -1128,7 +1128,7 @@ with tab_daypart:
                                 x=x, y=merged["spend (B)"],
                                 legendgroup="B", offsetgroup="B",
                                 hovertemplate="Hora: %{x}h<br>Gasto: R$ %{y:,.2f}<extra></extra>",
-                                marker_color="red"
+                                marker_color="#e23131"
                             ),
                             secondary_y=False
                         )
