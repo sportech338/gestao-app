@@ -1071,6 +1071,51 @@ with tab_daypart:
 
                         st.plotly_chart(fig_A, use_container_width=True)
 
+
+                        # ===== Gráfico do Período B =====
+                        fig_B = make_subplots(specs=[[{"secondary_y": True}]])
+                        fig_B.add_trace(
+                            go.Bar(
+                                name="Gasto (B)",
+                                x=x, y=merged["spend (B)"],
+                                legendgroup="B", offsetgroup="B",
+                                hovertemplate="Hora: %{x}h<br>Gasto: R$ %{y:,.2f}<extra></extra>"
+                            ),
+                            secondary_y=False
+                        )
+                        fig_B.add_trace(
+                            go.Bar(
+                                name="Receita (B)",
+                                x=x, y=merged["revenue (B)"],
+                                legendgroup="B", offsetgroup="B",
+                                hovertemplate="Hora: %{x}h<br>Receita: R$ %{y:,.2f}<extra></extra>"
+                            ),
+                            secondary_y=False
+                        )
+                        fig_B.add_trace(
+                            go.Scatter(
+                                name=f"Compras (B) — {period_sinceB} a {period_untilB}",
+                                x=x, y=merged["purchases (B)"],
+                                mode="lines+markers", legendgroup="B",
+                                hovertemplate="Hora: %{x}h<br>Compras: %{y}<extra></extra>"
+                            ),
+                            secondary_y=True
+                        )
+                        fig_B.update_layout(
+                            title=f"Período B — {period_sinceB} a {period_untilB} (Gasto+Receita empilhados + Compras em linha)",
+                            barmode="stack",
+                            bargap=0.15, bargroupgap=0.12,
+                            template="plotly_white",
+                            height=460, margin=dict(l=10, r=10, t=48, b=10),
+                            legend_title_text=""
+                        )
+                        fig_B.update_xaxes(title_text="Hora do dia", tickmode="linear")
+                        fig_B.update_yaxes(title_text="Valores (R$)", secondary_y=False)
+                        fig_B.update_yaxes(title_text="Compras (unid.)", secondary_y=True)
+
+                        st.plotly_chart(fig_B, use_container_width=True)
+
+
                                                 # ===== INSIGHTS DO PERÍODO A (entre os gráficos) =====
                         st.markdown("### 🔎 Insights — Período A")
 
@@ -1160,48 +1205,3 @@ with tab_daypart:
                         st.info(
                             "Sugestões (A): priorize a janela forte, aumente orçamento nas horas de melhor ROAS (com gasto mínimo atendido) e reavalie criativo/lance nas horas com gasto e 0 compras."
                         )
-
-
-                        # ===== Gráfico do Período B =====
-                        fig_B = make_subplots(specs=[[{"secondary_y": True}]])
-                        fig_B.add_trace(
-                            go.Bar(
-                                name="Gasto (B)",
-                                x=x, y=merged["spend (B)"],
-                                legendgroup="B", offsetgroup="B",
-                                hovertemplate="Hora: %{x}h<br>Gasto: R$ %{y:,.2f}<extra></extra>"
-                            ),
-                            secondary_y=False
-                        )
-                        fig_B.add_trace(
-                            go.Bar(
-                                name="Receita (B)",
-                                x=x, y=merged["revenue (B)"],
-                                legendgroup="B", offsetgroup="B",
-                                hovertemplate="Hora: %{x}h<br>Receita: R$ %{y:,.2f}<extra></extra>"
-                            ),
-                            secondary_y=False
-                        )
-                        fig_B.add_trace(
-                            go.Scatter(
-                                name=f"Compras (B) — {period_sinceB} a {period_untilB}",
-                                x=x, y=merged["purchases (B)"],
-                                mode="lines+markers", legendgroup="B",
-                                hovertemplate="Hora: %{x}h<br>Compras: %{y}<extra></extra>"
-                            ),
-                            secondary_y=True
-                        )
-                        fig_B.update_layout(
-                            title=f"Período B — {period_sinceB} a {period_untilB} (Gasto+Receita empilhados + Compras em linha)",
-                            barmode="stack",
-                            bargap=0.15, bargroupgap=0.12,
-                            template="plotly_white",
-                            height=460, margin=dict(l=10, r=10, t=48, b=10),
-                            legend_title_text=""
-                        )
-                        fig_B.update_xaxes(title_text="Hora do dia", tickmode="linear")
-                        fig_B.update_yaxes(title_text="Valores (R$)", secondary_y=False)
-                        fig_B.update_yaxes(title_text="Compras (unid.)", secondary_y=True)
-
-                        st.plotly_chart(fig_B, use_container_width=True)
-
