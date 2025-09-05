@@ -542,8 +542,8 @@ with tab_daily:
     st.subheader("Série diária — Investimento e Conversão")
 
     daily = df_daily.groupby("date", as_index=False)[["spend", "revenue", "purchases"]].sum()
-    daily_pt = daily.rename(columns={"spend": "Gasto", "revenue": "Receita"})
-    st.line_chart(daily_pt.set_index("date")[["Receita", "Gasto"]])
+    daily_pt = daily.rename(columns={"spend": "Gasto", "revenue": "Faturamento"})
+    st.line_chart(daily_pt.set_index("date")[["Faturamento", "Gasto"]])
     st.caption("Linhas diárias de Receita e Gasto. Vendas na tabela abaixo.")
 
     # ========= FUNIL (Período) — FUNIL VISUAL =========
@@ -908,8 +908,8 @@ with tab_daypart:
         if min_spend > 0:
             cube_hm = cube_hm[cube_hm["spend"] >= min_spend]
 
-        metric_hm = st.selectbox("Métrica para o heatmap", ["Compras","Receita","Gasto","ROAS"], index=0, key="hm_metric_top")
-        mcol_hm = {"Compras":"purchases","Receita":"revenue","Gasto":"spend","ROAS":"roas"}[metric_hm]
+        metric_hm = st.selectbox("Métrica para o heatmap", ["Compras","Faturamento","Gasto","ROAS"], index=0, key="hm_metric_top")
+        mcol_hm = {"Compras":"purchases","Faturamento":"revenue","Gasto":"spend","ROAS":"roas"}[metric_hm]
 
         if mcol_hm == "roas":
             pvt = cube_hm.groupby(["dow_label","hour"], as_index=False)[mcol_hm].mean()
@@ -1083,10 +1083,10 @@ with tab_daypart:
                         )
                         fig_A.add_trace(
                             go.Bar(
-                                name="Receita (A)",
+                                name="Faturamento (A)",
                                 x=x, y=merged["revenue (A)"],
                                 legendgroup="A", offsetgroup="A",
-                                hovertemplate="Hora: %{x}h<br>Receita: R$ %{y:,.2f}<extra></extra>",
+                                hovertemplate="Hora: %{x}h<br>Faturamento: R$ %{y:,.2f}<extra></extra>",
                                 marker_color="#636EFA"
                             ),
                             secondary_y=False
@@ -1134,10 +1134,10 @@ with tab_daypart:
                         )
                         fig_B.add_trace(
                             go.Bar(
-                                name="Receita (B)",
+                                name="Faturamento (B)",
                                 x=x, y=merged["revenue (B)"],
                                 legendgroup="B", offsetgroup="B",
-                                hovertemplate="Hora: %{x}h<br>Receita: R$ %{y:,.2f}<extra></extra>",
+                                hovertemplate="Hora: %{x}h<br>Faturamento: R$ %{y:,.2f}<extra></extra>",
                                 marker_color="#636EFA"
                             ),
                             secondary_y=False
