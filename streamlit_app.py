@@ -8,6 +8,7 @@ from datetime import date, timedelta, datetime
 from zoneinfo import ZoneInfo
 APP_TZ = ZoneInfo("America/Sao_Paulo")
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
 # =============== Config & Estilos ===============
 st.set_page_config(page_title="Meta Ads — Paridade + Funil", page_icon="📊", layout="wide")
@@ -960,7 +961,6 @@ with tab_daypart:
 
         st.info("Dica: use o 'Gasto mínimo' para filtrar horas com investimento muito baixo e evitar falsos positivos.")
 
-        # ============== 2) COMPARAR DOIS PERÍODOS (A vs B) ==============
         st.subheader("🆚 Comparar dois períodos (A vs B) — hora a hora")
 
         # Defaults: B = período atual (since/until), A = período anterior com mesma duração
@@ -978,16 +978,11 @@ with tab_daypart:
         with colB2:
             period_untilB = st.date_input("Até (B)",   value=until, key="cmp_untilB")
 
-        metric_cmp = st.selectbox(
-            "Métrica do gráfico",
-            ["Compras","Receita","Gasto","ROAS"], index=0, key="cmp_metric_period"
-        )
-
         # Validação rápida
         if period_sinceA > period_untilA or period_sinceB > period_untilB:
             st.warning("Confira as datas: em cada período, 'Desde' não pode ser maior que 'Até'.")
         else:
-            # >>> Buscar dados por hora cobrindo A ∪ B
+            # Buscar dados por hora cobrindo A ∪ B
             union_since = min(period_sinceA, period_sinceB)
             union_until = max(period_untilA, period_untilB)
 
@@ -1000,7 +995,7 @@ with tab_daypart:
             if df_hourly_union is None or df_hourly_union.empty:
                 st.info("Sem dados no intervalo combinado dos períodos selecionados.")
             else:
-                # base preparada
+                # Base preparada
                 d_cmp = df_hourly_union.dropna(subset=["hour"]).copy()
                 d_cmp["hour"] = d_cmp["hour"].astype(int).clip(0, 23)
                 d_cmp["date_only"] = d_cmp["date"].dt.date
@@ -1019,16 +1014,10 @@ with tab_daypart:
                     gA = datA.groupby("hour", as_index=False)[agg_cols].sum()
                     gB = datB.groupby("hour", as_index=False)[agg_cols].sum()
 
-                    # ROAS por hora
-                    gA["ROAS"] = np.where(gA["spend"]>0, gA["revenue"]/gA["spend"], np.nan)
-                    gB["ROAS"] = np.where(gB["spend"]>0, gB["revenue"]/gB["spend"], np.nan)
-
-                    # >>> Filtro de gasto mínimo após o merge (descarta só se AMBOS forem baixos)
+                    # Merge A vs B
                     merged = pd.merge(gA, gB, on="hour", how="outer", suffixes=(" (A)", " (B)")).fillna(0.0)
-                    for side in ["A", "B"]:
-                        s = merged[f"spend ({side})"]; r = merged[f"revenue ({side})"]
-                        merged[f"ROAS ({side})"] = np.where(s>0, r/s, np.nan)
 
+                    # Filtro de gasto mínimo (descarta só se AMBOS forem baixos)
                     if min_spend > 0:
                         keep = (merged["spend (A)"] >= min_spend) | (merged["spend (B)"] >= min_spend)
                         merged = merged[keep]
@@ -1036,51 +1025,55 @@ with tab_daypart:
                     if merged.empty:
                         st.info("Após o filtro de gasto mínimo, não sobraram horas para comparar.")
                     else:
-                        # Deltas
-                        merged["Δ Compras (B−A)"] = merged["purchases (B)"] - merged["purchases (A)"]
-                        merged["Δ Receita (B−A)"] = merged["revenue (B)"]   - merged["revenue (A)"]
-                        merged["Δ Gasto (B−A)"]   = merged["spend (B)"]     - merged["spend (A)"]
-                        merged["Δ ROAS (p.p.)"]   = merged["ROAS (B)"]      - merged["ROAS (A)"]
-                        merged = merged.sort_values("hour").reset_index(drop=True)
-
-                        # Tabela
-                        disp = merged[[
-                            "hour",
-                            "purchases (A)","purchases (B)","Δ Compras (B−A)",
-                            "revenue (A)","revenue (B)","Δ Receita (B−A)",
-                            "spend (A)","spend (B)","Δ Gasto (B−A)",
-                            "ROAS (A)","ROAS (B)","Δ ROAS (p.p.)"
-                        ]].copy()
-
-                        # Formatações
-                        disp["revenue (A)"]     = disp["revenue (A)"].apply(_fmt_money_br)
-                        disp["revenue (B)"]     = disp["revenue (B)"].apply(_fmt_money_br)
-                        disp["Δ Receita (B−A)"] = disp["Δ Receita (B−A)"].apply(_fmt_money_br)
-                        disp["spend (A)"]       = disp["spend (A)"].apply(_fmt_money_br)
-                        disp["spend (B)"]       = disp["spend (B)"].apply(_fmt_money_br)
-                        disp["Δ Gasto (B−A)"]   = disp["Δ Gasto (B−A)"].apply(_fmt_money_br)
-                        disp["ROAS (A)"]        = disp["ROAS (A)"].map(_fmt_ratio_br)
-                        disp["ROAS (B)"]        = disp["ROAS (B)"].map(_fmt_ratio_br)
-                        disp["Δ ROAS (p.p.)"]   = disp["Δ ROAS (p.p.)"].map(_fmt_ratio_br)
-
-                        disp = disp.rename(columns={"hour":"Hora","purchases (A)":"Compras (A)","purchases (B)":"Compras (B)"})
-                        st.dataframe(disp, use_container_width=True, height=420)
-
-                        # Gráfico linha — métrica escolhida
-                        mcol_map = {"Compras":"purchases", "Receita":"revenue", "Gasto":"spend", "ROAS":"ROAS"}
-                        mcol = mcol_map[metric_cmp]
+                        # ---------- GRÁFICO COMBINADO ----------
                         x = merged["hour"].astype(int)
-                        yA = merged[f"{mcol} (A)"]; yB = merged[f"{mcol} (B)"]
+                        fig_combo = make_subplots(specs=[[{"secondary_y": True}]])
 
-                        periodoA_txt = f"{period_sinceA} a {period_untilA}"
-                        periodoB_txt = f"{period_sinceB} a {period_untilB}"
-
-                        fig_cmp = go.Figure()
-                        fig_cmp.add_trace(go.Scatter(x=x, y=yA, mode="lines+markers", name=f"{metric_cmp} — {periodoA_txt}"))
-                        fig_cmp.add_trace(go.Scatter(x=x, y=yB, mode="lines+markers", name=f"{metric_cmp} — {periodoB_txt}"))
-                        fig_cmp.update_layout(
-                            title=f"Comparativo por hora — {metric_cmp}",
-                            xaxis_title="Hora do dia", yaxis_title=metric_cmp,
-                            height=420, template="plotly_white", margin=dict(l=10,r=10,t=48,b=10),
+                        # Barras empilhadas — Período A
+                        fig_combo.add_trace(
+                            go.Bar(name="Gasto (A)", x=x, y=merged["spend (A)"],
+                                   offsetgroup="A", legendgroup="A"),
+                            secondary_y=False
                         )
-                        st.plotly_chart(fig_cmp, use_container_width=True)
+                        fig_combo.add_trace(
+                            go.Bar(name="Receita (A)", x=x, y=merged["revenue (A)"],
+                                   offsetgroup="A", legendgroup="A"),
+                            secondary_y=False
+                        )
+
+                        # Barras empilhadas — Período B (lado a lado de A)
+                        fig_combo.add_trace(
+                            go.Bar(name="Gasto (B)", x=x, y=merged["spend (B)"],
+                                   offsetgroup="B", legendgroup="B"),
+                            secondary_y=False
+                        )
+                        fig_combo.add_trace(
+                            go.Bar(name="Receita (B)", x=x, y=merged["revenue (B)"],
+                                   offsetgroup="B", legendgroup="B"),
+                            secondary_y=False
+                        )
+
+                        # Linhas — Compras (eixo secundário)
+                        fig_combo.add_trace(
+                            go.Scatter(name=f"Compras (A) — {period_sinceA} a {period_untilA}",
+                                       x=x, y=merged["purchases (A)"], mode="lines+markers", legendgroup="A"),
+                            secondary_y=True
+                        )
+                        fig_combo.add_trace(
+                            go.Scatter(name=f"Compras (B) — {period_sinceB} a {period_untilB}",
+                                       x=x, y=merged["purchases (B)"], mode="lines+markers", legendgroup="B"),
+                            secondary_y=True
+                        )
+
+                        fig_combo.update_layout(
+                            title="Comparativo por hora — Barras empilhadas (Gasto+Receita) + linha de Compras",
+                            barmode="relative",              # empilha Gasto e Receita dentro de cada período
+                            bargap=0.15, bargroupgap=0.12,
+                            template="plotly_white",
+                            height=520, margin=dict(l=10, r=10, t=48, b=10),
+                        )
+                        fig_combo.update_xaxes(title_text="Hora do dia")
+                        fig_combo.update_yaxes(title_text="Valores (R$)", secondary_y=False)
+                        fig_combo.update_yaxes(title_text="Compras (unid.)", secondary_y=True)
+
+                        st.plotly_chart(fig_combo, use_container_width=True)
