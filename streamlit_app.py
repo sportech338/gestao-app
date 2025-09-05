@@ -494,6 +494,19 @@ tab_daily, tab_daypart = st.tabs(["📅 Visão diária", "⏱️ Horários (prin
 
 # -------------------- ABA 1: VISÃO DIÁRIA (seu conteúdo atual) --------------------
 with tab_daily:
+    # ========= FILTRO POR PRODUTO =========
+    produtos = ["Flexlive", "KneePro", "NasalFlex", "Meniscus"]
+    produto_sel = st.selectbox("Filtrar por produto (ou ver geral)", ["(Todos)"] + produtos, key="daily_produto")
+
+    if produto_sel != "(Todos)":
+        mask = df_daily["campaign_name"].str.contains(produto_sel, case=False, na=False)
+        df_d = df_daily[mask].copy()
+        df_h = df_hourly[df_hourly["campaign_name"].str.contains(produto_sel, case=False, na=False)].copy() if not df_hourly.empty else pd.DataFrame()
+        st.subheader(f"📌 Análise do produto: {produto_sel}")
+    else:
+        df_d, df_h = df_daily.copy(), df_hourly.copy()
+        st.subheader("📌 Análise geral (todos os produtos)")
+        
     # === Moeda detectada e override opcional ===
     currency_detected = (df_daily["currency"].dropna().iloc[0]
                          if "currency" in df_daily.columns and not df_daily["currency"].dropna().empty else "BRL")
@@ -883,69 +896,6 @@ with tab_daily:
             }), use_container_width=True)
     else:
         st.info("Troque o nível para 'campaign' para ver o detalhamento por campanha.")
-
-# ========= ANÁLISE POR PRODUTO =========
-st.markdown("---")
-with st.expander("🔎 Análise por produto (opcional)", expanded=False):
-    # Lista de produtos (adicione/edite conforme for lançando mais)
-    produtos = ["Flexlive", "KneePro", "NasalFlex", "Meniscus"]
-    
-    produto_sel = st.selectbox("Selecione um produto", ["(Todos)"] + produtos)
-
-    if produto_sel != "(Todos)":
-        # filtra campanhas cujo nome contenha o nome do produto
-        mask = df_daily["campaign_name"].str.contains(produto_sel, case=False, na=False)
-        df_filt = df_daily[mask].copy()
-
-        mask_h = df_hourly["campaign_name"].str.contains(produto_sel, case=False, na=False) if not df_hourly.empty else []
-        df_filt_h = df_hourly[mask_h].copy() if not df_hourly.empty else pd.DataFrame()
-
-        st.subheader(f"📌 Análise isolada — Produto: {produto_sel}")
-
-        # KPIs filtrados
-        tot_spend_f = float(df_filt["spend"].sum())
-        tot_purch_f = float(df_filt["purchases"].sum())
-        tot_rev_f   = float(df_filt["revenue"].sum())
-        roas_f      = (tot_rev_f / tot_spend_f) if tot_spend_f > 0 else np.nan
-
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Valor usado", _fmt_money_br(tot_spend_f))
-        c2.metric("Vendas", f"{int(round(tot_purch_f)):,}".replace(",", "."))
-        c3.metric("Valor de conversão", _fmt_money_br(tot_rev_f))
-        c4.metric("ROAS", _fmt_ratio_br(roas_f) if pd.notnull(roas_f) else "—")
-
-        # Série diária filtrada
-        daily_f = df_filt.groupby("date", as_index=False)[["spend", "revenue"]].sum()
-        daily_f = daily_f.rename(columns={"spend": "Gasto", "revenue": "Faturamento"})
-        st.line_chart(daily_f.set_index("date")[["Faturamento", "Gasto"]])
-
-        # Funil filtrado
-        f_clicks = float(df_filt["link_clicks"].sum())
-        f_lpv    = float(df_filt["lpv"].sum())
-        f_ic     = float(df_filt["init_checkout"].sum())
-        f_api    = float(df_filt["add_payment"].sum())
-        f_pur    = float(df_filt["purchases"].sum())
-
-        labels_total = ["Cliques", "LPV", "Checkout", "Add Pagamento", "Compra"]
-        values_total = [int(round(f_clicks)), int(round(f_lpv)), int(round(f_ic)),
-                        int(round(f_api)), int(round(f_pur))]
-
-        st.plotly_chart(
-            funnel_fig(labels_total, enforce_monotonic(values_total), title=f"Funil — {produto_sel}"),
-            use_container_width=True
-        )
-
-        # Taxas principais
-        core_rows = [
-            ("LPV / Cliques",     _rate(values_total[1], values_total[0])),
-            ("Checkout / LPV",    _rate(values_total[2], values_total[1])),
-            ("Compra / Checkout", _rate(values_total[4], values_total[2])),
-        ]
-        sr = pd.DataFrame(core_rows, columns=["Taxa", "Valor"])
-        sr["Valor"] = sr["Valor"].map(_fmt_pct_br)
-        st.dataframe(sr, use_container_width=True, height=160)
-    else:
-        st.info("Selecione um produto para ver a análise detalhada.")
 
 # -------------------- ABA DE HORÁRIOS (Heatmap no topo) --------------------
 with tab_daypart:
