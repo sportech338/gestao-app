@@ -930,7 +930,12 @@ with tab_daypart:
             colorbar=dict(title=metric_hm),
             hovertemplate="Dia: %{y}<br>Hora: %{x}h<br>"+metric_hm+": %{z}<extra></extra>"
         ))
-        fig_hm.update_layout(height=520, margin=dict(l=10,r=10,t=10,b=10), template="plotly_white")
+        fig_hm.update_layout(
+            height=520,
+            margin=dict(l=10, r=10, t=10, b=10),
+            template="plotly_white",
+            separators=",."
+        )
         st.plotly_chart(fig_hm, use_container_width=True)
 
         st.markdown("---")
@@ -957,9 +962,14 @@ with tab_daypart:
         fig_bar = go.Figure(go.Bar(x=cube_hr.sort_values("hour")["hour"], y=cube_hr.sort_values("hour")["purchases"]))
         fig_bar.update_layout(
             title="Compras por hora (total do período)",
-            xaxis_title="Hora do dia", yaxis_title="Compras",
-            height=380, template="plotly_white", margin=dict(l=10,r=10,t=48,b=10),
+            xaxis_title="Hora do dia",
+            yaxis_title="Compras",
+            height=380,
+            template="plotly_white",
+            margin=dict(l=10, r=10, t=48, b=10),
+            separators=",."
         )
+
         st.plotly_chart(fig_bar, use_container_width=True)
 
         st.info("Dica: use o 'Gasto mínimo' para filtrar horas com investimento muito baixo e evitar falsos positivos.")
@@ -1029,7 +1039,35 @@ with tab_daypart:
                         st.info("Após o filtro de gasto mínimo, não sobraram horas para comparar.")
                     else:
                         # ---------- GRÁFICOS SEPARADOS: Período A e Período B ----------
+
+                        # --- PADRONIZAÇÃO PARA COMPARAR A vs B ---
+                        # 0..23 sempre presentes (preenche horas faltantes com 0)
+                        hours_full = list(range(24))
+                        merged = (
+                            merged.set_index("hour")
+                                  .reindex(hours_full, fill_value=0)
+                                  .rename_axis("hour")
+                                  .reset_index()
+                        )
+
+                        # Eixo X (numérico 0..23)
                         x = merged["hour"].astype(int)
+
+                        # Teto comum para as BARRAS (Gasto + Receita)
+                        barsA_max = (merged["spend (A)"] + merged["revenue (A)"]).max()
+                        barsB_max = (merged["spend (B)"] + merged["revenue (B)"]).max()
+                        bars_max = max(barsA_max, barsB_max)
+                        if not np.isfinite(bars_max) or bars_max <= 0:
+                            bars_max = 1.0
+                        bars_max *= 1.05  # folga de 5%
+
+                        # Teto comum para a LINHA (Compras)
+                        lineA_max = merged["purchases (A)"].max()
+                        lineB_max = merged["purchases (B)"].max()
+                        line_max = max(lineA_max, lineB_max)
+                        if not np.isfinite(line_max) or line_max <= 0:
+                            line_max = 1.0
+                        line_max *= 1.05  # folga de 5%
 
                         # ===== Gráfico do Período A =====
                         fig_A = make_subplots(specs=[[{"secondary_y": True}]])
@@ -1066,11 +1104,16 @@ with tab_daypart:
                             bargap=0.15, bargroupgap=0.12,
                             template="plotly_white",
                             height=460, margin=dict(l=10, r=10, t=48, b=10),
-                            legend_title_text=""
+                            legend_title_text="",
+                            separators=",."  
                         )
-                        fig_A.update_xaxes(title_text="Hora do dia", tickmode="linear")
-                        fig_A.update_yaxes(title_text="Valores (R$)", secondary_y=False)
-                        fig_A.update_yaxes(title_text="Compras (unid.)", secondary_y=True)
+                        fig_A.update_xaxes(
+                            title_text="Hora do dia",
+                            tickmode="linear", tick0=0, dtick=1,
+                            range=[-0.5, 23.5]
+                        )
+                        fig_A.update_yaxes(title_text="Valores (R$)", secondary_y=False, range=[0, bars_max])
+                        fig_A.update_yaxes(title_text="Compras (unid.)", secondary_y=True, range=[0, line_max])
 
                         st.plotly_chart(fig_A, use_container_width=True)
 
@@ -1110,11 +1153,17 @@ with tab_daypart:
                             bargap=0.15, bargroupgap=0.12,
                             template="plotly_white",
                             height=460, margin=dict(l=10, r=10, t=48, b=10),
-                            legend_title_text=""
+                            legend_title_text="",
+                            separators=",."  
                         )
-                        fig_B.update_xaxes(title_text="Hora do dia", tickmode="linear")
-                        fig_B.update_yaxes(title_text="Valores (R$)", secondary_y=False)
-                        fig_B.update_yaxes(title_text="Compras (unid.)", secondary_y=True)
+                        fig_B.update_xaxes(
+                            title_text="Hora do dia",
+                            tickmode="linear", tick0=0, dtick=1,
+                            range=[-0.5, 23.5]
+                        )
+                        fig_B.update_yaxes(title_text="Valores (R$)", secondary_y=False, range=[0, bars_max])
+                        fig_B.update_yaxes(title_text="Compras (unid.)", secondary_y=True, range=[0, line_max])
+
 
                         st.plotly_chart(fig_B, use_container_width=True)
 
