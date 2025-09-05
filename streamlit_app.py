@@ -1076,7 +1076,8 @@ with tab_daypart:
                                 name="Gasto (A)",
                                 x=x, y=merged["spend (A)"],
                                 legendgroup="A", offsetgroup="A",
-                                hovertemplate="Hora: %{x}h<br>Gasto: R$ %{y:,.2f}<extra></extra>"
+                                hovertemplate="Hora: %{x}h<br>Gasto: R$ %{y:,.2f}<extra></extra>",
+                                marker_color="red"
                             ),
                             secondary_y=False
                         )
@@ -1085,7 +1086,8 @@ with tab_daypart:
                                 name="Receita (A)",
                                 x=x, y=merged["revenue (A)"],
                                 legendgroup="A", offsetgroup="A",
-                                hovertemplate="Hora: %{x}h<br>Receita: R$ %{y:,.2f}<extra></extra>"
+                                hovertemplate="Hora: %{x}h<br>Receita: R$ %{y:,.2f}<extra></extra>",
+                                marker_color="blue"
                             ),
                             secondary_y=False
                         )
@@ -1125,7 +1127,8 @@ with tab_daypart:
                                 name="Gasto (B)",
                                 x=x, y=merged["spend (B)"],
                                 legendgroup="B", offsetgroup="B",
-                                hovertemplate="Hora: %{x}h<br>Gasto: R$ %{y:,.2f}<extra></extra>"
+                                hovertemplate="Hora: %{x}h<br>Gasto: R$ %{y:,.2f}<extra></extra>",
+                                marker_color="red"
                             ),
                             secondary_y=False
                         )
@@ -1134,7 +1137,8 @@ with tab_daypart:
                                 name="Receita (B)",
                                 x=x, y=merged["revenue (B)"],
                                 legendgroup="B", offsetgroup="B",
-                                hovertemplate="Hora: %{x}h<br>Receita: R$ %{y:,.2f}<extra></extra>"
+                                hovertemplate="Hora: %{x}h<br>Receita: R$ %{y:,.2f}<extra></extra>",
+                                marker_color="blue"
                             ),
                             secondary_y=False
                         )
