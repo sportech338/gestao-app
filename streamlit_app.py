@@ -198,9 +198,9 @@ def fetch_insights_daily(act_id: str, token: str, api_version: str,
                          level: str = "campaign",
                          try_extra_fields: bool = True) -> pd.DataFrame:
     """
-    - time_range (since/until) + time_increment=1
-    - level único ('campaign' recomendado)
-    - Usa action_report_time=conversion e action_attribution_windows fixos (paridade com Ads Manager)
+    - Usa time_range (since/until) ou date_preset=maximum (quando Máximo).
+    - level único ('campaign' recomendado).
+    - Usa action_report_time=conversion e action_attribution_windows fixos (paridade com Ads Manager).
     - Traz fields extras (link_clicks, landing_page_views) e faz fallback se houver erro #100.
     """
     act_id = _ensure_act_prefix(act_id)
@@ -213,17 +213,30 @@ def fetch_insights_daily(act_id: str, token: str, api_version: str,
     extra_fields = ["link_clicks", "landing_page_views"]
 
     fields = base_fields + (extra_fields if try_extra_fields else [])
-    params = {
-        "access_token": token,
-        "level": level,
-        "time_range": json.dumps({"since": since_str, "until": until_str}),
-        "time_increment": 1,
-        "fields": ",".join(fields),
-        "limit": 500,
-    # >>> Fixos para paridade com o Ads Manager
-        "action_report_time": "conversion",
-        "action_attribution_windows": ",".join(ATTR_KEYS),  # "7d_click,1d_view"
-    }
+
+    if since_str is None and until_str is None:
+        # Caso "Máximo" — usar date_preset em vez de time_range
+        params = {
+            "access_token": token,
+            "level": level,
+            "date_preset": "maximum",
+            "time_increment": 1,
+            "fields": ",".join(fields),
+            "limit": 500,
+            "action_report_time": "conversion",
+            "action_attribution_windows": ",".join(ATTR_KEYS),
+        }
+    else:
+        params = {
+            "access_token": token,
+            "level": level,
+            "time_range": json.dumps({"since": str(since_str), "until": str(until_str)}),
+            "time_increment": 1,
+            "fields": ",".join(fields),
+            "limit": 500,
+            "action_report_time": "conversion",
+            "action_attribution_windows": ",".join(ATTR_KEYS),
+        }
 
     rows, next_url, next_params = [], base_url, params.copy()
     while next_url:
@@ -286,7 +299,6 @@ def fetch_insights_daily(act_id: str, token: str, api_version: str,
                 "revenue":        _to_float(revenue_val),
             })
 
-
         after = ((payload.get("paging") or {}).get("cursors") or {}).get("after")
         if after:
             next_url, next_params = base_url, params.copy()
@@ -298,13 +310,13 @@ def fetch_insights_daily(act_id: str, token: str, api_version: str,
     if df.empty:
         return df
 
-    # >>> mantenha estes 4 passos DENTRO da função diária
+    # Conversões numéricas
     num_cols = ["spend", "impressions", "clicks", "link_clicks",
                 "lpv", "init_checkout", "add_payment", "purchases", "revenue"]
     for c in num_cols:
         df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0.0)
 
-    # Métricas derivadas (do período/dia; taxas serão calculadas em agregações)
+    # Métricas derivadas
     df["roas"] = np.where(df["spend"] > 0, df["revenue"] / df["spend"], np.nan)
     df = df.sort_values("date")
     return df
@@ -322,20 +334,33 @@ def fetch_insights_hourly(act_id: str, token: str, api_version: str,
     ]
 
     def _run_hourly(action_rt: str) -> pd.DataFrame:
-        params = {
-            "access_token": token,
-            "level": level,
-            "time_range": json.dumps({"since": since_str, "until": until_str}),
-            "time_increment": 1,
-            "fields": ",".join(fields),
-            "limit": 500,
-            "action_report_time": action_rt,            # conversion (primeira tentativa) ou impression (fallback)
-            "breakdowns": HOUR_BREAKDOWN,
-        }
+        if since_str is None and until_str is None:
+            params = {
+                "access_token": token,
+                "level": level,
+                "date_preset": "maximum",
+                "time_increment": 1,
+                "fields": ",".join(fields),
+                "limit": 500,
+                "action_report_time": action_rt,
+                "breakdowns": HOUR_BREAKDOWN,
+            }
+            if action_rt == "conversion":
+                params["action_attribution_windows"] = ",".join(ATTR_KEYS)
+        else:
+            params = {
+                "access_token": token,
+                "level": level,
+                "time_range": json.dumps({"since": str(since_str), "until": str(until_str)}),
+                "time_increment": 1,
+                "fields": ",".join(fields),
+                "limit": 500,
+                "action_report_time": action_rt,
+                "breakdowns": HOUR_BREAKDOWN,
+            }
+            if action_rt == "conversion":
+                params["action_attribution_windows"] = ",".join(ATTR_KEYS)
 
-        if action_rt == "conversion":
-           params["action_attribution_windows"] = ",".join(ATTR_KEYS)
-        
         rows, next_url, next_params = [], base_url, params.copy()
         while next_url:
             resp = _retry_call(lambda: requests.get(next_url, params=next_params, timeout=90))
@@ -345,7 +370,6 @@ def fetch_insights_hourly(act_id: str, token: str, api_version: str,
                 raise RuntimeError("Resposta inválida da Graph API (hourly).")
 
             if resp.status_code != 200:
-                # Propaga o erro para o chamador decidir fallback
                 err = (payload or {}).get("error", {})
                 code, sub, msg = err.get("code"), err.get("error_subcode"), err.get("message")
                 raise RuntimeError(f"Graph API error hourly | code={code} subcode={sub} | {msg}")
@@ -387,7 +411,6 @@ def fetch_insights_hourly(act_id: str, token: str, api_version: str,
                     "revenue":       _to_float(rev),
                 })
 
-            # paginação: preferir paging.next; senão usar cursor.after
             paging = payload.get("paging") or {}
             next_link = paging.get("next")
             if next_link:
@@ -409,22 +432,20 @@ def fetch_insights_hourly(act_id: str, token: str, api_version: str,
         df["roas"] = np.where(df["spend"]>0, df["revenue"]/df["spend"], np.nan)
         return df.sort_values(["date","hour"])
 
-    # 1ª tentativa: conversion
     try:
         df = _run_hourly("conversion")
         if not df.empty:
             return df
     except Exception as e1:
-        # mostra aviso com o erro real
         st.warning(f"Hour breakdown (conversion) falhou: {e1}")
 
-    # fallback: impression
     try:
         st.info("Tentando breakdown por hora com `action_report_time=impression`…")
         return _run_hourly("impression")
     except Exception as e2:
         st.error(f"Hour breakdown (impression) também falhou: {e2}")
         return pd.DataFrame()
+
 
 # =============== Sidebar (filtros) ===============
 st.sidebar.header("Configuração")
@@ -465,9 +486,7 @@ def _range_from_preset(p):
     if p == "Últimos 90 dias":
         return base_end - timedelta(days=89), base_end
     if p == "Máximo":
-        # Usa limite seguro de 2 anos atrás
-        start_max = local_today - timedelta(days=730)
-        return start_max, base_end
+        return None, None 
 
 _since_auto, _until_auto = _range_from_preset(preset)
 
@@ -493,11 +512,11 @@ if not ready:
 with st.spinner("Buscando dados da Meta…"):
     df_daily = fetch_insights_daily(
         act_id=act_id, token=token, api_version=api_version,
-        since_str=str(since), until_str=str(until), level=level
+        since_str=since, until_str=until, level=level
     )
     df_hourly = fetch_insights_hourly(
         act_id=act_id, token=token, api_version=api_version,
-        since_str=str(since), until_str=str(until), level=level
+        since_str=since, until_str=until, level=level
     )
 
 if df_daily.empty and (df_hourly is None or df_hourly.empty):
