@@ -330,9 +330,12 @@ def fetch_insights_hourly(act_id: str, token: str, api_version: str,
             "fields": ",".join(fields),
             "limit": 500,
             "action_report_time": action_rt,            # conversion (primeira tentativa) ou impression (fallback)
-            "action_attribution_windows": ",".join(ATTR_KEYS),
             "breakdowns": HOUR_BREAKDOWN,
         }
+
+        if action_rt == "conversion":
+           params["action_attribution_windows"] = ",".join(ATTR_KEYS)
+        
         rows, next_url, next_params = [], base_url, params.copy()
         while next_url:
             resp = _retry_call(lambda: requests.get(next_url, params=next_params, timeout=90))
