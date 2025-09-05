@@ -4,7 +4,9 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import requests, json, time
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
+from zoneinfo import ZoneInfo
+APP_TZ = ZoneInfo("America/Sao_Paulo")
 import plotly.graph_objects as go
 
 # =============== Config & Estilos ===============
@@ -426,7 +428,7 @@ act_id = st.sidebar.text_input("Ad Account ID", placeholder="ex.: act_1234567890
 token = st.sidebar.text_input("Access Token", type="password")
 api_version = st.sidebar.text_input("API Version", value="v23.0")
 level = st.sidebar.selectbox("Nível (recomendado: campaign)", ["campaign", "account"], index=0)
-today = date.today()
+today = datetime.now(APP_TZ).date()
 
 preset = st.sidebar.radio(
     "Período rápido",
@@ -435,20 +437,19 @@ preset = st.sidebar.radio(
 )
 
 def _range_from_preset(p):
-    # fim sempre em "ontem", igual ao que a Meta mostra
-    base_end = today - timedelta(days=1)
+    local_today = datetime.now(APP_TZ).date()
+    base_end = local_today - timedelta(days=1)  # períodos “terminando ontem”, igual ao Ads Manager
 
     if p == "Hoje":
-        return today, today
+        return local_today, local_today
     if p == "Ontem":
-        return base_end, base_end
+        return local_today - timedelta(days=1), local_today - timedelta(days=1)
     if p == "Últimos 7 dias":
-        return base_end - timedelta(days=6), base_end    # 7 dias terminando ontem
+        return base_end - timedelta(days=6), base_end
     if p == "Últimos 14 dias":
-        return base_end - timedelta(days=13), base_end   # 14 dias terminando ontem
+        return base_end - timedelta(days=13), base_end
     if p == "Últimos 30 dias":
-        return base_end - timedelta(days=29), base_end   # 30 dias terminando ontem
-    # Personalizado (sugestão inicial)
+        return base_end - timedelta(days=29), base_end
     return base_end - timedelta(days=6), base_end
 
 _since_auto, _until_auto = _range_from_preset(preset)
