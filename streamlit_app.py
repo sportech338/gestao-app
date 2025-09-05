@@ -187,21 +187,12 @@ def _safe_div(n, d):
     d = float(d or 0)
     return (n / d) if d > 0 else np.nan
 
-def _includes_today(since_d, until_d) -> bool:
-    """Retorna True se o intervalo selecionado incluir o dia de hoje."""
-    today_d = date.today()
-    try:
-        return since_d <= today_d <= until_d
-    except Exception:
-        return False
-
 # =============== Coleta (com fallback de campos extras) ===============
 @st.cache_data(ttl=600, show_spinner=True)
 def fetch_insights_daily(act_id: str, token: str, api_version: str,
                          since_str: str, until_str: str,
                          level: str = "campaign",
-                         try_extra_fields: bool = True,
-                         action_rt: str = "conversion") -> pd.DataFrame:
+                         try_extra_fields: bool = True) -> pd.DataFrame:
     """
     - time_range (since/until) + time_increment=1
     - level único ('campaign' recomendado)
@@ -226,7 +217,7 @@ def fetch_insights_daily(act_id: str, token: str, api_version: str,
         "fields": ",".join(fields),
         "limit": 500,
     # >>> Fixos para paridade com o Ads Manager
-        "action_report_time": action_rt,                     # <<< TROCA AQUI
+        "action_report_time": "conversion",
         "action_attribution_windows": ",".join(ATTR_KEYS),  # "7d_click,1d_view"
     }
 
@@ -471,11 +462,6 @@ else:
 
 ready = bool(act_id and token)
 
-if st.sidebar.button("Limpar cache de dados"):
-    st.cache_data.clear()
-    st.experimental_rerun()
-
-
 # =============== Tela ===============
 st.title("📊 Meta Ads — Paridade com Filtro + Funil")
 st.caption("KPIs + Funil: Cliques → LPV → Finalização → Add Pagamento → Compra. Tudo alinhado ao período selecionado.")
@@ -486,29 +472,14 @@ if not ready:
 
 # ===================== NOVO LAYOUT COM ABAS =====================
 with st.spinner("Buscando dados da Meta…"):
-    # Se o período inclui HOJE, tentamos 'impression' (tempo real). Caso contrário, 'conversion' (paridade).
-    want_realtime = _includes_today(since, until)
-    action_rt = "impression" if want_realtime else "conversion"
-
     df_daily = fetch_insights_daily(
         act_id=act_id, token=token, api_version=api_version,
-        since_str=str(since), until_str=str(until), level=level,
-        action_rt=action_rt
+        since_str=str(since), until_str=str(until), level=level
     )
-
-    # Fallback: se quisemos tempo real e veio vazio, tenta de novo em 'conversion'
-    if want_realtime and (df_daily is None or df_daily.empty):
-        df_daily = fetch_insights_daily(
-            act_id=act_id, token=token, api_version=api_version,
-            since_str=str(since), until_str=str(until), level=level,
-            action_rt="conversion"
-        )
-
     df_hourly = fetch_insights_hourly(
         act_id=act_id, token=token, api_version=api_version,
         since_str=str(since), until_str=str(until), level=level
     )
-
 
 if df_daily.empty and (df_hourly is None or df_hourly.empty):
     st.warning("Sem dados para o período. Verifique permissões, conta e se há eventos de Purchase (value/currency).")
