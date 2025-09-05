@@ -436,13 +436,8 @@ today = datetime.now(APP_TZ).date()
 
 preset = st.sidebar.radio(
     "Período rápido",
-    [
-        "Hoje", "Ontem", "Este mês",
-        "Últimos 7 dias", "Últimos 14 dias",
-        "Últimos 30 dias", "Últimos 90 dias",
-        "Máximo", "Personalizado"
-    ],
-    index=3,  # "Últimos 7 dias"
+    ["Hoje", "Ontem", "Últimos 7 dias", "Últimos 14 dias", "Últimos 30 dias", "Personalizado"],
+    index=2,  # "Últimos 7 dias"
 )
 
 def _range_from_preset(p):
@@ -453,22 +448,13 @@ def _range_from_preset(p):
         return local_today, local_today
     if p == "Ontem":
         return local_today - timedelta(days=1), local_today - timedelta(days=1)
-    if p == "Este mês":
-        start_month = local_today.replace(day=1)
-        return start_month, base_end
     if p == "Últimos 7 dias":
         return base_end - timedelta(days=6), base_end
     if p == "Últimos 14 dias":
         return base_end - timedelta(days=13), base_end
     if p == "Últimos 30 dias":
         return base_end - timedelta(days=29), base_end
-    if p == "Últimos 90 dias":
-        return base_end - timedelta(days=89), base_end
-    if p == "Máximo":
-        # Força uma data bem antiga para capturar tudo (ex.: 2015)
-        return date(2015, 1, 1), base_end
     return base_end - timedelta(days=6), base_end
-
 
 _since_auto, _until_auto = _range_from_preset(preset)
 
