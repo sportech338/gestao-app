@@ -1071,6 +1071,97 @@ with tab_daypart:
 
                         st.plotly_chart(fig_A, use_container_width=True)
 
+                                                # ===== INSIGHTS DO PERÍODO A (entre os gráficos) =====
+                        st.markdown("### 🔎 Insights — Período A")
+
+                        # Base A
+                        a = merged.sort_values("hour").copy()
+                        a_spend     = a["spend (A)"]
+                        a_rev       = a["revenue (A)"]
+                        a_purch     = a["purchases (A)"]
+                        a_roas_ser  = np.where(a_spend > 0, a_rev / a_spend, np.nan)
+
+                        # KPIs gerais
+                        a_tot_spend = float(a_spend.sum())
+                        a_tot_rev   = float(a_rev.sum())
+                        a_tot_purch = int(round(float(a_purch.sum())))
+                        a_roas      = (a_tot_rev / a_tot_spend) if a_tot_spend > 0 else np.nan
+
+                        c1, c2, c3, c4 = st.columns(4)
+                        c1.metric("Valor usado (A)", _fmt_money_br(a_tot_spend))
+                        c2.metric("Faturamento (A)", _fmt_money_br(a_tot_rev))
+                        c3.metric("Vendas (A)", f"{a_tot_purch:,}".replace(",", "."))
+                        c4.metric("ROAS (A)", _fmt_ratio_br(a_roas) if pd.notnull(a_roas) else "—")
+
+                        # Melhores picos por hora
+                        h_best_purch_idx = int(a_purch.idxmax()) if len(a_purch) else 0
+                        h_best_purch     = int(a.loc[h_best_purch_idx, "hour"]) if len(a_purch) else None
+                        h_best_purch_val = int(a_purch.max()) if len(a_purch) else 0
+
+                        # Melhor hora por ROAS (aplica gasto mínimo já definido no slider)
+                        _mask_roas = (a_spend >= float(min_spend)) & (a_spend > 0)
+                        if _mask_roas.any():
+                            h_best_roas_idx = a.loc[_mask_roas, "hour"].iloc[int(np.nanargmax(a_roas_ser[_mask_roas]))]
+                            h_best_roas     = int(h_best_roas_idx)
+                            h_best_roas_val = float(np.nanmax(a_roas_ser[_mask_roas]))
+                        else:
+                            h_best_roas, h_best_roas_val = None, np.nan
+
+                        # Janela de 3 horas (picos de compras)
+                        roll = a_purch.rolling(window=3, min_periods=1).sum()
+                        i_peak = int(roll.idxmax()) if len(roll) else 0
+                        # janela aproximada (i-1, i, i+1 dentro do range 0..23)
+                        def _bound(ix): 
+                            return int(a.loc[min(max(ix, 0), len(a)-1), "hour"])
+                        win_start = _bound(i_peak-1)
+                        win_mid   = _bound(i_peak)
+                        win_end   = _bound(i_peak+1)
+                        win_sum   = int(roll.max()) if len(roll) else 0
+
+                        # Horas com gasto mas zero compras
+                        wasted = a[(a_spend > 0) & (a_purch == 0)]
+                        wasted_hours = ", ".join([f"{int(h)}h" for h in wasted["hour"].tolist()]) if not wasted.empty else "—"
+
+                        st.markdown(
+                            f"""
+**Pontos-chaves (A)**  
+- 🕐 **Pico de compras:** **{h_best_purch}h** ({h_best_purch_val} compras).  
+- 💹 **Melhor ROAS** (com gasto ≥ R$ {min_spend:,.0f}): **{(str(h_best_roas)+'h') if h_best_roas is not None else '—'}** ({_fmt_ratio_br(h_best_roas_val) if pd.notnull(h_best_roas_val) else '—'}).  
+- ⏱️ **Janela forte (3h):** **{win_start}–{win_end}h** (centro {win_mid}h) somando **{win_sum}** compras.  
+- 🧯 **Horas com gasto e 0 compras:** {wasted_hours}.
+""".replace(",", "X").replace(".", ",").replace("X", ".")
+                        )
+
+                        # Tabelas rápidas (Top 5)
+                        st.markdown("**Top 5 horas (A)**")
+                        colTA, colTB = st.columns(2)
+
+                        with colTA:
+                            top_p = a[["hour","purchases (A)","spend (A)","revenue (A)"]].sort_values("purchases (A)", ascending=False).head(5).copy()
+                            top_p.rename(columns={
+                                "hour":"Hora","purchases (A)":"Compras","spend (A)":"Valor usado","revenue (A)":"Valor de conversão"
+                            }, inplace=True)
+                            top_p["Valor usado"] = top_p["Valor usado"].apply(_fmt_money_br)
+                            top_p["Valor de conversão"] = top_p["Valor de conversão"].apply(_fmt_money_br)
+                            st.dataframe(top_p, use_container_width=True, height=220)
+
+                        with colTB:
+                            top_r = a[_mask_roas][["hour","spend (A)","revenue (A)"]].copy() if _mask_roas.any() else a.iloc[0:0][["hour","spend (A)","revenue (A)"]].copy()
+                            if not top_r.empty:
+                                top_r["ROAS"] = a_roas_ser[_mask_roas]
+                                top_r = top_r.sort_values("ROAS", ascending=False).head(5)
+                                top_r.rename(columns={"hour":"Hora","spend (A)":"Valor usado","revenue (A)":"Valor de conversão"}, inplace=True)
+                                top_r["Valor usado"] = top_r["Valor usado"].apply(_fmt_money_br)
+                                top_r["Valor de conversão"] = top_r["Valor de conversão"].apply(_fmt_money_br)
+                                top_r["ROAS"] = top_r["ROAS"].map(_fmt_ratio_br)
+                            st.dataframe(top_r if not top_r.empty else pd.DataFrame(columns=["Hora","Valor usado","Valor de conversão","ROAS"]),
+                                         use_container_width=True, height=220)
+
+                        st.info(
+                            "Sugestões (A): priorize a janela forte, aumente orçamento nas horas de melhor ROAS (com gasto mínimo atendido) e reavalie criativo/lance nas horas com gasto e 0 compras."
+                        )
+
+
                         # ===== Gráfico do Período B =====
                         fig_B = make_subplots(specs=[[{"secondary_y": True}]])
                         fig_B.add_trace(
