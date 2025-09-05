@@ -1,3 +1,4 @@
+
 # app.py — Meta Ads com Funil completo
 import streamlit as st
 import pandas as pd
@@ -187,22 +188,12 @@ def _safe_div(n, d):
     d = float(d or 0)
     return (n / d) if d > 0 else np.nan
 
-def _includes_today(since_d, until_d) -> bool:
-    """Retorna True se o intervalo selecionado incluir o dia de hoje."""
-    from datetime import date
-    today_d = date.today()
-    try:
-        return since_d <= today_d <= until_d
-    except Exception:
-        return False
-
 # =============== Coleta (com fallback de campos extras) ===============
 @st.cache_data(ttl=600, show_spinner=True)
 def fetch_insights_daily(act_id: str, token: str, api_version: str,
                          since_str: str, until_str: str,
                          level: str = "campaign",
-                         try_extra_fields: bool = True,
-                         action_rt: str = "conversion") -> pd.DataFrame:
+                         try_extra_fields: bool = True) -> pd.DataFrame:
     """
     - time_range (since/until) + time_increment=1
     - level único ('campaign' recomendado)
@@ -226,7 +217,8 @@ def fetch_insights_daily(act_id: str, token: str, api_version: str,
         "time_increment": 1,
         "fields": ",".join(fields),
         "limit": 500,
-        "action_report_time": action_rt,
+    # >>> Fixos para paridade com o Ads Manager
+        "action_report_time": "conversion",
         "action_attribution_windows": ",".join(ATTR_KEYS),  # "7d_click,1d_view"
     }
 
@@ -242,10 +234,8 @@ def fetch_insights_daily(act_id: str, token: str, api_version: str,
             err = (payload or {}).get("error", {})
             code, sub, msg = err.get("code"), err.get("error_subcode"), err.get("message")
             if code == 100 and try_extra_fields:
-                return fetch_insights_daily(
-                    act_id, token, api_version, since_str, until_str, level,
-                    try_extra_fields=False, action_rt=action_rt
-                )
+                # refaz sem extras
+                return fetch_insights_daily(act_id, token, api_version, since_str, until_str, level, try_extra_fields=False)
             raise RuntimeError(f"Graph API error {resp.status_code} | code={code} subcode={sub} | {msg}")
 
         for rec in payload.get("data", []):
@@ -483,24 +473,10 @@ if not ready:
 
 # ===================== NOVO LAYOUT COM ABAS =====================
 with st.spinner("Buscando dados da Meta…"):
-    # Tempo real só se o intervalo inclui HOJE; caso contrário, paridade (conversion)
-    want_realtime = _includes_today(since, until)
-    action_rt = "impression" if want_realtime else "conversion"
-
     df_daily = fetch_insights_daily(
         act_id=act_id, token=token, api_version=api_version,
-        since_str=str(since), until_str=str(until), level=level,
-        action_rt=action_rt
+        since_str=str(since), until_str=str(until), level=level
     )
-
-    # Fallback: se pedimos tempo real e veio vazio, tenta consolidado (conversion)
-    if want_realtime and (df_daily is None or df_daily.empty):
-        df_daily = fetch_insights_daily(
-            act_id=act_id, token=token, api_version=api_version,
-            since_str=str(since), until_str=str(until), level=level,
-            action_rt="conversion"
-        )
-
     df_hourly = fetch_insights_hourly(
         act_id=act_id, token=token, api_version=api_version,
         since_str=str(since), until_str=str(until), level=level
