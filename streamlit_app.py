@@ -1116,7 +1116,7 @@ with tab_daypart:
                         st.plotly_chart(fig_B, use_container_width=True)
 
 
-                                                # ===== INSIGHTS DO PERÍODO A (entre os gráficos) =====
+                        # ===== INSIGHTS — Período A (abaixo dos gráficos) =====
                         st.markdown("### 🔎 Insights — Período A")
 
                         # Base A
@@ -1139,69 +1139,134 @@ with tab_daypart:
                         c4.metric("ROAS (A)", _fmt_ratio_br(a_roas) if pd.notnull(a_roas) else "—")
 
                         # Melhores picos por hora
-                        h_best_purch_idx = int(a_purch.idxmax()) if len(a_purch) else 0
-                        h_best_purch     = int(a.loc[h_best_purch_idx, "hour"]) if len(a_purch) else None
-                        h_best_purch_val = int(a_purch.max()) if len(a_purch) else 0
+                        h_best_purch = int(a.loc[a["purchases (A)"].idxmax(), "hour"]) if len(a_purch) and a_purch.max() > 0 else None
+                        best_purch_val = int(a_purch.max()) if len(a_purch) else 0
 
-                        # Melhor hora por ROAS (aplica gasto mínimo já definido no slider)
-                        _mask_roas = (a_spend >= float(min_spend)) & (a_spend > 0)
-                        if _mask_roas.any():
-                            h_best_roas_idx = a.loc[_mask_roas, "hour"].iloc[int(np.nanargmax(a_roas_ser[_mask_roas]))]
-                            h_best_roas     = int(h_best_roas_idx)
-                            h_best_roas_val = float(np.nanmax(a_roas_ser[_mask_roas]))
+                        # Melhor hora por ROAS (aplica gasto mínimo definido no slider)
+                        mask_roasA = (a_spend >= float(min_spend)) & (a_spend > 0)
+                        if mask_roasA.any():
+                            roasA_vals = a_roas_ser.copy()
+                            roasA_vals[~mask_roasA] = np.nan
+                            h_best_roasA = int(a.loc[np.nanargmax(roasA_vals), "hour"])
+                            best_roasA_val = float(np.nanmax(roasA_vals))
                         else:
-                            h_best_roas, h_best_roas_val = None, np.nan
+                            h_best_roasA, best_roasA_val = None, np.nan
 
-                        # Janela de 3 horas (picos de compras)
-                        roll = a_purch.rolling(window=3, min_periods=1).sum()
-                        i_peak = int(roll.idxmax()) if len(roll) else 0
-                        # janela aproximada (i-1, i, i+1 dentro do range 0..23)
-                        def _bound(ix): 
-                            return int(a.loc[min(max(ix, 0), len(a)-1), "hour"])
-                        win_start = _bound(i_peak-1)
-                        win_mid   = _bound(i_peak)
-                        win_end   = _bound(i_peak+1)
-                        win_sum   = int(roll.max()) if len(roll) else 0
+                        # Janela forte 3h (A)
+                        rollA = a_purch.rolling(3, min_periods=1).sum()
+                        iA = int(rollA.idxmax()) if len(rollA) else 0
+                        def _bA(ix): return int(a.loc[min(max(ix, 0), len(a)-1), "hour"])
+                        winA_start, winA_mid, winA_end = _bA(iA-1), _bA(iA), _bA(iA+1)
+                        winA_sum = int(rollA.max()) if len(rollA) else 0
 
-                        # Horas com gasto mas zero compras
-                        wasted = a[(a_spend > 0) & (a_purch == 0)]
-                        wasted_hours = ", ".join([f"{int(h)}h" for h in wasted["hour"].tolist()]) if not wasted.empty else "—"
+                        # Horas com gasto e 0 compras (A)
+                        wastedA = a[(a_spend > 0) & (a_purch == 0)]
+                        wastedA_hours = ", ".join(f"{int(h)}h" for h in wastedA["hour"].tolist()) if not wastedA.empty else "—"
 
                         st.markdown(
                             f"""
-**Pontos-chaves (A)**  
-- 🕐 **Pico de compras:** **{h_best_purch}h** ({h_best_purch_val} compras).  
-- 💹 **Melhor ROAS** (com gasto ≥ R$ {min_spend:,.0f}): **{(str(h_best_roas)+'h') if h_best_roas is not None else '—'}** ({_fmt_ratio_br(h_best_roas_val) if pd.notnull(h_best_roas_val) else '—'}).  
-- ⏱️ **Janela forte (3h):** **{win_start}–{win_end}h** (centro {win_mid}h) somando **{win_sum}** compras.  
-- 🧯 **Horas com gasto e 0 compras:** {wasted_hours}.
+**Pontos-chave (A)**  
+- 🕐 **Pico de compras:** **{str(h_best_purch)+'h' if h_best_purch is not None else '—'}** ({best_purch_val} compras).  
+- 💹 **Melhor ROAS** (gasto ≥ R$ {min_spend:,.0f}): **{(str(h_best_roasA)+'h') if h_best_roasA is not None else '—'}** ({_fmt_ratio_br(best_roasA_val) if pd.notnull(best_roasA_val) else '—'}).  
+- ⏱️ **Janela forte (3h):** **{winA_start}–{winA_end}h** (centro {winA_mid}h) somando **{winA_sum}** compras.  
+- 🧯 **Horas com gasto e 0 compras:** {wastedA_hours}.
 """.replace(",", "X").replace(".", ",").replace("X", ".")
                         )
 
-                        # Tabelas rápidas (Top 5)
                         st.markdown("**Top 5 horas (A)**")
                         colTA, colTB = st.columns(2)
-
                         with colTA:
-                            top_p = a[["hour","purchases (A)","spend (A)","revenue (A)"]].sort_values("purchases (A)", ascending=False).head(5).copy()
-                            top_p.rename(columns={
-                                "hour":"Hora","purchases (A)":"Compras","spend (A)":"Valor usado","revenue (A)":"Valor de conversão"
-                            }, inplace=True)
-                            top_p["Valor usado"] = top_p["Valor usado"].apply(_fmt_money_br)
-                            top_p["Valor de conversão"] = top_p["Valor de conversão"].apply(_fmt_money_br)
-                            st.dataframe(top_p, use_container_width=True, height=220)
-
+                            topA_p = a[["hour","purchases (A)","spend (A)","revenue (A)"]].sort_values("purchases (A)", ascending=False).head(5).copy()
+                            topA_p.rename(columns={"hour":"Hora","purchases (A)":"Compras","spend (A)":"Valor usado","revenue (A)":"Valor de conversão"}, inplace=True)
+                            topA_p["Valor usado"] = topA_p["Valor usado"].apply(_fmt_money_br)
+                            topA_p["Valor de conversão"] = topA_p["Valor de conversão"].apply(_fmt_money_br)
+                            st.dataframe(topA_p, use_container_width=True, height=220)
                         with colTB:
-                            top_r = a[_mask_roas][["hour","spend (A)","revenue (A)"]].copy() if _mask_roas.any() else a.iloc[0:0][["hour","spend (A)","revenue (A)"]].copy()
-                            if not top_r.empty:
-                                top_r["ROAS"] = a_roas_ser[_mask_roas]
-                                top_r = top_r.sort_values("ROAS", ascending=False).head(5)
-                                top_r.rename(columns={"hour":"Hora","spend (A)":"Valor usado","revenue (A)":"Valor de conversão"}, inplace=True)
-                                top_r["Valor usado"] = top_r["Valor usado"].apply(_fmt_money_br)
-                                top_r["Valor de conversão"] = top_r["Valor de conversão"].apply(_fmt_money_br)
-                                top_r["ROAS"] = top_r["ROAS"].map(_fmt_ratio_br)
-                            st.dataframe(top_r if not top_r.empty else pd.DataFrame(columns=["Hora","Valor usado","Valor de conversão","ROAS"]),
-                                         use_container_width=True, height=220)
+                            if mask_roasA.any():
+                                topA_r = a[mask_roasA][["hour","spend (A)","revenue (A)"]].copy()
+                                topA_r["ROAS"] = a_roas_ser[mask_roasA]
+                                topA_r = topA_r.sort_values("ROAS", ascending=False).head(5)
+                                topA_r.rename(columns={"hour":"Hora","spend (A)":"Valor usado","revenue (A)":"Valor de conversão"}, inplace=True)
+                                topA_r["Valor usado"] = topA_r["Valor usado"].apply(_fmt_money_br)
+                                topA_r["Valor de conversão"] = topA_r["Valor de conversão"].apply(_fmt_money_br)
+                                topA_r["ROAS"] = topA_r["ROAS"].map(_fmt_ratio_br)
+                            else:
+                                topA_r = pd.DataFrame(columns=["Hora","Valor usado","Valor de conversão","ROAS"])
+                            st.dataframe(topA_r, use_container_width=True, height=220)
 
-                        st.info(
-                            "Sugestões (A): priorize a janela forte, aumente orçamento nas horas de melhor ROAS (com gasto mínimo atendido) e reavalie criativo/lance nas horas com gasto e 0 compras."
+                        st.info("Sugestões (A): priorize a janela forte, aumente orçamento nas horas de melhor ROAS (com gasto mínimo atendido) e reavalie criativo/lance nas horas com gasto e 0 compras.")
+
+                        st.markdown("---")
+
+                        # ===== INSIGHTS — Período B =====
+                        st.markdown("### 🔎 Insights — Período B")
+
+                        b = merged.sort_values("hour").copy()
+                        b_spend     = b["spend (B)"]
+                        b_rev       = b["revenue (B)"]
+                        b_purch     = b["purchases (B)"]
+                        b_roas_ser  = np.where(b_spend > 0, b_rev / b_spend, np.nan)
+
+                        b_tot_spend = float(b_spend.sum())
+                        b_tot_rev   = float(b_rev.sum())
+                        b_tot_purch = int(round(float(b_purch.sum())))
+                        b_roas      = (b_tot_rev / b_tot_spend) if b_tot_spend > 0 else np.nan
+
+                        d1, d2, d3, d4 = st.columns(4)
+                        d1.metric("Valor usado (B)", _fmt_money_br(b_tot_spend))
+                        d2.metric("Faturamento (B)", _fmt_money_br(b_tot_rev))
+                        d3.metric("Vendas (B)", f"{b_tot_purch:,}".replace(",", "."))
+                        d4.metric("ROAS (B)", _fmt_ratio_br(b_roas) if pd.notnull(b_roas) else "—")
+
+                        h_best_purchB = int(b.loc[b["purchases (B)"].idxmax(), "hour"]) if len(b_purch) and b_purch.max() > 0 else None
+                        best_purch_valB = int(b_purch.max()) if len(b_purch) else 0
+
+                        mask_roasB = (b_spend >= float(min_spend)) & (b_spend > 0)
+                        if mask_roasB.any():
+                            roasB_vals = b_roas_ser.copy()
+                            roasB_vals[~mask_roasB] = np.nan
+                            h_best_roasB = int(b.loc[np.nanargmax(roasB_vals), "hour"])
+                            best_roasB_val = float(np.nanmax(roasB_vals))
+                        else:
+                            h_best_roasB, best_roasB_val = None, np.nan
+
+                        rollB = b_purch.rolling(3, min_periods=1).sum()
+                        iB = int(rollB.idxmax()) if len(rollB) else 0
+                        def _bB(ix): return int(b.loc[min(max(ix, 0), len(b)-1), "hour"])
+                        winB_start, winB_mid, winB_end = _bB(iB-1), _bB(iB), _bB(iB+1)
+                        winB_sum = int(rollB.max()) if len(rollB) else 0
+
+                        wastedB = b[(b_spend > 0) & (b_purch == 0)]
+                        wastedB_hours = ", ".join(f"{int(h)}h" for h in wastedB["hour"].tolist()) if not wastedB.empty else "—"
+
+                        st.markdown(
+                            f"""
+**Pontos-chave (B)**  
+- 🕐 **Pico de compras:** **{(str(h_best_purchB)+'h') if h_best_purchB is not None else '—'}** ({best_purch_valB} compras).  
+- 💹 **Melhor ROAS** (gasto ≥ R$ {min_spend:,.0f}): **{(str(h_best_roasB)+'h') if h_best_roasB is not None else '—'}** ({_fmt_ratio_br(best_roasB_val) if pd.notnull(best_roasB_val) else '—'}).  
+- ⏱️ **Janela forte (3h):** **{winB_start}–{winB_end}h** (centro {winB_mid}h) somando **{winB_sum}** compras.  
+- 🧯 **Horas com gasto e 0 compras:** {wastedB_hours}.
+""".replace(",", "X").replace(".", ",").replace("X", ".")
                         )
+
+                        colTB1, colTB2 = st.columns(2)
+                        with colTB1:
+                            topB_p = b[["hour","purchases (B)","spend (B)","revenue (B)"]].sort_values("purchases (B)", ascending=False).head(5).copy()
+                            topB_p.rename(columns={"hour":"Hora","purchases (B)":"Compras","spend (B)":"Valor usado","revenue (B)":"Valor de conversão"}, inplace=True)
+                            topB_p["Valor usado"] = topB_p["Valor usado"].apply(_fmt_money_br)
+                            topB_p["Valor de conversão"] = topB_p["Valor de conversão"].apply(_fmt_money_br)
+                            st.dataframe(topB_p, use_container_width=True, height=220)
+                        with colTB2:
+                            if mask_roasB.any():
+                                topB_r = b[mask_roasB][["hour","spend (B)","revenue (B)"]].copy()
+                                topB_r["ROAS"] = b_roas_ser[mask_roasB]
+                                topB_r = topB_r.sort_values("ROAS", ascending=False).head(5)
+                                topB_r.rename(columns={"hour":"Hora","spend (B)":"Valor usado","revenue (B)":"Valor de conversão"}, inplace=True)
+                                topB_r["Valor usado"] = topB_r["Valor usado"].apply(_fmt_money_br)
+                                topB_r["Valor de conversão"] = topB_r["Valor de conversão"].apply(_fmt_money_br)
+                                topB_r["ROAS"] = topB_r["ROAS"].map(_fmt_ratio_br)
+                            else:
+                                topB_r = pd.DataFrame(columns=["Hora","Valor usado","Valor de conversão","ROAS"])
+                            st.dataframe(topB_r, use_container_width=True, height=220)
+
+                        st.info("Sugestões (B): direcione orçamento para as horas com melhor ROAS e pause/teste criativos nas horas com gasto e 0 compras.")
