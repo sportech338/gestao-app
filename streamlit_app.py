@@ -1101,7 +1101,7 @@ with tab_daypart:
                             secondary_y=True
                         )
                         fig_A.update_layout(
-                            title=f"Período A — {period_sinceA} a {period_untilA} (Gasto+Receita empilhados + Compras em linha)",
+                            title=f"Período A — {period_sinceA} a {period_untilA} (Gasto + Faturamento + Compras)",
                             barmode="stack",
                             bargap=0.15, bargroupgap=0.12,
                             template="plotly_white",
@@ -1152,7 +1152,7 @@ with tab_daypart:
                             secondary_y=True
                         )
                         fig_B.update_layout(
-                            title=f"Período B — {period_sinceB} a {period_untilB} (Gasto+Receita empilhados + Compras em linha)",
+                            title=f"Período B — {period_sinceB} a {period_untilB} (Gasto + Faturamento + Compras)",
                             barmode="stack",
                             bargap=0.15, bargroupgap=0.12,
                             template="plotly_white",
