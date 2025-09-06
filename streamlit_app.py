@@ -1,3 +1,5 @@
+
+
 # app.py — Meta Ads com Funil completo
 import streamlit as st
 import pandas as pd
@@ -33,48 +35,6 @@ def _parse_hour_bucket(h):
         return max(0, min(23, val))
     except Exception:
         return None
-
-# --- RETRY + CHUNK HELPERS ---------------------------------
-RETRYABLE_CODES = {1, 2, 4, 17, 32, 613}  # erros transitórios comuns da Graph API
-
-def _get_with_retries(url, params, max_retries=5, base_wait=1.2, timeout=150):
-    """GET com backoff para erros transitórios (e 5xx). Retorna payload JSON ou lança erro."""
-    for i in range(max_retries):
-        try:
-            resp = requests.get(url, params=params, timeout=timeout)
-        except Exception as e:
-            if any(k in str(e).lower() for k in ["rate limit", "retry", "temporarily unavailable", "timeout"]):
-                time.sleep(base_wait * (2 ** i))
-                continue
-            raise
-        try:
-            payload = resp.json()
-        except Exception:
-            payload = None
-
-        if resp.status_code == 200:
-            return payload
-
-        err = (payload or {}).get("error", {})
-        code = err.get("code")
-        if resp.status_code >= 500 or code in RETRYABLE_CODES:
-            time.sleep(base_wait * (2 ** i))
-            continue
-
-        sub = err.get("error_subcode"); msg = err.get("message")
-        raise RuntimeError(f"Graph API error {resp.status_code} | code={code} subcode={sub} | {msg}")
-
-    raise RuntimeError("Falha após múltiplas tentativas (Graph API).")
-
-def _daterange_chunks(since_str, until_str, days=30):
-    """Divide intervalo em blocos de até N dias."""
-    s = datetime.fromisoformat(str(since_str)).date()
-    u = datetime.fromisoformat(str(until_str)).date()
-    cur = s
-    while cur <= u:
-        end = min(cur + timedelta(days=days-1), u)
-        yield str(cur), str(end)
-        cur = end + timedelta(days=1)
 
 # =============== Helpers de rede/parse ===============
 def _retry_call(fn, max_retries=5, base_wait=1.2):
@@ -171,7 +131,7 @@ def funnel_fig(labels, values, title=None):
             x=values,
             textinfo="value",
             textposition="inside",
-            texttemplate="<b>%{value}</b>",
+            texttemplate="<b>%{value}</b>",  # deixa o número em negrito
             textfont=dict(size=35),
             opacity=0.95,
             connector={"line": {"dash": "dot", "width": 1}},
@@ -180,12 +140,14 @@ def funnel_fig(labels, values, title=None):
     fig.update_layout(
         title=title or "",
         margin=dict(l=10, r=10, t=48, b=10),
-        height=540,
+        height=540,                         # <<< AUMENTE AQUI (ex.: 600–720)
         template="plotly_white",
-        separators=",.",
+        separators=",.",                    # pt-BR
         uniformtext=dict(minsize=12, mode="show")
     )
     return fig
+
+
 
 def enforce_monotonic(values):
     """Garante formato de funil: cada etapa <= etapa anterior (só para o desenho)."""
@@ -259,30 +221,37 @@ def fetch_insights_daily(act_id: str, token: str, api_version: str,
         "time_increment": 1,
         "fields": ",".join(fields),
         "limit": 500,
+    # >>> Fixos para paridade com o Ads Manager
         "action_report_time": "conversion",
-        "action_attribution_windows": ",".join(ATTR_KEYS),
+        "action_attribution_windows": ",".join(ATTR_KEYS),  # "7d_click,1d_view"
     }
 
     rows, next_url, next_params = [], base_url, params.copy()
     while next_url:
-        payload = _get_with_retries(next_url, next_params, timeout=150)
-        if not isinstance(payload, dict):
+        resp = _retry_call(lambda: requests.get(next_url, params=next_params, timeout=90))
+        try:
+            payload = resp.json()
+        except Exception:
             raise RuntimeError("Resposta inválida da Graph API.")
 
-        err = (payload or {}).get("error")
-        if err and err.get("code") == 100 and try_extra_fields:
-            return fetch_insights_daily(
-                act_id, token, api_version, since_str, until_str, level, try_extra_fields=False
-            )
+        if resp.status_code != 200:
+            err = (payload or {}).get("error", {})
+            code, sub, msg = err.get("code"), err.get("error_subcode"), err.get("message")
+            if code == 100 and try_extra_fields:
+                # refaz sem extras
+                return fetch_insights_daily(act_id, token, api_version, since_str, until_str, level, try_extra_fields=False)
+            raise RuntimeError(f"Graph API error {resp.status_code} | code={code} subcode={sub} | {msg}")
 
         for rec in payload.get("data", []):
             actions = rec.get("actions") or []
             action_values = rec.get("action_values") or []
 
+            # Cliques em link (preferir field; fallback action com janela)
             link_clicks = rec.get("link_clicks", None)
             if link_clicks is None:
                 link_clicks = _sum_actions_exact(actions, ["link_click"], allowed_keys=ATTR_KEYS)
 
+            # LPV (preferir field; fallback landing_page_view → view_content → contains "landing_page")
             lpv = rec.get("landing_page_views", None)
             if lpv is None:
                 lpv = _sum_actions_exact(actions, ["landing_page_view"], allowed_keys=ATTR_KEYS)
@@ -290,9 +259,11 @@ def fetch_insights_daily(act_id: str, token: str, api_version: str,
                     lpv = (_sum_actions_exact(actions, ["view_content"], allowed_keys=ATTR_KEYS)
                            or _sum_actions_contains(actions, ["landing_page"], allowed_keys=ATTR_KEYS))
 
+            # Iniciar checkout / add payment info com janela definida
             ic  = _sum_actions_exact(actions, ["initiate_checkout"], allowed_keys=ATTR_KEYS)
             api = _sum_actions_exact(actions, ["add_payment_info"], allowed_keys=ATTR_KEYS)
 
+            # Purchase (qtd) e Revenue (valor) respeitando janela
             purchases_cnt = _pick_purchase_totals(actions, allowed_keys=ATTR_KEYS)
             revenue_val   = _pick_purchase_totals(action_values, allowed_keys=ATTR_KEYS)
 
@@ -301,9 +272,13 @@ def fetch_insights_daily(act_id: str, token: str, api_version: str,
                 "currency":       rec.get("account_currency", "BRL"),
                 "campaign_id":    rec.get("campaign_id", ""),
                 "campaign_name":  rec.get("campaign_name", ""),
+
+                # métricas básicas
                 "spend":          _to_float(rec.get("spend")),
                 "impressions":    _to_float(rec.get("impressions")),
                 "clicks":         _to_float(rec.get("clicks")),
+
+                # funil
                 "link_clicks":    _to_float(link_clicks),
                 "lpv":            _to_float(lpv),
                 "init_checkout":  _to_float(ic),
@@ -311,6 +286,7 @@ def fetch_insights_daily(act_id: str, token: str, api_version: str,
                 "purchases":      _to_float(purchases_cnt),
                 "revenue":        _to_float(revenue_val),
             })
+
 
         after = ((payload.get("paging") or {}).get("cursors") or {}).get("after")
         if after:
@@ -323,11 +299,13 @@ def fetch_insights_daily(act_id: str, token: str, api_version: str,
     if df.empty:
         return df
 
+    # >>> mantenha estes 4 passos DENTRO da função diária
     num_cols = ["spend", "impressions", "clicks", "link_clicks",
                 "lpv", "init_checkout", "add_payment", "purchases", "revenue"]
     for c in num_cols:
         df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0.0)
 
+    # Métricas derivadas (do período/dia; taxas serão calculadas em agregações)
     df["roas"] = np.where(df["spend"] > 0, df["revenue"] / df["spend"], np.nan)
     df = df.sort_values("date")
     return df
@@ -352,17 +330,26 @@ def fetch_insights_hourly(act_id: str, token: str, api_version: str,
             "time_increment": 1,
             "fields": ",".join(fields),
             "limit": 500,
-            "action_report_time": action_rt,  # conversion preferencial; impression de fallback
+            "action_report_time": action_rt,            # conversion (primeira tentativa) ou impression (fallback)
             "breakdowns": HOUR_BREAKDOWN,
         }
-        if action_rt == "conversion":
-            params["action_attribution_windows"] = ",".join(ATTR_KEYS)
 
+        if action_rt == "conversion":
+           params["action_attribution_windows"] = ",".join(ATTR_KEYS)
+        
         rows, next_url, next_params = [], base_url, params.copy()
         while next_url:
-            payload = _get_with_retries(next_url, next_params, timeout=150)
-            if not isinstance(payload, dict):
+            resp = _retry_call(lambda: requests.get(next_url, params=next_params, timeout=90))
+            try:
+                payload = resp.json()
+            except Exception:
                 raise RuntimeError("Resposta inválida da Graph API (hourly).")
+
+            if resp.status_code != 200:
+                # Propaga o erro para o chamador decidir fallback
+                err = (payload or {}).get("error", {})
+                code, sub, msg = err.get("code"), err.get("error_subcode"), err.get("message")
+                raise RuntimeError(f"Graph API error hourly | code={code} subcode={sub} | {msg}")
 
             for rec in payload.get("data", []):
                 actions = rec.get("actions") or []
@@ -401,6 +388,7 @@ def fetch_insights_hourly(act_id: str, token: str, api_version: str,
                     "revenue":       _to_float(rev),
                 })
 
+            # paginação: preferir paging.next; senão usar cursor.after
             paging = payload.get("paging") or {}
             next_link = paging.get("next")
             if next_link:
@@ -428,6 +416,7 @@ def fetch_insights_hourly(act_id: str, token: str, api_version: str,
         if not df.empty:
             return df
     except Exception as e1:
+        # mostra aviso com o erro real
         st.warning(f"Hour breakdown (conversion) falhou: {e1}")
 
     # fallback: impression
@@ -437,27 +426,6 @@ def fetch_insights_hourly(act_id: str, token: str, api_version: str,
     except Exception as e2:
         st.error(f"Hour breakdown (impression) também falhou: {e2}")
         return pd.DataFrame()
-
-# --- chunked wrappers (com cache opcional)
-@st.cache_data(ttl=600, show_spinner=True)
-def fetch_insights_daily_chunked(act_id, token, api_version, since_str, until_str, level="campaign", chunk_days=30):
-    parts = []
-    for s_part, u_part in _daterange_chunks(since_str, until_str, days=chunk_days):
-        df_part = fetch_insights_daily(act_id, token, api_version, s_part, u_part, level)
-        if not df_part.empty:
-            parts.append(df_part)
-        time.sleep(0.6)
-    return pd.concat(parts, ignore_index=True) if parts else pd.DataFrame()
-
-@st.cache_data(ttl=600, show_spinner=True)
-def fetch_insights_hourly_chunked(act_id, token, api_version, since_str, until_str, level="campaign", chunk_days=21):
-    parts = []
-    for s_part, u_part in _daterange_chunks(since_str, until_str, days=chunk_days):
-        df_part = fetch_insights_hourly(act_id, token, api_version, s_part, u_part, level)
-        if not df_part.empty:
-            parts.append(df_part)
-        time.sleep(0.6)
-    return pd.concat(parts, ignore_index=True) if parts else pd.DataFrame()
 
 # =============== Sidebar (filtros) ===============
 st.sidebar.header("Configuração")
@@ -470,7 +438,7 @@ today = datetime.now(APP_TZ).date()
 preset = st.sidebar.radio(
     "Período rápido",
     ["Hoje", "Ontem", "Últimos 7 dias", "Últimos 14 dias", "Últimos 30 dias", "Personalizado"],
-    index=2,
+    index=2,  # "Últimos 7 dias"
 )
 
 def _range_from_preset(p):
@@ -495,6 +463,7 @@ if preset == "Personalizado":
     since = st.sidebar.date_input("Desde", value=_since_auto, key="since_custom")
     until = st.sidebar.date_input("Até",   value=_until_auto, key="until_custom")
 else:
+    # Mostra as datas calculadas, bloqueadas (só leitura)
     since = st.sidebar.date_input("Desde", value=_since_auto, disabled=True, key="since_auto")
     until = st.sidebar.date_input("Até",   value=_until_auto, disabled=True, key="until_auto")
 
@@ -510,41 +479,24 @@ if not ready:
 
 # ===================== NOVO LAYOUT COM ABAS =====================
 with st.spinner("Buscando dados da Meta…"):
-    total_days = (until - since).days + 1
-    use_chunk = total_days > 35
+    df_daily = fetch_insights_daily(
+        act_id=act_id, token=token, api_version=api_version,
+        since_str=str(since), until_str=str(until), level=level
+    )
+    df_hourly = fetch_insights_hourly(
+        act_id=act_id, token=token, api_version=api_version,
+        since_str=str(since), until_str=str(until), level=level
+    )
 
-    try:
-        if use_chunk:
-            df_daily = fetch_insights_daily_chunked(
-                act_id=act_id, token=token, api_version=api_version,
-                since_str=str(since), until_str=str(until), level=level, chunk_days=30
-            )
-            df_hourly = fetch_insights_hourly_chunked(
-                act_id=act_id, token=token, api_version=api_version,
-                since_str=str(since), until_str=str(until), level=level, chunk_days=21
-            )
-        else:
-            df_daily = fetch_insights_daily(
-                act_id=act_id, token=token, api_version=api_version,
-                since_str=str(since), until_str=str(until), level=level
-            )
-            df_hourly = fetch_insights_hourly(
-                act_id=act_id, token=token, api_version=api_version,
-                since_str=str(since), until_str=str(until), level=level
-            )
-    except Exception as e:
-        st.error("Falha ao buscar dados na Meta Graph API.")
-        st.code(str(e))
-        st.stop()
-
-if (df_daily is None or df_daily.empty) and (df_hourly is None or df_hourly.empty):
-    st.warning("Sem dados para o período. Verifique permissões, conta e eventos.")
+if df_daily.empty and (df_hourly is None or df_hourly.empty):
+    st.warning("Sem dados para o período. Verifique permissões, conta e se há eventos de Purchase (value/currency).")
     st.stop()
 
 tab_daily, tab_daypart = st.tabs(["📅 Visão diária", "⏱️ Horários (principal)"])
 
-# -------------------- ABA 1: VISÃO DIÁRIA --------------------
+# -------------------- ABA 1: VISÃO DIÁRIA (seu conteúdo atual) --------------------
 with tab_daily:
+    # === Moeda detectada e override opcional ===
     currency_detected = (df_daily["currency"].dropna().iloc[0]
                          if "currency" in df_daily.columns and not df_daily["currency"].dropna().empty else "BRL")
     col_curA, col_curB = st.columns([1, 2])
@@ -555,9 +507,11 @@ with tab_daily:
 
     with col_curB:
         if use_brl_display and currency_detected != "BRL":
-            st.caption("⚠️ Exibindo com símbolo **R$** apenas para **formatação visual**. Os valores permanecem na moeda da conta.")
+            st.caption("⚠️ Exibindo com símbolo **R$** apenas para **formatação visual**. "
+                       "Os valores permanecem na moeda da conta.")
 
     st.caption(f"Moeda da conta detectada: **{currency_detected}** — Exibindo como: **{currency_label}**")
+
 
     # ========= KPIs do período =========
     tot_spend = float(df_daily["spend"].sum())
@@ -582,18 +536,20 @@ with tab_daily:
         st.markdown('<div class="kpi-card"><div class="small-muted">ROAS</div>'
                     f'<div class="big-number">{roas_txt}</div></div>',
                     unsafe_allow_html=True)
-
+                    
     st.divider()
 
     # ========= Série diária =========
     st.subheader("Série diária — Investimento e Conversão")
+
     daily = df_daily.groupby("date", as_index=False)[["spend", "revenue", "purchases"]].sum()
     daily_pt = daily.rename(columns={"spend": "Gasto", "revenue": "Faturamento"})
     st.line_chart(daily_pt.set_index("date")[["Faturamento", "Gasto"]])
     st.caption("Linhas diárias de Receita e Gasto. Vendas na tabela abaixo.")
 
-    # ========= FUNIL (Período) =========
+    # ========= FUNIL (Período) — FUNIL VISUAL =========
     st.subheader("Funil do período (Total) — Cliques → LPV → Checkout → Add Pagamento → Compra")
+
     f_clicks = float(df_daily["link_clicks"].sum())
     f_lpv    = float(df_daily["lpv"].sum())
     f_ic     = float(df_daily["init_checkout"].sum())
@@ -639,7 +595,7 @@ with tab_daily:
     height = base_h + row_h * len(extras_selected)
     st.dataframe(sr, use_container_width=True, height=height)
 
-    # ========= COMPARATIVOS (Período A vs B) =========
+    # ========= COMPARATIVOS (Período A vs Período B) =========
     with st.expander("Comparativos — Período A vs Período B (opcional)", expanded=False):
         st.subheader("Comparativos — descubra o que mudou e por quê")
 
@@ -701,7 +657,7 @@ with tab_daily:
                     "Vendas":       B["purchases"] - A["purchases"],
                     "ROAS":         (roasB - roasA) if pd.notnull(roasA) and pd.notnull(roasB) else np.nan,
                     "CPC":          (cpcB - cpcA)   if pd.notnull(cpcA) and pd.notnull(cpcB) else np.nan,
-                    "CPA":          (cpaB - cpaA)   if pd.notnull(cpaA) and pd.notnull(cpb) else np.nan if 'cpb' in locals() else np.nan,
+                    "CPA":          (cpaB - cpaA)   if pd.notnull(cpaA) and pd.notnull(cpaB) else np.nan,
                 }
 
                 kpi_rows = [
@@ -883,8 +839,10 @@ with tab_daily:
         for name in extras_selected:
             camp_view[name] = extras_cols[name]
 
+        # Ordena ANTES de formatar moeda
         camp_view = camp_view.sort_values("spend", ascending=False)
 
+        # Formatação
         for c in ["spend", "revenue"]:
             camp_view[c] = camp_view[c].apply(_fmt_money_br)
 
@@ -931,9 +889,10 @@ with tab_daily:
 # ========= ANÁLISE POR PRODUTO =========
 st.markdown("---")
 with st.expander("🔎 Análise por produto (opcional)", expanded=False):
+    # Lista de produtos (adicione/edite conforme for lançando mais)
     produtos = ["Flexlive", "KneePro", "NasalFlex", "Meniscus"]
-    # incluir opção "(Todos)"
-    produto_sel = st.selectbox("Selecione um produto", ["(Todos)"] + produtos)
+    
+    produto_sel = st.selectbox("Selecione um produto", produtos)
 
     if produto_sel != "(Todos)":
         # filtra campanhas cujo nome contenha o nome do produto
@@ -1008,6 +967,7 @@ with tab_daypart:
         d = d.dropna(subset=["hour"])
         d["hour"] = d["hour"].astype(int).clip(0, 23)
         d["date_only"] = d["date"].dt.date
+
 
         # ============== 1) HEATMAP HORA × DIA (TOPO) ==============
         st.subheader("📆 Heatmap — Hora × Dia")
@@ -1087,6 +1047,7 @@ with tab_daypart:
 
         st.subheader("🆚 Comparar dois períodos (A vs B) — hora a hora")
 
+        # Defaults: B = período atual (since/until), A = período anterior com mesma duração
         base_len = (until - since).days + 1
         default_sinceA = (since - timedelta(days=base_len))
         default_untilA = (since - timedelta(days=1))
@@ -1101,9 +1062,11 @@ with tab_daypart:
         with colB2:
             period_untilB = st.date_input("Até (B)",   value=until, key="cmp_untilB")
 
+        # Validação rápida
         if period_sinceA > period_untilA or period_sinceB > period_untilB:
             st.warning("Confira as datas: em cada período, 'Desde' não pode ser maior que 'Até'.")
         else:
+            # Buscar dados por hora cobrindo A ∪ B
             union_since = min(period_sinceA, period_sinceB)
             union_until = max(period_untilA, period_untilB)
 
@@ -1116,10 +1079,12 @@ with tab_daypart:
             if df_hourly_union is None or df_hourly_union.empty:
                 st.info("Sem dados no intervalo combinado dos períodos selecionados.")
             else:
+                # Base preparada
                 d_cmp = df_hourly_union.dropna(subset=["hour"]).copy()
                 d_cmp["hour"] = d_cmp["hour"].astype(int).clip(0, 23)
                 d_cmp["date_only"] = d_cmp["date"].dt.date
 
+                # Filtra pelos períodos A e B
                 A_mask = (d_cmp["date_only"] >= period_sinceA) & (d_cmp["date_only"] <= period_untilA)
                 B_mask = (d_cmp["date_only"] >= period_sinceB) & (d_cmp["date_only"] <= period_untilB)
                 datA, datB = d_cmp[A_mask], d_cmp[B_mask]
@@ -1128,11 +1093,15 @@ with tab_daypart:
                     st.info("Sem dados em um dos períodos selecionados.")
                 else:
                     agg_cols = ["spend","revenue","purchases","link_clicks","lpv","init_checkout","add_payment"]
+
+                    # Soma por hora
                     gA = datA.groupby("hour", as_index=False)[agg_cols].sum()
                     gB = datB.groupby("hour", as_index=False)[agg_cols].sum()
 
+                    # Merge A vs B
                     merged = pd.merge(gA, gB, on="hour", how="outer", suffixes=(" (A)", " (B)")).fillna(0.0)
 
+                    # Filtro de gasto mínimo (descarta só se AMBOS forem baixos)
                     if min_spend > 0:
                         keep = (merged["spend (A)"] >= min_spend) | (merged["spend (B)"] >= min_spend)
                         merged = merged[keep]
@@ -1140,6 +1109,10 @@ with tab_daypart:
                     if merged.empty:
                         st.info("Após o filtro de gasto mínimo, não sobraram horas para comparar.")
                     else:
+                        # ---------- GRÁFICOS SEPARADOS: Período A e Período B ----------
+
+                        # --- PADRONIZAÇÃO PARA COMPARAR A vs B ---
+                        # 0..23 sempre presentes (preenche horas faltantes com 0)
                         hours_full = list(range(24))
                         merged = (
                             merged.set_index("hour")
@@ -1148,22 +1121,26 @@ with tab_daypart:
                                   .reset_index()
                         )
 
+                        # Eixo X (numérico 0..23)
                         x = merged["hour"].astype(int)
 
+                        # Teto comum para as BARRAS (Gasto + Receita)
                         barsA_max = (merged["spend (A)"] + merged["revenue (A)"]).max()
                         barsB_max = (merged["spend (B)"] + merged["revenue (B)"]).max()
                         bars_max = max(barsA_max, barsB_max)
                         if not np.isfinite(bars_max) or bars_max <= 0:
                             bars_max = 1.0
-                        bars_max *= 1.05
+                        bars_max *= 1.05  # folga de 5%
 
+                        # Teto comum para a LINHA (Compras)
                         lineA_max = merged["purchases (A)"].max()
                         lineB_max = merged["purchases (B)"].max()
                         line_max = max(lineA_max, lineB_max)
                         if not np.isfinite(line_max) or line_max <= 0:
                             line_max = 1.0
-                        line_max *= 1.05
+                        line_max *= 1.05  # folga de 5%
 
+                        # ===== Gráfico do Período A =====
                         fig_A = make_subplots(specs=[[{"secondary_y": True}]])
                         fig_A.add_trace(
                             go.Bar(
@@ -1201,13 +1178,20 @@ with tab_daypart:
                             template="plotly_white",
                             height=460, margin=dict(l=10, r=10, t=48, b=10),
                             legend_title_text="",
-                            separators=",."
+                            separators=",."  
                         )
-                        fig_A.update_xaxes(title_text="Hora do dia", tickmode="linear", tick0=0, dtick=1, range=[-0.5, 23.5])
+                        fig_A.update_xaxes(
+                            title_text="Hora do dia",
+                            tickmode="linear", tick0=0, dtick=1,
+                            range=[-0.5, 23.5]
+                        )
                         fig_A.update_yaxes(title_text="Valores (R$)", secondary_y=False, range=[0, bars_max])
                         fig_A.update_yaxes(title_text="Compras (unid.)", secondary_y=True, range=[0, line_max])
+
                         st.plotly_chart(fig_A, use_container_width=True)
 
+
+                        # ===== Gráfico do Período B =====
                         fig_B = make_subplots(specs=[[{"secondary_y": True}]])
                         fig_B.add_trace(
                             go.Bar(
@@ -1245,19 +1229,31 @@ with tab_daypart:
                             template="plotly_white",
                             height=460, margin=dict(l=10, r=10, t=48, b=10),
                             legend_title_text="",
-                            separators=",."
+                            separators=",."  
                         )
-                        fig_B.update_xaxes(title_text="Hora do dia", tickmode="linear", tick0=0, dtick=1, range=[-0.5, 23.5])
+                        fig_B.update_xaxes(
+                            title_text="Hora do dia",
+                            tickmode="linear", tick0=0, dtick=1,
+                            range=[-0.5, 23.5]
+                        )
                         fig_B.update_yaxes(title_text="Valores (R$)", secondary_y=False, range=[0, bars_max])
                         fig_B.update_yaxes(title_text="Compras (unid.)", secondary_y=True, range=[0, line_max])
+
+
                         st.plotly_chart(fig_B, use_container_width=True)
 
-                        # ===== INSIGHTS — Período A =====
+
+                        # ===== INSIGHTS — Período A (abaixo dos gráficos) =====
                         st.markdown("### 🔎 Insights — Período A")
+
+                        # Base A
                         a = merged.sort_values("hour").copy()
-                        a_spend, a_rev, a_purch = a["spend (A)"], a["revenue (A)"], a["purchases (A)"]
+                        a_spend     = a["spend (A)"]
+                        a_rev       = a["revenue (A)"]
+                        a_purch     = a["purchases (A)"]
                         a_roas_ser  = np.where(a_spend > 0, a_rev / a_spend, np.nan)
 
+                        # KPIs gerais
                         a_tot_spend = float(a_spend.sum())
                         a_tot_rev   = float(a_rev.sum())
                         a_tot_purch = int(round(float(a_purch.sum())))
@@ -1269,9 +1265,11 @@ with tab_daypart:
                         c3.metric("Vendas (A)", f"{a_tot_purch:,}".replace(",", "."))
                         c4.metric("ROAS (A)", _fmt_ratio_br(a_roas) if pd.notnull(a_roas) else "—")
 
+                        # Melhores picos por hora
                         h_best_purch = int(a.loc[a["purchases (A)"].idxmax(), "hour"]) if len(a_purch) and a_purch.max() > 0 else None
                         best_purch_val = int(a_purch.max()) if len(a_purch) else 0
 
+                        # Melhor hora por ROAS (aplica gasto mínimo definido no slider)
                         mask_roasA = (a_spend >= float(min_spend)) & (a_spend > 0)
                         if mask_roasA.any():
                             roasA_vals = a_roas_ser.copy()
@@ -1281,12 +1279,14 @@ with tab_daypart:
                         else:
                             h_best_roasA, best_roasA_val = None, np.nan
 
+                        # Janela forte 3h (A)
                         rollA = a_purch.rolling(3, min_periods=1).sum()
                         iA = int(rollA.idxmax()) if len(rollA) else 0
                         def _bA(ix): return int(a.loc[min(max(ix, 0), len(a)-1), "hour"])
                         winA_start, winA_mid, winA_end = _bA(iA-1), _bA(iA), _bA(iA+1)
                         winA_sum = int(rollA.max()) if len(rollA) else 0
 
+                        # Horas com gasto e 0 compras (A)
                         wastedA = a[(a_spend > 0) & (a_purch == 0)]
                         wastedA_hours = ", ".join(f"{int(h)}h" for h in wastedA["hour"].tolist()) if not wastedA.empty else "—"
 
@@ -1312,7 +1312,7 @@ with tab_daypart:
                             if mask_roasA.any():
                                 topA_r = a[mask_roasA][["hour","spend (A)","revenue (A)"]].copy()
                                 topA_r["ROAS"] = a_roas_ser[mask_roasA]
-                                topA_r = topA_r.sort_values("ROAS", descending=False).head(5) if False else topA_r.sort_values("ROAS", ascending=False).head(5)
+                                topA_r = topA_r.sort_values("ROAS", ascending=False).head(5)
                                 topA_r.rename(columns={"hour":"Hora","spend (A)":"Valor usado","revenue (A)":"Valor de conversão"}, inplace=True)
                                 topA_r["Valor usado"] = topA_r["Valor usado"].apply(_fmt_money_br)
                                 topA_r["Valor de conversão"] = topA_r["Valor de conversão"].apply(_fmt_money_br)
@@ -1327,8 +1327,11 @@ with tab_daypart:
 
                         # ===== INSIGHTS — Período B =====
                         st.markdown("### 🔎 Insights — Período B")
+
                         b = merged.sort_values("hour").copy()
-                        b_spend, b_rev, b_purch = b["spend (B)"], b["revenue (B)"], b["purchases (B)"]
+                        b_spend     = b["spend (B)"]
+                        b_rev       = b["revenue (B)"]
+                        b_purch     = b["purchases (B)"]
                         b_roas_ser  = np.where(b_spend > 0, b_rev / b_spend, np.nan)
 
                         b_tot_spend = float(b_spend.sum())
