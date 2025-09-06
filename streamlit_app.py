@@ -436,13 +436,18 @@ today = datetime.now(APP_TZ).date()
 
 preset = st.sidebar.radio(
     "Período rápido",
-    ["Hoje", "Ontem", "Últimos 7 dias", "Últimos 14 dias", "Últimos 30 dias", "Personalizado"],
-    index=2,  # "Últimos 7 dias"
+    [
+        "Hoje", "Ontem",
+        "Últimos 7 dias", "Últimos 14 dias", "Últimos 30 dias", "Últimos 90 dias",
+        "Esta semana", "Este mês", "Máximo",
+        "Personalizado"
+    ],
+    index=2,
 )
 
 def _range_from_preset(p):
     local_today = datetime.now(APP_TZ).date()
-    base_end = local_today - timedelta(days=1)  # períodos “terminando ontem”, igual ao Ads Manager
+    base_end = local_today - timedelta(days=1)  # períodos padrão terminam ontem
 
     if p == "Hoje":
         return local_today, local_today
@@ -454,7 +459,22 @@ def _range_from_preset(p):
         return base_end - timedelta(days=13), base_end
     if p == "Últimos 30 dias":
         return base_end - timedelta(days=29), base_end
+    if p == "Últimos 90 dias":
+        return base_end - timedelta(days=89), base_end
+    if p == "Esta semana":
+        # semana corrente (seg a hoje)
+        start_week = local_today - timedelta(days=local_today.weekday())
+        return start_week, local_today
+    if p == "Este mês":
+        start_month = local_today.replace(day=1)
+        return start_month, local_today
+    if p == "Máximo":
+        # arbitrário: desde 2017-01-01 até ontem
+        return date(2017, 1, 1), base_end
+
+    # fallback
     return base_end - timedelta(days=6), base_end
+
 
 _since_auto, _until_auto = _range_from_preset(preset)
 
