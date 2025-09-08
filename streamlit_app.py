@@ -957,9 +957,7 @@ with tab_daily:
 with tab_daypart:
     st.caption("Explore desempenho por hora: Heatmap no topo, depois comparação de dias e apanhado geral.")
 
-    # 1) Granularidade do hourly (conta = mais rápido)
-    gran = st.selectbox("Granularidade do hourly", ["Conta (rápido)", "Campanha (lento)"], index=0)
-    level_hourly = "account" if gran.startswith("Conta") else "campaign"
+    level_hourly = "campaign"
 
     # 2) Cache por chave (granularidade + período)
     cache = st.session_state.setdefault("hourly_cache", {})
