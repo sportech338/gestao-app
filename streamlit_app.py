@@ -517,7 +517,7 @@ st.sidebar.header("Configuração")
 act_id = st.sidebar.text_input("Ad Account ID", placeholder="ex.: act_1234567890")
 token = st.sidebar.text_input("Access Token", type="password")
 api_version = st.sidebar.text_input("API Version", value="v23.0")
-level = st.sidebar.selectbox("Nível (recomendado: campaign)", ["campaign", "account"], index=0)
+level = st.sidebar.selectbox("Nível (recomendado: campaign)", ["campaign", "account", "adset", "ad"],  index=0)
 
 preset = st.sidebar.radio(
     "Período rápido",
@@ -1507,9 +1507,8 @@ with tab_detail:
 
     # 🔧 Proteção para Posicionamento em nível errado
     if dimensao == "Posicionamento" and level not in ["adset", "ad"]:
-        st.warning("⚠️ O breakdown por **Posicionamento** só está disponível nos níveis *Ad Set* ou *Ad*. "
-                   "Troque o nível na barra lateral para visualizar.")
-        st.stop()
+        st.info("Mudando nível automaticamente para **Ad Set** para exibir Posicionamento.")
+        level = "adset"
 
     if dimensao in dim_to_breakdowns:
         bks = dim_to_breakdowns[dimensao]
