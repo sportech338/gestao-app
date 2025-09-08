@@ -325,7 +325,7 @@ def fetch_insights_hourly(act_id: str, token: str, api_version: str,
                           since_str: str, until_str: str,
                           level: str = "campaign") -> pd.DataFrame:
     """
-    Coleta por hora em janelas menores (default 14 dias) para evitar code=1
+    Coleta por hora em janelas menores (default 30 dias) para evitar code=1
     e concatena o resultado. Tenta 'conversion' por chunk; se falhar, tenta 'impression'.
     """
     act_id = _ensure_act_prefix(act_id)
@@ -409,7 +409,7 @@ def fetch_insights_hourly(act_id: str, token: str, api_version: str,
         df = pd.DataFrame(rows)
         return df
 
-    # Agrega chunks menores (use 14 dias por segurança no hourly)
+    # Agrega chunks menores (use 30 dias por segurança no hourly)
     dfs = []
     for s_chunk, u_chunk in _chunks_by_days(since_str, until_str, max_days=30):
         try:
@@ -1035,30 +1035,39 @@ with tab_daypart:
                 since_str=str(since), until_str=str(until), level=level_hourly
             )
 
-    # Se não veio nada, encerra a aba aqui
-    if df_hourly is None or df_hourly.empty:
-        st.info("A conta/período não retornou breakdown por hora. Use a visão diária.")
-        st.stop()
-
-    # ---------------- Filtros + base ----------------
-    min_spend = st.slider(
-        "Gasto mínimo para considerar o horário (R$)",
-        0.0, 1000.0, 0.0, 10.0
-    )
-
-    # Filtro por produto (opcional)
+    # --------- Filtro por produto (opcional) ---------
     produto_sel_hr = st.selectbox(
         "Filtrar por produto (opcional)",
         ["(Todos)"] + PRODUTOS,
         key="daypart_produto"
     )
 
+    # ⚠️ Se o usuário escolheu um produto, garantimos nível 'campaign' (senão o filtro por nome não funciona)
+    if produto_sel_hr != "(Todos)" and level_hourly != "campaign":
+        st.info("Para filtrar por produto, recarregando dados por hora no nível de **campanha**…")
+        with st.spinner("Recarregando breakdown por hora (campanha)…"):
+            df_hourly = fetch_insights_hourly(
+                act_id=act_id, token=token, api_version=api_version,
+                since_str=str(since), until_str=str(until), level="campaign"
+            )
+        level_hourly = "campaign"
+
+    # Guard: checa vazio antes de usar
+    if df_hourly is None or df_hourly.empty:
+        st.info("A conta/período não retornou breakdown por hora. Use a visão diária.")
+        st.stop()
+
+    # Agora aplicamos o filtro por produto no campaign_name (como no modelo antigo)
     d = df_hourly.copy()
     if produto_sel_hr != "(Todos)":
-        mask_hr = d["campaign_name"].str.contains(
-            produto_sel_hr, case=False, na=False
-        )
+        mask_hr = d["campaign_name"].str.contains(produto_sel_hr, case=False, na=False)
         d = d[mask_hr].copy()
+
+    # Slider de gasto mínimo
+    min_spend = st.slider(
+        "Gasto mínimo para considerar o horário (R$)",
+        0.0, 1000.0, 0.0, 10.0
+    )
 
     d = d.dropna(subset=["hour"])
     d["hour"] = d["hour"].astype(int).clip(0, 23)
@@ -1419,6 +1428,7 @@ with tab_daypart:
                         st.dataframe(topB_r, use_container_width=True, height=220)
 
                     st.info("Sugestões (B): direcione orçamento para as horas com melhor ROAS e pause/teste criativos nas horas com gasto e 0 compras.")
+
 
 # -------------------- ABA 3: 📊 DETALHAMENTO --------------------
 with tab_detail:
