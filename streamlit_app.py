@@ -1436,7 +1436,6 @@ with tab_detail:
     colf1, colf2 = st.columns([2,1])
     with colf1:
         produto_sel_det = st.selectbox("Filtrar por produto (opcional)", ["(Todos)"] + PRODUTOS, key="det_produto")
-
     with colf2:
         min_spend_det = st.slider("Gasto mínimo para considerar (R$)", 0.0, 2000.0, 0.0, 10.0, key="det_min_spend")
 
@@ -1446,34 +1445,38 @@ with tab_detail:
         index=0, horizontal=True
     )
 
-    # =================== Helpers locais para a aba Detalhamento ===================
+    # ========= Helpers locais =========
     def _apply_prod_filter(df_base: pd.DataFrame) -> pd.DataFrame:
         if produto_sel_det and produto_sel_det != "(Todos)":
             mask = df_base["campaign_name"].str.contains(produto_sel_det, case=False, na=False)
             return df_base[mask].copy()
         return df_base
 
+    def _ensure_cols_exist(df: pd.DataFrame) -> pd.DataFrame:
+        for col in ["spend","revenue","purchases","link_clicks","lpv","init_checkout","add_payment"]:
+            if col not in df.columns:
+                df[col] = 0.0
+        return df
+
     def _agg_and_format(df: pd.DataFrame, group_cols: list[str]):
-        # Sempre retorna (g, gf)
         if df is None or df.empty:
             return pd.DataFrame(), pd.DataFrame()
         df2 = _apply_prod_filter(df)
         if df2.empty:
             return pd.DataFrame(), pd.DataFrame()
 
+        df2 = _ensure_cols_exist(df2)
+
         agg_cols = ["spend","revenue","purchases","link_clicks","lpv","init_checkout","add_payment"]
         g = df2.groupby(group_cols, dropna=False, as_index=False)[agg_cols].sum()
         g["ROAS"] = np.where(g["spend"]>0, g["revenue"]/g["spend"], np.nan)
 
-        # filtro por gasto mínimo
         if min_spend_det and float(min_spend_det) > 0:
             g = g[g["spend"] >= float(min_spend_det)]
 
-        # ordenação padrão: Compras desc, ROAS desc
         if not g.empty:
             g = g.sort_values(["purchases","ROAS"], ascending=[False, False])
 
-        # versão formatada para exibição
         gf = g.copy()
         if not gf.empty:
             gf["Valor usado"] = gf["spend"].apply(_fmt_money_br)
@@ -1481,7 +1484,6 @@ with tab_detail:
             gf["ROAS"] = gf["ROAS"].map(_fmt_ratio_br)
             gf = gf.drop(columns=["spend","revenue"])
         return g, gf
-
 
     def _bar_chart(x_labels, y_values, title, x_title, y_title):
         fig = go.Figure(go.Bar(x=x_labels, y=y_values))
@@ -1492,76 +1494,7 @@ with tab_detail:
         )
         st.plotly_chart(fig, use_container_width=True)
 
-    # =================== Populares (TOP 5 em cada dimensão principal) ===================
-    if dimensao == "Populares":
-        st.subheader("TOP 5 — Quem mais compra em cada dimensão")
-
-        # Idade
-        with st.container():
-            st.markdown("**Idade**")
-            df_age = fetch_insights_breakdown(act_id, token, api_version, str(since), str(until), ["age"], level)
-            g, gf = _agg_and_format(df_age, ["age"]) if not df_age.empty else (pd.DataFrame(), pd.DataFrame())
-            if gf.empty:
-                st.info("Sem dados por Idade para o período/filtro.")
-            else:
-                top = gf.head(5).rename(columns={"age":"Idade","purchases":"Compras","link_clicks":"Cliques","lpv":"LPV","init_checkout":"Checkout","add_payment":"Add Pagto"})
-                st.dataframe(top[["Idade","Compras","ROAS","Valor usado","Valor de conversão","Cliques","LPV","Checkout","Add Pagto"]], use_container_width=True, height=230)
-                _bar_chart(top["Idade"], g.head(5)["purchases"], "Compras por Idade (TOP 5)", "Idade", "Compras")
-
-        st.markdown("---")
-
-        # Gênero
-        with st.container():
-            st.markdown("**Gênero**")
-            df_gen = fetch_insights_breakdown(act_id, token, api_version, str(since), str(until), ["gender"], level)
-            g, gf = _agg_and_format(df_gen, ["gender"]) if not df_gen.empty else (pd.DataFrame(), pd.DataFrame())
-            if gf.empty:
-                st.info("Sem dados por Gênero para o período/filtro.")
-            else:
-                top = gf.head(5).rename(columns={"gender":"Gênero","purchases":"Compras","link_clicks":"Cliques","lpv":"LPV","init_checkout":"Checkout","add_payment":"Add Pagto"})
-                st.dataframe(top[["Gênero","Compras","ROAS","Valor usado","Valor de conversão","Cliques","LPV","Checkout","Add Pagto"]], use_container_width=True, height=230)
-                _bar_chart(top["Gênero"], g.head(5)["purchases"], "Compras por Gênero (TOP 5)", "Gênero", "Compras")
-
-        st.markdown("---")
-
-        # País
-        with st.container():
-            st.markdown("**País**")
-            df_cty = fetch_insights_breakdown(act_id, token, api_version, str(since), str(until), ["country"], level)
-            g, gf = _agg_and_format(df_cty, ["country"]) if not df_cty.empty else (pd.DataFrame(), pd.DataFrame())
-            if gf.empty:
-                st.info("Sem dados por País para o período/filtro.")
-            else:
-                top = gf.head(5).rename(columns={"country":"País","purchases":"Compras","link_clicks":"Cliques","lpv":"LPV","init_checkout":"Checkout","add_payment":"Add Pagto"})
-                st.dataframe(top[["País","Compras","ROAS","Valor usado","Valor de conversão","Cliques","LPV","Checkout","Add Pagto"]], use_container_width=True, height=230)
-                _bar_chart(top["País"], g.head(5)["purchases"], "Compras por País (TOP 5)", "País", "Compras")
-
-        st.markdown("---")
-
-        # Plataforma (publisher_platform) e Posicionamento (platform_position)
-        cA, cB = st.columns(2)
-        with cA:
-            st.markdown("**Plataforma**")
-            df_plat = fetch_insights_breakdown(act_id, token, api_version, str(since), str(until), ["publisher_platform"], level)
-            g, gf = _agg_and_format(df_plat, ["publisher_platform"]) if not df_plat.empty else (pd.DataFrame(), pd.DataFrame())
-            if gf.empty:
-                st.info("Sem dados por Plataforma.")
-            else:
-                top = gf.head(5).rename(columns={"publisher_platform":"Plataforma","purchases":"Compras"})
-                st.dataframe(top[["Plataforma","Compras","ROAS","Valor usado","Valor de conversão"]], use_container_width=True, height=230)
-        with cB:
-            st.markdown("**Posicionamento**")
-            df_pos = fetch_insights_breakdown(act_id, token, api_version, str(since), str(until), ["platform_position"], level)
-            g, gf = _agg_and_format(df_pos, ["platform_position"]) if not df_pos.empty else (pd.DataFrame(), pd.DataFrame())
-            if gf.empty:
-                st.info("Sem dados por Posicionamento.")
-            else:
-                top = gf.head(5).rename(columns={"platform_position":"Posicionamento","purchases":"Compras"})
-                st.dataframe(top[["Posicionamento","Compras","ROAS","Valor usado","Valor de conversão"]], use_container_width=True, height=230)
-
-        st.stop()  # encerra a aba no modo "Populares"
-
-    # =================== Dimensões 1D e 2D (Idade, Gênero, Idade+Gênero, País, Plataforma, Posicionamento) ===================
+    # =================== Dimensões ===================
     dim_to_breakdowns = {
         "Idade": ["age"],
         "Gênero": ["gender"],
@@ -1572,6 +1505,12 @@ with tab_detail:
         "Posicionamento": ["platform_position"],
     }
 
+    # 🔧 Proteção para Posicionamento em nível errado
+    if dimensao == "Posicionamento" and level not in ["adset", "ad"]:
+        st.warning("⚠️ O breakdown por **Posicionamento** só está disponível nos níveis *Ad Set* ou *Ad*. "
+                   "Troque o nível na barra lateral para visualizar.")
+        st.stop()
+
     if dimensao in dim_to_breakdowns:
         bks = dim_to_breakdowns[dimensao]
         df_bd = fetch_insights_breakdown(act_id, token, api_version, str(since), str(until), bks, level)
@@ -1580,33 +1519,30 @@ with tab_detail:
             st.info(f"Sem dados para {dimensao} no período/filtro.")
             st.stop()
 
-        # Nomes amigáveis
         rename_map = {
             "age":"Idade", "gender":"Gênero", "region":"Região", "country":"País",
             "publisher_platform":"Plataforma", "platform_position":"Posicionamento"
         }
         group_cols = [rename_map.get(c, c) for c in bks]
 
-        # agrega + formata
         raw, disp = _agg_and_format(df_bd.rename(columns=rename_map), group_cols)
         if disp.empty:
             st.info(f"Sem dados para {dimensao} após aplicar filtros.")
             st.stop()
 
         st.subheader(f"Desempenho por {dimensao}")
-        # tabela
-        base_cols = group_cols + ["Compras","ROAS","Valor usado","Valor de conversão","Cliques","LPV","Checkout","Add Pagto"]
+
+        # 🔧 cols_presentes em vez de lista fixa
+        base_cols = group_cols + ["Compras","ROAS","Valor usado","Valor de conversão",
+                                  "Cliques","LPV","Checkout","Add Pagto"]
         disp = disp.rename(columns={
             "purchases":"Compras","link_clicks":"Cliques","lpv":"LPV",
             "init_checkout":"Checkout","add_payment":"Add Pagto"
         })
-        # garante colunas na ordem
-        for c in base_cols:
-            if c not in disp.columns:  # caso 2D, as outras colunas já existem
-                pass
-        st.dataframe(disp[base_cols], use_container_width=True, height=520)
+        cols_presentes = [c for c in base_cols if c in disp.columns]
 
-        # gráfico: compras por grupo (se 1D) ou heatmap (se 2D)
+        st.dataframe(disp[cols_presentes], use_container_width=True, height=520)
+
         if len(group_cols) == 1:
             xlab = group_cols[0]
             _bar_chart(raw[xlab], raw["purchases"], f"Compras por {xlab}", xlab, "Compras")
@@ -1634,15 +1570,10 @@ with tab_detail:
             st.info("Sem dados diários.")
             st.stop()
 
-        d = _apply_prod_filter(df_daily.copy())
+        d = _ensure_cols_exist(_apply_prod_filter(df_daily.copy()))
         if d.empty:
             st.info("Sem dados após filtro de produto.")
             st.stop()
-
-        # 🔧 Garante que todas as colunas existam
-        for col in ["spend","revenue","purchases","link_clicks","lpv","init_checkout","add_payment"]:
-            if col not in d.columns:
-                d[col] = 0.0
 
         g = d.groupby(d["date"].dt.date, as_index=False)[
             ["spend","revenue","purchases","link_clicks","lpv","init_checkout","add_payment"]
@@ -1665,12 +1596,7 @@ with tab_detail:
                 "Cliques","LPV","Checkout","Add Pagto"]
         cols_presentes = [c for c in cols if c in disp.columns]
 
-        st.dataframe(
-           disp[cols_presentes],
-           use_container_width=True, height=520
-        )
-
-
+        st.dataframe(disp[cols_presentes], use_container_width=True, height=520)
         _bar_chart(g["date"].dt.strftime("%Y-%m-%d"), g["purchases"], "Compras por Dia", "Dia", "Compras")
         st.stop()
 
@@ -1681,16 +1607,11 @@ with tab_detail:
             st.info("Sem breakdown por hora para o período.")
             st.stop()
 
-        d = _apply_prod_filter(df_hourly.copy())
+        d = _ensure_cols_exist(_apply_prod_filter(df_hourly.copy()))
         d = d.dropna(subset=["hour"])
         if d.empty:
             st.info("Sem dados após filtro de produto.")
             st.stop()
-
-        # 🔧 Garante que todas as colunas existam
-        for col in ["spend","revenue","purchases","link_clicks","lpv","init_checkout","add_payment"]:
-            if col not in d.columns:
-                d[col] = 0.0
 
         g = d.groupby("hour", as_index=False)[
             ["spend","revenue","purchases","link_clicks","lpv","init_checkout","add_payment"]
@@ -1713,10 +1634,6 @@ with tab_detail:
                 "Cliques","LPV","Checkout","Add Pagto"]
         cols_presentes = [c for c in cols if c in disp.columns]
 
-        st.dataframe(
-           disp[cols_presentes],
-           use_container_width=True, height=520
-        )
-
+        st.dataframe(disp[cols_presentes], use_container_width=True, height=520)
         _bar_chart(g["hour"].astype(int), g["purchases"], "Compras por Hora", "Hora do dia", "Compras")
         st.stop()
