@@ -1041,9 +1041,25 @@ with tab_daypart:
         st.stop()
 
     # ---------------- Filtros + base ----------------
-    min_spend = st.slider("Gasto mínimo para considerar o horário (R$)", 0.0, 1000.0, 0.0, 10.0)
+    min_spend = st.slider(
+        "Gasto mínimo para considerar o horário (R$)",
+        0.0, 1000.0, 0.0, 10.0
+    )
+
+    # Filtro por produto (opcional)
+    produto_sel_hr = st.selectbox(
+        "Filtrar por produto (opcional)",
+        ["(Todos)"] + PRODUTOS,
+        key="daypart_produto"
+    )
 
     d = df_hourly.copy()
+    if produto_sel_hr != "(Todos)":
+        mask_hr = d["campaign_name"].str.contains(
+            produto_sel_hr, case=False, na=False
+        )
+        d = d[mask_hr].copy()
+
     d = d.dropna(subset=["hour"])
     d["hour"] = d["hour"].astype(int).clip(0, 23)
     d["date_only"] = d["date"].dt.date
