@@ -1502,17 +1502,20 @@ with tab_detail:
         "Região": ["region"],
         "País": ["country"],
         "Plataforma": ["publisher_platform"],
-        "Posicionamento": ["platform_position"],
+        "Posicionamento": ["publisher_platform","platform_position"],
     }
 
     # 🔧 Proteção para Posicionamento em nível errado
-    if dimensao == "Posicionamento" and level not in ["adset", "ad"]:
-        st.info("Mudando nível automaticamente para **Ad Set** para exibir Posicionamento.")
-        level = "adset"
+    level_bd = level  # cria uma cópia do nível só para o breakdown
+    if dimensao == "Posicionamento" and level_bd not in ["adset", "ad"]:
+        st.info("⚠️ O breakdown por **Posicionamento** requer nível Ad Set ou Ad. Usando Ad Set nesta consulta.")
+        level_bd = "adset"
 
     if dimensao in dim_to_breakdowns:
         bks = dim_to_breakdowns[dimensao]
-        df_bd = fetch_insights_breakdown(act_id, token, api_version, str(since), str(until), bks, level)
+        df_bd = fetch_insights_breakdown(
+            act_id, token, api_version, str(since), str(until), bks, level_bd
+        )
 
         if df_bd.empty:
             st.info(f"Sem dados para {dimensao} no período/filtro.")
@@ -1560,79 +1563,4 @@ with tab_detail:
             )
             st.plotly_chart(fig, use_container_width=True)
 
-        st.stop()
-
-    # =================== Dia ===================
-    if dimensao == "Dia":
-        st.subheader("Desempenho por Dia")
-        if df_daily.empty:
-            st.info("Sem dados diários.")
-            st.stop()
-
-        d = _ensure_cols_exist(_apply_prod_filter(df_daily.copy()))
-        if d.empty:
-            st.info("Sem dados após filtro de produto.")
-            st.stop()
-
-        g = d.groupby(d["date"].dt.date, as_index=False)[
-            ["spend","revenue","purchases","link_clicks","lpv","init_checkout","add_payment"]
-        ].sum()
-        g["ROAS"] = np.where(g["spend"]>0, g["revenue"]/g["spend"], np.nan)
-
-        if min_spend_det and float(min_spend_det) > 0:
-            g = g[g["spend"] >= float(min_spend_det)]
-
-        disp = g.rename(columns={
-            "date":"Data","purchases":"Compras","link_clicks":"Cliques","lpv":"LPV",
-            "init_checkout":"Checkout","add_payment":"Add Pagto",
-            "spend":"Valor usado","revenue":"Valor de conversão"
-        })
-        disp["Valor usado"] = disp["Valor usado"].apply(_fmt_money_br)
-        disp["Valor de conversão"] = disp["Valor de conversão"].apply(_fmt_money_br)
-        disp["ROAS"] = disp["ROAS"].map(_fmt_ratio_br)
-
-        cols = ["Data","Compras","ROAS","Valor usado","Valor de conversão",
-                "Cliques","LPV","Checkout","Add Pagto"]
-        cols_presentes = [c for c in cols if c in disp.columns]
-
-        st.dataframe(disp[cols_presentes], use_container_width=True, height=520)
-        _bar_chart(g["date"].dt.strftime("%Y-%m-%d"), g["purchases"], "Compras por Dia", "Dia", "Compras")
-        st.stop()
-
-    # =================== Hora ===================
-    if dimensao == "Hora":
-        st.subheader("Desempenho por Hora")
-        if df_hourly is None or df_hourly.empty:
-            st.info("Sem breakdown por hora para o período.")
-            st.stop()
-
-        d = _ensure_cols_exist(_apply_prod_filter(df_hourly.copy()))
-        d = d.dropna(subset=["hour"])
-        if d.empty:
-            st.info("Sem dados após filtro de produto.")
-            st.stop()
-
-        g = d.groupby("hour", as_index=False)[
-            ["spend","revenue","purchases","link_clicks","lpv","init_checkout","add_payment"]
-        ].sum()
-        g["ROAS"] = np.where(g["spend"]>0, g["revenue"]/g["spend"], np.nan)
-
-        if min_spend_det and float(min_spend_det) > 0:
-            g = g[g["spend"] >= float(min_spend_det)]
-
-        disp = g.rename(columns={
-            "hour":"Hora","purchases":"Compras","link_clicks":"Cliques","lpv":"LPV",
-            "init_checkout":"Checkout","add_payment":"Add Pagto",
-            "spend":"Valor usado","revenue":"Valor de conversão"
-        })
-        disp["Valor usado"] = disp["Valor usado"].apply(_fmt_money_br)
-        disp["Valor de conversão"] = disp["Valor de conversão"].apply(_fmt_money_br)
-        disp["ROAS"] = disp["ROAS"].map(_fmt_ratio_br)
-
-        cols = ["Hora","Compras","ROAS","Valor usado","Valor de conversão",
-                "Cliques","LPV","Checkout","Add Pagto"]
-        cols_presentes = [c for c in cols if c in disp.columns]
-
-        st.dataframe(disp[cols_presentes], use_container_width=True, height=520)
-        _bar_chart(g["hour"].astype(int), g["purchases"], "Compras por Hora", "Hora do dia", "Compras")
         st.stop()
