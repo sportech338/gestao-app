@@ -1,5 +1,3 @@
-
-# app.py — Meta Ads com Funil completo
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -446,6 +444,7 @@ def fetch_insights_breakdown(act_id: str, token: str, api_version: str,
     Coleta insights com 1 ou 2 breakdowns (ex.: ['age'], ['gender'], ['age','gender'],
     ['country'], ['publisher_platform'], ['platform_position']).
     Mantém paridade: action_report_time=conversion + ATTR_KEYS.
+    Agora faz chunking (até 30 dias) para evitar erro em intervalos longos.
     """
     act_id = _ensure_act_prefix(act_id)
     base_url = f"https://graph.facebook.com/{api_version}/{act_id}/insights"
@@ -453,69 +452,81 @@ def fetch_insights_breakdown(act_id: str, token: str, api_version: str,
         "spend","impressions","clicks","actions","action_values",
         "account_currency","date_start","campaign_id","campaign_name"
     ]
-    params = {
-        "access_token": token,
-        "level": level,
-        "time_range": json.dumps({"since": since_str, "until": until_str}),
-        "time_increment": 1,
-        "fields": ",".join(fields),
-        "limit": 500,
-        "action_report_time": "conversion",
-        "action_attribution_windows": ",".join(ATTR_KEYS),
-        "breakdowns": ",".join(breakdowns[:2])
-    }
 
-    rows, next_url, next_params = [], base_url, params.copy()
-    while next_url:
-        resp = _retry_call(lambda: requests.get(next_url, params=next_params, timeout=90))
-        payload = resp.json()
-        if resp.status_code != 200:
-            err = (payload or {}).get("error", {})
-            raise RuntimeError(f"Graph API error breakdown | code={err.get('code')} sub={err.get('error_subcode')} | {err.get('message')}")
+    def _fetch_range(_since: str, _until: str) -> list[dict]:
+        params = {
+            "access_token": token,
+            "level": level,
+            "time_range": json.dumps({"since": _since, "until": _until}),
+            "time_increment": 1,
+            "fields": ",".join(fields),
+            "limit": 500,
+            "action_report_time": "conversion",
+            "action_attribution_windows": ",".join(ATTR_KEYS),
+            "breakdowns": ",".join(breakdowns[:2])
+        }
 
-        for rec in payload.get("data", []):
-            actions = rec.get("actions") or []
-            action_values = rec.get("action_values") or []
+        rows, next_url, next_params = [], base_url, params.copy()
+        while next_url:
+            resp = _retry_call(lambda: requests.get(next_url, params=next_params, timeout=90))
+            payload = resp.json()
+            if resp.status_code != 200:
+                err = (payload or {}).get("error", {})
+                raise RuntimeError(
+                    f"Graph API error breakdown | code={err.get('code')} "
+                    f"sub={err.get('error_subcode')} | {err.get('message')}"
+                )
 
-            link_clicks = _sum_actions_exact(actions, ["link_click"], allowed_keys=ATTR_KEYS)
-            lpv = (_sum_actions_exact(actions, ["landing_page_view"], allowed_keys=ATTR_KEYS)
-                   or _sum_actions_exact(actions, ["view_content"], allowed_keys=ATTR_KEYS)
-                   or _sum_actions_contains(actions, ["landing_page"], allowed_keys=ATTR_KEYS))
-            ic   = _sum_actions_exact(actions, ["initiate_checkout"], allowed_keys=ATTR_KEYS)
-            api_ = _sum_actions_exact(actions, ["add_payment_info"], allowed_keys=ATTR_KEYS)
-            pur  = _pick_purchase_totals(actions, allowed_keys=ATTR_KEYS)
-            rev  = _pick_purchase_totals(action_values, allowed_keys=ATTR_KEYS)
+            for rec in payload.get("data", []):
+                actions = rec.get("actions") or []
+                action_values = rec.get("action_values") or []
 
-            base = {
-                "currency":      rec.get("account_currency","BRL"),
-                "campaign_id":   rec.get("campaign_id",""),
-                "campaign_name": rec.get("campaign_name",""),
-                "spend":         _to_float(rec.get("spend")),
-                "impressions":   _to_float(rec.get("impressions")),
-                "clicks":        _to_float(rec.get("clicks")),
-                "link_clicks":   _to_float(link_clicks),
-                "lpv":           _to_float(lpv),
-                "init_checkout": _to_float(ic),
-                "add_payment":   _to_float(api_),
-                "purchases":     _to_float(pur),
-                "revenue":       _to_float(rev),
-            }
-            for b in breakdowns[:2]:
-                base[b] = rec.get(b)
-            rows.append(base)
+                link_clicks = _sum_actions_exact(actions, ["link_click"], allowed_keys=ATTR_KEYS)
+                lpv = (_sum_actions_exact(actions, ["landing_page_view"], allowed_keys=ATTR_KEYS)
+                       or _sum_actions_exact(actions, ["view_content"], allowed_keys=ATTR_KEYS)
+                       or _sum_actions_contains(actions, ["landing_page"], allowed_keys=ATTR_KEYS))
+                ic   = _sum_actions_exact(actions, ["initiate_checkout"], allowed_keys=ATTR_KEYS)
+                api_ = _sum_actions_exact(actions, ["add_payment_info"], allowed_keys=ATTR_KEYS)
+                pur  = _pick_purchase_totals(actions, allowed_keys=ATTR_KEYS)
+                rev  = _pick_purchase_totals(action_values, allowed_keys=ATTR_KEYS)
 
-        paging = (payload or {}).get("paging", {})
-        if paging.get("next"):
-            next_url, next_params = paging.get("next"), None
-        else:
-            after = (paging.get("cursors") or {}).get("after")
-            if after:
-                next_url, next_params = base_url, params.copy()
-                next_params["after"] = after
+                base = {
+                    "currency":      rec.get("account_currency","BRL"),
+                    "campaign_id":   rec.get("campaign_id",""),
+                    "campaign_name": rec.get("campaign_name",""),
+                    "spend":         _to_float(rec.get("spend")),
+                    "impressions":   _to_float(rec.get("impressions")),
+                    "clicks":        _to_float(rec.get("clicks")),
+                    "link_clicks":   _to_float(link_clicks),
+                    "lpv":           _to_float(lpv),
+                    "init_checkout": _to_float(ic),
+                    "add_payment":   _to_float(api_),
+                    "purchases":     _to_float(pur),
+                    "revenue":       _to_float(rev),
+                }
+                for b in breakdowns[:2]:
+                    base[b] = rec.get(b)
+                rows.append(base)
+
+            paging = (payload or {}).get("paging", {})
+            if paging.get("next"):
+                next_url, next_params = paging.get("next"), None
             else:
-                break
+                after = (paging.get("cursors") or {}).get("after")
+                if after:
+                    next_url, next_params = base_url, params.copy()
+                    next_params["after"] = after
+                else:
+                    break
 
-    df = pd.DataFrame(rows)
+        return rows
+
+    # 🔑 Junta em blocos de até 30 dias
+    all_rows: list[dict] = []
+    for s_chunk, u_chunk in _chunks_by_days(since_str, until_str, max_days=30):
+        all_rows.extend(_fetch_range(s_chunk, u_chunk))
+
+    df = pd.DataFrame(all_rows)
     if df.empty:
         return df
     df["ROAS"] = np.where(df["spend"]>0, df["revenue"]/df["spend"], np.nan)
