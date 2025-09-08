@@ -1433,6 +1433,12 @@ with tab_daypart:
 with tab_detail:
     st.caption("Explore por dimensão: Idade, Gênero, Idade+Gênero, País, Plataforma, Posicionamento, Dia e Hora. Há um modo 'Populares' com os TOP 5.")
 
+    colf1, colf2 = st.columns([2,1])
+    with colf1:
+        produto_sel_det = st.selectbox("Filtrar por produto (opcional)", ["(Todos)"] + PRODUTOS, key="det_produto")
+    with colf2:
+        min_spend_det = st.slider("Gasto mínimo para considerar (R$)", 0.0, 2000.0, 0.0, 10.0, key="det_min_spend")
+
     dimensao = st.radio(
         "Dimensão",
         ["Populares","Idade","Gênero","Idade + Gênero", "Região", "País","Plataforma","Posicionamento","Dia","Hora"],
@@ -1440,6 +1446,11 @@ with tab_detail:
     )
 
     # ========= Helpers locais =========
+    def _apply_prod_filter(df_base: pd.DataFrame) -> pd.DataFrame:
+        if produto_sel_det and produto_sel_det != "(Todos)":
+            mask = df_base["campaign_name"].str.contains(produto_sel_det, case=False, na=False)
+            return df_base[mask].copy()
+        return df_base
 
     def _ensure_cols_exist(df: pd.DataFrame) -> pd.DataFrame:
         for col in ["spend","revenue","purchases","link_clicks","lpv","init_checkout","add_payment"]:
@@ -1450,13 +1461,18 @@ with tab_detail:
     def _agg_and_format(df: pd.DataFrame, group_cols: list[str]):
         if df is None or df.empty:
             return pd.DataFrame(), pd.DataFrame()
-        df2 = df.copy()
+        df2 = _apply_prod_filter(df)
+        if df2.empty:
+            return pd.DataFrame(), pd.DataFrame()
 
         df2 = _ensure_cols_exist(df2)
 
         agg_cols = ["spend","revenue","purchases","link_clicks","lpv","init_checkout","add_payment"]
         g = df2.groupby(group_cols, dropna=False, as_index=False)[agg_cols].sum()
         g["ROAS"] = np.where(g["spend"]>0, g["revenue"]/g["spend"], np.nan)
+
+        if min_spend_det and float(min_spend_det) > 0:
+            g = g[g["spend"] >= float(min_spend_det)]
 
         if not g.empty:
             g = g.sort_values(["purchases","ROAS"], ascending=[False, False])
