@@ -517,7 +517,7 @@ st.sidebar.header("Configuração")
 act_id = st.sidebar.text_input("Ad Account ID", placeholder="ex.: act_1234567890")
 token = st.sidebar.text_input("Access Token", type="password")
 api_version = st.sidebar.text_input("API Version", value="v23.0")
-level = st.sidebar.selectbox("Nível (recomendado: campaign)", ["campaign", "account", "adset", "ad"],  index=0)
+level = st.sidebar.selectbox("Nível (recomendado: campaign)", ["campaign"],  index=0)
 
 preset = st.sidebar.radio(
     "Período rápido",
