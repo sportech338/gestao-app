@@ -413,7 +413,7 @@ def fetch_insights_hourly(act_id: str, token: str, api_version: str,
 
     # Agrega chunks menores (use 14 dias por segurança no hourly)
     dfs = []
-    for s_chunk, u_chunk in _chunks_by_days(since_str, until_str, max_days=14):
+    for s_chunk, u_chunk in _chunks_by_days(since_str, until_str, max_days=30):
         try:
             df_chunk = _fetch_range(s_chunk, u_chunk, "conversion")
         except Exception:
@@ -595,10 +595,7 @@ with st.spinner("Buscando dados da Meta…"):
         act_id=act_id, token=token, api_version=api_version,
         since_str=str(since), until_str=str(until), level=level
     )
-    df_hourly = fetch_insights_hourly(
-        act_id=act_id, token=token, api_version=api_version,
-        since_str=str(since), until_str=str(until), level=level
-    )
+df_hourly = None  # será carregado apenas quando o usuário abrir a aba de horário
 
 if df_daily.empty and (df_hourly is None or df_hourly.empty):
     st.warning("Sem dados para o período. Verifique permissões, conta e se há eventos de Purchase (value/currency).")
@@ -999,444 +996,402 @@ with tab_daily:
 # -------------------- ABA DE HORÁRIOS (Heatmap no topo) --------------------
 with tab_daypart:
     st.caption("Explore desempenho por hora: Heatmap no topo, depois comparação de dias e apanhado geral.")
+
+    # 1) Só baixa hourly quando o usuário quiser (e com limites)
+    days = (until - since).days + 1
+    st.info(f"Período selecionado: {days} dias. 'Horários' pode ser pesado em janelas longas.")
+
+    # Cap padrão (rápido). Deixe o usuário decidir acima disso:
+    allow_long = True
+    if days > 60:
+        allow_long = st.toggle(
+            f"Carregar horários para {days} dias? (pode demorar)",
+            value=False, help="Recomendado usar até 60 dias."
+        )
+
+    if not allow_long:
+        st.stop()
+
+    # 2) Granularidade do hourly (conta = MUITO mais rápido)
+    gran = st.selectbox("Granularidade do hourly", ["Conta (rápido)", "Campanha (lento)"], index=0)
+    level_hourly = "account" if gran.startswith("Conta") else "campaign"
+
+    # 3) Dispara a coleta somente agora
+    if df_hourly is None:
+        with st.spinner("Carregando breakdown por hora…"):
+            df_hourly = fetch_insights_hourly(
+                act_id=act_id, token=token, api_version=api_version,
+                since_str=str(since), until_str=str(until), level=level_hourly
+            )
+
+    # Se não veio nada, encerra a aba aqui
     if df_hourly is None or df_hourly.empty:
         st.info("A conta/período não retornou breakdown por hora. Use a visão diária.")
+        st.stop()
+
+    # ---------------- Filtros + base ----------------
+    min_spend = st.slider("Gasto mínimo para considerar o horário (R$)", 0.0, 1000.0, 0.0, 10.0)
+
+    d = df_hourly.copy()
+    d = d.dropna(subset=["hour"])
+    d["hour"] = d["hour"].astype(int).clip(0, 23)
+    d["date_only"] = d["date"].dt.date
+
+    # ============== 1) HEATMAP HORA × DIA (TOPO) ==============
+    st.subheader("📆 Heatmap — Hora × Dia")
+    cube_hm = d.groupby(["dow_label","hour"], as_index=False)[
+        ["spend","revenue","purchases","link_clicks","lpv","init_checkout","add_payment"]
+    ].sum()
+    cube_hm["roas"] = np.where(cube_hm["spend"]>0, cube_hm["revenue"]/cube_hm["spend"], np.nan)
+
+    if min_spend > 0:
+        cube_hm = cube_hm[cube_hm["spend"] >= min_spend]
+
+    metric_hm = st.selectbox("Métrica para o heatmap", ["Compras","Faturamento","Gasto","ROAS"], index=0, key="hm_metric_top")
+    mcol_hm = {"Compras":"purchases","Faturamento":"revenue","Gasto":"spend","ROAS":"roas"}[metric_hm]
+
+    if mcol_hm == "roas":
+        pvt = cube_hm.groupby(["dow_label","hour"], as_index=False)[mcol_hm].mean()
     else:
-        # ========= FILTRO POR PRODUTO =========
-        produto_sel_hr = st.selectbox("Filtrar por produto (opcional)", ["(Todos)"] + PRODUTOS, key="daypart_produto")
+        pvt = cube_hm.groupby(["dow_label","hour"], as_index=False)[mcol_hm].sum()
 
-        d = df_hourly.copy()
-        if produto_sel_hr != "(Todos)":
-            mask_hr = d["campaign_name"].str.contains(produto_sel_hr, case=False, na=False)
-            d = d[mask_hr].copy()
+    order = ["Seg","Ter","Qua","Qui","Sex","Sáb","Dom"]
+    pvt["dow_label"] = pd.Categorical(pvt["dow_label"], categories=order, ordered=True)
+    pvt = pvt.sort_values(["dow_label","hour"])
+    heat = pvt.pivot(index="dow_label", columns="hour", values=mcol_hm).fillna(0)
 
-        # ---------------- Filtros + base ----------------
-        min_spend = st.slider("Gasto mínimo para considerar o horário (R$)", 0.0, 1000.0, 0.0, 10.0)
-        d = d.dropna(subset=["hour"])
-        d["hour"] = d["hour"].astype(int).clip(0, 23)
-        d["date_only"] = d["date"].dt.date
+    hours_full = list(range(24))
+    heat = heat.reindex(columns=hours_full, fill_value=0)
+    heat.columns = list(range(24))
 
-        # ============== 1) HEATMAP HORA × DIA (TOPO) ==============
-        st.subheader("📆 Heatmap — Hora × Dia")
-        cube_hm = d.groupby(["dow_label","hour"], as_index=False)[
-            ["spend","revenue","purchases","link_clicks","lpv","init_checkout","add_payment"]
-        ].sum()
-        cube_hm["roas"] = np.where(cube_hm["spend"]>0, cube_hm["revenue"]/cube_hm["spend"], np.nan)
+    fig_hm = go.Figure(data=go.Heatmap(
+        z=heat.values, x=heat.columns, y=heat.index,
+        colorbar=dict(title=metric_hm),
+        hovertemplate="Dia: %{y}<br>Hora: %{x}h<br>"+metric_hm+": %{z}<extra></extra>"
+    ))
+    fig_hm.update_layout(
+        height=520,
+        margin=dict(l=10, r=10, t=10, b=10),
+        template="plotly_white",
+        separators=",."
+    )
+    st.plotly_chart(fig_hm, use_container_width=True)
 
-        if min_spend > 0:
-            cube_hm = cube_hm[cube_hm["spend"] >= min_spend]
+    st.markdown("---")
 
-        metric_hm = st.selectbox("Métrica para o heatmap", ["Compras","Faturamento","Gasto","ROAS"], index=0, key="hm_metric_top")
-        mcol_hm = {"Compras":"purchases","Faturamento":"revenue","Gasto":"spend","ROAS":"roas"}[metric_hm]
+    # ============== 3) APANHADO GERAL POR HORA (no período) ==============
+    st.subheader("📦 Apanhado geral por hora (período selecionado)")
+    cube_hr = d.groupby("hour", as_index=False)[
+        ["spend","revenue","purchases","link_clicks","lpv","init_checkout","add_payment"]
+    ].sum()
+    cube_hr["ROAS"] = np.where(cube_hr["spend"]>0, cube_hr["revenue"]/cube_hr["spend"], np.nan)
+    if min_spend > 0:
+        cube_hr = cube_hr[cube_hr["spend"] >= min_spend]
 
-        if mcol_hm == "roas":
-            pvt = cube_hm.groupby(["dow_label","hour"], as_index=False)[mcol_hm].mean()
+    top_hr = cube_hr.sort_values(["purchases","ROAS"], ascending=[False,False]).copy()
+    show_cols = ["hour","purchases","ROAS","spend","revenue","link_clicks","lpv","init_checkout","add_payment"]
+    disp_top = top_hr[show_cols].rename(columns={
+        "hour":"Hora","purchases":"Compras","spend":"Valor usado","revenue":"Valor de conversão"
+    })
+    disp_top["Valor usado"] = disp_top["Valor usado"].apply(_fmt_money_br)
+    disp_top["Valor de conversão"] = disp_top["Valor de conversão"].apply(_fmt_money_br)
+    disp_top["ROAS"] = disp_top["ROAS"].map(_fmt_ratio_br)
+    st.dataframe(disp_top, use_container_width=True, height=360)
+
+    fig_bar = go.Figure(go.Bar(x=cube_hr.sort_values("hour")["hour"], y=cube_hr.sort_values("hour")["purchases"]))
+    fig_bar.update_layout(
+        title="Compras por hora (total do período)",
+        xaxis_title="Hora do dia",
+        yaxis_title="Compras",
+        height=380,
+        template="plotly_white",
+        margin=dict(l=10, r=10, t=48, b=10),
+        separators=",."
+    )
+    st.plotly_chart(fig_bar, use_container_width=True)
+
+    st.info("Dica: use o 'Gasto mínimo' para filtrar horas com investimento muito baixo e evitar falsos positivos.")
+
+    # ============== 4) COMPARAR DOIS PERÍODOS (A vs B) — HORA A HORA ==============
+    st.subheader("🆚 Comparar dois períodos (A vs B) — hora a hora")
+
+    # Defaults: B = período atual (since/until), A = período anterior com mesma duração
+    base_len = (until - since).days + 1
+    default_sinceA = (since - timedelta(days=base_len))
+    default_untilA = (since - timedelta(days=1))
+
+    colA1, colA2, colB1, colB2 = st.columns(4)
+    with colA1:
+        period_sinceA = st.date_input("Desde (A)", value=default_sinceA, key="cmp_sinceA")
+    with colA2:
+        period_untilA = st.date_input("Até (A)", value=default_untilA, key="cmp_untilA")
+    with colB1:
+        period_sinceB = st.date_input("Desde (B)", value=since, key="cmp_sinceB")
+    with colB2:
+        period_untilB = st.date_input("Até (B)", value=until, key="cmp_untilB")
+
+    # Validação rápida
+    if period_sinceA > period_untilA or period_sinceB > period_untilB:
+        st.warning("Confira as datas: em cada período, 'Desde' não pode ser maior que 'Até'.")
+    else:
+        # Buscar dados por hora cobrindo A ∪ B
+        union_since = min(period_sinceA, period_sinceB)
+        union_until = max(period_untilA, period_untilB)
+
+        with st.spinner("Carregando dados por hora dos períodos selecionados…"):
+            df_hourly_union = fetch_insights_hourly(
+                act_id=act_id, token=token, api_version=api_version,
+                since_str=str(union_since), until_str=str(union_until), level="account"
+            )
+
+        if df_hourly_union is None or df_hourly_union.empty:
+            st.info("Sem dados no intervalo combinado dos períodos selecionados.")
         else:
-            pvt = cube_hm.groupby(["dow_label","hour"], as_index=False)[mcol_hm].sum()
+            # Base preparada
+            d_cmp = df_hourly_union.dropna(subset=["hour"]).copy()
+            d_cmp["hour"] = d_cmp["hour"].astype(int).clip(0, 23)
+            d_cmp["date_only"] = d_cmp["date"].dt.date
 
-        order = ["Seg","Ter","Qua","Qui","Sex","Sáb","Dom"]
-        pvt["dow_label"] = pd.Categorical(pvt["dow_label"], categories=order, ordered=True)
-        pvt = pvt.sort_values(["dow_label","hour"])
-        heat = pvt.pivot(index="dow_label", columns="hour", values=mcol_hm).fillna(0)
+            # Filtra pelos períodos A e B
+            A_mask = (d_cmp["date_only"] >= period_sinceA) & (d_cmp["date_only"] <= period_untilA)
+            B_mask = (d_cmp["date_only"] >= period_sinceB) & (d_cmp["date_only"] <= period_untilB)
+            datA, datB = d_cmp[A_mask], d_cmp[B_mask]
 
-        hours_full = list(range(24))
-        heat = heat.reindex(columns=hours_full, fill_value=0)
-        heat.columns = list(range(24))
-
-        fig_hm = go.Figure(data=go.Heatmap(
-            z=heat.values, x=heat.columns, y=heat.index,
-            colorbar=dict(title=metric_hm),
-            hovertemplate="Dia: %{y}<br>Hora: %{x}h<br>"+metric_hm+": %{z}<extra></extra>"
-        ))
-        fig_hm.update_layout(
-            height=520,
-            margin=dict(l=10, r=10, t=10, b=10),
-            template="plotly_white",
-            separators=",."
-        )
-        st.plotly_chart(fig_hm, use_container_width=True)
-
-        st.markdown("---")
-
-        # ============== 3) APANHADO GERAL POR HORA (no período) ==============
-        st.subheader("📦 Apanhado geral por hora (período selecionado)")
-        cube_hr = d.groupby("hour", as_index=False)[
-            ["spend","revenue","purchases","link_clicks","lpv","init_checkout","add_payment"]
-        ].sum()
-        cube_hr["ROAS"] = np.where(cube_hr["spend"]>0, cube_hr["revenue"]/cube_hr["spend"], np.nan)
-        if min_spend > 0:
-            cube_hr = cube_hr[cube_hr["spend"] >= min_spend]
-
-        top_hr = cube_hr.sort_values(["purchases","ROAS"], ascending=[False,False]).copy()
-        show_cols = ["hour","purchases","ROAS","spend","revenue","link_clicks","lpv","init_checkout","add_payment"]
-        disp_top = top_hr[show_cols].rename(columns={
-            "hour":"Hora","purchases":"Compras","spend":"Valor usado","revenue":"Valor de conversão"
-        })
-        disp_top["Valor usado"] = disp_top["Valor usado"].apply(_fmt_money_br)
-        disp_top["Valor de conversão"] = disp_top["Valor de conversão"].apply(_fmt_money_br)
-        disp_top["ROAS"] = disp_top["ROAS"].map(_fmt_ratio_br)
-        st.dataframe(disp_top, use_container_width=True, height=360)
-
-        fig_bar = go.Figure(go.Bar(x=cube_hr.sort_values("hour")["hour"], y=cube_hr.sort_values("hour")["purchases"]))
-        fig_bar.update_layout(
-            title="Compras por hora (total do período)",
-            xaxis_title="Hora do dia",
-            yaxis_title="Compras",
-            height=380,
-            template="plotly_white",
-            margin=dict(l=10, r=10, t=48, b=10),
-            separators=",."
-        )
-
-        st.plotly_chart(fig_bar, use_container_width=True)
-
-        st.info("Dica: use o 'Gasto mínimo' para filtrar horas com investimento muito baixo e evitar falsos positivos.")
-
-        st.subheader("🆚 Comparar dois períodos (A vs B) — hora a hora")
-
-        # Defaults: B = período atual (since/until), A = período anterior com mesma duração
-        base_len = (until - since).days + 1
-        default_sinceA = (since - timedelta(days=base_len))
-        default_untilA = (since - timedelta(days=1))
-
-        colA1, colA2, colB1, colB2 = st.columns(4)
-        with colA1:
-            period_sinceA = st.date_input("Desde (A)", value=default_sinceA, key="cmp_sinceA")
-        with colA2:
-            period_untilA = st.date_input("Até (A)",   value=default_untilA, key="cmp_untilA")
-        with colB1:
-            period_sinceB = st.date_input("Desde (B)", value=since, key="cmp_sinceB")
-        with colB2:
-            period_untilB = st.date_input("Até (B)",   value=until, key="cmp_untilB")
-
-        # Validação rápida
-        if period_sinceA > period_untilA or period_sinceB > period_untilB:
-            st.warning("Confira as datas: em cada período, 'Desde' não pode ser maior que 'Até'.")
-        else:
-            # Buscar dados por hora cobrindo A ∪ B
-            union_since = min(period_sinceA, period_sinceB)
-            union_until = max(period_untilA, period_untilB)
-
-            with st.spinner("Carregando dados por hora dos períodos selecionados…"):
-                df_hourly_union = fetch_insights_hourly(
-                    act_id=act_id, token=token, api_version=api_version,
-                    since_str=str(union_since), until_str=str(union_until), level=level
-                )
-
-            if df_hourly_union is None or df_hourly_union.empty:
-                st.info("Sem dados no intervalo combinado dos períodos selecionados.")
+            if datA.empty or datB.empty:
+                st.info("Sem dados em um dos períodos selecionados.")
             else:
-                # Base preparada
-                d_cmp = df_hourly_union.dropna(subset=["hour"]).copy()
-                d_cmp["hour"] = d_cmp["hour"].astype(int).clip(0, 23)
-                d_cmp["date_only"] = d_cmp["date"].dt.date
+                agg_cols = ["spend","revenue","purchases","link_clicks","lpv","init_checkout","add_payment"]
 
-                # Filtra pelos períodos A e B
-                A_mask = (d_cmp["date_only"] >= period_sinceA) & (d_cmp["date_only"] <= period_untilA)
-                B_mask = (d_cmp["date_only"] >= period_sinceB) & (d_cmp["date_only"] <= period_untilB)
-                datA, datB = d_cmp[A_mask], d_cmp[B_mask]
+                # Soma por hora
+                gA = datA.groupby("hour", as_index=False)[agg_cols].sum()
+                gB = datB.groupby("hour", as_index=False)[agg_cols].sum()
 
-                if datA.empty or datB.empty:
-                    st.info("Sem dados em um dos períodos selecionados.")
+                # Merge A vs B
+                merged = pd.merge(gA, gB, on="hour", how="outer", suffixes=(" (A)", " (B)")).fillna(0.0)
+
+                # Filtro de gasto mínimo (descarta só se AMBOS forem baixos)
+                if min_spend > 0:
+                    keep = (merged["spend (A)"] >= min_spend) | (merged["spend (B)"] >= min_spend)
+                    merged = merged[keep]
+
+                if merged.empty:
+                    st.info("Após o filtro de gasto mínimo, não sobraram horas para comparar.")
                 else:
-                    agg_cols = ["spend","revenue","purchases","link_clicks","lpv","init_checkout","add_payment"]
+                    # 0..23 sempre presentes (preenche horas faltantes com 0)
+                    hours_full = list(range(24))
+                    merged = (
+                        merged.set_index("hour")
+                              .reindex(hours_full, fill_value=0)
+                              .rename_axis("hour")
+                              .reset_index()
+                    )
 
-                    # Soma por hora
-                    gA = datA.groupby("hour", as_index=False)[agg_cols].sum()
-                    gB = datB.groupby("hour", as_index=False)[agg_cols].sum()
+                    # Eixo X (numérico 0..23)
+                    x = merged["hour"].astype(int)
 
-                    # Merge A vs B
-                    merged = pd.merge(gA, gB, on="hour", how="outer", suffixes=(" (A)", " (B)")).fillna(0.0)
+                    # Teto comum para as BARRAS (Gasto + Receita)
+                    barsA_max = (merged["spend (A)"] + merged["revenue (A)"]).max()
+                    barsB_max = (merged["spend (B)"] + merged["revenue (B)"]).max()
+                    bars_max = max(barsA_max, barsB_max)
+                    if not np.isfinite(bars_max) or bars_max <= 0:
+                        bars_max = 1.0
+                    bars_max *= 1.05  # folga de 5%
 
-                    # Filtro de gasto mínimo (descarta só se AMBOS forem baixos)
-                    if min_spend > 0:
-                        keep = (merged["spend (A)"] >= min_spend) | (merged["spend (B)"] >= min_spend)
-                        merged = merged[keep]
+                    # Teto comum para a LINHA (Compras)
+                    lineA_max = merged["purchases (A)"].max()
+                    lineB_max = merged["purchases (B)"].max()
+                    line_max = max(lineA_max, lineB_max)
+                    if not np.isfinite(line_max) or line_max <= 0:
+                        line_max = 1.0
+                    line_max *= 1.05  # folga de 5%
 
-                    if merged.empty:
-                        st.info("Após o filtro de gasto mínimo, não sobraram horas para comparar.")
+                    # ===== Gráfico do Período A =====
+                    fig_A = make_subplots(specs=[[{"secondary_y": True}]])
+                    fig_A.add_trace(go.Bar(name="Gasto (A)", x=x, y=merged["spend (A)"], legendgroup="A", offsetgroup="A"))
+                    fig_A.add_trace(go.Bar(name="Faturamento (A)", x=x, y=merged["revenue (A)"], legendgroup="A", offsetgroup="A"))
+                    fig_A.add_trace(
+                        go.Scatter(name=f"Compras (A) — {period_sinceA} a {period_untilA}",
+                                   x=x, y=merged["purchases (A)"], mode="lines+markers", legendgroup="A"),
+                        secondary_y=True
+                    )
+                    fig_A.update_layout(
+                        title=f"Período A — {period_sinceA} a {period_untilA} (Gasto + Faturamento + Compras)",
+                        barmode="stack", bargap=0.15, bargroupgap=0.12,
+                        template="plotly_white", height=460,
+                        margin=dict(l=10, r=10, t=48, b=10), legend_title_text="", separators=",."
+                    )
+                    fig_A.update_xaxes(title_text="Hora do dia", tickmode="linear", tick0=0, dtick=1, range=[-0.5, 23.5])
+                    fig_A.update_yaxes(title_text="Valores (R$)", secondary_y=False, range=[0, bars_max])
+                    fig_A.update_yaxes(title_text="Compras (unid.)", secondary_y=True, range=[0, line_max])
+                    st.plotly_chart(fig_A, use_container_width=True)
+
+                    # ===== Gráfico do Período B =====
+                    fig_B = make_subplots(specs=[[{"secondary_y": True}]])
+                    fig_B.add_trace(go.Bar(name="Gasto (B)", x=x, y=merged["spend (B)"], legendgroup="B", offsetgroup="B"))
+                    fig_B.add_trace(go.Bar(name="Faturamento (B)", x=x, y=merged["revenue (B)"], legendgroup="B", offsetgroup="B"))
+                    fig_B.add_trace(
+                        go.Scatter(name=f"Compras (B) — {period_sinceB} a {period_untilB}",
+                                   x=x, y=merged["purchases (B)"], mode="lines+markers", legendgroup="B"),
+                        secondary_y=True
+                    )
+                    fig_B.update_layout(
+                        title=f"Período B — {period_sinceB} a {period_untilB} (Gasto + Faturamento + Compras)",
+                        barmode="stack", bargap=0.15, bargroupgap=0.12,
+                        template="plotly_white", height=460,
+                        margin=dict(l=10, r=10, t=48, b=10), legend_title_text="", separators=",."
+                    )
+                    fig_B.update_xaxes(title_text="Hora do dia", tickmode="linear", tick0=0, dtick=1, range=[-0.5, 23.5])
+                    fig_B.update_yaxes(title_text="Valores (R$)", secondary_y=False, range=[0, bars_max])
+                    fig_B.update_yaxes(title_text="Compras (unid.)", secondary_y=True, range=[0, line_max])
+                    st.plotly_chart(fig_B, use_container_width=True)
+
+                    # ===== INSIGHTS — Período A =====
+                    st.markdown("### 🔎 Insights — Período A")
+                    a = merged.sort_values("hour").copy()
+                    a_spend     = a["spend (A)"]
+                    a_rev       = a["revenue (A)"]
+                    a_purch     = a["purchases (A)"]
+                    a_roas_ser  = np.where(a_spend > 0, a_rev / a_spend, np.nan)
+
+                    a_tot_spend = float(a_spend.sum())
+                    a_tot_rev   = float(a_rev.sum())
+                    a_tot_purch = int(round(float(a_purch.sum())))
+                    a_roas      = (a_tot_rev / a_tot_spend) if a_tot_spend > 0 else np.nan
+
+                    c1, c2, c3, c4 = st.columns(4)
+                    c1.metric("Valor usado (A)", _fmt_money_br(a_tot_spend))
+                    c2.metric("Faturamento (A)", _fmt_money_br(a_tot_rev))
+                    c3.metric("Vendas (A)", f"{a_tot_purch:,}".replace(",", "."))
+                    c4.metric("ROAS (A)", _fmt_ratio_br(a_roas) if pd.notnull(a_roas) else "—")
+
+                    h_best_purch = int(a.loc[a["purchases (A)"].idxmax(), "hour"]) if len(a_purch) and a_purch.max() > 0 else None
+                    best_purch_val = int(a_purch.max()) if len(a_purch) else 0
+
+                    mask_roasA = (a_spend >= float(min_spend)) & (a_spend > 0)
+                    if mask_roasA.any():
+                        roasA_vals = a_roas_ser.copy()
+                        roasA_vals[~mask_roasA] = np.nan
+                        h_best_roasA = int(a.loc[np.nanargmax(roasA_vals), "hour"])
+                        best_roasA_val = float(np.nanmax(roasA_vals))
                     else:
-                        # ---------- GRÁFICOS SEPARADOS: Período A e Período B ----------
-                        # 0..23 sempre presentes (preenche horas faltantes com 0)
-                        hours_full = list(range(24))
-                        merged = (
-                            merged.set_index("hour")
-                                  .reindex(hours_full, fill_value=0)
-                                  .rename_axis("hour")
-                                  .reset_index()
-                        )
+                        h_best_roasA, best_roasA_val = None, np.nan
 
-                        # Eixo X (numérico 0..23)
-                        x = merged["hour"].astype(int)
+                    rollA = a_purch.rolling(3, min_periods=1).sum()
+                    iA = int(rollA.idxmax()) if len(rollA) else 0
+                    def _bA(ix): return int(a.loc[min(max(ix, 0), len(a)-1), "hour"])
+                    winA_start, winA_mid, winA_end = _bA(iA-1), _bA(iA), _bA(iA+1)
+                    winA_sum = int(rollA.max()) if len(rollA) else 0
 
-                        # Teto comum para as BARRAS (Gasto + Receita)
-                        barsA_max = (merged["spend (A)"] + merged["revenue (A)"]).max()
-                        barsB_max = (merged["spend (B)"] + merged["revenue (B)"]).max()
-                        bars_max = max(barsA_max, barsB_max)
-                        if not np.isfinite(bars_max) or bars_max <= 0:
-                            bars_max = 1.0
-                        bars_max *= 1.05  # folga de 5%
+                    wastedA = a[(a_spend > 0) & (a_purch == 0)]
+                    wastedA_hours = ", ".join(f"{int(h)}h" for h in wastedA["hour"].tolist()) if not wastedA.empty else "—"
 
-                        # Teto comum para a LINHA (Compras)
-                        lineA_max = merged["purchases (A)"].max()
-                        lineB_max = merged["purchases (B)"].max()
-                        line_max = max(lineA_max, lineB_max)
-                        if not np.isfinite(line_max) or line_max <= 0:
-                            line_max = 1.0
-                        line_max *= 1.05  # folga de 5%
-
-                        # ===== Gráfico do Período A =====
-                        fig_A = make_subplots(specs=[[{"secondary_y": True}]])
-                        fig_A.add_trace(
-                            go.Bar(
-                                name="Gasto (A)",
-                                x=x, y=merged["spend (A)"],
-                                legendgroup="A", offsetgroup="A",
-                                hovertemplate="Hora: %{x}h<br>Gasto: R$ %{y:,.2f}<extra></extra>",
-                                marker_color="#e51414"
-                            ),
-                            secondary_y=False
-                        )
-                        fig_A.add_trace(
-                            go.Bar(
-                                name="Faturamento (A)",
-                                x=x, y=merged["revenue (A)"],
-                                legendgroup="A", offsetgroup="A",
-                                hovertemplate="Hora: %{x}h<br>Faturamento: R$ %{y:,.2f}<extra></extra>",
-                                marker_color="#636EFA"
-                            ),
-                            secondary_y=False
-                        )
-                        fig_A.add_trace(
-                            go.Scatter(
-                                name=f"Compras (A) — {period_sinceA} a {period_untilA}",
-                                x=x, y=merged["purchases (A)"],
-                                mode="lines+markers", legendgroup="A",
-                                hovertemplate="Hora: %{x}h<br>Compras: %{y}<extra></extra>"
-                            ),
-                            secondary_y=True
-                        )
-                        fig_A.update_layout(
-                            title=f"Período A — {period_sinceA} a {period_untilA} (Gasto + Faturamento + Compras)",
-                            barmode="stack",
-                            bargap=0.15, bargroupgap=0.12,
-                            template="plotly_white",
-                            height=460, margin=dict(l=10, r=10, t=48, b=10),
-                            legend_title_text="",
-                            separators=",."  
-                        )
-                        fig_A.update_xaxes(
-                            title_text="Hora do dia",
-                            tickmode="linear", tick0=0, dtick=1,
-                            range=[-0.5, 23.5]
-                        )
-                        fig_A.update_yaxes(title_text="Valores (R$)", secondary_y=False, range=[0, bars_max])
-                        fig_A.update_yaxes(title_text="Compras (unid.)", secondary_y=True, range=[0, line_max])
-
-                        st.plotly_chart(fig_A, use_container_width=True)
-
-                        # ===== Gráfico do Período B =====
-                        fig_B = make_subplots(specs=[[{"secondary_y": True}]])
-                        fig_B.add_trace(
-                            go.Bar(
-                                name="Gasto (B)",
-                                x=x, y=merged["spend (B)"],
-                                legendgroup="B", offsetgroup="B",
-                                hovertemplate="Hora: %{x}h<br>Gasto: R$ %{y:,.2f}<extra></extra>",
-                                marker_color="#e51414"
-                            ),
-                            secondary_y=False
-                        )
-                        fig_B.add_trace(
-                            go.Bar(
-                                name="Faturamento (B)",
-                                x=x, y=merged["revenue (B)"],
-                                legendgroup="B", offsetgroup="B",
-                                hovertemplate="Hora: %{x}h<br>Faturamento: R$ %{y:,.2f}<extra></extra>",
-                                marker_color="#636EFA"
-                            ),
-                            secondary_y=False
-                        )
-                        fig_B.add_trace(
-                            go.Scatter(
-                                name=f"Compras (B) — {period_sinceB} a {period_untilB}",
-                                x=x, y=merged["purchases (B)"],
-                                mode="lines+markers", legendgroup="B",
-                                hovertemplate="Hora: %{x}h<br>Compras: %{y}<extra></extra>"
-                            ),
-                            secondary_y=True
-                        )
-                        fig_B.update_layout(
-                            title=f"Período B — {period_sinceB} a {period_untilB} (Gasto + Faturamento + Compras)",
-                            barmode="stack",
-                            bargap=0.15, bargroupgap=0.12,
-                            template="plotly_white",
-                            height=460, margin=dict(l=10, r=10, t=48, b=10),
-                            legend_title_text="",
-                            separators=",."  
-                        )
-                        fig_B.update_xaxes(
-                            title_text="Hora do dia",
-                            tickmode="linear", tick0=0, dtick=1,
-                            range=[-0.5, 23.5]
-                        )
-                        fig_B.update_yaxes(title_text="Valores (R$)", secondary_y=False, range=[0, bars_max])
-                        fig_B.update_yaxes(title_text="Compras (unid.)", secondary_y=True, range=[0, line_max])
-
-                        st.plotly_chart(fig_B, use_container_width=True)
-
-                        # ===== INSIGHTS — Período A =====
-                        st.markdown("### 🔎 Insights — Período A")
-
-                        a = merged.sort_values("hour").copy()
-                        a_spend     = a["spend (A)"]
-                        a_rev       = a["revenue (A)"]
-                        a_purch     = a["purchases (A)"]
-                        a_roas_ser  = np.where(a_spend > 0, a_rev / a_spend, np.nan)
-
-                        a_tot_spend = float(a_spend.sum())
-                        a_tot_rev   = float(a_rev.sum())
-                        a_tot_purch = int(round(float(a_purch.sum())))
-                        a_roas      = (a_tot_rev / a_tot_spend) if a_tot_spend > 0 else np.nan
-
-                        c1, c2, c3, c4 = st.columns(4)
-                        c1.metric("Valor usado (A)", _fmt_money_br(a_tot_spend))
-                        c2.metric("Faturamento (A)", _fmt_money_br(a_tot_rev))
-                        c3.metric("Vendas (A)", f"{a_tot_purch:,}".replace(",", "."))
-                        c4.metric("ROAS (A)", _fmt_ratio_br(a_roas) if pd.notnull(a_roas) else "—")
-
-                        # Picos
-                        h_best_purch = int(a.loc[a["purchases (A)"].idxmax(), "hour"]) if len(a_purch) and a_purch.max() > 0 else None
-                        best_purch_val = int(a_purch.max()) if len(a_purch) else 0
-
-                        # Melhor ROAS (com gasto mínimo)
-                        mask_roasA = (a_spend >= float(min_spend)) & (a_spend > 0)
-                        if mask_roasA.any():
-                            roasA_vals = a_roas_ser.copy()
-                            roasA_vals[~mask_roasA] = np.nan
-                            h_best_roasA = int(a.loc[np.nanargmax(roasA_vals), "hour"])
-                            best_roasA_val = float(np.nanmax(roasA_vals))
-                        else:
-                            h_best_roasA, best_roasA_val = None, np.nan
-
-                        # Janela forte 3h (A)
-                        rollA = a_purch.rolling(3, min_periods=1).sum()
-                        iA = int(rollA.idxmax()) if len(rollA) else 0
-                        def _bA(ix): return int(a.loc[min(max(ix, 0), len(a)-1), "hour"])
-                        winA_start, winA_mid, winA_end = _bA(iA-1), _bA(iA), _bA(iA+1)
-                        winA_sum = int(rollA.max()) if len(rollA) else 0
-
-                        # Horas com gasto e 0 compras (A)
-                        wastedA = a[(a_spend > 0) & (a_purch == 0)]
-                        wastedA_hours = ", ".join(f"{int(h)}h" for h in wastedA["hour"].tolist()) if not wastedA.empty else "—"
-
-                        st.markdown(
-                            f"""
+                    st.markdown(
+                        f"""
 **Pontos-chave (A)**  
 - 🕐 **Pico de compras:** **{str(h_best_purch)+'h' if h_best_purch is not None else '—'}** ({best_purch_val} compras).  
 - 💹 **Melhor ROAS** (gasto ≥ R$ {min_spend:,.0f}): **{(str(h_best_roasA)+'h') if h_best_roasA is not None else '—'}** ({_fmt_ratio_br(best_roasA_val) if pd.notnull(best_roasA_val) else '—'}).  
 - ⏱️ **Janela forte (3h):** **{winA_start}–{winA_end}h** (centro {winA_mid}h) somando **{winA_sum}** compras.  
 - 🧯 **Horas com gasto e 0 compras:** {wastedA_hours}.
 """.replace(",", "X").replace(".", ",").replace("X", ".")
-                        )
+                    )
 
-                        st.markdown("**Top 5 horas (A)**")
-                        colTA, colTB = st.columns(2)
-                        with colTA:
-                            topA_p = a[["hour","purchases (A)","spend (A)","revenue (A)"]].sort_values("purchases (A)", ascending=False).head(5).copy()
-                            topA_p.rename(columns={"hour":"Hora","purchases (A)":"Compras","spend (A)":"Valor usado","revenue (A)":"Valor de conversão"}, inplace=True)
-                            topA_p["Valor usado"] = topA_p["Valor usado"].apply(_fmt_money_br)
-                            topA_p["Valor de conversão"] = topA_p["Valor de conversão"].apply(_fmt_money_br)
-                            st.dataframe(topA_p, use_container_width=True, height=220)
-                        with colTB:
-                            if mask_roasA.any():
-                                topA_r = a[mask_roasA][["hour","spend (A)","revenue (A)"]].copy()
-                                topA_r["ROAS"] = a_roas_ser[mask_roasA]
-                                topA_r = topA_r.sort_values("ROAS", ascending=False).head(5)
-                                topA_r.rename(columns={"hour":"Hora","spend (A)":"Valor usado","revenue (A)":"Valor de conversão"}, inplace=True)
-                                topA_r["Valor usado"] = topA_r["Valor usado"].apply(_fmt_money_br)
-                                topA_r["Valor de conversão"] = topA_r["Valor de conversão"].apply(_fmt_money_br)
-                                topA_r["ROAS"] = topA_r["ROAS"].map(_fmt_ratio_br)
-                            else:
-                                topA_r = pd.DataFrame(columns=["Hora","Valor usado","Valor de conversão","ROAS"])
-                            st.dataframe(topA_r, use_container_width=True, height=220)
-
-                        st.info("Sugestões (A): priorize a janela forte, aumente orçamento nas horas de melhor ROAS (com gasto mínimo atendido) e reavalie criativo/lance nas horas com gasto e 0 compras.")
-
-                        st.markdown("---")
-
-                        # ===== INSIGHTS — Período B =====
-                        st.markdown("### 🔎 Insights — Período B")
-
-                        b = merged.sort_values("hour").copy()
-                        b_spend     = b["spend (B)"]
-                        b_rev       = b["revenue (B)"]
-                        b_purch     = b["purchases (B)"]
-                        b_roas_ser  = np.where(b_spend > 0, b_rev / b_spend, np.nan)
-
-                        b_tot_spend = float(b_spend.sum())
-                        b_tot_rev   = float(b_rev.sum())
-                        b_tot_purch = int(round(float(b_purch.sum())))
-                        b_roas      = (b_tot_rev / b_tot_spend) if b_tot_spend > 0 else np.nan
-
-                        d1, d2, d3, d4 = st.columns(4)
-                        d1.metric("Valor usado (B)", _fmt_money_br(b_tot_spend))
-                        d2.metric("Faturamento (B)", _fmt_money_br(b_tot_rev))
-                        d3.metric("Vendas (B)", f"{b_tot_purch:,}".replace(",", "."))
-                        d4.metric("ROAS (B)", _fmt_ratio_br(b_roas) if pd.notnull(b_roas) else "—")
-
-                        h_best_purchB = int(b.loc[b["purchases (B)"].idxmax(), "hour"]) if len(b_purch) and b_purch.max() > 0 else None
-                        best_purch_valB = int(b_purch.max()) if len(b_purch) else 0
-
-                        mask_roasB = (b_spend >= float(min_spend)) & (b_spend > 0)
-                        if mask_roasB.any():
-                            roasB_vals = b_roas_ser.copy()
-                            roasB_vals[~mask_roasB] = np.nan
-                            h_best_roasB = int(b.loc[np.nanargmax(roasB_vals), "hour"])
-                            best_roasB_val = float(np.nanmax(roasB_vals))
+                    st.markdown("**Top 5 horas (A)**")
+                    colTA, colTB = st.columns(2)
+                    with colTA:
+                        topA_p = a[["hour","purchases (A)","spend (A)","revenue (A)"]].sort_values("purchases (A)", ascending=False).head(5).copy()
+                        topA_p.rename(columns={"hour":"Hora","purchases (A)":"Compras","spend (A)":"Valor usado","revenue (A)":"Valor de conversão"}, inplace=True)
+                        topA_p["Valor usado"] = topA_p["Valor usado"].apply(_fmt_money_br)
+                        topA_p["Valor de conversão"] = topA_p["Valor de conversão"].apply(_fmt_money_br)
+                        st.dataframe(topA_p, use_container_width=True, height=220)
+                    with colTB:
+                        if mask_roasA.any():
+                            topA_r = a[mask_roasA][["hour","spend (A)","revenue (A)"]].copy()
+                            topA_r["ROAS"] = a_roas_ser[mask_roasA]
+                            topA_r = topA_r.sort_values("ROAS", ascending=False).head(5)
+                            topA_r.rename(columns={"hour":"Hora","spend (A)":"Valor usado","revenue (A)":"Valor de conversão"}, inplace=True)
+                            topA_r["Valor usado"] = topA_r["Valor usado"].apply(_fmt_money_br)
+                            topA_r["Valor de conversão"] = topA_r["Valor de conversão"].apply(_fmt_money_br)
+                            topA_r["ROAS"] = topA_r["ROAS"].map(_fmt_ratio_br)
                         else:
-                            h_best_roasB, best_roasB_val = None, np.nan
+                            topA_r = pd.DataFrame(columns=["Hora","Valor usado","Valor de conversão","ROAS"])
+                        st.dataframe(topA_r, use_container_width=True, height=220)
 
-                        rollB = b_purch.rolling(3, min_periods=1).sum()
-                        iB = int(rollB.idxmax()) if len(rollB) else 0
-                        def _bB(ix): return int(b.loc[min(max(ix, 0), len(b)-1), "hour"])
-                        winB_start, winB_mid, winB_end = _bB(iB-1), _bB(iB), _bB(iB+1)
-                        winB_sum = int(rollB.max()) if len(rollB) else 0
+                    st.info("Sugestões (A): priorize a janela forte, aumente orçamento nas horas de melhor ROAS (com gasto mínimo atendido) e reavalie criativo/lance nas horas com gasto e 0 compras.")
 
-                        wastedB = b[(b_spend > 0) & (b_purch == 0)]
-                        wastedB_hours = ", ".join(f"{int(h)}h" for h in wastedB["hour"].tolist()) if not wastedB.empty else "—"
+                    st.markdown("---")
 
-                        st.markdown(
-                            f"""
+                    # ===== INSIGHTS — Período B =====
+                    st.markdown("### 🔎 Insights — Período B")
+
+                    b = merged.sort_values("hour").copy()
+                    b_spend     = b["spend (B)"]
+                    b_rev       = b["revenue (B)"]
+                    b_purch     = b["purchases (B)"]
+                    b_roas_ser  = np.where(b_spend > 0, b_rev / b_spend, np.nan)
+
+                    b_tot_spend = float(b_spend.sum())
+                    b_tot_rev   = float(b_rev.sum())
+                    b_tot_purch = int(round(float(b_purch.sum())))
+                    b_roas      = (b_tot_rev / b_tot_spend) if b_tot_spend > 0 else np.nan
+
+                    d1, d2, d3, d4 = st.columns(4)
+                    d1.metric("Valor usado (B)", _fmt_money_br(b_tot_spend))
+                    d2.metric("Faturamento (B)", _fmt_money_br(b_tot_rev))
+                    d3.metric("Vendas (B)", f"{b_tot_purch:,}".replace(",", "."))
+                    d4.metric("ROAS (B)", _fmt_ratio_br(b_roas) if pd.notnull(b_roas) else "—")
+
+                    h_best_purchB = int(b.loc[b["purchases (B)"].idxmax(), "hour"]) if len(b_purch) and b_purch.max() > 0 else None
+                    best_purch_valB = int(b_purch.max()) if len(b_purch) else 0
+
+                    mask_roasB = (b_spend >= float(min_spend)) & (b_spend > 0)
+                    if mask_roasB.any():
+                        roasB_vals = b_roas_ser.copy()
+                        roasB_vals[~mask_roasB] = np.nan
+                        h_best_roasB = int(b.loc[np.nanargmax(roasB_vals), "hour"])
+                        best_roasB_val = float(np.nanmax(roasB_vals))
+                    else:
+                        h_best_roasB, best_roasB_val = None, np.nan
+
+                    rollB = b_purch.rolling(3, min_periods=1).sum()
+                    iB = int(rollB.idxmax()) if len(rollB) else 0
+                    def _bB(ix): return int(b.loc[min(max(ix, 0), len(b)-1), "hour"])
+                    winB_start, winB_mid, winB_end = _bB(iB-1), _bB(iB), _bB(iB+1)
+                    winB_sum = int(rollB.max()) if len(rollB) else 0
+
+                    wastedB = b[(b_spend > 0) & (b_purch == 0)]
+                    wastedB_hours = ", ".join(f"{int(h)}h" for h in wastedB["hour"].tolist()) if not wastedB.empty else "—"
+
+                    st.markdown(
+                        f"""
 **Pontos-chave (B)**  
 - 🕐 **Pico de compras:** **{(str(h_best_purchB)+'h') if h_best_purchB is not None else '—'}** ({best_purch_valB} compras).  
 - 💹 **Melhor ROAS** (gasto ≥ R$ {min_spend:,.0f}): **{(str(h_best_roasB)+'h') if h_best_roasB is not None else '—'}** ({_fmt_ratio_br(best_roasB_val) if pd.notnull(best_roasB_val) else '—'}).  
 - ⏱️ **Janela forte (3h):** **{winB_start}–{winB_end}h** (centro {winB_mid}h) somando **{winB_sum}** compras.  
 - 🧯 **Horas com gasto e 0 compras:** {wastedB_hours}.
 """.replace(",", "X").replace(".", ",").replace("X", ".")
-                        )
+                    )
 
-                        colTB1, colTB2 = st.columns(2)
-                        with colTB1:
-                            topB_p = b[["hour","purchases (B)","spend (B)","revenue (B)"]].sort_values("purchases (B)", ascending=False).head(5).copy()
-                            topB_p.rename(columns={"hour":"Hora","purchases (B)":"Compras","spend (B)":"Valor usado","revenue (B)":"Valor de conversão"}, inplace=True)
-                            topB_p["Valor usado"] = topB_p["Valor usado"].apply(_fmt_money_br)
-                            topB_p["Valor de conversão"] = topB_p["Valor de conversão"].apply(_fmt_money_br)
-                            st.dataframe(topB_p, use_container_width=True, height=220)
-                        with colTB2:
-                            if mask_roasB.any():
-                                topB_r = b[mask_roasB][["hour","spend (B)","revenue (B)"]].copy()
-                                topB_r["ROAS"] = b_roas_ser[mask_roasB]
-                                topB_r = topB_r.sort_values("ROAS", ascending=False).head(5)
-                                topB_r.rename(columns={"hour":"Hora","spend (B)":"Valor usado","revenue (B)":"Valor de conversão"}, inplace=True)
-                                topB_r["Valor usado"] = topB_r["Valor usado"].apply(_fmt_money_br)
-                                topB_r["Valor de conversão"] = topB_r["Valor de conversão"].apply(_fmt_money_br)
-                                topB_r["ROAS"] = topB_r["ROAS"].map(_fmt_ratio_br)
-                            else:
-                                topB_r = pd.DataFrame(columns=["Hora","Valor usado","Valor de conversão","ROAS"])
-                            st.dataframe(topB_r, use_container_width=True, height=220)
+                    colTB1, colTB2 = st.columns(2)
+                    with colTB1:
+                        topB_p = b[["hour","purchases (B)","spend (B)","revenue (B)"]].sort_values("purchases (B)", ascending=False).head(5).copy()
+                        topB_p.rename(columns={"hour":"Hora","purchases (B)":"Compras","spend (B)":"Valor usado","revenue (B)":"Valor de conversão"}, inplace=True)
+                        topB_p["Valor usado"] = topB_p["Valor usado"].apply(_fmt_money_br)
+                        topB_p["Valor de conversão"] = topB_p["Valor de conversão"].apply(_fmt_money_br)
+                        st.dataframe(topB_p, use_container_width=True, height=220)
+                    with colTB2:
+                        if mask_roasB.any():
+                            topB_r = b[mask_roasB][["hour","spend (B)","revenue (B)"]].copy()
+                            topB_r["ROAS"] = b_roas_ser[mask_roasB]
+                            topB_r = topB_r.sort_values("ROAS", ascending=False).head(5)
+                            topB_r.rename(columns={"hour":"Hora","spend (B)":"Valor usado","revenue (B)":"Valor de conversão"}, inplace=True)
+                            topB_r["Valor usado"] = topB_r["Valor usado"].apply(_fmt_money_br)
+                            topB_r["Valor de conversão"] = topB_r["Valor de conversão"].apply(_fmt_money_br)
+                            topB_r["ROAS"] = topB_r["ROAS"].map(_fmt_ratio_br)
+                        else:
+                            topB_r = pd.DataFrame(columns=["Hora","Valor usado","Valor de conversão","ROAS"])
+                        st.dataframe(topB_r, use_container_width=True, height=220)
 
-                        st.info("Sugestões (B): direcione orçamento para as horas com melhor ROAS e pause/teste criativos nas horas com gasto e 0 compras.")
+                    st.info("Sugestões (B): direcione orçamento para as horas com melhor ROAS e pause/teste criativos nas horas com gasto e 0 compras.")
 
 # -------------------- ABA 3: 📊 DETALHAMENTO --------------------
 with tab_detail:
