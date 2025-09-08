@@ -952,38 +952,27 @@ with tab_daily:
         # ...
     else:
         st.info("Troque o nível para 'campaign' para ver o detalhamento por campanha.")
-
-
+        
 # -------------------- ABA DE HORÁRIOS (Heatmap no topo) --------------------
 with tab_daypart:
     st.caption("Explore desempenho por hora: Heatmap no topo, depois comparação de dias e apanhado geral.")
 
-    # 1) Só baixa hourly quando o usuário quiser (e com limites)
-    days = (until - since).days + 1
-    st.info(f"Período selecionado: {days} dias. 'Horários' pode ser pesado em janelas longas.")
-
-    # Cap padrão (rápido). Deixe o usuário decidir acima disso:
-    allow_long = True
-    if days > 60:
-        allow_long = st.toggle(
-            f"Carregar horários para {days} dias? (pode demorar)",
-            value=False, help="Recomendado usar até 60 dias."
-        )
-
-    if not allow_long:
-        st.stop()
-
-    # 2) Granularidade do hourly (conta = MUITO mais rápido)
+    # 1) Granularidade do hourly (conta = mais rápido)
     gran = st.selectbox("Granularidade do hourly", ["Conta (rápido)", "Campanha (lento)"], index=0)
     level_hourly = "account" if gran.startswith("Conta") else "campaign"
 
-    # 3) Dispara a coleta somente agora
-    if df_hourly is None:
+    # 2) Cache por chave (granularidade + período)
+    cache = st.session_state.setdefault("hourly_cache", {})
+    hourly_key = (act_id, api_version, level_hourly, str(since), str(until))
+
+    # 3) Lazy-load: só busca quando precisa e guarda no cache
+    if df_hourly is None or hourly_key not in cache:
         with st.spinner("Carregando breakdown por hora…"):
-            df_hourly = fetch_insights_hourly(
+            cache[hourly_key] = fetch_insights_hourly(
                 act_id=act_id, token=token, api_version=api_version,
                 since_str=str(since), until_str=str(until), level=level_hourly
             )
+    df_hourly = cache[hourly_key]
 
     # --------- Filtro por produto (opcional) ---------
     produto_sel_hr = st.selectbox(
@@ -992,14 +981,16 @@ with tab_daypart:
         key="daypart_produto"
     )
 
-    # ⚠️ Se o usuário escolheu um produto, garantimos nível 'campaign' (senão o filtro por nome não funciona)
+    # Se o usuário escolher produto, garantimos nível 'campaign' (pra poder filtrar por nome)
     if produto_sel_hr != "(Todos)" and level_hourly != "campaign":
-        st.info("Para filtrar por produto, recarregando dados por hora no nível de **campanha**…")
-        with st.spinner("Recarregando breakdown por hora (campanha)…"):
-            df_hourly = fetch_insights_hourly(
-                act_id=act_id, token=token, api_version=api_version,
-                since_str=str(since), until_str=str(until), level="campaign"
-            )
+        hourly_key = (act_id, api_version, "campaign", str(since), str(until))
+        if hourly_key not in cache:
+            with st.spinner("Recarregando breakdown por hora (campanha)…"):
+                cache[hourly_key] = fetch_insights_hourly(
+                    act_id=act_id, token=token, api_version=api_version,
+                    since_str=str(since), until_str=str(until), level="campaign"
+                )
+        df_hourly = cache[hourly_key]
         level_hourly = "campaign"
 
     # Guard: checa vazio antes de usar
