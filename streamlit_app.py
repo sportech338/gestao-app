@@ -1661,11 +1661,15 @@ with tab_detail:
         disp["Valor de conversão"] = disp["Valor de conversão"].apply(_fmt_money_br)
         disp["ROAS"] = disp["ROAS"].map(_fmt_ratio_br)
 
+        cols = ["Data","Compras","ROAS","Valor usado","Valor de conversão",
+                "Cliques","LPV","Checkout","Add Pagto"]
+        cols_presentes = [c for c in cols if c in disp.columns]
+
         st.dataframe(
-            disp[["Data","Compras","ROAS","Valor usado","Valor de conversão",
-                  "Cliques","LPV","Checkout","Add Pagto"]],
-            use_container_width=True, height=520
+           disp[cols_presentes],
+           use_container_width=True, height=520
         )
+
 
         _bar_chart(g["date"].dt.strftime("%Y-%m-%d"), g["purchases"], "Compras por Dia", "Dia", "Compras")
         st.stop()
@@ -1705,10 +1709,13 @@ with tab_detail:
         disp["Valor de conversão"] = disp["Valor de conversão"].apply(_fmt_money_br)
         disp["ROAS"] = disp["ROAS"].map(_fmt_ratio_br)
 
+        cols = ["Hora","Compras","ROAS","Valor usado","Valor de conversão",
+                "Cliques","LPV","Checkout","Add Pagto"]
+        cols_presentes = [c for c in cols if c in disp.columns]
+
         st.dataframe(
-            disp[["Hora","Compras","ROAS","Valor usado","Valor de conversão",
-                  "Cliques","LPV","Checkout","Add Pagto"]],
-            use_container_width=True, height=520
+           disp[cols_presentes],
+           use_container_width=True, height=520
         )
 
         _bar_chart(g["hour"].astype(int), g["purchases"], "Compras por Hora", "Hora do dia", "Compras")
