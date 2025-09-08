@@ -1441,7 +1441,7 @@ with tab_detail:
 
     dimensao = st.radio(
         "Dimensão",
-        ["Populares","Idade","Gênero","Idade + Gênero","País","Plataforma","Posicionamento","Dia","Hora"],
+        ["Populares","Idade","Gênero","Idade + Gênero", "Região", "País","Plataforma","Posicionamento","Dia","Hora"],
         index=0, horizontal=True
     )
 
@@ -1565,6 +1565,7 @@ with tab_detail:
         "Idade": ["age"],
         "Gênero": ["gender"],
         "Idade + Gênero": ["age","gender"],
+        "Região": ["region"],
         "País": ["country"],
         "Plataforma": ["publisher_platform"],
         "Posicionamento": ["platform_position"],
@@ -1580,7 +1581,7 @@ with tab_detail:
 
         # Nomes amigáveis
         rename_map = {
-            "age":"Idade", "gender":"Gênero", "country":"País",
+            "age":"Idade", "gender":"Gênero", "region":"Região", "country":"País",
             "publisher_platform":"Plataforma", "platform_position":"Posicionamento"
         }
         group_cols = [rename_map.get(c, c) for c in bks]
