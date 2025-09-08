@@ -194,6 +194,18 @@ def _safe_div(n, d):
     d = float(d or 0)
     return (n / d) if d > 0 else np.nan
 
+
+def _chunks_by_days(since_str: str, until_str: str, max_days: int = 30):
+    """Divide [since, until] em janelas de até max_days (inclusive)."""
+    s = datetime.fromisoformat(str(since_str)).date()
+    u = datetime.fromisoformat(str(until_str)).date()
+    cur = s
+    while cur <= u:
+        end = min(cur + timedelta(days=max_days - 1), u)
+        yield str(cur), str(end)
+        cur = end + timedelta(days=1)
+
+
 # =============== Coleta (com fallback de campos extras) ===============
 @st.cache_data(ttl=600, show_spinner=True)
 def fetch_insights_daily(act_id: str, token: str, api_version: str,
@@ -215,98 +227,96 @@ def fetch_insights_daily(act_id: str, token: str, api_version: str,
     ]
     extra_fields = ["link_clicks", "landing_page_views"]
 
-    fields = base_fields + (extra_fields if try_extra_fields else [])
-    params = {
-        "access_token": token,
-        "level": level,
-        "time_range": json.dumps({"since": since_str, "until": until_str}),
-        "time_increment": 1,
-        "fields": ",".join(fields),
-        "limit": 500,
-        # >>> Fixos para paridade com o Ads Manager
-        "action_report_time": "conversion",
-        "action_attribution_windows": ",".join(ATTR_KEYS),  # "7d_click,1d_view"
-    }
+    def _fetch_range(_since: str, _until: str, _try_extra: bool) -> list[dict]:
+        fields = base_fields + (extra_fields if _try_extra else [])
+        params = {
+            "access_token": token,
+            "level": level,
+            "time_range": json.dumps({"since": _since, "until": _until}),
+            "time_increment": 1,
+            "fields": ",".join(fields),
+            "limit": 500,
+            "action_report_time": "conversion",
+            "action_attribution_windows": ",".join(ATTR_KEYS),
+        }
+        rows_local, next_url, next_params = [], base_url, params.copy()
+        while next_url:
+            resp = _retry_call(lambda: requests.get(next_url, params=next_params, timeout=90))
+            try:
+                payload = resp.json()
+            except Exception:
+                raise RuntimeError("Resposta inválida da Graph API.")
+            if resp.status_code != 200:
+                err = (payload or {}).get("error", {})
+                code, sub, msg = err.get("code"), err.get("error_subcode"), err.get("message")
+                if code == 100 and _try_extra:
+                    # refaz sem extras só para ESTA janela
+                    return _fetch_range(_since, _until, _try_extra=False)
+                raise RuntimeError(f"Graph API error {resp.status_code} | code={code} subcode={sub} | {msg}")
 
-    rows, next_url, next_params = [], base_url, params.copy()
-    while next_url:
-        resp = _retry_call(lambda: requests.get(next_url, params=next_params, timeout=90))
-        try:
-            payload = resp.json()
-        except Exception:
-            raise RuntimeError("Resposta inválida da Graph API.")
+            for rec in payload.get("data", []):
+                actions = rec.get("actions") or []
+                action_values = rec.get("action_values") or []
 
-        if resp.status_code != 200:
-            err = (payload or {}).get("error", {})
-            code, sub, msg = err.get("code"), err.get("error_subcode"), err.get("message")
-            if code == 100 and try_extra_fields:
-                # refaz sem extras
-                return fetch_insights_daily(act_id, token, api_version, since_str, until_str, level, try_extra_fields=False)
-            raise RuntimeError(f"Graph API error {resp.status_code} | code={code} subcode={sub} | {msg}")
+                link_clicks = rec.get("link_clicks", None)
+                if link_clicks is None:
+                    link_clicks = _sum_actions_exact(actions, ["link_click"], allowed_keys=ATTR_KEYS)
 
-        for rec in payload.get("data", []):
-            actions = rec.get("actions") or []
-            action_values = rec.get("action_values") or []
+                lpv = rec.get("landing_page_views", None)
+                if lpv is None:
+                    lpv = _sum_actions_exact(actions, ["landing_page_view"], allowed_keys=ATTR_KEYS)
+                    if lpv == 0:
+                        lpv = (_sum_actions_exact(actions, ["view_content"], allowed_keys=ATTR_KEYS)
+                               or _sum_actions_contains(actions, ["landing_page"], allowed_keys=ATTR_KEYS))
 
-            # Cliques em link (preferir field; fallback action com janela)
-            link_clicks = rec.get("link_clicks", None)
-            if link_clicks is None:
-                link_clicks = _sum_actions_exact(actions, ["link_click"], allowed_keys=ATTR_KEYS)
+                ic  = _sum_actions_exact(actions, ["initiate_checkout"], allowed_keys=ATTR_KEYS)
+                api = _sum_actions_exact(actions, ["add_payment_info"], allowed_keys=ATTR_KEYS)
+                purchases_cnt = _pick_purchase_totals(actions, allowed_keys=ATTR_KEYS)
+                revenue_val   = _pick_purchase_totals(action_values, allowed_keys=ATTR_KEYS)
 
-            # LPV (preferir field; fallback landing_page_view → view_content → contains "landing_page")
-            lpv = rec.get("landing_page_views", None)
-            if lpv is None:
-                lpv = _sum_actions_exact(actions, ["landing_page_view"], allowed_keys=ATTR_KEYS)
-                if lpv == 0:
-                    lpv = (_sum_actions_exact(actions, ["view_content"], allowed_keys=ATTR_KEYS)
-                           or _sum_actions_contains(actions, ["landing_page"], allowed_keys=ATTR_KEYS))
+                rows_local.append({
+                    "date":           pd.to_datetime(rec.get("date_start")),
+                    "currency":       rec.get("account_currency", "BRL"),
+                    "campaign_id":    rec.get("campaign_id", ""),
+                    "campaign_name":  rec.get("campaign_name", ""),
+                    "spend":          _to_float(rec.get("spend")),
+                    "impressions":    _to_float(rec.get("impressions")),
+                    "clicks":         _to_float(rec.get("clicks")),
+                    "link_clicks":    _to_float(link_clicks),
+                    "lpv":            _to_float(lpv),
+                    "init_checkout":  _to_float(ic),
+                    "add_payment":    _to_float(api),
+                    "purchases":      _to_float(purchases_cnt),
+                    "revenue":        _to_float(revenue_val),
+                })
 
-            # Iniciar checkout / add payment info com janela definida
-            ic  = _sum_actions_exact(actions, ["initiate_checkout"], allowed_keys=ATTR_KEYS)
-            api = _sum_actions_exact(actions, ["add_payment_info"], allowed_keys=ATTR_KEYS)
+            paging = (payload or {}).get("paging", {})
+            if paging.get("next"):
+                next_url, next_params = paging.get("next"), None
+            else:
+                after = (paging.get("cursors") or {}).get("after")
+                if after:
+                    next_url, next_params = base_url, params.copy()
+                    next_params["after"] = after
+                else:
+                    break
 
-            # Purchase (qtd) e Revenue (valor) respeitando janela
-            purchases_cnt = _pick_purchase_totals(actions, allowed_keys=ATTR_KEYS)
-            revenue_val   = _pick_purchase_totals(action_values, allowed_keys=ATTR_KEYS)
+        return rows_local
 
-            rows.append({
-                "date":           pd.to_datetime(rec.get("date_start")),
-                "currency":       rec.get("account_currency", "BRL"),
-                "campaign_id":    rec.get("campaign_id", ""),
-                "campaign_name":  rec.get("campaign_name", ""),
+    # Busca em janelas de até 30 dias (reduz carga e evita erro 100/timeout)
+    all_rows: list[dict] = []
+    for s_chunk, u_chunk in _chunks_by_days(since_str, until_str, max_days=30):
+        all_rows.extend(_fetch_range(s_chunk, u_chunk, try_extra_fields))
 
-                # métricas básicas
-                "spend":          _to_float(rec.get("spend")),
-                "impressions":    _to_float(rec.get("impressions")),
-                "clicks":         _to_float(rec.get("clicks")),
-
-                # funil
-                "link_clicks":    _to_float(link_clicks),
-                "lpv":            _to_float(lpv),
-                "init_checkout":  _to_float(ic),
-                "add_payment":    _to_float(api),
-                "purchases":      _to_float(purchases_cnt),
-                "revenue":        _to_float(revenue_val),
-            })
-
-        after = ((payload.get("paging") or {}).get("cursors") or {}).get("after")
-        if after:
-            next_url, next_params = base_url, params.copy()
-            next_params["after"] = after
-        else:
-            break
-
-    df = pd.DataFrame(rows)
+    df = pd.DataFrame(all_rows)
     if df.empty:
         return df
 
-    # >>> mantenha estes 4 passos DENTRO da função diária
     num_cols = ["spend", "impressions", "clicks", "link_clicks",
                 "lpv", "init_checkout", "add_payment", "purchases", "revenue"]
     for c in num_cols:
         df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0.0)
 
-    # Métricas derivadas (do período/dia; taxas serão calculadas em agregações)
     df["roas"] = np.where(df["spend"] > 0, df["revenue"] / df["spend"], np.nan)
     df = df.sort_values("date")
     return df
