@@ -1442,7 +1442,7 @@ with tab_detail:
 
     dimensao = st.radio(
         "Dimensão",
-        ["Populares","Idade","Gênero","Idade + Gênero", "Região", "País","Plataforma","Posicionamento","Dia","Hora"],
+        ["Populares","Idade","Gênero","Idade + Gênero", "Região", "País","Plataforma","Posicionamento"],
         index=0, horizontal=True
     )
 
@@ -1495,7 +1495,67 @@ with tab_detail:
         )
         st.plotly_chart(fig, use_container_width=True)
 
-    # =================== Dimensões ===================
+    # ========= POPULARES =========
+    if dimensao == "Populares":
+        # Base: usa o diário consolidado no período
+        base = df_daily.copy()
+        base = _apply_prod_filter(base)
+        base = _ensure_cols_exist(base)
+
+        # Agrega por campanha
+        g = (base.groupby(["campaign_id","campaign_name"], as_index=False)
+                  [["spend","revenue","purchases","link_clicks","lpv","init_checkout","add_payment"]]
+                  .sum())
+        g["ROAS"] = np.where(g["spend"]>0, g["revenue"]/g["spend"], np.nan)
+
+        # Aplica gasto mínimo (detalhe)
+        if min_spend_det and float(min_spend_det) > 0:
+            g = g[g["spend"] >= float(min_spend_det)]
+
+        # TOP 5
+        top_comp = g.sort_values(["purchases","ROAS"], ascending=[False,False]).head(5).copy()
+        top_roas = g[g["spend"]>0].sort_values("ROAS", ascending=False).head(5).copy()
+
+        # Formata
+        def _fmt_disp(df_):
+            out = df_.copy()
+            out["Valor usado"] = out["spend"].apply(_fmt_money_br)
+            out["Valor de conversão"] = out["revenue"].apply(_fmt_money_br)
+            out["ROAS"] = out["ROAS"].map(_fmt_ratio_br)
+            out.rename(columns={
+                "campaign_name":"Campanha", "purchases":"Compras",
+                "link_clicks":"Cliques", "lpv":"LPV",
+                "init_checkout":"Checkout", "add_payment":"Add Pagto"
+            }, inplace=True)
+            return out
+
+        disp_comp = _fmt_disp(top_comp)[["Campanha","Compras","Valor usado","Valor de conversão","ROAS","Cliques","LPV","Checkout","Add Pagto"]]
+        disp_roas = _fmt_disp(top_roas)[["Campanha","ROAS","Compras","Valor usado","Valor de conversão","Cliques","LPV","Checkout","Add Pagto"]]
+
+        st.subheader("TOP 5 — Campanhas")
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown("**Por Compras**")
+            st.dataframe(disp_comp, use_container_width=True, height=260)
+            st.download_button(
+                "⬇️ Baixar CSV — TOP 5 por Compras",
+                data=disp_comp.to_csv(index=False).encode("utf-8-sig"),
+                file_name="top5_campanhas_por_compras.csv",
+                mime="text/csv"
+            )
+        with c2:
+            st.markdown("**Por ROAS** (com gasto > 0)")
+            st.dataframe(disp_roas, use_container_width=True, height=260)
+            st.download_button(
+                "⬇️ Baixar CSV — TOP 5 por ROAS",
+                data=disp_roas.to_csv(index=False).encode("utf-8-sig"),
+                file_name="top5_campanhas_por_roas.csv",
+                mime="text/csv"
+            )
+
+        st.stop()  # evita executar o restante desta aba quando Populares estiver selecionado
+
+    # ========= DEMAIS DIMENSÕES =========
     dim_to_breakdowns = {
         "Idade": ["age"],
         "Gênero": ["gender"],
@@ -1506,8 +1566,8 @@ with tab_detail:
         "Posicionamento": ["publisher_platform","platform_position"],
     }
 
-    # 🔧 Proteção para Posicionamento em nível errado
-    level_bd = level  # cria uma cópia do nível só para o breakdown
+    # Proteção para Posicionamento em nível errado
+    level_bd = level
     if dimensao == "Posicionamento" and level_bd not in ["adset", "ad"]:
         level_bd = "adset"
 
@@ -1534,7 +1594,6 @@ with tab_detail:
 
         st.subheader(f"Desempenho por {dimensao}")
 
-        # 🔧 cols_presentes em vez de lista fixa
         base_cols = group_cols + ["Compras","ROAS","Valor usado","Valor de conversão",
                                   "Cliques","LPV","Checkout","Add Pagto"]
         disp = disp.rename(columns={
