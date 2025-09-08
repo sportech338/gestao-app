@@ -21,6 +21,7 @@ st.markdown("""
 
 # Janelas de atribuição (paridade com Ads Manager)
 ATTR_KEYS = ["7d_click", "1d_view"]
+PRODUTOS = ["Flexlive", "KneePro", "NasalFlex", "Meniscus"]
 
 # --- Constantes e parser para breakdown por hora
 HOUR_BREAKDOWN = "hourly_stats_aggregated_by_advertiser_time_zone"
@@ -426,13 +427,96 @@ def fetch_insights_hourly(act_id: str, token: str, api_version: str,
         st.error(f"Hour breakdown (impression) também falhou: {e2}")
         return pd.DataFrame()
 
+@st.cache_data(ttl=600, show_spinner=True)
+def fetch_insights_breakdown(act_id: str, token: str, api_version: str,
+                             since_str: str, until_str: str,
+                             breakdowns: list[str],
+                             level: str = "campaign") -> pd.DataFrame:
+    """
+    Coleta insights com 1 ou 2 breakdowns (ex.: ['age'], ['gender'], ['age','gender'],
+    ['country'], ['publisher_platform'], ['platform_position']).
+    Mantém paridade: action_report_time=conversion + ATTR_KEYS.
+    """
+    act_id = _ensure_act_prefix(act_id)
+    base_url = f"https://graph.facebook.com/{api_version}/{act_id}/insights"
+    fields = [
+        "spend","impressions","clicks","actions","action_values",
+        "account_currency","date_start","campaign_id","campaign_name"
+    ]
+    params = {
+        "access_token": token,
+        "level": level,
+        "time_range": json.dumps({"since": since_str, "until": until_str}),
+        "time_increment": 1,
+        "fields": ",".join(fields),
+        "limit": 500,
+        "action_report_time": "conversion",
+        "action_attribution_windows": ",".join(ATTR_KEYS),
+        "breakdowns": ",".join(breakdowns[:2])
+    }
+
+    rows, next_url, next_params = [], base_url, params.copy()
+    while next_url:
+        resp = _retry_call(lambda: requests.get(next_url, params=next_params, timeout=90))
+        payload = resp.json()
+        if resp.status_code != 200:
+            err = (payload or {}).get("error", {})
+            raise RuntimeError(f"Graph API error breakdown | code={err.get('code')} sub={err.get('error_subcode')} | {err.get('message')}")
+
+        for rec in payload.get("data", []):
+            actions = rec.get("actions") or []
+            action_values = rec.get("action_values") or []
+
+            link_clicks = _sum_actions_exact(actions, ["link_click"], allowed_keys=ATTR_KEYS)
+            lpv = (_sum_actions_exact(actions, ["landing_page_view"], allowed_keys=ATTR_KEYS)
+                   or _sum_actions_exact(actions, ["view_content"], allowed_keys=ATTR_KEYS)
+                   or _sum_actions_contains(actions, ["landing_page"], allowed_keys=ATTR_KEYS))
+            ic   = _sum_actions_exact(actions, ["initiate_checkout"], allowed_keys=ATTR_KEYS)
+            api_ = _sum_actions_exact(actions, ["add_payment_info"], allowed_keys=ATTR_KEYS)
+            pur  = _pick_purchase_totals(actions, allowed_keys=ATTR_KEYS)
+            rev  = _pick_purchase_totals(action_values, allowed_keys=ATTR_KEYS)
+
+            base = {
+                "currency":      rec.get("account_currency","BRL"),
+                "campaign_id":   rec.get("campaign_id",""),
+                "campaign_name": rec.get("campaign_name",""),
+                "spend":         _to_float(rec.get("spend")),
+                "impressions":   _to_float(rec.get("impressions")),
+                "clicks":        _to_float(rec.get("clicks")),
+                "link_clicks":   _to_float(link_clicks),
+                "lpv":           _to_float(lpv),
+                "init_checkout": _to_float(ic),
+                "add_payment":   _to_float(api_),
+                "purchases":     _to_float(pur),
+                "revenue":       _to_float(rev),
+            }
+            for b in breakdowns[:2]:
+                base[b] = rec.get(b)
+            rows.append(base)
+
+        paging = (payload or {}).get("paging", {})
+        if paging.get("next"):
+            next_url, next_params = paging.get("next"), None
+        else:
+            after = (paging.get("cursors") or {}).get("after")
+            if after:
+                next_url, next_params = base_url, params.copy()
+                next_params["after"] = after
+            else:
+                break
+
+    df = pd.DataFrame(rows)
+    if df.empty:
+        return df
+    df["ROAS"] = np.where(df["spend"]>0, df["revenue"]/df["spend"], np.nan)
+    return df
+
 # =============== Sidebar (filtros) ===============
 st.sidebar.header("Configuração")
 act_id = st.sidebar.text_input("Ad Account ID", placeholder="ex.: act_1234567890")
 token = st.sidebar.text_input("Access Token", type="password")
 api_version = st.sidebar.text_input("API Version", value="v23.0")
 level = st.sidebar.selectbox("Nível (recomendado: campaign)", ["campaign", "account"], index=0)
-today = datetime.now(APP_TZ).date()
 
 preset = st.sidebar.radio(
     "Período rápido",
@@ -447,8 +531,7 @@ preset = st.sidebar.radio(
 
 def _range_from_preset(p):
     local_today = datetime.now(APP_TZ).date()
-    base_end = local_today - timedelta(days=1)  # períodos padrão terminam ontem
-
+    base_end = local_today - timedelta(days=1) 
     if p == "Hoje":
         return local_today, local_today
     if p == "Ontem":
@@ -490,7 +573,7 @@ ready = bool(act_id and token)
 
 # =============== Tela ===============
 st.title("📊 Meta Ads — Paridade com Filtro + Funil")
-st.caption("KPIs + Funil: Cliques → LPV → Finalização → Add Pagamento → Compra. Tudo alinhado ao período selecionado.")
+st.caption("KPIs + Funil: Cliques → LPV → Checkout → Add Pagamento → Compra. Tudo alinhado ao período selecionado.")
 
 if not ready:
     st.info("Informe **Ad Account ID** e **Access Token** para iniciar.")
@@ -511,7 +594,7 @@ if df_daily.empty and (df_hourly is None or df_hourly.empty):
     st.warning("Sem dados para o período. Verifique permissões, conta e se há eventos de Purchase (value/currency).")
     st.stop()
 
-tab_daily, tab_daypart = st.tabs(["📅 Visão diária", "⏱️ Horários (principal)"])
+tab_daily, tab_daypart, tab_detail = st.tabs(["📅 Visão diária", "⏱️ Horários (principal)", "📊 Detalhamento"])
 
 # -------------------- ABA 1: VISÃO DIÁRIA --------------------
 with tab_daily:
@@ -549,11 +632,11 @@ with tab_daily:
         st.markdown('<div class="kpi-card"><div class="small-muted">Valor de conversão</div>'
                     f'<div class="big-number">{_fmt_money_br(tot_rev)}</div></div>', unsafe_allow_html=True)
     with c4:
-        roas_txt = (f"{roas_g:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-                    if pd.notnull(roas_g) else "—")
+        roas_txt = _fmt_ratio_br(roas_g) if pd.notnull(roas_g) else "—"
         st.markdown('<div class="kpi-card"><div class="small-muted">ROAS</div>'
                     f'<div class="big-number">{roas_txt}</div></div>',
                     unsafe_allow_html=True)
+
 
     st.divider()
 
@@ -896,7 +979,7 @@ with tab_daily:
             dd_fmt["roas"]    = dd_fmt["roas"].map(lambda x: f"{x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") if pd.notnull(x) else "")
             st.dataframe(dd_fmt.rename(columns={
                 "date": "Data", "campaign_name": "Campanha", "spend": "Valor usado",
-                "link_clicks": "Cliques", "lpv": "LPV", "init_checkout": "Finalização",
+                "link_clicks": "Cliques", "lpv": "LPV", "init_checkout": "Checkout",
                 "add_payment": "Add Pagamento", "purchases": "Compras",
                 "revenue": "Valor de conversão", "roas": "ROAS"
             }), use_container_width=True)
@@ -907,10 +990,7 @@ with tab_daily:
 st.markdown("---")
 with st.expander("🔎 Análise por produto (opcional)", expanded=False):
     # Lista de produtos (adicione/edite conforme for lançando mais)
-    produtos = ["Flexlive", "KneePro", "NasalFlex", "Meniscus"]
-
-    # incluir opção "(Todos)"
-    produto_sel = st.selectbox("Selecione um produto", ["(Todos)"] + produtos)
+    produto_sel = st.selectbox("Selecione um produto", ["(Todos)"] + PRODUTOS)
 
     if produto_sel != "(Todos)":
         # filtra campanhas cujo nome contenha o nome do produto
@@ -972,8 +1052,7 @@ with tab_daypart:
         st.info("A conta/período não retornou breakdown por hora. Use a visão diária.")
     else:
         # ========= FILTRO POR PRODUTO =========
-        produtos = ["Flexlive", "KneePro", "NasalFlex", "Meniscus"]
-        produto_sel_hr = st.selectbox("Filtrar por produto (opcional)", ["(Todos)"] + produtos, key="daypart_produto")
+        produto_sel_hr = st.selectbox("Filtrar por produto (opcional)", ["(Todos)"] + PRODUTOS, key="daypart_produto")
 
         d = df_hourly.copy()
         if produto_sel_hr != "(Todos)":
@@ -1407,3 +1486,266 @@ with tab_daypart:
                             st.dataframe(topB_r, use_container_width=True, height=220)
 
                         st.info("Sugestões (B): direcione orçamento para as horas com melhor ROAS e pause/teste criativos nas horas com gasto e 0 compras.")
+
+# -------------------- ABA 3: 📊 DETALHAMENTO --------------------
+with tab_detail:
+    st.caption("Explore por dimensão: Idade, Gênero, Idade+Gênero, País, Plataforma, Posicionamento, Dia e Hora. Há um modo 'Populares' com os TOP 5.")
+
+    colf1, colf2 = st.columns([2,1])
+    with colf1:
+        produto_sel_det = st.selectbox("Filtrar por produto (opcional)", ["(Todos)"] + PRODUTOS, key="det_produto")
+
+    with colf2:
+        min_spend_det = st.slider("Gasto mínimo para considerar (R$)", 0.0, 2000.0, 0.0, 10.0, key="det_min_spend")
+
+    dimensao = st.radio(
+        "Dimensão",
+        ["Populares","Idade","Gênero","Idade + Gênero","País","Plataforma","Posicionamento","Dia","Hora"],
+        index=0, horizontal=True
+    )
+
+    # =================== Helpers locais para a aba Detalhamento ===================
+    def _apply_prod_filter(df_base: pd.DataFrame) -> pd.DataFrame:
+        if produto_sel_det and produto_sel_det != "(Todos)":
+            mask = df_base["campaign_name"].str.contains(produto_sel_det, case=False, na=False)
+            return df_base[mask].copy()
+        return df_base
+
+    def _agg_and_format(df: pd.DataFrame, group_cols: list[str]):
+        # Sempre retorna (g, gf)
+        if df is None or df.empty:
+            return pd.DataFrame(), pd.DataFrame()
+        df2 = _apply_prod_filter(df)
+        if df2.empty:
+            return pd.DataFrame(), pd.DataFrame()
+
+        agg_cols = ["spend","revenue","purchases","link_clicks","lpv","init_checkout","add_payment"]
+        g = df2.groupby(group_cols, dropna=False, as_index=False)[agg_cols].sum()
+        g["ROAS"] = np.where(g["spend"]>0, g["revenue"]/g["spend"], np.nan)
+
+        # filtro por gasto mínimo
+        if min_spend_det and float(min_spend_det) > 0:
+            g = g[g["spend"] >= float(min_spend_det)]
+
+        # ordenação padrão: Compras desc, ROAS desc
+        if not g.empty:
+            g = g.sort_values(["purchases","ROAS"], ascending=[False, False])
+
+        # versão formatada para exibição
+        gf = g.copy()
+        if not gf.empty:
+            gf["Valor usado"] = gf["spend"].apply(_fmt_money_br)
+            gf["Valor de conversão"] = gf["revenue"].apply(_fmt_money_br)
+            gf["ROAS"] = gf["ROAS"].map(_fmt_ratio_br)
+            gf = gf.drop(columns=["spend","revenue"])
+        return g, gf
+
+
+    def _bar_chart(x_labels, y_values, title, x_title, y_title):
+        fig = go.Figure(go.Bar(x=x_labels, y=y_values))
+        fig.update_layout(
+            title=title, xaxis_title=x_title, yaxis_title=y_title,
+            height=420, template="plotly_white",
+            margin=dict(l=10, r=10, t=48, b=10), separators=",."
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+    # =================== Populares (TOP 5 em cada dimensão principal) ===================
+    if dimensao == "Populares":
+        st.subheader("TOP 5 — Quem mais compra em cada dimensão")
+
+        # Idade
+        with st.container():
+            st.markdown("**Idade**")
+            df_age = fetch_insights_breakdown(act_id, token, api_version, str(since), str(until), ["age"], level)
+            g, gf = _agg_and_format(df_age, ["age"]) if not df_age.empty else (pd.DataFrame(), pd.DataFrame())
+            if gf.empty:
+                st.info("Sem dados por Idade para o período/filtro.")
+            else:
+                top = gf.head(5).rename(columns={"age":"Idade","purchases":"Compras","link_clicks":"Cliques","lpv":"LPV","init_checkout":"Checkout","add_payment":"Add Pagto"})
+                st.dataframe(top[["Idade","Compras","ROAS","Valor usado","Valor de conversão","Cliques","LPV","Checkout","Add Pagto"]], use_container_width=True, height=230)
+                _bar_chart(top["Idade"], g.head(5)["purchases"], "Compras por Idade (TOP 5)", "Idade", "Compras")
+
+        st.markdown("---")
+
+        # Gênero
+        with st.container():
+            st.markdown("**Gênero**")
+            df_gen = fetch_insights_breakdown(act_id, token, api_version, str(since), str(until), ["gender"], level)
+            g, gf = _agg_and_format(df_gen, ["gender"]) if not df_gen.empty else (pd.DataFrame(), pd.DataFrame())
+            if gf.empty:
+                st.info("Sem dados por Gênero para o período/filtro.")
+            else:
+                top = gf.head(5).rename(columns={"gender":"Gênero","purchases":"Compras","link_clicks":"Cliques","lpv":"LPV","init_checkout":"Checkout","add_payment":"Add Pagto"})
+                st.dataframe(top[["Gênero","Compras","ROAS","Valor usado","Valor de conversão","Cliques","LPV","Checkout","Add Pagto"]], use_container_width=True, height=230)
+                _bar_chart(top["Gênero"], g.head(5)["purchases"], "Compras por Gênero (TOP 5)", "Gênero", "Compras")
+
+        st.markdown("---")
+
+        # País
+        with st.container():
+            st.markdown("**País**")
+            df_cty = fetch_insights_breakdown(act_id, token, api_version, str(since), str(until), ["country"], level)
+            g, gf = _agg_and_format(df_cty, ["country"]) if not df_cty.empty else (pd.DataFrame(), pd.DataFrame())
+            if gf.empty:
+                st.info("Sem dados por País para o período/filtro.")
+            else:
+                top = gf.head(5).rename(columns={"country":"País","purchases":"Compras","link_clicks":"Cliques","lpv":"LPV","init_checkout":"Checkout","add_payment":"Add Pagto"})
+                st.dataframe(top[["País","Compras","ROAS","Valor usado","Valor de conversão","Cliques","LPV","Checkout","Add Pagto"]], use_container_width=True, height=230)
+                _bar_chart(top["País"], g.head(5)["purchases"], "Compras por País (TOP 5)", "País", "Compras")
+
+        st.markdown("---")
+
+        # Plataforma (publisher_platform) e Posicionamento (platform_position)
+        cA, cB = st.columns(2)
+        with cA:
+            st.markdown("**Plataforma**")
+            df_plat = fetch_insights_breakdown(act_id, token, api_version, str(since), str(until), ["publisher_platform"], level)
+            g, gf = _agg_and_format(df_plat, ["publisher_platform"]) if not df_plat.empty else (pd.DataFrame(), pd.DataFrame())
+            if gf.empty:
+                st.info("Sem dados por Plataforma.")
+            else:
+                top = gf.head(5).rename(columns={"publisher_platform":"Plataforma","purchases":"Compras"})
+                st.dataframe(top[["Plataforma","Compras","ROAS","Valor usado","Valor de conversão"]], use_container_width=True, height=230)
+        with cB:
+            st.markdown("**Posicionamento**")
+            df_pos = fetch_insights_breakdown(act_id, token, api_version, str(since), str(until), ["platform_position"], level)
+            g, gf = _agg_and_format(df_pos, ["platform_position"]) if not df_pos.empty else (pd.DataFrame(), pd.DataFrame())
+            if gf.empty:
+                st.info("Sem dados por Posicionamento.")
+            else:
+                top = gf.head(5).rename(columns={"platform_position":"Posicionamento","purchases":"Compras"})
+                st.dataframe(top[["Posicionamento","Compras","ROAS","Valor usado","Valor de conversão"]], use_container_width=True, height=230)
+
+        st.stop()  # encerra a aba no modo "Populares"
+
+    # =================== Dimensões 1D e 2D (Idade, Gênero, Idade+Gênero, País, Plataforma, Posicionamento) ===================
+    dim_to_breakdowns = {
+        "Idade": ["age"],
+        "Gênero": ["gender"],
+        "Idade + Gênero": ["age","gender"],
+        "País": ["country"],
+        "Plataforma": ["publisher_platform"],
+        "Posicionamento": ["platform_position"],
+    }
+
+    if dimensao in dim_to_breakdowns:
+        bks = dim_to_breakdowns[dimensao]
+        df_bd = fetch_insights_breakdown(act_id, token, api_version, str(since), str(until), bks, level)
+
+        if df_bd.empty:
+            st.info(f"Sem dados para {dimensao} no período/filtro.")
+            st.stop()
+
+        # Nomes amigáveis
+        rename_map = {
+            "age":"Idade", "gender":"Gênero", "country":"País",
+            "publisher_platform":"Plataforma", "platform_position":"Posicionamento"
+        }
+        group_cols = [rename_map.get(c, c) for c in bks]
+
+        # agrega + formata
+        raw, disp = _agg_and_format(df_bd.rename(columns=rename_map), group_cols)
+        if disp.empty:
+            st.info(f"Sem dados para {dimensao} após aplicar filtros.")
+            st.stop()
+
+        st.subheader(f"Desempenho por {dimensao}")
+        # tabela
+        base_cols = group_cols + ["Compras","ROAS","Valor usado","Valor de conversão","Cliques","LPV","Checkout","Add Pagto"]
+        disp = disp.rename(columns={
+            "purchases":"Compras","link_clicks":"Cliques","lpv":"LPV",
+            "init_checkout":"Checkout","add_payment":"Add Pagto"
+        })
+        # garante colunas na ordem
+        for c in base_cols:
+            if c not in disp.columns:  # caso 2D, as outras colunas já existem
+                pass
+        st.dataframe(disp[base_cols], use_container_width=True, height=520)
+
+        # gráfico: compras por grupo (se 1D) ou heatmap (se 2D)
+        if len(group_cols) == 1:
+            xlab = group_cols[0]
+            _bar_chart(raw[xlab], raw["purchases"], f"Compras por {xlab}", xlab, "Compras")
+        else:
+            idx, col = group_cols
+            pvt = raw.pivot_table(index=idx, columns=col, values="purchases", aggfunc="sum").fillna(0)
+            fig = go.Figure(data=go.Heatmap(
+                z=pvt.values, x=pvt.columns.astype(str), y=pvt.index.astype(str),
+                colorbar=dict(title="Compras"),
+                hovertemplate=f"{idx}: "+"%{y}<br>"+f"{col}: "+"%{x}<br>Compras: %{z}<extra></extra>"
+            ))
+            fig.update_layout(
+                title=f"Heatmap — Compras por {idx} × {col}",
+                height=460, template="plotly_white",
+                margin=dict(l=10, r=10, t=48, b=10), separators=",."
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+        st.stop()
+
+    # =================== Dia ===================
+    if dimensao == "Dia":
+        st.subheader("Desempenho por Dia")
+        if df_daily.empty:
+            st.info("Sem dados diários.")
+            st.stop()
+
+        d = _apply_prod_filter(df_daily.copy())
+        if d.empty:
+            st.info("Sem dados após filtro de produto.")
+            st.stop()
+
+        g = d.groupby(d["date"].dt.date, as_index=False)[["spend","revenue","purchases","link_clicks","lpv","init_checkout","add_payment"]].sum()
+        g["ROAS"] = np.where(g["spend"]>0, g["revenue"]/g["spend"], np.nan)
+
+        if min_spend_det and float(min_spend_det) > 0:
+            g = g[g["spend"] >= float(min_spend_det)]
+
+        disp = g.rename(columns={
+            "date":"Data","purchases":"Compras","link_clicks":"Cliques","lpv":"LPV",
+            "init_checkout":"Checkout","add_payment":"Add Pagto","spend":"Valor usado","revenue":"Valor de conversão"
+        })
+        disp["Valor usado"] = disp["Valor usado"].apply(_fmt_money_br)
+        disp["Valor de conversão"] = disp["Valor de conversão"].apply(_fmt_money_br)
+        disp["ROAS"] = disp["ROAS"].map(_fmt_ratio_br)
+
+        st.dataframe(disp[["Data","Compras","ROAS","Valor usado","Valor de conversão","Cliques","LPV","Checkout","Add Pagto"]],
+                     use_container_width=True, height=520)
+
+        # gráfico: série de compras
+        _bar_chart(g["date"].dt.strftime("%Y-%m-%d"), g["purchases"], "Compras por Dia", "Dia", "Compras")
+        st.stop()
+
+    # =================== Hora ===================
+    if dimensao == "Hora":
+        st.subheader("Desempenho por Hora")
+        if df_hourly is None or df_hourly.empty:
+            st.info("Sem breakdown por hora para o período.")
+            st.stop()
+
+        d = _apply_prod_filter(df_hourly.copy())
+        d = d.dropna(subset=["hour"])
+        if d.empty:
+            st.info("Sem dados após filtro de produto.")
+            st.stop()
+
+        g = d.groupby("hour", as_index=False)[["spend","revenue","purchases","link_clicks","lpv","init_checkout","add_payment"]].sum()
+        g["ROAS"] = np.where(g["spend"]>0, g["revenue"]/g["spend"], np.nan)
+
+        if min_spend_det and float(min_spend_det) > 0:
+            g = g[g["spend"] >= float(min_spend_det)]
+
+        disp = g.rename(columns={
+            "hour":"Hora","purchases":"Compras","link_clicks":"Cliques","lpv":"LPV",
+            "init_checkout":"Checkout","add_payment":"Add Pagto","spend":"Valor usado","revenue":"Valor de conversão"
+        })
+        disp["Valor usado"] = disp["Valor usado"].apply(_fmt_money_br)
+        disp["Valor de conversão"] = disp["Valor de conversão"].apply(_fmt_money_br)
+        disp["ROAS"] = disp["ROAS"].map(_fmt_ratio_br)
+
+        st.dataframe(disp[["Hora","Compras","ROAS","Valor usado","Valor de conversão","Cliques","LPV","Checkout","Add Pagto"]],
+                     use_container_width=True, height=520)
+
+        _bar_chart(g["hour"].astype(int), g["purchases"], "Compras por Hora", "Hora do dia", "Compras")
+        st.stop()
