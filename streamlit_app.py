@@ -474,7 +474,7 @@ def fetch_insights_hourly(act_id: str, token: str, api_version: str,
     df["roas"] = np.where(df["spend"] > 0, df["revenue"] / df["spend"], np.nan)
     return df.sort_values(["date", "hour"])
 
-@st.cache_data(ttl=1800, show_spinner=True)
+@st.cache_data(ttl=600, show_spinner=True)
 def fetch_insights_breakdown(act_id: str, token: str, api_version: str,
                              since_str: str, until_str: str,
                              breakdowns: list[str],
@@ -482,8 +482,8 @@ def fetch_insights_breakdown(act_id: str, token: str, api_version: str,
                              product_name: str | None = None) -> pd.DataFrame:
     """
     Coleta insights com 1 ou 2 breakdowns.
-    Paridade: action_report_time=conversion + ATTR_KEYS.
-    Otimização: time_increment='all_days' para reduzir linhas (agrega o período no servidor).
+    Mantém paridade (conversion + ATTR_KEYS), chunking 30d, requests.Session e paralelismo.
+    Opcional: filtering por campanha (product_name) direto na API.
     """
     act_id = _ensure_act_prefix(act_id)
     base_url = f"https://graph.facebook.com/{api_version}/{act_id}/insights"
@@ -497,14 +497,13 @@ def fetch_insights_breakdown(act_id: str, token: str, api_version: str,
             "access_token": token,
             "level": level,
             "time_range": json.dumps({"since": _since, "until": _until}),
-            "time_increment": "all_days",  # ✅ agrega no servidor
+            "time_increment": 1,
             "fields": ",".join(fields),
             "limit": 500,
             "action_report_time": "conversion",
             "action_attribution_windows": ",".join(ATTR_KEYS),
             "breakdowns": ",".join(breakdowns[:2])
         }
-        # (opcional) filtro por produto no servidor — mantenho igual ao seu
         if level == "campaign" and product_name and product_name != "(Todos)":
             params["filtering"] = json.dumps([{
                 "field": "campaign.name", "operator": "CONTAIN", "value": product_name
@@ -566,7 +565,7 @@ def fetch_insights_breakdown(act_id: str, token: str, api_version: str,
 
         return rows
 
-    # Com 'all_days', normalmente 1 chamada cobre o período, mas mantenho o esqueleto
+    # 🔑 Junta em blocos de até 30 dias — em paralelo
     chunks = list(_chunks_by_days(since_str, until_str, max_days=30))
     all_rows: list[dict] = []
     with ThreadPoolExecutor(max_workers=min(5, len(chunks))) as ex:
@@ -1414,7 +1413,7 @@ with tab_daypart:
 
 # -------------------- ABA 3: 📊 DETALHAMENTO --------------------
 with tab_detail:
-    st.caption("Explore por dimensão: Idade, Gênero, Idade+Gênero, País, Plataforma, Posicionamento. Há um modo 'Populares' com os TOP 5.")
+    st.caption("Explore por dimensão: Idade, Gênero, Idade+Gênero, País, Plataforma, Posicionamento, Dia e Hora. Há um modo 'Populares' com os TOP 5.")
 
     colf1, colf2 = st.columns([2,1])
     with colf1:
@@ -1427,29 +1426,6 @@ with tab_detail:
         ["Populares","Idade","Gênero","Idade + Gênero", "Região", "País","Plataforma","Posicionamento"],
         index=0, horizontal=True
     )
-
-    # ---------- Lazy-load (só busca quando pedir) ----------
-    if "detail_ready" not in st.session_state:
-        st.session_state["detail_ready"] = False
-
-    if not st.session_state["detail_ready"]:
-        st.info("Para evitar chamadas pesadas desnecessárias, carregue o detalhamento quando quiser.")
-        if st.button("🚀 Carregar detalhamento"):
-            st.session_state["detail_ready"] = True
-        else:
-            st.stop()
-
-    # ---------- Cache de sessão por chave de consulta ----------
-    bd_cache = st.session_state.setdefault("breakdown_cache", {})
-
-    def get_breakdown(bks_tuple, level_bd_local, produto_name, since_dt, until_dt):
-        key = (act_id, api_version, level_bd_local, str(since_dt), str(until_dt), bks_tuple, produto_name or "(Todos)")
-        if key not in bd_cache:
-            bd_cache[key] = fetch_insights_breakdown(
-                act_id, token, api_version, str(since_dt), str(until_dt),
-                list(bks_tuple), level_bd_local, product_name=produto_name
-            )
-        return bd_cache[key]
 
     # ========= Helpers locais =========
     def _apply_prod_filter(df_base: pd.DataFrame) -> pd.DataFrame:
@@ -1500,25 +1476,28 @@ with tab_detail:
         )
         st.plotly_chart(fig, use_container_width=True)
 
-    MAX_ROWS = 300  # limite para renderização (frontend leve)
-
-    # ========= POPULARES (local, rápido) =========
+    # ========= POPULARES =========
     if dimensao == "Populares":
+        # Base: usa o diário consolidado no período
         base = df_daily.copy()
         base = _apply_prod_filter(base)
         base = _ensure_cols_exist(base)
 
+        # Agrega por campanha
         g = (base.groupby(["campaign_id","campaign_name"], as_index=False)
                   [["spend","revenue","purchases","link_clicks","lpv","init_checkout","add_payment"]]
                   .sum())
         g["ROAS"] = np.where(g["spend"]>0, g["revenue"]/g["spend"], np.nan)
 
+        # Aplica gasto mínimo (detalhe)
         if min_spend_det and float(min_spend_det) > 0:
             g = g[g["spend"] >= float(min_spend_det)]
 
+        # TOP 5
         top_comp = g.sort_values(["purchases","ROAS"], ascending=[False,False]).head(5).copy()
         top_roas = g[g["spend"]>0].sort_values("ROAS", ascending=False).head(5).copy()
 
+        # Formata
         def _fmt_disp(df_):
             out = df_.copy()
             out["Valor usado"] = out["spend"].apply(_fmt_money_br)
@@ -1554,9 +1533,10 @@ with tab_detail:
                 file_name="top5_campanhas_por_roas.csv",
                 mime="text/csv"
             )
-        st.stop()
 
-    # ========= DEMAIS DIMENSÕES (com cache + all_days) =========
+        st.stop()  # evita executar o restante desta aba quando Populares estiver selecionado
+
+    # ========= DEMAIS DIMENSÕES =========
     dim_to_breakdowns = {
         "Idade": ["age"],
         "Gênero": ["gender"],
@@ -1567,22 +1547,17 @@ with tab_detail:
         "Posicionamento": ["publisher_platform","platform_position"],
     }
 
+    # Proteção para Posicionamento em nível errado
     level_bd = level
-    if dimensao == "Posicionamento":
-        if level_bd not in ["adset", "ad"]:
-            level_bd = "adset"
-        go_pos = st.toggle("Incluir detalhamento por Posicionamento (pode ser lento)", value=False,
-                           help="Ative apenas se precisar dessa visão específica. Pode retornar muitas linhas.")
-        if not go_pos:
-            st.info("Ative o toggle acima para carregar o detalhamento por Posicionamento.")
-            st.stop()
+    if dimensao == "Posicionamento" and level_bd not in ["adset", "ad"]:
+        level_bd = "adset"
 
     if dimensao in dim_to_breakdowns:
         bks = dim_to_breakdowns[dimensao]
-        bks_tuple = tuple(bks)
-
-        with st.spinner("Carregando detalhamento da Meta…"):
-            df_bd = get_breakdown(bks_tuple, level_bd, produto_sel_det, since, until)
+        df_bd = fetch_insights_breakdown(
+            act_id, token, api_version, str(since), str(until), bks, level_bd,
+            product_name=st.session_state.get("det_produto")
+        )
 
         if df_bd.empty:
             st.info(f"Sem dados para {dimensao} no período/filtro.")
@@ -1609,14 +1584,7 @@ with tab_detail:
         })
         cols_presentes = [c for c in base_cols if c in disp.columns]
 
-        disp_cut = disp[cols_presentes].head(MAX_ROWS)
-        st.dataframe(disp_cut, use_container_width=True, height=520)
-        st.download_button(
-            "⬇️ Baixar CSV completo (detalhamento)",
-            data=disp[cols_presentes].to_csv(index=False).encode("utf-8-sig"),
-            file_name=f"detalhamento_{dimensao.lower()}.csv",
-            mime="text/csv"
-        )
+        st.dataframe(disp[cols_presentes], use_container_width=True, height=520)
 
         if len(group_cols) == 1:
             xlab = group_cols[0]
