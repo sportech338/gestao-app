@@ -1508,7 +1508,6 @@ with tab_detail:
     # 🔧 Proteção para Posicionamento em nível errado
     level_bd = level  # cria uma cópia do nível só para o breakdown
     if dimensao == "Posicionamento" and level_bd not in ["adset", "ad"]:
-        st.info("⚠️ O breakdown por **Posicionamento** requer nível Ad Set ou Ad. Usando Ad Set nesta consulta.")
         level_bd = "adset"
 
     if dimensao in dim_to_breakdowns:
