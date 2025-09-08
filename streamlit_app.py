@@ -1639,7 +1639,14 @@ with tab_detail:
             st.info("Sem dados após filtro de produto.")
             st.stop()
 
-        g = d.groupby(d["date"].dt.date, as_index=False)[["spend","revenue","purchases","link_clicks","lpv","init_checkout","add_payment"]].sum()
+        # 🔧 Garante que todas as colunas existam
+        for col in ["spend","revenue","purchases","link_clicks","lpv","init_checkout","add_payment"]:
+            if col not in d.columns:
+                d[col] = 0.0
+
+        g = d.groupby(d["date"].dt.date, as_index=False)[
+            ["spend","revenue","purchases","link_clicks","lpv","init_checkout","add_payment"]
+        ].sum()
         g["ROAS"] = np.where(g["spend"]>0, g["revenue"]/g["spend"], np.nan)
 
         if min_spend_det and float(min_spend_det) > 0:
@@ -1647,16 +1654,19 @@ with tab_detail:
 
         disp = g.rename(columns={
             "date":"Data","purchases":"Compras","link_clicks":"Cliques","lpv":"LPV",
-            "init_checkout":"Checkout","add_payment":"Add Pagto","spend":"Valor usado","revenue":"Valor de conversão"
+            "init_checkout":"Checkout","add_payment":"Add Pagto",
+            "spend":"Valor usado","revenue":"Valor de conversão"
         })
         disp["Valor usado"] = disp["Valor usado"].apply(_fmt_money_br)
         disp["Valor de conversão"] = disp["Valor de conversão"].apply(_fmt_money_br)
         disp["ROAS"] = disp["ROAS"].map(_fmt_ratio_br)
 
-        st.dataframe(disp[["Data","Compras","ROAS","Valor usado","Valor de conversão","Cliques","LPV","Checkout","Add Pagto"]],
-                     use_container_width=True, height=520)
+        st.dataframe(
+            disp[["Data","Compras","ROAS","Valor usado","Valor de conversão",
+                  "Cliques","LPV","Checkout","Add Pagto"]],
+            use_container_width=True, height=520
+        )
 
-        # gráfico: série de compras
         _bar_chart(g["date"].dt.strftime("%Y-%m-%d"), g["purchases"], "Compras por Dia", "Dia", "Compras")
         st.stop()
 
@@ -1673,7 +1683,14 @@ with tab_detail:
             st.info("Sem dados após filtro de produto.")
             st.stop()
 
-        g = d.groupby("hour", as_index=False)[["spend","revenue","purchases","link_clicks","lpv","init_checkout","add_payment"]].sum()
+        # 🔧 Garante que todas as colunas existam
+        for col in ["spend","revenue","purchases","link_clicks","lpv","init_checkout","add_payment"]:
+            if col not in d.columns:
+                d[col] = 0.0
+
+        g = d.groupby("hour", as_index=False)[
+            ["spend","revenue","purchases","link_clicks","lpv","init_checkout","add_payment"]
+        ].sum()
         g["ROAS"] = np.where(g["spend"]>0, g["revenue"]/g["spend"], np.nan)
 
         if min_spend_det and float(min_spend_det) > 0:
@@ -1681,14 +1698,18 @@ with tab_detail:
 
         disp = g.rename(columns={
             "hour":"Hora","purchases":"Compras","link_clicks":"Cliques","lpv":"LPV",
-            "init_checkout":"Checkout","add_payment":"Add Pagto","spend":"Valor usado","revenue":"Valor de conversão"
+            "init_checkout":"Checkout","add_payment":"Add Pagto",
+            "spend":"Valor usado","revenue":"Valor de conversão"
         })
         disp["Valor usado"] = disp["Valor usado"].apply(_fmt_money_br)
         disp["Valor de conversão"] = disp["Valor de conversão"].apply(_fmt_money_br)
         disp["ROAS"] = disp["ROAS"].map(_fmt_ratio_br)
 
-        st.dataframe(disp[["Hora","Compras","ROAS","Valor usado","Valor de conversão","Cliques","LPV","Checkout","Add Pagto"]],
-                     use_container_width=True, height=520)
+        st.dataframe(
+            disp[["Hora","Compras","ROAS","Valor usado","Valor de conversão",
+                  "Cliques","LPV","Checkout","Add Pagto"]],
+            use_container_width=True, height=520
+        )
 
         _bar_chart(g["hour"].astype(int), g["purchases"], "Compras por Hora", "Hora do dia", "Compras")
         st.stop()
