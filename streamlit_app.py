@@ -326,6 +326,10 @@ def fetch_insights_daily(act_id: str, token: str, api_version: str,
 def fetch_insights_hourly(act_id: str, token: str, api_version: str,
                           since_str: str, until_str: str,
                           level: str = "campaign") -> pd.DataFrame:
+    """
+    Coleta por hora em janelas menores (default 14 dias) para evitar code=1
+    e concatena o resultado. Tenta 'conversion' por chunk; se falhar, tenta 'impression'.
+    """
     act_id = _ensure_act_prefix(act_id)
     base_url = f"https://graph.facebook.com/{api_version}/{act_id}/insights"
     fields = [
@@ -333,36 +337,30 @@ def fetch_insights_hourly(act_id: str, token: str, api_version: str,
         "account_currency","date_start","campaign_id","campaign_name"
     ]
 
-    def _run_hourly(action_rt: str) -> pd.DataFrame:
+    def _fetch_range(_since: str, _until: str, action_rt: str) -> pd.DataFrame:
         params = {
             "access_token": token,
             "level": level,
-            "time_range": json.dumps({"since": since_str, "until": until_str}),
+            "time_range": json.dumps({"since": _since, "until": _until}),
             "time_increment": 1,
             "fields": ",".join(fields),
             "limit": 500,
-            "action_report_time": action_rt,            # conversion (primeira tentativa) ou impression (fallback)
+            "action_report_time": action_rt,
             "breakdowns": HOUR_BREAKDOWN,
         }
-
         if action_rt == "conversion":
-           params["action_attribution_windows"] = ",".join(ATTR_KEYS)
-        
+            params["action_attribution_windows"] = ",".join(ATTR_KEYS)
+
         rows, next_url, next_params = [], base_url, params.copy()
         while next_url:
             resp = _retry_call(lambda: requests.get(next_url, params=next_params, timeout=90))
-            try:
-                payload = resp.json()
-            except Exception:
-                raise RuntimeError("Resposta inválida da Graph API (hourly).")
-
+            payload = resp.json()
             if resp.status_code != 200:
-                # Propaga o erro para o chamador decidir fallback
                 err = (payload or {}).get("error", {})
                 code, sub, msg = err.get("code"), err.get("error_subcode"), err.get("message")
                 raise RuntimeError(f"Graph API error hourly | code={code} subcode={sub} | {msg}")
 
-            for rec in payload.get("data", []):
+            for rec in (payload.get("data") or []):
                 actions = rec.get("actions") or []
                 action_values = rec.get("action_values") or []
                 hour_bucket = _parse_hour_bucket(rec.get(HOUR_BREAKDOWN))
@@ -385,9 +383,9 @@ def fetch_insights_hourly(act_id: str, token: str, api_version: str,
                 rows.append({
                     "date":          pd.to_datetime(rec.get("date_start")),
                     "hour":          hour_bucket,
-                    "currency":      rec.get("account_currency","BRL"),
-                    "campaign_id":   rec.get("campaign_id",""),
-                    "campaign_name": rec.get("campaign_name",""),
+                    "currency":      rec.get("account_currency", "BRL"),
+                    "campaign_id":   rec.get("campaign_id", ""),
+                    "campaign_name": rec.get("campaign_name", ""),
                     "spend":         _to_float(rec.get("spend")),
                     "impressions":   _to_float(rec.get("impressions")),
                     "clicks":        _to_float(rec.get("clicks")),
@@ -399,13 +397,11 @@ def fetch_insights_hourly(act_id: str, token: str, api_version: str,
                     "revenue":       _to_float(rev),
                 })
 
-            # paginação: preferir paging.next; senão usar cursor.after
-            paging = payload.get("paging") or {}
-            next_link = paging.get("next")
-            if next_link:
-                next_url, next_params = next_link, None
+            paging = (payload.get("paging") or {})
+            if paging.get("next"):
+                next_url, next_params = paging.get("next"), None
             else:
-                after = ((paging.get("cursors") or {}).get("after"))
+                after = (paging.get("cursors") or {}).get("after")
                 if after:
                     next_url, next_params = base_url, params.copy()
                     next_params["after"] = after
@@ -413,30 +409,33 @@ def fetch_insights_hourly(act_id: str, token: str, api_version: str,
                     break
 
         df = pd.DataFrame(rows)
-        if df.empty:
-            return df
-        df["dow"] = df["date"].dt.dayofweek
-        order = {0:"Seg",1:"Ter",2:"Qua",3:"Qui",4:"Sex",5:"Sáb",6:"Dom"}
-        df["dow_label"] = df["dow"].map(order)
-        df["roas"] = np.where(df["spend"]>0, df["revenue"]/df["spend"], np.nan)
-        return df.sort_values(["date","hour"])
+        return df
 
-    # 1ª tentativa: conversion
-    try:
-        df = _run_hourly("conversion")
-        if not df.empty:
-            return df
-    except Exception as e1:
-        # mostra aviso com o erro real
-        st.warning(f"Hour breakdown (conversion) falhou: {e1}")
+    # Agrega chunks menores (use 14 dias por segurança no hourly)
+    dfs = []
+    for s_chunk, u_chunk in _chunks_by_days(since_str, until_str, max_days=14):
+        try:
+            df_chunk = _fetch_range(s_chunk, u_chunk, "conversion")
+        except Exception:
+            # fallback silencioso por chunk
+            try:
+                df_chunk = _fetch_range(s_chunk, u_chunk, "impression")
+            except Exception:
+                df_chunk = pd.DataFrame()
+        if df_chunk is not None and not df_chunk.empty:
+            dfs.append(df_chunk)
 
-    # fallback: impression
-    try:
-        st.info("Tentando breakdown por hora com `action_report_time=impression`…")
-        return _run_hourly("impression")
-    except Exception as e2:
-        st.error(f"Hour breakdown (impression) também falhou: {e2}")
+    if not dfs:
         return pd.DataFrame()
+
+    df = pd.concat(dfs, ignore_index=True)
+    df = df.dropna(subset=["hour"])
+    df["hour"] = df["hour"].astype(int).clip(0, 23)
+    df["dow"] = df["date"].dt.dayofweek
+    order = {0:"Seg",1:"Ter",2:"Qua",3:"Qui",4:"Sex",5:"Sáb",6:"Dom"}
+    df["dow_label"] = df["dow"].map(order)
+    df["roas"] = np.where(df["spend"] > 0, df["revenue"] / df["spend"], np.nan)
+    return df.sort_values(["date", "hour"])
 
 @st.cache_data(ttl=600, show_spinner=True)
 def fetch_insights_breakdown(act_id: str, token: str, api_version: str,
