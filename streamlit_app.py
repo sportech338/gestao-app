@@ -7,6 +7,17 @@ from zoneinfo import ZoneInfo
 APP_TZ = ZoneInfo("America/Sao_Paulo")
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+_session = None
+def _get_session():
+    global _session
+    if _session is None:
+        s = requests.Session()
+        s.headers.update({"Accept-Encoding": "gzip, deflate"})
+        _session = s
+    return _session
+
 
 # =============== Config & Estilos ===============
 st.set_page_config(page_title="Meta Ads — Paridade + Funil", page_icon="📊", layout="wide")
@@ -220,12 +231,15 @@ def _filter_by_product(df: pd.DataFrame, produto: str) -> pd.DataFrame:
 def fetch_insights_daily(act_id: str, token: str, api_version: str,
                          since_str: str, until_str: str,
                          level: str = "campaign",
-                         try_extra_fields: bool = True) -> pd.DataFrame:
+                         try_extra_fields: bool = True,
+                         product_name: str | None = None) -> pd.DataFrame:
     """
     - time_range (since/until) + time_increment=1
     - level único ('campaign' recomendado)
     - Usa action_report_time=conversion e action_attribution_windows fixos (paridade com Ads Manager)
     - Traz fields extras (link_clicks, landing_page_views) e faz fallback se houver erro #100.
+    - Paraleliza chunks de 30d e usa requests.Session para keep-alive.
+    - Opcional: filtering por nome da campanha (product_name) direto na API.
     """
     act_id = _ensure_act_prefix(act_id)
     base_url = f"https://graph.facebook.com/{api_version}/{act_id}/insights"
@@ -248,9 +262,16 @@ def fetch_insights_daily(act_id: str, token: str, api_version: str,
             "action_report_time": "conversion",
             "action_attribution_windows": ",".join(ATTR_KEYS),
         }
+        # filtro por campanha (produto) direto na API, quando aplicável
+        if level == "campaign" and product_name and product_name != "(Todos)":
+            params["filtering"] = json.dumps([{
+                "field": "campaign.name", "operator": "CONTAIN", "value": product_name
+            }])
+
         rows_local, next_url, next_params = [], base_url, params.copy()
         while next_url:
-            resp = _retry_call(lambda: requests.get(next_url, params=next_params, timeout=90))
+            sess = _get_session()
+            resp = _retry_call(lambda: sess.get(next_url, params=next_params, timeout=90))
             try:
                 payload = resp.json()
             except Exception:
@@ -312,10 +333,13 @@ def fetch_insights_daily(act_id: str, token: str, api_version: str,
 
         return rows_local
 
-    # Busca em janelas de até 30 dias (reduz carga e evita erro 100/timeout)
+    # Busca em paralelo (3-5 workers é seguro)
+    chunks = list(_chunks_by_days(since_str, until_str, max_days=30))
     all_rows: list[dict] = []
-    for s_chunk, u_chunk in _chunks_by_days(since_str, until_str, max_days=30):
-        all_rows.extend(_fetch_range(s_chunk, u_chunk, try_extra_fields))
+    with ThreadPoolExecutor(max_workers=min(5, len(chunks))) as ex:
+        futs = [ex.submit(_fetch_range, s, u, try_extra_fields) for s, u in chunks]
+        for f in as_completed(futs):
+            all_rows.extend(f.result() or [])
 
     df = pd.DataFrame(all_rows)
     if df.empty:
@@ -362,8 +386,12 @@ def fetch_insights_hourly(act_id: str, token: str, api_version: str,
 
         rows, next_url, next_params = [], base_url, params.copy()
         while next_url:
-            resp = _retry_call(lambda: requests.get(next_url, params=next_params, timeout=90))
-            payload = resp.json()
+            sess = _get_session()
+            resp = _retry_call(lambda: sess.get(next_url, params=next_params, timeout=90))
+            try:
+                payload = resp.json()
+            except Exception:
+                raise RuntimeError("Resposta inválida da Graph API (hourly).")
             if resp.status_code != 200:
                 err = (payload or {}).get("error", {})
                 code, sub, msg = err.get("code"), err.get("error_subcode"), err.get("message")
@@ -450,12 +478,12 @@ def fetch_insights_hourly(act_id: str, token: str, api_version: str,
 def fetch_insights_breakdown(act_id: str, token: str, api_version: str,
                              since_str: str, until_str: str,
                              breakdowns: list[str],
-                             level: str = "campaign") -> pd.DataFrame:
+                             level: str = "campaign",
+                             product_name: str | None = None) -> pd.DataFrame:
     """
-    Coleta insights com 1 ou 2 breakdowns (ex.: ['age'], ['gender'], ['age','gender'],
-    ['country'], ['publisher_platform'], ['platform_position']).
-    Mantém paridade: action_report_time=conversion + ATTR_KEYS.
-    Agora faz chunking (até 30 dias) para evitar erro em intervalos longos.
+    Coleta insights com 1 ou 2 breakdowns.
+    Mantém paridade (conversion + ATTR_KEYS), chunking 30d, requests.Session e paralelismo.
+    Opcional: filtering por campanha (product_name) direto na API.
     """
     act_id = _ensure_act_prefix(act_id)
     base_url = f"https://graph.facebook.com/{api_version}/{act_id}/insights"
@@ -476,10 +504,15 @@ def fetch_insights_breakdown(act_id: str, token: str, api_version: str,
             "action_attribution_windows": ",".join(ATTR_KEYS),
             "breakdowns": ",".join(breakdowns[:2])
         }
+        if level == "campaign" and product_name and product_name != "(Todos)":
+            params["filtering"] = json.dumps([{
+                "field": "campaign.name", "operator": "CONTAIN", "value": product_name
+            }])
 
         rows, next_url, next_params = [], base_url, params.copy()
         while next_url:
-            resp = _retry_call(lambda: requests.get(next_url, params=next_params, timeout=90))
+            sess = _get_session()
+            resp = _retry_call(lambda: sess.get(next_url, params=next_params, timeout=90))
             payload = resp.json()
             if resp.status_code != 200:
                 err = (payload or {}).get("error", {})
@@ -532,10 +565,13 @@ def fetch_insights_breakdown(act_id: str, token: str, api_version: str,
 
         return rows
 
-    # 🔑 Junta em blocos de até 30 dias
+    # 🔑 Junta em blocos de até 30 dias — em paralelo
+    chunks = list(_chunks_by_days(since_str, until_str, max_days=30))
     all_rows: list[dict] = []
-    for s_chunk, u_chunk in _chunks_by_days(since_str, until_str, max_days=30):
-        all_rows.extend(_fetch_range(s_chunk, u_chunk))
+    with ThreadPoolExecutor(max_workers=min(5, len(chunks))) as ex:
+        futs = [ex.submit(_fetch_range, s, u) for s, u in chunks]
+        for f in as_completed(futs):
+            all_rows.extend(f.result() or [])
 
     df = pd.DataFrame(all_rows)
     if df.empty:
@@ -609,9 +645,15 @@ if not ready:
 # ===================== Coleta =====================
 with st.spinner("Buscando dados da Meta…"):
     df_daily = fetch_insights_daily(
-        act_id=act_id, token=token, api_version=api_version,
-        since_str=str(since), until_str=str(until), level=level
+        act_id=act_id,
+        token=token,
+        api_version=api_version,
+        since_str=str(since),
+        until_str=str(until),
+        level=level,
+        product_name=st.session_state.get("daily_produto")  # pode ser None na primeira carga
     )
+
 df_hourly = None  # será carregado apenas quando o usuário abrir a aba de horário
 
 if df_daily.empty and (df_hourly is None or df_hourly.empty):
@@ -756,11 +798,15 @@ with tab_daily:
             st.warning("Confira as datas: 'Desde' não pode ser maior que 'Até'.")
         else:
             with st.spinner("Comparando períodos…"):
-                # ⚠️ Primeiro busca, depois aplica o mesmo filtro de produto
-                dfA = fetch_insights_daily(act_id, token, api_version, str(sinceA), str(untilA), level)
-                dfB = fetch_insights_daily(act_id, token, api_version, str(sinceB), str(untilB), level)
-                dfA = _filter_by_product(dfA, produto_sel_daily)
-                dfB = _filter_by_product(dfB, produto_sel_daily)
+                dfA = fetch_insights_daily(
+                    act_id, token, api_version, str(sinceA), str(untilA), level,
+                    product_name=produto_sel_daily
+                )
+                dfB = fetch_insights_daily(
+                    act_id, token, api_version, str(sinceB), str(untilB), level,
+                    product_name=produto_sel_daily
+                )
+
 
             if dfA.empty or dfB.empty:
                 st.info("Sem dados em um dos períodos selecionados.")
@@ -979,18 +1025,6 @@ with tab_daypart:
         key="daypart_produto"
     )
 
-    # Se o usuário escolher produto, garantimos nível 'campaign' (pra poder filtrar por nome)
-    if produto_sel_hr != "(Todos)" and level_hourly != "campaign":
-        hourly_key = (act_id, api_version, "campaign", str(since), str(until))
-        if hourly_key not in cache:
-            with st.spinner("Recarregando breakdown por hora (campanha)…"):
-                cache[hourly_key] = fetch_insights_hourly(
-                    act_id=act_id, token=token, api_version=api_version,
-                    since_str=str(since), until_str=str(until), level="campaign"
-                )
-        df_hourly = cache[hourly_key]
-        level_hourly = "campaign"
-
     # Guard: checa vazio antes de usar
     if df_hourly is None or df_hourly.empty:
         st.info("A conta/período não retornou breakdown por hora. Use a visão diária.")
@@ -1113,8 +1147,7 @@ with tab_daypart:
         union_since = min(period_sinceA, period_sinceB)
         union_until = max(period_untilA, period_untilB)
 
-        # se houver filtro de produto, precisamos do nível "campaign" para poder filtrar por nome
-        level_union = "campaign" if produto_sel_hr != "(Todos)" else "account"
+        level_union = "campaign"
 
         with st.spinner("Carregando dados por hora dos períodos selecionados…"):
             df_hourly_union = fetch_insights_hourly(
@@ -1522,7 +1555,8 @@ with tab_detail:
     if dimensao in dim_to_breakdowns:
         bks = dim_to_breakdowns[dimensao]
         df_bd = fetch_insights_breakdown(
-            act_id, token, api_version, str(since), str(until), bks, level_bd
+            act_id, token, api_version, str(since), str(until), bks, level_bd,
+            product_name=st.session_state.get("det_produto")
         )
 
         if df_bd.empty:
