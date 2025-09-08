@@ -563,7 +563,7 @@ preset = st.sidebar.radio(
 
 def _range_from_preset(p):
     local_today = datetime.now(APP_TZ).date()
-    base_end = local_today - timedelta(days=1) 
+    base_end = local_today - timedelta(days=1)
     if p == "Hoje":
         return local_today, local_today
     if p == "Ontem":
@@ -577,19 +577,14 @@ def _range_from_preset(p):
     if p == "Últimos 90 dias":
         return base_end - timedelta(days=89), base_end
     if p == "Esta semana":
-        # semana corrente (seg a hoje)
         start_week = local_today - timedelta(days=local_today.weekday())
         return start_week, local_today
     if p == "Este mês":
         start_month = local_today.replace(day=1)
         return start_month, local_today
     if p == "Máximo":
-        # arbitrário: desde 2017-01-01 até ontem
         return date(2017, 1, 1), base_end
-
-    # fallback
     return base_end - timedelta(days=6), base_end
-
 
 _since_auto, _until_auto = _range_from_preset(preset)
 
@@ -597,9 +592,9 @@ if preset == "Personalizado":
     since = st.sidebar.date_input("Desde", value=_since_auto, key="since_custom")
     until = st.sidebar.date_input("Até",   value=_until_auto, key="until_custom")
 else:
-    # Mostra as datas calculadas, bloqueadas (só leitura)
-    since = st.sidebar.date_input("Desde", value=_since_auto, disabled=True, key="since_auto")
-    until = st.sidebar.date_input("Até",   value=_until_auto, disabled=True, key="until_auto")
+    # ✅ NÃO usar date_input aqui (evita estado preso)
+    since, until = _since_auto, _until_auto
+    st.sidebar.caption(f"**Desde:** {since}  \n**Até:** {until}")
 
 ready = bool(act_id and token)
 
