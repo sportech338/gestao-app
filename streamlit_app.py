@@ -842,154 +842,142 @@ with tab_daily:
     height = base_h + row_h * len(extras_selected)
     st.dataframe(sr, use_container_width=True, height=height)
 
-    # Taxas do funil (para o Guia de Ação)
-    r1 = _safe_div(values_total[1], values_total[0])  # LPV / Cliques
-    r2 = _safe_div(values_total[2], values_total[1])  # Checkout / LPV
-    r3 = _safe_div(values_total[4], values_total[2])  # Compra / Checkout
+    # === NOTIFICAÇÃO DIDÁTICA DE ALOCAÇÃO DE VERBA =================================
+    st.subheader("🔔 Para onde vai a verba? (recomendação automática)")
 
-    # Quedas absolutas por etapa (para priorização)
-    drop1 = max(0, values_total[0] - values_total[1])  # Cliques -> LPV
-    drop2 = max(0, values_total[1] - values_total[2])  # LPV -> Checkout
-    drop3 = max(0, values_total[2] - values_total[4])  # Checkout -> Compra
+    with st.expander("Ajuste as faixas saudáveis (%) — use valores que façam sentido no seu negócio", expanded=True):
+        lpv_cli_low, lpv_cli_high = st.slider("LPV / Cliques (Qualidade do clique + LP)", 0, 100, (70, 85), 1)
+        co_lpv_low,  co_lpv_high  = st.slider("Checkout / LPV (Aderência do público + oferta)", 0, 100, (10, 20), 1)
+        buy_co_low,  buy_co_high  = st.slider("Compra / Checkout (Atritos no pagamento)", 0, 100, (30, 40), 1)
+        min_purchases_to_scale    = st.number_input("Compras mínimas para sugerir Escala (volume)", 0, 1_000_000, 50)
 
+    # taxas do período (a partir do funil total já calculado)
+    r1 = _safe_div(values_total[1], values_total[0])   # LPV/Cliques
+    r2 = _safe_div(values_total[2], values_total[1])   # Checkout/LPV
+    r3 = _safe_div(values_total[4], values_total[2])   # Compra/Checkout
 
-    # ===== 🧭 GUIA DE AÇÃO — metas, leitura rápida e prioridade =====
-    st.subheader("🧭 Guia de Ação — metas & prioridade")
+    # quedas absolutas por etapa (onde as pessoas “somem”)
+    drop1 = max(0, values_total[0] - values_total[1])  # Cliques -> LPV (Criativo/LP)
+    drop2 = max(0, values_total[1] - values_total[2])  # LPV -> Checkout (Interesse/Oferta)
+    drop3 = max(0, values_total[2] - values_total[4])  # Checkout -> Compra (RMK/Pagamento)
 
-    # Metas de referência (e-commerce)
-    bench = {
-        "r1": (0.70, 0.90),  # LPV/Cliques
-        "r2": (0.12, 0.20),  # Checkout/LPV
-        "r3": (0.30, 0.40),  # Compra/Checkout
-    }
-
-    def _band(val, lo, hi):
-        if not pd.notnull(val): return "sem"
-        if val < lo:  return "abaixo"
-        if val > hi:  return "acima"
+    # helpers de status e formatação
+    def _band_status(val, lo, hi):
+        if not pd.notnull(val): return "sem_dado"
+        v = val * 100
+        if v < lo:  return "abaixo"
+        if v > hi:  return "acima"
         return "dentro"
 
-    status = {
-        "LPV/Cliques":     (_fmt_pct_br(r1), _band(r1, *bench["r1"]), bench["r1"]),
-        "Checkout/LPV":    (_fmt_pct_br(r2), _band(r2, *bench["r2"]), bench["r2"]),
-        "Compra/Checkout": (_fmt_pct_br(r3), _band(r3, *bench["r3"]), bench["r3"]),
+    def _chip(label, val, lo, hi):
+        status = _band_status(val, lo, hi)
+        if status == "abaixo":
+            return f"❌ **{label}** — {_fmt_pct_br(val)} (alvo {lo}–{hi}%)"
+        if status == "dentro":
+            return f"✅ **{label}** — {_fmt_pct_br(val)} (dentro de {lo}–{hi}%)"
+        if status == "acima":
+            return f"🟢 **{label}** — {_fmt_pct_br(val)} (acima de {hi}%)"
+        return f"⛔ **{label}** — sem dados suficientes"
+
+    # mapa das etapas
+    stages = {
+        "Teste de criativo": {
+            "rate": r1, "lo": lpv_cli_low, "hi": lpv_cli_high, "drop": drop1,
+            "explain": "Perda entre Cliques → LPV (qualidade do clique, criativo, velocidade e UX da landing).",
+            "todo": [
+                "Testar variações de criativo (ângulo, thumb, 3s iniciais, CTA).",
+                "Melhorar tempo de carregamento e primeira dobra da LP.",
+                "Revisar promessa/título para alinhar com o anúncio."
+            ]
+        },
+        "Teste de interesse": {
+            "rate": r2, "lo": co_lpv_low, "hi": co_lpv_high, "drop": drop2,
+            "explain": "Perda entre LPV → Checkout (público/segmentação e proposta de valor).",
+            "todo": [
+                "Refinar públicos/lookalikes e excluir desinteressados.",
+                "Evidenciar prova social e benefícios acima do CTA.",
+                "Harmonizar oferta (preço/parcelas/bundle) com o público certo."
+            ]
+        },
+        "Remarketing": {
+            "rate": r3, "lo": buy_co_low, "hi": buy_co_high, "drop": drop3,
+            "explain": "Perda entre Checkout → Compra (confiança, meios de pagamento, follow-up).",
+            "todo": [
+                "RMK dinâmico com objeções, frete e garantia claros.",
+                "Oferecer alternativas de pagamento (pix/boleto/parcelas).",
+                "Recuperar carrinhos (e-mail/SMS/Whats) em até 24h."
+            ]
+        }
     }
 
-    # Tabela-resumo das metas vs atual
-    st.markdown("**Metas de referência (boas práticas)**")
-    tbl = pd.DataFrame([
-        ["LPV / Cliques",     status["LPV/Cliques"][0],     f"{int(bench['r1'][0]*100)}–{int(bench['r1'][1]*100)}%"],
-        ["Checkout / LPV",    status["Checkout/LPV"][0],    f"{int(bench['r2'][0]*100)}–{int(bench['r2'][1]*100)}%"],
-        ["Compra / Checkout", status["Compra/Checkout"][0], f"{int(bench['r3'][0]*100)}–{int(bench['r3'][1]*100)}%"],
-    ], columns=["Taxa", "Seu valor", "Faixa saudável"])
-    st.dataframe(tbl, use_container_width=True, height=150)
+    # decide foco principal (didático)
+    abaixos = {k: v for k, v in stages.items()
+               if _band_status(v["rate"], v["lo"], v["hi"]) == "abaixo"}
 
-    # Leitura rápida (semáforo)
-    def _chip_sem(color, txt): 
-        return f"<span style='padding:3px 8px;border-radius:999px;background:{color};color:#fff;font-size:12px'>{txt}</span>"
-
-    def _badge(name):
-        val, band, (lo, hi) = status[name]
-        if band == "abaixo": color = "#dc2626"; lab = "Abaixo"
-        elif band == "dentro": color = "#16a34a"; lab = "OK"
-        elif band == "acima": color = "#059669"; lab = "Acima"
-        else: color = "#6b7280"; lab = "–"
-        return f"**{name}** {val} {_chip_sem(color, lab)}"
-
-    st.markdown("**Leitura em 30s**", unsafe_allow_html=True)
-    st.markdown(
-        "- " + _badge("LPV/Cliques") + "<br>" +
-        "- " + _badge("Checkout/LPV") + "<br>" +
-        "- " + _badge("Compra/Checkout"),
-        unsafe_allow_html=True
-    )
-
-    # Priorização — escolhe onde atuar primeiro
-    # regra: onde estiver "abaixo" e onde a QUEDA absoluta é maior
-    abaixo_map = {
-        "Teste de criativo (Cliques→LPV)":      ("LPV/Cliques", drop1),
-        "Interesse/Oferta (LPV→Checkout)":      ("Checkout/LPV", drop2),
-        "Pagamento & RMK (Checkout→Compra)":    ("Compra/Checkout", drop3),
-    }
-    candidatos = {k: v for k, v in abaixo_map.items() if status[v[0]][1] == "abaixo"}
-
-    if candidatos:
-        foco = max(candidatos.items(), key=lambda kv: kv[1][1])[0]
+    if abaixos:
+        # se >1 abaixo, escolhe onde há maior queda absoluta de pessoas
+        foco, foco_dat = max(abaixos.items(), key=lambda kv: kv[1]["drop"])
     else:
-        # se nada abaixo das metas e há volume, o foco vira escala
-        foco = "Escala" if pd.notnull(r1) and pd.notnull(r2) and pd.notnull(r3) else "Diagnóstico"
+        # se nenhuma abaixo, checa se pode escalar
+        total_purch = values_total[4]
+        todas_ok = all(_band_status(v["rate"], v["lo"], v["hi"]) in ["dentro", "acima"]
+                       for v in stages.values())
+        if todas_ok and total_purch >= min_purchases_to_scale:
+            foco, foco_dat = "Escala", {
+                "rate": None, "lo": None, "hi": None, "drop": 0,
+                "explain": "Taxas saudáveis e volume suficiente. Hora de aumentar alcance nas melhores campanhas."
+            }
+        else:
+            # sem crítica clara: sugerir ganho de volume onde a queda é maior
+            foco, foco_dat = max(stages.items(), key=lambda kv: kv[1]["drop"])
 
-    # Ações recomendadas por foco
-    acoes = {
-        "Teste de criativo (Cliques→LPV)": [
-            "Alinhar headline/visual do anúncio com a primeira dobra da LP.",
-            "Testar 3 ângulos (dor, ganho, prova) + 3 CTAs diferentes.",
-            "Melhorar velocidade (LCP < 2,5s) e remover distrações acima da dobra."
-        ],
-        "Interesse/Oferta (LPV→Checkout)": [
-            "Evidenciar benefício + prova social + preço/parcelamento antes do CTA.",
-            "Responder objeções (troca, prazo, garantia) na LP.",
-            "Testar bundle/brinde e CTA ('Comprar agora' vs 'Adicionar ao carrinho')."
-        ],
-        "Pagamento & RMK (Checkout→Compra)": [
-            "Checkout curto (1–2 passos), 'convidado', autofill e erros claros.",
-            "Destacar Pix/Cartão e incentivo (ex.: Pix -10% / frete grátis).",
-            "RMK por etapa: D1 prova/garantia • D3 objeções • D7 urgência/cupom."
-        ],
-        "Escala": [
-            "Aumentar 10–30% nas campanhas/horários com melhor ROAS nos últimos 7–14 dias.",
-            "Duplicar conjuntos vencedores e expandir públicos gradualmente.",
-            "Manter rotatividade de criativos vencedores."
-        ],
-        "Diagnóstico": [
-            "Checar tracking (duplicidade de pixel/UTM) e integridade de eventos.",
-            "Rever experiência mobile (velocidade, checkout, meios de pagamento).",
-            "Validar oferta vs concorrência e percepção de valor."
-        ]
-    }
+    # intensidade (ajuda a sugerir % de verba)
+    total_drop = max(1, drop1 + drop2 + drop3)  # evita divisão por zero
+    share = (foco_dat["drop"] / total_drop)
+    if share > 0.60:
+        intensidade = "Alta"; faixa_verba = "↑ realocar **20–30%** do budget"
+    elif share >= 0.30:
+        intensidade = "Média"; faixa_verba = "↑ realocar **10–15%** do budget"
+    else:
+        intensidade = "Baixa"; faixa_verba = "↑ realocar **5–10%** do budget"
 
-    # Metas táticas para a semana (puxa seus valores e aponta próximo alvo)
-    def _meta_alvo(cur, lo, step=0.02):
-        if not pd.notnull(cur): return None
-        if cur < lo: 
-            # define alvo mínimo + 'step'
-            return max(lo, round((cur + step), 4))
-        return round(cur, 4)
-
-    alvo_r3 = _meta_alvo(r3, bench["r3"][0], 0.02)  # +2 p.p. ou até o piso
-    alvo_r2 = _meta_alvo(r2, bench["r2"][0], 0.02)
-
+    # cartão-resumo bem didático
     st.markdown("---")
-    if foco == "Escala":
-        st.success("**✅ Prioridade da semana: Escala** — taxas dentro/above das metas e volume ok.")
-    else:
-        st.warning(f"**⚠️ Prioridade da semana: {foco}**")
+    colA, colB = st.columns([1,2])
+    with colA:
+        st.markdown("**Taxas do período**")
+        st.markdown(_chip("LPV/Cliques", r1, lpv_cli_low, lpv_cli_high))
+        st.markdown(_chip("Checkout/LPV", r2, co_lpv_low,  co_lpv_high))
+        st.markdown(_chip("Compra/Checkout", r3, buy_co_low,  buy_co_high))
 
-    st.markdown("**Ações imediatas (execute nesta semana):**")
-    for tip in acoes.get(foco, []):
-        st.markdown(f"- {tip}")
+    with colB:
+        if foco == "Escala":
+            st.success(
+                f"**✅ Recomendação: Escala**\n\n"
+                f"- Motivo: {foco_dat['explain']}\n"
+                f"- Compras no período: **{_fmt_int_br(values_total[4])}** (mín. para escalar: **{_fmt_int_br(min_purchases_to_scale)}**)\n"
+                f"- Ação: aumentar orçamento nas campanhas com melhor ROAS; manter horários e públicos vencedores."
+            )
+        else:
+            st.warning(
+                f"**⚠️ Recomendação: {foco}**\n\n"
+                f"- Motivo: {foco_dat['explain']}\n"
+                f"- Queda concentrada nessa etapa: **{_fmt_int_br(foco_dat['drop'])}** pessoas (intensidade **{intensidade}** → {faixa_verba})."
+            )
+            st.markdown("**O que fazer agora**")
+            for tip in foco_dat["todo"]:
+                st.markdown(f"- {tip}")
 
-    # Metas numéricas claras (se existirem)
-    metas = []
-    if alvo_r3 and r3 < bench["r3"][0]:
-        metas.append(f"Levar **Compra/Checkout** de { _fmt_pct_br(r3) } → **{ _fmt_pct_br(alvo_r3) }**.")
-    if alvo_r2 and r2 < bench["r2"][0]:
-        metas.append(f"Levar **Checkout/LPV** de { _fmt_pct_br(r2) } → **{ _fmt_pct_br(alvo_r2) }**.")
-    if r1 < bench["r1"][0]:
-        metas.append(f"Elevar **LPV/Cliques** até **{int(bench['r1'][0]*100)}%+**.")
-
-    if metas:
-        st.markdown("**Metas táticas (7 dias):**")
-        for m in metas:
-            st.markdown(f"- {m}")
-
-    # Mini-calculadora de impacto (aproximada)
-    ticket_medio = st.number_input("Ticket médio estimado (R$)", 0.0, 100000.0, 120.0, 1.0, key="ticket_meta")
-    # impacto de subir Compra/Checkout até o alvo
-    if alvo_r3 and pd.notnull(r3) and values_total[2] > 0:
-        delta_conv = int(round(values_total[2] * max(0.0, alvo_r3 - r3)))
-        if delta_conv > 0:
-            st.caption(f"🎯 Subir **Compra/Checkout** até { _fmt_pct_br(alvo_r3) } ⇒ ~**{_fmt_int_br(delta_conv)}** compras extras (≈ {_fmt_money_br(delta_conv*ticket_medio)}).")
+    # dica rápida extra (facilita leitura)
+    with st.expander("ℹ️ Como interpretar"):
+        st.markdown(
+            """
+- **LPV/Cliques** baixo → problema de **Criativo/LP** (as pessoas clicam mas não engajam na página).
+- **Checkout/LPV** baixo → problema de **Interesse/Oferta** (as pessoas veem, mas não avançam).
+- **Compra/Checkout** baixo → problema de **Remarketing/Pagamento** (travou na finalização).
+- Se tudo está saudável **e** há volume de compras → **Escala**.
+            """
+        )
 
     # ========= COMPARATIVOS (Período A vs Período B) =========
     with st.expander("Comparativos — Período A vs Período B (opcional)", expanded=False):
