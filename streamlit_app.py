@@ -841,113 +841,184 @@ with tab_daily:
     height = base_h + row_h * len(extras_selected)
     st.dataframe(sr, use_container_width=True, height=height)
 
-    # ========= TAXAS POR DIA (variação diária) =========
-    st.markdown("### Taxas por dia — evolução no período")
+    # ========= TAXAS POR DIA (variação diária — com banda saudável e resumo) =========
+    st.markdown("### Taxas por dia — evolução e leitura guiada")
 
     with st.expander("Ajustes de exibição", expanded=True):
-        min_clicks_day = st.slider("Ignorar dias com menos de X cliques", 0, 300, 20, 10, key="min_clicks_day_daily")
-        mm_on = st.checkbox("Aplicar média móvel (3 dias)", value=True, key="mm_on_daily")
+        col_cfg1, col_cfg2 = st.columns([2, 1])
+        with col_cfg1:
+            min_clicks_day = st.slider("Ignorar dias com menos de X cliques", 0, 500, 30, 10)
+            mm_on = st.checkbox("Aplicar média móvel (3 dias)", value=True)
+            mark_weekends = st.checkbox("Marcar fins de semana no fundo", value=True)
+            show_band = st.checkbox("Mostrar banda saudável (faixa alvo)", value=True)
+        with col_cfg2:
+            st.caption("Faixas saudáveis (%)")
+            lpv_cli_low, lpv_cli_high = st.slider("LPV / Cliques", 0, 100, (70, 85), 1, key="tx_lpv_cli_band")
+            co_lpv_low,  co_lpv_high  = st.slider("Checkout / LPV", 0, 100, (10, 20), 1, key="tx_co_lpv_band")
+            buy_co_low,  buy_co_high  = st.slider("Compra / Checkout", 0, 100, (30, 40), 1, key="tx_buy_co_band")
 
     # agrega por dia
     daily_conv = (
         df_daily_view.groupby("date", as_index=False)[
             ["link_clicks","lpv","init_checkout","add_payment","purchases"]
         ].sum()
-        .rename(columns={
-            "link_clicks":"clicks",
-            "init_checkout":"checkout",
-            "add_payment":"addpay"
-        })
+        .rename(columns={"link_clicks":"clicks","init_checkout":"checkout","add_payment":"addpay"})
     )
 
     # evita ruído (dias com pouquíssimos eventos)
-    mask = daily_conv["clicks"] >= min_clicks_day
-    daily_conv = daily_conv[mask].copy()
+    daily_conv = daily_conv[daily_conv["clicks"] >= min_clicks_day].copy()
+    if daily_conv.empty:
+        st.info("Sem dias suficientes após o filtro de cliques mínimos.")
+    else:
+        # taxas (frações 0–1)
+        daily_conv["LPV/Cliques"]     = daily_conv.apply(lambda r: _safe_div(r["lpv"],       r["clicks"]),   axis=1)
+        daily_conv["Checkout/LPV"]    = daily_conv.apply(lambda r: _safe_div(r["checkout"],  r["lpv"]),      axis=1)
+        daily_conv["Compra/Checkout"] = daily_conv.apply(lambda r: _safe_div(r["purchases"], r["checkout"]), axis=1)
 
-    # taxas principais
-    daily_conv["LPV/Cliques"]     = daily_conv.apply(lambda r: _safe_div(r["lpv"],       r["clicks"]),   axis=1)
-    daily_conv["Checkout/LPV"]    = daily_conv.apply(lambda r: _safe_div(r["checkout"],  r["lpv"]),      axis=1)
-    daily_conv["Compra/Checkout"] = daily_conv.apply(lambda r: _safe_div(r["purchases"], r["checkout"]), axis=1)
+        if mm_on:
+            for col in ["LPV/Cliques","Checkout/LPV","Compra/Checkout"]:
+                daily_conv[f"{col} (MM3)"] = daily_conv[col].rolling(3, min_periods=1).mean()
 
-    # média móvel opcional (principais)
-    if mm_on:
-        for col in ["LPV/Cliques","Checkout/LPV","Compra/Checkout"]:
-            daily_conv[f"{col} (MM3)"] = daily_conv[col].rolling(3, min_periods=1).mean()
+        def _fmt_pct_series(s):  # 0–1 -> 0–100
+            return (s*100).round(2)
 
-    # formatação p/ gráfico
-    def _fmt_pct_series(s):
-        return (s*100).round(2)
+        # helper geral do gráfico
+        def _line_pct_banded(df, col, lo_pct, hi_pct, title):
+            import plotly.graph_objects as go
+            x = df["date"]
+            y = _fmt_pct_series(df[col])
 
-    def _line_pct(df, col, container):
-        import plotly.graph_objects as go
-        y = _fmt_pct_series(df[col])
-        fig = go.Figure(go.Scatter(x=df["date"], y=y, mode="lines+markers", name=col))
-        # linha de média móvel, se houver
-        mm_col = f"{col} (MM3)"
-        if mm_col in df.columns:
-            fig.add_trace(go.Scatter(x=df["date"], y=_fmt_pct_series(df[mm_col]),
-                                     mode="lines", name=mm_col))
-        fig.update_layout(
-            title=col,
-            yaxis_title="%",
-            xaxis_title="Data",
-            height=320,
-            template="plotly_white",
-            margin=dict(l=10, r=10, t=48, b=10),
-            separators=",."
-        )
-        container.plotly_chart(fig, use_container_width=True)
+            # status por ponto (abaixo/dentro/acima)
+            def _status(v):
+                if not pd.notnull(v): return "sem"
+                v100 = v*100.0
+                if v100 < lo_pct: return "abaixo"
+                if v100 > hi_pct: return "acima"
+                return "dentro"
 
-    # linhas (3 colunas) para as principais
-    left, mid, right = st.columns(3)
-    with left:
-        _line_pct(daily_conv, "LPV/Cliques", st)
-    with mid:
-        _line_pct(daily_conv, "Checkout/LPV", st)
-    with right:
-        _line_pct(daily_conv, "Compra/Checkout", st)
+            status = df[col].map(_status).tolist()
+            colors = [ {"abaixo":"#dc2626","dentro":"#16a34a","acima":"#0ea5e9","sem":"#9ca3af"}[s] for s in status ]
+            hover = [
+                f"{title}<br>{d:%Y-%m-%d}<br>Taxa: {v:.2f}%"
+                for d, v in zip(x, y.fillna(0))
+            ]
 
-    # ========= OUTRAS TAXAS (opcionais) =========
-    with st.expander("Outras taxas — escolher e visualizar", expanded=False):
-        extra_opts = {
-            "Add Pagto / Checkout":  ("addpay",    "checkout"),
-            "Compra / Add Pagto":    ("purchases", "addpay"),
-            "Compra / LPV":          ("purchases", "lpv"),
-            "Compra / Cliques":      ("purchases", "clicks"),
-            "Checkout / Cliques":    ("checkout",  "clicks"),
-            "Add Pagto / LPV":       ("addpay",    "lpv"),
-        }
-        extras_sel = st.multiselect(
-            "Selecione as taxas extras que deseja traçar:",
-            options=list(extra_opts.keys()),
-            default=[],
-            key="extras_rates_daily"
-        )
+            fig = go.Figure()
 
-        # calcula as colunas extras selecionadas
-        for name in extras_sel:
-            num, den = extra_opts[name]
-            if name not in daily_conv.columns:
-                daily_conv[name] = daily_conv.apply(lambda r: _safe_div(r[num], r[den]), axis=1)
-            # MM3 opcional, se ativo
-            mm_col = f"{name} (MM3)"
-            if mm_on and mm_col not in daily_conv.columns:
-                daily_conv[mm_col] = daily_conv[name].rolling(3, min_periods=1).mean()
+            # banda saudável
+            if show_band:
+                fig.add_shape(
+                    type="rect",
+                    xref="x", yref="y",
+                    x0=x.min(), x1=x.max(),
+                    y0=lo_pct, y1=hi_pct,
+                    fillcolor="rgba(34,197,94,0.08)", line=dict(width=0),
+                    layer="below"
+                )
 
-        # utilitário para dividir em linhas de 3 gráficos
-        def _chunk(lst, n):
-            for i in range(0, len(lst), n):
-                yield lst[i:i+n]
+            # fins de semana (fundo suave por dia)
+            if mark_weekends:
+                for d in x:
+                    if d.weekday() >= 5:  # 5=sábado, 6=domingo
+                        fig.add_shape(
+                            type="rect", xref="x", yref="paper",
+                            x0=d, x1=d + pd.Timedelta(days=1),  # largura = 1 dia
+                            y0=0, y1=1,
+                            line=dict(width=0),
+                            fillcolor="rgba(2,132,199,0.06)"
+                        )
 
-        # desenha os gráficos extras (3 por linha)
-        for trio in _chunk(extras_sel, 3):
-            cols = st.columns(len(trio))
-            for name, c in zip(trio, cols):
-                with c:
-                    _line_pct(daily_conv, name, st)
+            # série diária (pontos coloridos por status)
+            fig.add_trace(go.Scatter(
+                x=x, y=y, mode="lines+markers",
+                name="Diário",
+                marker=dict(size=7, color=colors),
+                line=dict(width=1.5, color="#1f77b4"),
+                hovertext=hover, hoverinfo="text"
+            ))
 
-    st.caption("Dica: use o filtro de cliques mínimos para reduzir ruído em dias de baixo volume. A média móvel (MM3) suaviza variações pontuais.")
+            # média móvel (se houver)
+            mm_col = f"{col} (MM3)"
+            if mm_on and mm_col in df.columns:
+                fig.add_trace(go.Scatter(
+                    x=x, y=_fmt_pct_series(df[mm_col]),
+                    mode="lines",
+                    name="MM3",
+                    line=dict(width=2.2, color="#ef4444")
+                ))
 
+            fig.update_layout(
+                title=title,
+                yaxis_title="%",
+                xaxis_title="Data",
+                height=340,
+                template="plotly_white",
+                margin=dict(l=10, r=10, t=48, b=10),
+                separators=",.",
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0)
+            )
+            # limites Y dinâmicos com folga
+            y_min = max(0, min(y.min(), lo_pct) - 5)
+            y_max = min(100, max(y.max(), hi_pct) + 5)
+            fig.update_yaxes(range=[y_min, y_max])
+            return fig
+
+        # mini-resumo por taxa
+        def _resume_box(df, col, lo_pct, hi_pct, label):
+            vals = df[col].dropna()
+            if vals.empty:
+                mcol1, mcol2, mcol3 = st.columns(3)
+                mcol1.metric(label, "—")
+                mcol2.metric("% dias dentro", "—")
+                mcol3.metric("Tendência 7d", "—")
+                return
+
+            mean_pct = vals.mean()*100.0
+            inside = ((vals*100.0 >= lo_pct) & (vals*100.0 <= hi_pct)).mean()*100.0
+
+            # tendência: média últimos 7 dias vs. 7 anteriores
+            df2 = vals.reset_index(drop=True)
+            n = len(df2)
+            last7 = df2.iloc[max(0, n-7):].mean()*100.0 if n > 0 else np.nan
+            prev7 = df2.iloc[max(0, n-14):max(0, n-7)].mean()*100.0 if n > 7 else np.nan
+            trend = last7 - prev7 if pd.notnull(last7) and pd.notnull(prev7) else np.nan
+
+            mcol1, mcol2, mcol3 = st.columns(3)
+            mcol1.metric(label, f"{mean_pct:,.2f}%".replace(",", "X").replace(".", ",").replace("X", "."))
+            mcol2.metric("% dias dentro", f"{inside:,.0f}%".replace(",", "X").replace(".", ",").replace("X", "."))
+            if pd.notnull(trend):
+                delta_txt = f"{trend:,.2f} pp".replace(",", "X").replace(".", ",").replace("X", ".")
+                mcol3.metric("Tendência 7d", ("+" if trend>=0 else "") + delta_txt)
+            else:
+                mcol3.metric("Tendência 7d", "—")
+
+        # === Resumo rápido (médias e tendência) ===
+        st.markdown("**Resumo das taxas (período filtrado)**")
+        _resume_box(daily_conv, "LPV/Cliques",     lpv_cli_low, lpv_cli_high, "LPV/Cliques (média)")
+        _resume_box(daily_conv, "Checkout/LPV",    co_lpv_low,  co_lpv_high,  "Checkout/LPV (média)")
+        _resume_box(daily_conv, "Compra/Checkout", buy_co_low,  buy_co_high,  "Compra/Checkout (média)")
+
+        st.markdown("---")
+
+        # === Gráficos lado a lado ===
+        left, mid, right = st.columns(3)
+        with left:
+            st.plotly_chart(
+                _line_pct_banded(daily_conv, "LPV/Cliques", lpv_cli_low, lpv_cli_high, "LPV/Cliques"),
+                use_container_width=True
+            )
+        with mid:
+            st.plotly_chart(
+                _line_pct_banded(daily_conv, "Checkout/LPV", co_lpv_low, co_lpv_high, "Checkout/LPV"),
+                use_container_width=True
+            )
+        with right:
+            st.plotly_chart(
+                _line_pct_banded(daily_conv, "Compra/Checkout", buy_co_low, buy_co_high, "Compra/Checkout"),
+                use_container_width=True
+            )
+
+        st.caption("Leitura: pontos **verdes** estão dentro da banda saudável, **vermelhos** abaixo e **azuis** acima. A área verde mostra o alvo; MM3 (vermelha) suaviza e evidencia a tendência. Fins de semana ganham fundo azul claro (opcional).")
 
     # === NOTIFICAÇÃO DIDÁTICA DE ALOCAÇÃO DE VERBA =================================
     st.subheader("🔔 Para onde vai a verba? (recomendação automática)")
