@@ -841,6 +841,114 @@ with tab_daily:
     height = base_h + row_h * len(extras_selected)
     st.dataframe(sr, use_container_width=True, height=height)
 
+    # ========= TAXAS POR DIA (variação diária) =========
+    st.markdown("### Taxas por dia — evolução no período")
+
+    with st.expander("Ajustes de exibição", expanded=True):
+        min_clicks_day = st.slider("Ignorar dias com menos de X cliques", 0, 300, 20, 10, key="min_clicks_day_daily")
+        mm_on = st.checkbox("Aplicar média móvel (3 dias)", value=True, key="mm_on_daily")
+
+    # agrega por dia
+    daily_conv = (
+        df_daily_view.groupby("date", as_index=False)[
+            ["link_clicks","lpv","init_checkout","add_payment","purchases"]
+        ].sum()
+        .rename(columns={
+            "link_clicks":"clicks",
+            "init_checkout":"checkout",
+            "add_payment":"addpay"
+        })
+    )
+
+    # evita ruído (dias com pouquíssimos eventos)
+    mask = daily_conv["clicks"] >= min_clicks_day
+    daily_conv = daily_conv[mask].copy()
+
+    # taxas principais
+    daily_conv["LPV/Cliques"]     = daily_conv.apply(lambda r: _safe_div(r["lpv"],       r["clicks"]),   axis=1)
+    daily_conv["Checkout/LPV"]    = daily_conv.apply(lambda r: _safe_div(r["checkout"],  r["lpv"]),      axis=1)
+    daily_conv["Compra/Checkout"] = daily_conv.apply(lambda r: _safe_div(r["purchases"], r["checkout"]), axis=1)
+
+    # média móvel opcional (principais)
+    if mm_on:
+        for col in ["LPV/Cliques","Checkout/LPV","Compra/Checkout"]:
+            daily_conv[f"{col} (MM3)"] = daily_conv[col].rolling(3, min_periods=1).mean()
+
+    # formatação p/ gráfico
+    def _fmt_pct_series(s):
+        return (s*100).round(2)
+
+    def _line_pct(df, col, container):
+        import plotly.graph_objects as go
+        y = _fmt_pct_series(df[col])
+        fig = go.Figure(go.Scatter(x=df["date"], y=y, mode="lines+markers", name=col))
+        # linha de média móvel, se houver
+        mm_col = f"{col} (MM3)"
+        if mm_col in df.columns:
+            fig.add_trace(go.Scatter(x=df["date"], y=_fmt_pct_series(df[mm_col]),
+                                     mode="lines", name=mm_col))
+        fig.update_layout(
+            title=col,
+            yaxis_title="%",
+            xaxis_title="Data",
+            height=320,
+            template="plotly_white",
+            margin=dict(l=10, r=10, t=48, b=10),
+            separators=",."
+        )
+        container.plotly_chart(fig, use_container_width=True)
+
+    # linhas (3 colunas) para as principais
+    left, mid, right = st.columns(3)
+    with left:
+        _line_pct(daily_conv, "LPV/Cliques", st)
+    with mid:
+        _line_pct(daily_conv, "Checkout/LPV", st)
+    with right:
+        _line_pct(daily_conv, "Compra/Checkout", st)
+
+    # ========= OUTRAS TAXAS (opcionais) =========
+    with st.expander("Outras taxas — escolher e visualizar", expanded=False):
+        extra_opts = {
+            "Add Pagto / Checkout":  ("addpay",    "checkout"),
+            "Compra / Add Pagto":    ("purchases", "addpay"),
+            "Compra / LPV":          ("purchases", "lpv"),
+            "Compra / Cliques":      ("purchases", "clicks"),
+            "Checkout / Cliques":    ("checkout",  "clicks"),
+            "Add Pagto / LPV":       ("addpay",    "lpv"),
+        }
+        extras_sel = st.multiselect(
+            "Selecione as taxas extras que deseja traçar:",
+            options=list(extra_opts.keys()),
+            default=[],
+            key="extras_rates_daily"
+        )
+
+        # calcula as colunas extras selecionadas
+        for name in extras_sel:
+            num, den = extra_opts[name]
+            if name not in daily_conv.columns:
+                daily_conv[name] = daily_conv.apply(lambda r: _safe_div(r[num], r[den]), axis=1)
+            # MM3 opcional, se ativo
+            mm_col = f"{name} (MM3)"
+            if mm_on and mm_col not in daily_conv.columns:
+                daily_conv[mm_col] = daily_conv[name].rolling(3, min_periods=1).mean()
+
+        # utilitário para dividir em linhas de 3 gráficos
+        def _chunk(lst, n):
+            for i in range(0, len(lst), n):
+                yield lst[i:i+n]
+
+        # desenha os gráficos extras (3 por linha)
+        for trio in _chunk(extras_sel, 3):
+            cols = st.columns(len(trio))
+            for name, c in zip(trio, cols):
+                with c:
+                    _line_pct(daily_conv, name, st)
+
+    st.caption("Dica: use o filtro de cliques mínimos para reduzir ruído em dias de baixo volume. A média móvel (MM3) suaviza variações pontuais.")
+
+
     # === NOTIFICAÇÃO DIDÁTICA DE ALOCAÇÃO DE VERBA =================================
     st.subheader("🔔 Para onde vai a verba? (recomendação automática)")
 
