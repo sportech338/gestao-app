@@ -848,7 +848,6 @@ with tab_daily:
         col_cfg1, col_cfg2 = st.columns([2, 1])
         with col_cfg1:
             min_clicks_day = st.slider("Ignorar dias com menos de X cliques", 0, 500, 30, 10)
-            mm_on = st.checkbox("Aplicar média móvel (3 dias)", value=True)
             mark_weekends = st.checkbox("Marcar fins de semana no fundo", value=True)
             show_band = st.checkbox("Mostrar banda saudável (faixa alvo)", value=True)
         with col_cfg2:
@@ -875,9 +874,33 @@ with tab_daily:
         daily_conv["Checkout/LPV"]    = daily_conv.apply(lambda r: _safe_div(r["checkout"],  r["lpv"]),      axis=1)
         daily_conv["Compra/Checkout"] = daily_conv.apply(lambda r: _safe_div(r["purchases"], r["checkout"]), axis=1)
 
-        if mm_on:
-            for col in ["LPV/Cliques","Checkout/LPV","Compra/Checkout"]:
-                daily_conv[f"{col} (MM3)"] = daily_conv[col].rolling(3, min_periods=1).mean()
+        ### ADD: calcula período anterior com mesma duração
+        period_len = (until - since).days + 1
+        prev_since = since - timedelta(days=period_len)
+        prev_until = since - timedelta(days=1)
+
+        df_prev = fetch_insights_daily(
+            act_id=act_id,
+            token=token,
+            api_version=api_version,
+            since_str=str(prev_since),
+            until_str=str(prev_until),
+            level=level,
+            product_name=st.session_state.get("daily_produto")
+        )
+
+        daily_prev = pd.DataFrame()
+        if df_prev is not None and not df_prev.empty:
+            daily_prev = (
+                df_prev.groupby("date", as_index=False)[
+                    ["link_clicks","lpv","init_checkout","purchases"]
+                ].sum()
+                .rename(columns={"link_clicks":"clicks","init_checkout":"checkout"})
+            )
+            daily_prev["LPV/Cliques"]     = daily_prev.apply(lambda r: _safe_div(r["lpv"],       r["clicks"]),   axis=1)
+            daily_prev["Checkout/LPV"]    = daily_prev.apply(lambda r: _safe_div(r["checkout"],  r["lpv"]),      axis=1)
+            daily_prev["Compra/Checkout"] = daily_prev.apply(lambda r: _safe_div(r["purchases"], r["checkout"]), axis=1)
+
 
         def _fmt_pct_series(s):  # 0–1 -> 0–100
             return (s*100).round(2)
@@ -937,14 +960,15 @@ with tab_daily:
                 hovertext=hover, hoverinfo="text"
             ))
 
-            # média móvel (se houver)
-            mm_col = f"{col} (MM3)"
-            if mm_on and mm_col in df.columns:
+            ### ADD: linha do período anterior
+            if not daily_prev.empty and col in daily_prev.columns:
+                x_prev = daily_prev["date"]
+                y_prev = _fmt_pct_series(daily_prev[col])
                 fig.add_trace(go.Scatter(
-                    x=x, y=_fmt_pct_series(df[mm_col]),
+                    x=x_prev, y=y_prev,
                     mode="lines",
-                    name="MM3",
-                    line=dict(width=2.2, color="#ef4444")
+                    name="Período anterior",
+                    line=dict(width=2.2, color="#ef4444", dash="dot")
                 ))
 
             fig.update_layout(
@@ -1079,7 +1103,7 @@ with tab_daily:
 
         st.caption(
             "Leitura: pontos **verdes** estão dentro da banda saudável, **vermelhos** abaixo e **azuis** acima. "
-            "A área verde mostra o alvo; MM3 (vermelha) suaviza e evidencia a tendência. "
+            "A área verde mostra o alvo; a linha vermelha tracejada mostra o **período anterior** para comparação. "
             "Fins de semana ganham fundo azul claro (opcional)."
         )
 
