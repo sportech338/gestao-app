@@ -35,6 +35,26 @@ BENCH_DEFAULT = {
     "r3": (0.30, 0.40),  # Compra/Checkout (30% a 40%)
 }
 
+def _bench_state_init():
+    """Inicializa os valores dos benchmarks em st.session_state (em %), caso não existam."""
+    if "bench_r1_lo" not in st.session_state:
+        st.session_state.update({
+            "bench_r1_lo": int(BENCH_DEFAULT["r1"][0] * 100),
+            "bench_r1_hi": int(BENCH_DEFAULT["r1"][1] * 100),
+            "bench_r2_lo": int(BENCH_DEFAULT["r2"][0] * 100),
+            "bench_r2_hi": int(BENCH_DEFAULT["r2"][1] * 100),
+            "bench_r3_lo": int(BENCH_DEFAULT["r3"][0] * 100),
+            "bench_r3_hi": int(BENCH_DEFAULT["r3"][1] * 100),
+        })
+
+def get_bench():
+    """Retorna dict com faixas **em fração** (0–1) a partir dos valores da Sidebar."""
+    return {
+        "r1": (st.session_state["bench_r1_lo"] / 100.0, st.session_state["bench_r1_hi"] / 100.0),
+        "r2": (st.session_state["bench_r2_lo"] / 100.0, st.session_state["bench_r2_hi"] / 100.0),
+        "r3": (st.session_state["bench_r3_lo"] / 100.0, st.session_state["bench_r3_hi"] / 100.0),
+    }
+
 # Janelas de atribuição (paridade com Ads Manager)
 ATTR_KEYS = ["7d_click", "1d_view"]
 PRODUTOS = ["Flexlive", "KneePro", "NasalFlex", "Meniscus"]
@@ -703,6 +723,44 @@ else:
     since, until = _since_auto, _until_auto
     st.sidebar.caption(f"**Desde:** {since}  \n**Até:** {until}")
 
+# Benchmarks editáveis na UI
+_bench_state_init()
+with st.sidebar.expander("Benchmarks do funil (editar faixas %)", expanded=False):
+    st.caption("Ajuste as faixas ideais das taxas (em **%**).")
+    r1_lo, r1_hi = st.sidebar.slider(
+        "LPV / Cliques (%)",
+        min_value=0, max_value=100,
+        value=(st.session_state["bench_r1_lo"], st.session_state["bench_r1_hi"]),
+        step=1, key="slider_r1"
+    )
+    st.session_state["bench_r1_lo"], st.session_state["bench_r1_hi"] = r1_lo, r1_hi
+
+    r2_lo, r2_hi = st.sidebar.slider(
+        "Checkout / LPV (%)",
+        min_value=0, max_value=100,
+        value=(st.session_state["bench_r2_lo"], st.session_state["bench_r2_hi"]),
+        step=1, key="slider_r2"
+    )
+    st.session_state["bench_r2_lo"], st.session_state["bench_r2_hi"] = r2_lo, r2_hi
+
+    r3_lo, r3_hi = st.sidebar.slider(
+        "Compra / Checkout (%)",
+        min_value=0, max_value=100,
+        value=(st.session_state["bench_r3_lo"], st.session_state["bench_r3_hi"]),
+        step=1, key="slider_r3"
+    )
+    st.session_state["bench_r3_lo"], st.session_state["bench_r3_hi"] = r3_lo, r3_hi
+
+    # Botão opcional: resetar sliders para o padrão (BENCH_DEFAULT)
+    if st.button("↺ Resetar para padrão", key="btn_reset_bench"):
+        st.session_state["bench_r1_lo"] = int(BENCH_DEFAULT["r1"][0] * 100)
+        st.session_state["bench_r1_hi"] = int(BENCH_DEFAULT["r1"][1] * 100)
+        st.session_state["bench_r2_lo"] = int(BENCH_DEFAULT["r2"][0] * 100)
+        st.session_state["bench_r2_hi"] = int(BENCH_DEFAULT["r2"][1] * 100)
+        st.session_state["bench_r3_lo"] = int(BENCH_DEFAULT["r3"][0] * 100)
+        st.session_state["bench_r3_hi"] = int(BENCH_DEFAULT["r3"][1] * 100)
+        st.experimental_rerun()
+
 ready = bool(act_id and token)
 
 # =============== Tela ===============
@@ -862,7 +920,7 @@ with tab_daily:
     st.subheader("🧭 Guia de Ação — metas & prioridade")
 
     # Metas de referência (e-commerce)
-    bench = BENCH_DEFAULT
+    bench = get_bench()
 
     def _band(val, lo, hi):
         if not pd.notnull(val): return "sem"
