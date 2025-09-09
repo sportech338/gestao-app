@@ -751,17 +751,17 @@ with st.sidebar.expander("Benchmarks do funil (editar faixas %)", expanded=False
     )
     st.session_state["bench_r3_lo"], st.session_state["bench_r3_hi"] = r3_lo, r3_hi
 
-    # OBS: use st.sidebar.button porque o expander está na Sidebar.
-    if st.sidebar.button("↺ Resetar para padrão", key="btn_reset_bench"):
+    # Botão opcional: resetar sliders para o padrão (BENCH_DEFAULT)
+    if st.button("↺ Resetar para padrão", key="btn_reset_bench"):
         st.session_state["bench_r1_lo"] = int(BENCH_DEFAULT["r1"][0] * 100)
         st.session_state["bench_r1_hi"] = int(BENCH_DEFAULT["r1"][1] * 100)
         st.session_state["bench_r2_lo"] = int(BENCH_DEFAULT["r2"][0] * 100)
         st.session_state["bench_r2_hi"] = int(BENCH_DEFAULT["r2"][1] * 100)
         st.session_state["bench_r3_lo"] = int(BENCH_DEFAULT["r3"][0] * 100)
         st.session_state["bench_r3_hi"] = int(BENCH_DEFAULT["r3"][1] * 100)
+        st.experimental_rerun()
 
-        # Streamlit >= 1.30: st.rerun(); fallback para versões antigas
-        (getattr(st, "rerun", st.experimental_rerun))()
+ready = bool(act_id and token)
 
 # =============== Tela ===============
 st.title("📊 Meta Ads — Paridade com Filtro + Funil")
