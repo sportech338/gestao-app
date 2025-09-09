@@ -151,14 +151,108 @@ def funnel_fig(labels, values, title=None):
         )
     )
     fig.update_layout(
-        title=title or "",
-        margin=dict(l=10, r=10, t=48, b=10),
-        height=540,
+        title=title or "Funil",
+        height=400,
         template="plotly_white",
-        separators=",.",  # pt-BR
-        uniformtext=dict(minsize=12, mode="show")
+        margin=dict(l=10, r=10, t=48, b=10),
+        separators=",.",
+        showlegend=False
     )
     return fig
+
+
+def _line_pct_banded(df: pd.DataFrame,
+                     col: str,
+                     lo: float,
+                     hi: float,
+                     title: str,
+                     comp_y: pd.Series | None = None,
+                     show_band: bool = True,
+                     mark_weekends: bool = True) -> go.Figure:
+    """
+    Desenha série % com:
+      - faixa alvo (lo..hi) em verde claro
+      - fins de semana sombreados (opcional)
+      - linha de comparação (período anterior), se passada em comp_y (fração 0–1)
+      - pontos coloridos: verde=dentro, vermelho=abaixo, azul=acima
+    Espera df['date'] (datetime) e df[col] em fração 0–1.
+    """
+    if df is None or df.empty or col not in df.columns:
+        return go.Figure()
+
+    x = pd.to_datetime(df["date"])
+    y_pct = (df[col].astype(float) * 100.0)
+
+    fig = go.Figure()
+
+    # Banda saudável
+    if show_band and y_pct.size:
+        fig.add_shape(
+            type="rect", xref="x", yref="y",
+            x0=x.min(), x1=x.max(), y0=float(lo), y1=float(hi),
+            fillcolor="LightGreen", opacity=0.15, line_width=0, layer="below"
+        )
+
+    # Fins de semana (fundo)
+    if mark_weekends and y_pct.size:
+        day0, dayN = pd.to_datetime(x.min()).normalize(), pd.to_datetime(x.max()).normalize()
+        for d in pd.date_range(day0, dayN, freq="D"):
+            if d.weekday() >= 5:  # 5=Sáb, 6=Dom
+                fig.add_shape(
+                    type="rect", xref="x", yref="paper",
+                    x0=d, x1=d + pd.Timedelta(days=1),
+                    y0=0, y1=1, fillcolor="LightBlue", opacity=0.08, line_width=0, layer="below"
+                )
+
+    # Linha principal
+    fig.add_trace(go.Scatter(
+        name=title, x=x, y=y_pct, mode="lines", line=dict(width=2),
+        hovertemplate="%{x|%Y-%m-%d}<br>"+title+": %{y:.2f}%<extra></extra>"
+    ))
+
+    # Marcadores por categoria (abaixo/dentro/acima)
+    mask_below  = y_pct <  float(lo)
+    mask_inside = (y_pct >= float(lo)) & (y_pct <= float(hi))
+    mask_above  = y_pct >  float(hi)
+
+    def _add_markers(mask, name, symbol, color):
+        if mask.any():
+            fig.add_trace(go.Scatter(
+                name=name, x=x[mask], y=y_pct[mask],
+                mode="markers", marker=dict(size=7, symbol=symbol, color=color, line=dict(width=0)),
+                hovertemplate="%{x|%Y-%m-%d}<br>"+title+": %{y:.2f}%<extra></extra>",
+                showlegend=True
+            ))
+
+    _add_markers(mask_inside, "Dentro da banda", "circle",   "green")
+    _add_markers(mask_below,  "Abaixo da banda", "x",        "red")
+    _add_markers(mask_above,  "Acima da banda",  "triangle-up", "blue")
+
+    # Linha de comparação (período anterior)
+    if comp_y is not None and len(comp_y) > 0:
+        comp_y = (pd.Series(comp_y).astype(float) * 100.0)
+        # Alinha no eixo X ao final (mesmo tamanho de y_pct)
+        m = min(len(comp_y), len(x))
+        if m > 0:
+            fig.add_trace(go.Scatter(
+                name="Comparação (período anterior)",
+                x=x.tail(m), y=comp_y.tail(m),
+                mode="lines", line=dict(width=2, dash="dot", color="red"),
+                hovertemplate="%{x|%Y-%m-%d}<br>Comparação: %{y:.2f}%<extra></extra>"
+            ))
+
+    fig.update_layout(
+        title=title,
+        height=320,
+        template="plotly_white",
+        margin=dict(l=10, r=10, t=40, b=10),
+        legend_title_text="",
+        separators=",.",
+        yaxis=dict(title="%", rangemode="tozero"),
+        xaxis=dict(title="")
+    )
+    return fig
+
 
 def enforce_monotonic(values):
     """Garante formato de funil: cada etapa <= etapa anterior (só para o desenho)."""
@@ -841,247 +935,203 @@ with tab_daily:
     height = base_h + row_h * len(extras_selected)
     st.dataframe(sr, use_container_width=True, height=height)
 
-    # ========= TAXAS POR DIA (variação diária — com banda saudável e resumo) =========
-    st.markdown("### Taxas por dia — evolução e leitura guiada")
+# ========= TAXAS POR DIA (variação diária — com banda saudável e resumo) =========
+st.markdown("### Taxas por dia — evolução e leitura guiada")
 
-    with st.expander("Ajustes de exibição", expanded=True):
-        col_cfg1, col_cfg2 = st.columns([2, 1])
-        with col_cfg1:
-            min_clicks_day = st.slider("Ignorar dias com menos de X cliques", 0, 500, 30, 10)
-            mm_on = st.checkbox("Aplicar média móvel (3 dias)", value=True)
-            mark_weekends = st.checkbox("Marcar fins de semana no fundo", value=True)
-            show_band = st.checkbox("Mostrar banda saudável (faixa alvo)", value=True)
-        with col_cfg2:
-            st.caption("Faixas saudáveis (%)")
-            lpv_cli_low, lpv_cli_high = st.slider("LPV / Cliques", 0, 100, (70, 85), 1, key="tx_lpv_cli_band")
-            co_lpv_low,  co_lpv_high  = st.slider("Checkout / LPV", 0, 100, (10, 20), 1, key="tx_co_lpv_band")
-            buy_co_low,  buy_co_high  = st.slider("Compra / Checkout", 0, 100, (30, 40), 1, key="tx_buy_co_band")
+with st.expander("Ajustes de exibição", expanded=True):
+    col_cfg1, col_cfg2 = st.columns([2, 1])
+    with col_cfg1:
+        min_clicks_day = st.slider("Ignorar dias com menos de X cliques", 0, 500, 30, 10)
+        show_compare = st.checkbox("Mostrar período de comparação (linha vermelha)", value=True)
+        mark_weekends = st.checkbox("Marcar fins de semana no fundo", value=True)
+        show_band = st.checkbox("Mostrar banda saudável (faixa alvo)", value=True)
+    with col_cfg2:
+        st.caption("Faixas saudáveis (%)")
+        lpv_cli_low, lpv_cli_high = st.slider("LPV / Cliques", 0, 100, (70, 85), 1, key="tx_lpv_cli_band")
+        co_lpv_low,  co_lpv_high  = st.slider("Checkout / LPV", 0, 100, (10, 20), 1, key="tx_co_lpv_band")
+        buy_co_low,  buy_co_high  = st.slider("Compra / Checkout", 0, 100, (30, 40), 1, key="tx_buy_co_band")
 
-    # agrega por dia
-    daily_conv = (
-        df_daily_view.groupby("date", as_index=False)[
-            ["link_clicks","lpv","init_checkout","add_payment","purchases"]
-        ].sum()
-        .rename(columns={"link_clicks":"clicks","init_checkout":"checkout","add_payment":"addpay"})
+# agrega por dia
+daily_conv = (
+    df_daily_view.groupby("date", as_index=False)[
+        ["link_clicks","lpv","init_checkout","add_payment","purchases"]
+    ].sum()
+    .rename(columns={"link_clicks":"clicks","init_checkout":"checkout","add_payment":"addpay"})
+)
+
+# evita ruído (dias com poucos eventos)
+daily_conv = daily_conv[daily_conv["clicks"] >= min_clicks_day].copy()
+
+if daily_conv.empty:
+    st.info("Sem dias suficientes após o filtro de cliques mínimos.")
+else:
+    # taxas (frações 0–1)
+    daily_conv["LPV/Cliques"]     = daily_conv.apply(lambda r: _safe_div(r["lpv"],       r["clicks"]),   axis=1)
+    daily_conv["Checkout/LPV"]    = daily_conv.apply(lambda r: _safe_div(r["checkout"],  r["lpv"]),      axis=1)
+    daily_conv["Compra/Checkout"] = daily_conv.apply(lambda r: _safe_div(r["purchases"], r["checkout"]), axis=1)
+
+    # ======== RESUMO DAS TAXAS (dinâmico por período) ========
+    def _trend_vs_previous_period(series_vals: pd.Series,
+                                  since_dt: date,
+                                  until_dt: date,
+                                  rate_name: str,
+                                  produto_nome: str | None) -> tuple[float | None, float | None]:
+        cur_mean = float(series_vals.mean() * 100.0) if series_vals.size else None
+        period_len = (until_dt - since_dt).days + 1
+        prev_since = since_dt - timedelta(days=period_len)
+        prev_until = since_dt - timedelta(days=1)
+
+        try:
+            df_prev = fetch_insights_daily(
+                act_id=act_id,
+                token=token,
+                api_version=api_version,
+                since_str=str(prev_since),
+                until_str=str(prev_until),
+                level=level,
+                product_name=st.session_state.get("daily_produto")
+            )
+            if df_prev is not None and not df_prev.empty:
+                prev = (
+                    df_prev.groupby("date", as_index=False)[
+                        ["link_clicks", "lpv", "init_checkout", "purchases"]
+                    ]
+                    .sum()
+                    .rename(columns={"link_clicks": "clicks", "init_checkout": "checkout"})
+                )
+                if rate_name == "LPV/Cliques":
+                    prev["rate"] = prev.apply(lambda r: _safe_div(r["lpv"], r["clicks"]), axis=1)
+                elif rate_name == "Checkout/LPV":
+                    prev["rate"] = prev.apply(lambda r: _safe_div(r["checkout"], r["lpv"]), axis=1)
+                else:  # "Compra/Checkout"
+                    prev["rate"] = prev.apply(lambda r: _safe_div(r["purchases"], r["checkout"]), axis=1)
+
+                prev_mean = float(prev["rate"].mean() * 100.0) if not prev.empty else None
+            else:
+                prev_mean = None
+        except Exception:
+            prev_mean = None
+
+        if prev_mean is not None and cur_mean is not None:
+            return cur_mean, (cur_mean - prev_mean)
+
+        # fallback: metade inicial vs. final do período atual
+        n = series_vals.size
+        if n == 0:
+            return cur_mean, None
+        mid = max(1, n // 2)
+        first_mean = float(series_vals.iloc[:mid].mean() * 100.0)
+        last_mean = float(series_vals.iloc[mid:].mean() * 100.0) if n - mid > 0 else first_mean
+        return cur_mean, (last_mean - first_mean)
+
+    def _resume_box(df_rates: pd.DataFrame,
+                    col: str,
+                    lo_pct: int,
+                    hi_pct: int,
+                    label: str) -> None:
+        vals = df_rates[col].dropna()
+        if vals.empty:
+            mcol1, mcol2, mcol3 = st.columns(3)
+            mcol1.metric(label, "—")
+            mcol2.metric("% dias dentro", "—")
+            mcol3.metric("Tendência (período)", "—")
+            return
+
+        mean_pct = float(vals.mean() * 100.0)
+        inside = float(((vals * 100.0 >= lo_pct) & (vals * 100.0 <= hi_pct)).mean() * 100.0)
+
+        cur_mean, delta_pp = _trend_vs_previous_period(
+            series_vals=vals,
+            since_dt=since,
+            until_dt=until,
+            rate_name=label.split(" (")[0],
+            produto_nome=st.session_state.get("daily_produto")
+        )
+
+        mcol1, mcol2, mcol3 = st.columns(3)
+        mcol1.metric(label, f"{mean_pct:,.2f}%".replace(",", "X").replace(".", ",").replace("X", "."))
+        mcol2.metric("% dias dentro", f"{inside:,.0f}%".replace(",", "X").replace(".", ",").replace("X", "."))
+        if delta_pp is None:
+            mcol3.metric("Tendência (período)", "—")
+        else:
+            delta_txt = f"{delta_pp:,.2f} pp".replace(",", "X").replace(".", ",").replace("X", ".")
+            mcol3.metric("Tendência (período)", ("+" if delta_pp >= 0 else "") + delta_txt)
+
+    st.markdown("**Resumo das taxas (período filtrado)**")
+    _resume_box(daily_conv, "LPV/Cliques",     lpv_cli_low, lpv_cli_high, "LPV/Cliques (média)")
+    _resume_box(daily_conv, "Checkout/LPV",    co_lpv_low,  co_lpv_high,  "Checkout/LPV (média)")
+    _resume_box(daily_conv, "Compra/Checkout", buy_co_low,  buy_co_high,  "Compra/Checkout (média)")
+
+    st.markdown("---")
+
+    # --- Séries de comparação (período anterior) ---
+    comp_series = {k: None for k in ["LPV/Cliques", "Checkout/LPV", "Compra/Checkout"]}
+
+    if show_compare:
+        period_len = (until - since).days + 1
+        prev_since = since - timedelta(days=period_len)
+        prev_until = since - timedelta(days=1)
+
+        try:
+            df_prev = fetch_insights_daily(
+                act_id=act_id, token=token, api_version=api_version,
+                since_str=str(prev_since), until_str=str(prev_until),
+                level=level, product_name=st.session_state.get("daily_produto")
+            )
+            if df_prev is not None and not df_prev.empty:
+                prev = (
+                    df_prev.groupby("date", as_index=False)[
+                        ["link_clicks","lpv","init_checkout","purchases"]
+                    ].sum()
+                    .rename(columns={"link_clicks":"clicks","init_checkout":"checkout"})
+                )
+                # Alinha comprimento
+                m = min(len(prev), len(daily_conv))
+                prev = prev.tail(m).reset_index(drop=True)
+                cur  = daily_conv.tail(m).reset_index(drop=True)
+
+                comp_series["LPV/Cliques"]     = prev.apply(lambda r: _safe_div(r["lpv"],       r["clicks"]),   axis=1)
+                comp_series["Checkout/LPV"]    = prev.apply(lambda r: _safe_div(r["checkout"],  r["lpv"]),      axis=1)
+                comp_series["Compra/Checkout"] = prev.apply(lambda r: _safe_div(r["purchases"], r["checkout"]), axis=1)
+
+                # usamos "cur" para os gráficos
+                daily_conv = cur
+        except Exception:
+            pass  # segue sem comparação
+
+    # === Gráficos lado a lado (com banda/feriados) ===
+    left, mid, right = st.columns(3)
+    with left:
+        st.plotly_chart(
+            _line_pct_banded(
+                daily_conv, "LPV/Cliques", lpv_cli_low, lpv_cli_high, "LPV/Cliques",
+                comp_y=comp_series["LPV/Cliques"], show_band=show_band, mark_weekends=mark_weekends
+            ),
+            use_container_width=True
+        )
+    with mid:
+        st.plotly_chart(
+            _line_pct_banded(
+                daily_conv, "Checkout/LPV", co_lpv_low, co_lpv_high, "Checkout/LPV",
+                comp_y=comp_series["Checkout/LPV"], show_band=show_band, mark_weekends=mark_weekends
+            ),
+            use_container_width=True
+        )
+    with right:
+        st.plotly_chart(
+            _line_pct_banded(
+                daily_conv, "Compra/Checkout", buy_co_low, buy_co_high, "Compra/Checkout",
+                comp_y=comp_series["Compra/Checkout"], show_band=show_band, mark_weekends=mark_weekends
+            ),
+            use_container_width=True
+        )
+
+    st.caption(
+        "Leitura: pontos **verdes** estão dentro da banda saudável, **vermelhos** abaixo e **azuis** acima. "
+        "A área verde mostra o alvo; a **linha vermelha** representa o **período de comparação** (mesma duração anterior). "
+        "Fins de semana ganham fundo azul claro (opcional)."
     )
 
-    # evita ruído (dias com pouquíssimos eventos)
-    daily_conv = daily_conv[daily_conv["clicks"] >= min_clicks_day].copy()
-    if daily_conv.empty:
-        st.info("Sem dias suficientes após o filtro de cliques mínimos.")
-    else:
-        # taxas (frações 0–1)
-        daily_conv["LPV/Cliques"]     = daily_conv.apply(lambda r: _safe_div(r["lpv"],       r["clicks"]),   axis=1)
-        daily_conv["Checkout/LPV"]    = daily_conv.apply(lambda r: _safe_div(r["checkout"],  r["lpv"]),      axis=1)
-        daily_conv["Compra/Checkout"] = daily_conv.apply(lambda r: _safe_div(r["purchases"], r["checkout"]), axis=1)
-
-        if mm_on:
-            for col in ["LPV/Cliques","Checkout/LPV","Compra/Checkout"]:
-                daily_conv[f"{col} (MM3)"] = daily_conv[col].rolling(3, min_periods=1).mean()
-
-        def _fmt_pct_series(s):  # 0–1 -> 0–100
-            return (s*100).round(2)
-
-        # helper geral do gráfico
-        def _line_pct_banded(df, col, lo_pct, hi_pct, title):
-            import plotly.graph_objects as go
-            x = df["date"]
-            y = _fmt_pct_series(df[col])
-
-            # status por ponto (abaixo/dentro/acima)
-            def _status(v):
-                if not pd.notnull(v): return "sem"
-                v100 = v*100.0
-                if v100 < lo_pct: return "abaixo"
-                if v100 > hi_pct: return "acima"
-                return "dentro"
-
-            status = df[col].map(_status).tolist()
-            colors = [ {"abaixo":"#dc2626","dentro":"#16a34a","acima":"#0ea5e9","sem":"#9ca3af"}[s] for s in status ]
-            hover = [
-                f"{title}<br>{d:%Y-%m-%d}<br>Taxa: {v:.2f}%"
-                for d, v in zip(x, y.fillna(0))
-            ]
-
-            fig = go.Figure()
-
-            # banda saudável
-            if show_band:
-                fig.add_shape(
-                    type="rect",
-                    xref="x", yref="y",
-                    x0=x.min(), x1=x.max(),
-                    y0=lo_pct, y1=hi_pct,
-                    fillcolor="rgba(34,197,94,0.08)", line=dict(width=0),
-                    layer="below"
-                )
-
-            # fins de semana (fundo suave por dia)
-            if mark_weekends:
-                for d in x:
-                    if d.weekday() >= 5:  # 5=sábado, 6=domingo
-                        fig.add_shape(
-                            type="rect", xref="x", yref="paper",
-                            x0=d, x1=d + pd.Timedelta(days=1),  # largura = 1 dia
-                            y0=0, y1=1,
-                            line=dict(width=0),
-                            fillcolor="rgba(2,132,199,0.06)"
-                        )
-
-            # série diária (pontos coloridos por status)
-            fig.add_trace(go.Scatter(
-                x=x, y=y, mode="lines+markers",
-                name="Diário",
-                marker=dict(size=7, color=colors),
-                line=dict(width=1.5, color="#1f77b4"),
-                hovertext=hover, hoverinfo="text"
-            ))
-
-            # média móvel (se houver)
-            mm_col = f"{col} (MM3)"
-            if mm_on and mm_col in df.columns:
-                fig.add_trace(go.Scatter(
-                    x=x, y=_fmt_pct_series(df[mm_col]),
-                    mode="lines",
-                    name="MM3",
-                    line=dict(width=2.2, color="#ef4444")
-                ))
-
-            fig.update_layout(
-                title=title,
-                yaxis_title="%",
-                xaxis_title="Data",
-                height=340,
-                template="plotly_white",
-                margin=dict(l=10, r=10, t=48, b=10),
-                separators=",.",
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0)
-            )
-            # limites Y dinâmicos com folga
-            y_min = max(0, min(y.min(), lo_pct) - 5)
-            y_max = min(100, max(y.max(), hi_pct) + 5)
-            fig.update_yaxes(range=[y_min, y_max])
-            return fig
-
-        # ======== RESUMO DAS TAXAS (dinâmico por período) ========
-        def _trend_vs_previous_period(series_vals: pd.Series,
-                                      since_dt: date,
-                                      until_dt: date,
-                                      rate_name: str,
-                                      produto_nome: str | None) -> tuple[float | None, float | None]:
-            cur_mean = float(series_vals.mean() * 100.0) if series_vals.size else None
-            period_len = (until_dt - since_dt).days + 1
-            prev_since = since_dt - timedelta(days=period_len)
-            prev_until = since_dt - timedelta(days=1)
-
-            try:
-                df_prev = fetch_insights_daily(
-                    act_id=act_id,
-                    token=token,
-                    api_version=api_version,
-                    since_str=str(prev_since),
-                    until_str=str(prev_until),
-                    level=level,
-                    product_name=produto_nome
-                )
-                if df_prev is not None and not df_prev.empty:
-                    prev = (
-                        df_prev.groupby("date", as_index=False)[
-                            ["link_clicks", "lpv", "init_checkout", "purchases"]
-                        ]
-                        .sum()
-                        .rename(columns={"link_clicks": "clicks", "init_checkout": "checkout"})
-                    )
-                    if rate_name == "LPV/Cliques":
-                        prev["rate"] = prev.apply(lambda r: _safe_div(r["lpv"], r["clicks"]), axis=1)
-                    elif rate_name == "Checkout/LPV":
-                        prev["rate"] = prev.apply(lambda r: _safe_div(r["checkout"], r["lpv"]), axis=1)
-                    else:  # "Compra/Checkout"
-                        prev["rate"] = prev.apply(lambda r: _safe_div(r["purchases"], r["checkout"]), axis=1)
-
-                    prev_mean = float(prev["rate"].mean() * 100.0) if not prev.empty else None
-                else:
-                    prev_mean = None
-            except Exception:
-                prev_mean = None
-
-            if prev_mean is not None and cur_mean is not None:
-                return cur_mean, (cur_mean - prev_mean)
-
-            # fallback: metade inicial vs. final do período atual
-            n = series_vals.size
-            if n == 0:
-                return cur_mean, None
-            mid = max(1, n // 2)
-            first_mean = float(series_vals.iloc[:mid].mean() * 100.0)
-            last_mean = float(series_vals.iloc[mid:].mean() * 100.0) if n - mid > 0 else first_mean
-            return cur_mean, (last_mean - first_mean)
-
-        def _resume_box(df_rates: pd.DataFrame,
-                        col: str,
-                        lo_pct: int,
-                        hi_pct: int,
-                        label: str) -> None:
-            """Mostra: média do período, % de dias dentro da banda e tendência vs período anterior."""
-            vals = df_rates[col].dropna()
-            if vals.empty:
-                mcol1, mcol2, mcol3 = st.columns(3)
-                mcol1.metric(label, "—")
-                mcol2.metric("% dias dentro", "—")
-                mcol3.metric("Tendência (período)", "—")
-                return
-
-            mean_pct = float(vals.mean() * 100.0)
-            inside = float(((vals * 100.0 >= lo_pct) & (vals * 100.0 <= hi_pct)).mean() * 100.0)
-
-            cur_mean, delta_pp = _trend_vs_previous_period(
-                series_vals=vals,
-                since_dt=since,
-                until_dt=until,
-                rate_name=label.split(" (")[0],  # tira o “(média)” do fim
-                produto_nome=st.session_state.get("daily_produto")
-            )
-
-            mcol1, mcol2, mcol3 = st.columns(3)
-            mcol1.metric(label, f"{mean_pct:,.2f}%".replace(",", "X").replace(".", ",").replace("X", "."))
-            mcol2.metric("% dias dentro", f"{inside:,.0f}%".replace(",", "X").replace(".", ",").replace("X", "."))
-            if delta_pp is None:
-                mcol3.metric("Tendência (período)", "—")
-            else:
-                delta_txt = f"{delta_pp:,.2f} pp".replace(",", "X").replace(".", ",").replace("X", ".")
-                mcol3.metric("Tendência (período)", ("+" if delta_pp >= 0 else "") + delta_txt)
-
-        # === Chame as três caixinhas de resumo ===
-        st.markdown("**Resumo das taxas (período filtrado)**")
-        _resume_box(daily_conv, "LPV/Cliques",     lpv_cli_low, lpv_cli_high, "LPV/Cliques (média)")
-        _resume_box(daily_conv, "Checkout/LPV",    co_lpv_low,  co_lpv_high,  "Checkout/LPV (média)")
-        _resume_box(daily_conv, "Compra/Checkout", buy_co_low,  buy_co_high,  "Compra/Checkout (média)")
-
-        st.markdown("---")
-
-        # === Gráficos lado a lado (mantém como estava) ===
-        left, mid, right = st.columns(3)
-        with left:
-            st.plotly_chart(
-                _line_pct_banded(daily_conv, "LPV/Cliques", lpv_cli_low, lpv_cli_high, "LPV/Cliques"),
-                use_container_width=True
-            )
-        with mid:
-            st.plotly_chart(
-                _line_pct_banded(daily_conv, "Checkout/LPV", co_lpv_low, co_lpv_high, "Checkout/LPV"),
-                use_container_width=True
-            )
-        with right:
-            st.plotly_chart(
-                _line_pct_banded(daily_conv, "Compra/Checkout", buy_co_low, buy_co_high, "Compra/Checkout"),
-                use_container_width=True
-            )
-
-        st.caption(
-            "Leitura: pontos **verdes** estão dentro da banda saudável, **vermelhos** abaixo e **azuis** acima. "
-            "A área verde mostra o alvo; MM3 (vermelha) suaviza e evidencia a tendência. "
-            "Fins de semana ganham fundo azul claro (opcional)."
-        )
 
     # === NOTIFICAÇÃO DIDÁTICA DE ALOCAÇÃO DE VERBA =================================
     st.subheader("🔔 Para onde vai a verba? (recomendação automática)")
