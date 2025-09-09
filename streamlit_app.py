@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -849,11 +848,9 @@ with tab_daily:
         col_cfg1, col_cfg2 = st.columns([2, 1])
         with col_cfg1:
             min_clicks_day = st.slider("Ignorar dias com menos de X cliques", 0, 500, 30, 10)
-            compare_prev = st.checkbox("Comparar com período anterior (linha vermelha)", value=True)
+            mm_on = st.checkbox("Aplicar média móvel (3 dias)", value=True)
             mark_weekends = st.checkbox("Marcar fins de semana no fundo", value=True)
             show_band = st.checkbox("Mostrar banda saudável (faixa alvo)", value=True)
-            mm_on = st.checkbox("Mostrar média móvel (MM3)", value=True)  # ✅ ADICIONADO
-
         with col_cfg2:
             st.caption("Faixas saudáveis (%)")
             lpv_cli_low, lpv_cli_high = st.slider("LPV / Cliques", 0, 100, (70, 85), 1, key="tx_lpv_cli_band")
@@ -1064,46 +1061,26 @@ with tab_daily:
 
         # === Gráficos lado a lado (mantém como estava) ===
         left, mid, right = st.columns(3)
-
         with left:
             st.plotly_chart(
-                _line_pct_banded(
-                    daily_conv,
-                    col="LPV/Cliques",
-                    lo_pct=lpv_cli_low,
-                    hi_pct=lpv_cli_high,
-                    title="LPV/Cliques"
-                ),
+                _line_pct_banded(daily_conv, "LPV/Cliques", lpv_cli_low, lpv_cli_high, "LPV/Cliques"),
                 use_container_width=True
             )
-
         with mid:
             st.plotly_chart(
-                _line_pct_banded(
-                    daily_conv,
-                    col="Checkout/LPV",
-                    lo_pct=co_lpv_low,
-                    hi_pct=co_lpv_high,
-                    title="Checkout/LPV"
-                ),
+                _line_pct_banded(daily_conv, "Checkout/LPV", co_lpv_low, co_lpv_high, "Checkout/LPV"),
                 use_container_width=True
             )
-
         with right:
             st.plotly_chart(
-                _line_pct_banded(
-                    daily_conv,
-                    col="Compra/Checkout",
-                    lo_pct=buy_co_low,
-                    hi_pct=buy_co_high,
-                    title="Compra/Checkout"
-                ),
+                _line_pct_banded(daily_conv, "Compra/Checkout", buy_co_low, buy_co_high, "Compra/Checkout"),
                 use_container_width=True
             )
 
         st.caption(
-            "Leitura: **azul** = período atual; **vermelho** = período anterior deslocado para sobrepor as datas. "
-            "A área verde mostra a faixa saudável. Fins de semana têm fundo azul claro (opcional)."
+            "Leitura: pontos **verdes** estão dentro da banda saudável, **vermelhos** abaixo e **azuis** acima. "
+            "A área verde mostra o alvo; MM3 (vermelha) suaviza e evidencia a tendência. "
+            "Fins de semana ganham fundo azul claro (opcional)."
         )
 
     # === NOTIFICAÇÃO DIDÁTICA DE ALOCAÇÃO DE VERBA =================================
