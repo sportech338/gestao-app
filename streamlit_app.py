@@ -841,98 +841,142 @@ with tab_daily:
     height = base_h + row_h * len(extras_selected)
     st.dataframe(sr, use_container_width=True, height=height)
 
-    # ========= ORIENTAÇÕES DIÁRIAS — FOCO DE ORÇAMENTO =========
-    st.subheader("🧭 Orientações diárias — foco de orçamento")
+    # === NOTIFICAÇÃO DIDÁTICA DE ALOCAÇÃO DE VERBA =================================
+    st.subheader("🔔 Para onde vai a verba? (recomendação automática)")
 
-    with st.expander("Configurações das regras (benchmarks e salvaguardas)", expanded=False):
-        cA, cB, cC = st.columns(3)
-        with cA:
-            bm_r1 = st.slider("Benchmark: LPV / Cliques (%)", 0, 100, 25, 1, help="Qualidade do clique/primeira dobra")
-        with cB:
-            bm_r2 = st.slider("Benchmark: Checkout / LPV (%)", 0, 100, 15, 1, help="Público/oferta")
-        with cC:
-            bm_r3 = st.slider("Benchmark: Compra / Checkout (%)", 0, 100, 35, 1, help="Finalização/confiança")
+    with st.expander("Ajuste as faixas saudáveis (%) — use valores que façam sentido no seu negócio", expanded=True):
+        lpv_cli_low, lpv_cli_high = st.slider("LPV / Cliques (Qualidade do clique + LP)", 0, 100, (70, 85), 1)
+        co_lpv_low,  co_lpv_high  = st.slider("Checkout / LPV (Aderência do público + oferta)", 0, 100, (10, 20), 1)
+        buy_co_low,  buy_co_high  = st.slider("Compra / Checkout (Atritos no pagamento)", 0, 100, (30, 40), 1)
+        min_purchases_to_scale    = st.number_input("Compras mínimas para sugerir Escala (volume)", 0, 1_000_000, 50)
 
-        d1, d2, d3, d4 = st.columns(4)
-        with d1:
-            min_clicks = st.number_input("Mín. Cliques/dia p/ avaliar", 0, 1_000_000, 200)
-        with d2:
-            min_lpv    = st.number_input("Mín. LPV/dia p/ avaliar", 0, 1_000_000, 150)
-        with d3:
-            min_co     = st.number_input("Mín. Checkout/dia p/ avaliar", 0, 1_000_000, 40)
-        with d4:
-            min_purch  = st.number_input("Mín. Compras/dia p/ Escala", 0, 1_000_000, 10)
+    # taxas do período (a partir do funil total já calculado)
+    r1 = _safe_div(values_total[1], values_total[0])   # LPV/Cliques
+    r2 = _safe_div(values_total[2], values_total[1])   # Checkout/LPV
+    r3 = _safe_div(values_total[4], values_total[2])   # Compra/Checkout
 
-        split_rmk = st.checkbox("Separar RMK em (checkout→pagto) e (pagto→compra)", value=True)
+    # quedas absolutas por etapa (onde as pessoas “somem”)
+    drop1 = max(0, values_total[0] - values_total[1])  # Cliques -> LPV (Criativo/LP)
+    drop2 = max(0, values_total[1] - values_total[2])  # LPV -> Checkout (Interesse/Oferta)
+    drop3 = max(0, values_total[2] - values_total[4])  # Checkout -> Compra (RMK/Pagamento)
 
-    # agrega por data no contexto filtrado atual
-    base = (df_daily_view.groupby("date", as_index=False)
-            [["spend","revenue","link_clicks","lpv","init_checkout","add_payment","purchases"]]
-            .sum()
-            .rename(columns={"link_clicks":"clicks","init_checkout":"checkout"}))
+    # helpers de status e formatação
+    def _band_status(val, lo, hi):
+        if not pd.notnull(val): return "sem_dado"
+        v = val * 100
+        if v < lo:  return "abaixo"
+        if v > hi:  return "acima"
+        return "dentro"
 
-    # calcula taxas
-    base["r1"] = base.apply(lambda r: _pct(r["lpv"], r["clicks"]), axis=1)
-    base["r2"] = base.apply(lambda r: _pct(r["checkout"], r["lpv"]), axis=1)
-    base["r3"] = base.apply(lambda r: _pct(r["purchases"], r["checkout"]), axis=1)
+    def _chip(label, val, lo, hi):
+        status = _band_status(val, lo, hi)
+        if status == "abaixo":
+            return f"❌ **{label}** — {_fmt_pct_br(val)} (alvo {lo}–{hi}%)"
+        if status == "dentro":
+            return f"✅ **{label}** — {_fmt_pct_br(val)} (dentro de {lo}–{hi}%)"
+        if status == "acima":
+            return f"🟢 **{label}** — {_fmt_pct_br(val)} (acima de {hi}%)"
+        return f"⛔ **{label}** — sem dados suficientes"
 
-    # aplica regra por dia
-    focus_list, reason_list, intensity_list, caution_list = [], [], [], []
-    drop1_list, drop2_list, drop3a_list, drop3b_list = [], [], [], []
-    for _, r in base.iterrows():
-        focus, reason, intensity, caution, d1, d2, d3a, d3b = _decide_focus(
-            r["r1"], r["r2"], r["r3"],
-            r["clicks"], r["lpv"], r["checkout"], r["add_payment"], r["purchases"],
-            bm_r1, bm_r2, bm_r3, min_clicks, min_lpv, min_co, min_purch,
-            split_rmk=split_rmk
-        )
-        focus_list.append(focus); reason_list.append(reason); intensity_list.append(intensity); caution_list.append(caution)
-        drop1_list.append(int(d1)); drop2_list.append(int(d2)); drop3a_list.append(int(d3a)); drop3b_list.append(int(d3b))
-
-    base["Foco"] = focus_list
-    base["Motivo"] = reason_list
-    base["Intensidade"] = intensity_list
-    base["Cautela?"] = ["Sim" if c else "Não" for c in caution_list]
-    base["Drop Cliques→LPV"] = drop1_list
-    base["Drop LPV→Checkout"] = drop2_list
-    base["Drop Checkout→Pagto"] = drop3a_list
-    base["Drop Pagto→Compra"] = drop3b_list
-
-    # histerese simples (marca “consistente” se repetir 2 dias seguidos)
-    base = base.sort_values("date")
-    base["Consistente?"] = "Não"
-    for i in range(1, len(base)):
-        if base.iloc[i]["Foco"].split(" (c/ cautela)")[0] == base.iloc[i-1]["Foco"].split(" (c/ cautela)")[0]:
-            base.iat[i, base.columns.get_loc("Consistente?")] = "Sim"
-
-    # formatação p/ exibição
-    disp = base.copy()
-    disp["Data"] = disp["date"].dt.date
-    disp["Valor usado"] = disp["spend"].apply(_fmt_money_br)
-    disp["Valor de conversão"] = disp["revenue"].apply(_fmt_money_br)
-    disp["LPV/Cliques"] = disp["r1"].map(_fmt_pct_br)
-    disp["Checkout/LPV"] = disp["r2"].map(_fmt_pct_br)
-    disp["Compra/Checkout"] = disp["r3"].map(_fmt_pct_br)
-
-    cols_show = [
-        "Data","Foco","Intensidade","Consistente?","Cautela?","Motivo",
-        "clicks","lpv","checkout","add_payment","purchases",
-        "Drop Cliques→LPV","Drop LPV→Checkout","Drop Checkout→Pagto","Drop Pagto→Compra",
-        "LPV/Cliques","Checkout/LPV","Compra/Checkout",
-        "Valor usado","Valor de conversão"
-    ]
-    rename_show = {
-        "clicks":"Cliques","lpv":"LPV","checkout":"Checkout","add_payment":"Add Pagto","purchases":"Compras"
+    # mapa das etapas
+    stages = {
+        "Teste de criativo": {
+            "rate": r1, "lo": lpv_cli_low, "hi": lpv_cli_high, "drop": drop1,
+            "explain": "Perda entre Cliques → LPV (qualidade do clique, criativo, velocidade e UX da landing).",
+            "todo": [
+                "Testar variações de criativo (ângulo, thumb, 3s iniciais, CTA).",
+                "Melhorar tempo de carregamento e primeira dobra da LP.",
+                "Revisar promessa/título para alinhar com o anúncio."
+            ]
+        },
+        "Teste de interesse": {
+            "rate": r2, "lo": co_lpv_low, "hi": co_lpv_high, "drop": drop2,
+            "explain": "Perda entre LPV → Checkout (público/segmentação e proposta de valor).",
+            "todo": [
+                "Refinar públicos/lookalikes e excluir desinteressados.",
+                "Evidenciar prova social e benefícios acima do CTA.",
+                "Harmonizar oferta (preço/parcelas/bundle) com o público certo."
+            ]
+        },
+        "Remarketing": {
+            "rate": r3, "lo": buy_co_low, "hi": buy_co_high, "drop": drop3,
+            "explain": "Perda entre Checkout → Compra (confiança, meios de pagamento, follow-up).",
+            "todo": [
+                "RMK dinâmico com objeções, frete e garantia claros.",
+                "Oferecer alternativas de pagamento (pix/boleto/parcelas).",
+                "Recuperar carrinhos (e-mail/SMS/Whats) em até 24h."
+            ]
+        }
     }
-    disp = disp[cols_show].rename(columns=rename_show)
 
-    st.dataframe(disp, use_container_width=True, height=min(560, 120 + 34*len(disp)))
-    st.download_button(
-        "⬇️ Baixar CSV — Orientações diárias",
-        data=disp.to_csv(index=False).encode("utf-8-sig"),
-        file_name="orientacoes_diarias_foco_orcamento.csv",
-        mime="text/csv"
-    )
+    # decide foco principal (didático)
+    abaixos = {k: v for k, v in stages.items()
+               if _band_status(v["rate"], v["lo"], v["hi"]) == "abaixo"}
+
+    if abaixos:
+        # se >1 abaixo, escolhe onde há maior queda absoluta de pessoas
+        foco, foco_dat = max(abaixos.items(), key=lambda kv: kv[1]["drop"])
+    else:
+        # se nenhuma abaixo, checa se pode escalar
+        total_purch = values_total[4]
+        todas_ok = all(_band_status(v["rate"], v["lo"], v["hi"]) in ["dentro", "acima"]
+                       for v in stages.values())
+        if todas_ok and total_purch >= min_purchases_to_scale:
+            foco, foco_dat = "Escala", {
+                "rate": None, "lo": None, "hi": None, "drop": 0,
+                "explain": "Taxas saudáveis e volume suficiente. Hora de aumentar alcance nas melhores campanhas."
+            }
+        else:
+            # sem crítica clara: sugerir ganho de volume onde a queda é maior
+            foco, foco_dat = max(stages.items(), key=lambda kv: kv[1]["drop"])
+
+    # intensidade (ajuda a sugerir % de verba)
+    total_drop = max(1, drop1 + drop2 + drop3)  # evita divisão por zero
+    share = (foco_dat["drop"] / total_drop)
+    if share > 0.60:
+        intensidade = "Alta"; faixa_verba = "↑ realocar **20–30%** do budget"
+    elif share >= 0.30:
+        intensidade = "Média"; faixa_verba = "↑ realocar **10–15%** do budget"
+    else:
+        intensidade = "Baixa"; faixa_verba = "↑ realocar **5–10%** do budget"
+
+    # cartão-resumo bem didático
+    st.markdown("---")
+    colA, colB = st.columns([1,2])
+    with colA:
+        st.markdown("**Taxas do período**")
+        st.markdown(_chip("LPV/Cliques", r1, lpv_cli_low, lpv_cli_high))
+        st.markdown(_chip("Checkout/LPV", r2, co_lpv_low,  co_lpv_high))
+        st.markdown(_chip("Compra/Checkout", r3, buy_co_low,  buy_co_high))
+
+    with colB:
+        if foco == "Escala":
+            st.success(
+                f"**✅ Recomendação: Escala**\n\n"
+                f"- Motivo: {foco_dat['explain']}\n"
+                f"- Compras no período: **{_fmt_int_br(values_total[4])}** (mín. para escalar: **{_fmt_int_br(min_purchases_to_scale)}**)\n"
+                f"- Ação: aumentar orçamento nas campanhas com melhor ROAS; manter horários e públicos vencedores."
+            )
+        else:
+            st.warning(
+                f"**⚠️ Recomendação: {foco}**\n\n"
+                f"- Motivo: {foco_dat['explain']}\n"
+                f"- Queda concentrada nessa etapa: **{_fmt_int_br(foco_dat['drop'])}** pessoas (intensidade **{intensidade}** → {faixa_verba})."
+            )
+            st.markdown("**O que fazer agora**")
+            for tip in foco_dat["todo"]:
+                st.markdown(f"- {tip}")
+
+    # dica rápida extra (facilita leitura)
+    with st.expander("ℹ️ Como interpretar"):
+        st.markdown(
+            """
+- **LPV/Cliques** baixo → problema de **Criativo/LP** (as pessoas clicam mas não engajam na página).
+- **Checkout/LPV** baixo → problema de **Interesse/Oferta** (as pessoas veem, mas não avançam).
+- **Compra/Checkout** baixo → problema de **Remarketing/Pagamento** (travou na finalização).
+- Se tudo está saudável **e** há volume de compras → **Escala**.
+            """
+        )
 
     # ========= COMPARATIVOS (Período A vs Período B) =========
     with st.expander("Comparativos — Período A vs Período B (opcional)", expanded=False):
@@ -964,7 +1008,6 @@ with tab_daily:
                     act_id, token, api_version, str(sinceB), str(untilB), level,
                     product_name=produto_sel_daily
                 )
-
 
             if dfA.empty or dfB.empty:
                 st.info("Sem dados em um dos períodos selecionados.")
