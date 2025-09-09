@@ -584,7 +584,7 @@ st.sidebar.header("Configuração")
 act_id = st.sidebar.text_input("Ad Account ID", placeholder="ex.: act_1234567890")
 token = st.sidebar.text_input("Access Token", type="password")
 api_version = st.sidebar.text_input("API Version", value="v23.0")
-level = st.sidebar.selectbox("Nível (recomendado: campaign)", ["campaign"],  index=0)
+level = st.sidebar.selectbox("Nível (recomendado: campaign)", ["campaign"], index=0)
 
 preset = st.sidebar.radio(
     "Período rápido",
@@ -619,9 +619,10 @@ def _range_from_preset(p):
         start_month = local_today.replace(day=1)
         return start_month, local_today
     if p == "Máximo":
-        return date(2017, 1, 1), base_end
+        return date(2017, 1, 1), local_today
     return base_end - timedelta(days=6), base_end
 
+# ✅ calcula imediatamente os defaults do preset
 _since_auto, _until_auto = _range_from_preset(preset)
 
 if preset == "Personalizado":
