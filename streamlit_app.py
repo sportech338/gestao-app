@@ -29,6 +29,12 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+BENCH_DEFAULT = {
+    "r1": (0.70, 0.90),  # LPV/Cliques   (70% a 90%)
+    "r2": (0.12, 0.20),  # Checkout/LPV  (12% a 20%)
+    "r3": (0.30, 0.40),  # Compra/Checkout (30% a 40%)
+}
+
 # Janelas de atribuição (paridade com Ads Manager)
 ATTR_KEYS = ["7d_click", "1d_view"]
 PRODUTOS = ["Flexlive", "KneePro", "NasalFlex", "Meniscus"]
@@ -856,11 +862,7 @@ with tab_daily:
     st.subheader("🧭 Guia de Ação — metas & prioridade")
 
     # Metas de referência (e-commerce)
-    bench = {
-        "r1": (0.70, 0.90),  # LPV/Cliques
-        "r2": (0.12, 0.20),  # Checkout/LPV
-        "r3": (0.30, 0.40),  # Compra/Checkout
-    }
+    bench = BENCH_DEFAULT
 
     def _band(val, lo, hi):
         if not pd.notnull(val): return "sem"
