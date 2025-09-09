@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -861,12 +860,15 @@ with tab_daily:
     drop2 = max(0, values_total[1] - values_total[2])  # LPV -> Checkout (Interesse/Oferta)
     drop3 = max(0, values_total[2] - values_total[4])  # Checkout -> Compra (RMK/Pagamento)
 
-    # helpers de status e formatação
+    # helpers de status e forma de exibir “chips”
     def _band_status(val, lo, hi):
-        if not pd.notnull(val): return "sem_dado"
+        if not pd.notnull(val):
+            return "sem_dado"
         v = val * 100
-        if v < lo:  return "abaixo"
-        if v > hi:  return "acima"
+        if v < lo:
+            return "abaixo"
+        if v > hi:
+            return "acima"
         return "dentro"
 
     def _chip(label, val, lo, hi):
@@ -879,7 +881,7 @@ with tab_daily:
             return f"🟢 **{label}** — {_fmt_pct_br(val)} (acima de {hi}%)"
         return f"⛔ **{label}** — sem dados suficientes"
 
-    # mapa das etapas
+    # mapa didático das etapas
     stages = {
         "Teste de criativo": {
             "rate": r1, "lo": lpv_cli_low, "hi": lpv_cli_high, "drop": drop1,
@@ -910,18 +912,15 @@ with tab_daily:
         }
     }
 
-    # decide foco principal (didático)
-    abaixos = {k: v for k, v in stages.items()
-               if _band_status(v["rate"], v["lo"], v["hi"]) == "abaixo"}
+    # decide foco principal
+    abaixos = {k: v for k, v in stages.items() if _band_status(v["rate"], v["lo"], v["hi"]) == "abaixo"}
 
     if abaixos:
         # se >1 abaixo, escolhe onde há maior queda absoluta de pessoas
         foco, foco_dat = max(abaixos.items(), key=lambda kv: kv[1]["drop"])
     else:
-        # se nenhuma abaixo, checa se pode escalar
         total_purch = values_total[4]
-        todas_ok = all(_band_status(v["rate"], v["lo"], v["hi"]) in ["dentro", "acima"]
-                       for v in stages.values())
+        todas_ok = all(_band_status(v["rate"], v["lo"], v["hi"]) in ["dentro", "acima"] for v in stages.values())
         if todas_ok and total_purch >= min_purchases_to_scale:
             foco, foco_dat = "Escala", {
                 "rate": None, "lo": None, "hi": None, "drop": 0,
@@ -933,7 +932,7 @@ with tab_daily:
 
     # intensidade (ajuda a sugerir % de verba)
     total_drop = max(1, drop1 + drop2 + drop3)  # evita divisão por zero
-    share = (foco_dat["drop"] / total_drop)
+    share = foco_dat["drop"] / total_drop
     if share > 0.60:
         intensidade = "Alta"; faixa_verba = "↑ realocar **20–30%** do budget"
     elif share >= 0.30:
@@ -941,9 +940,10 @@ with tab_daily:
     else:
         intensidade = "Baixa"; faixa_verba = "↑ realocar **5–10%** do budget"
 
-    # cartão-resumo bem didático
+    # cartão-resumo
     st.markdown("---")
-    colA, colB = st.columns([1,2])
+    colA, colB = st.columns([1, 2])
+
     with colA:
         st.markdown("**Taxas do período**")
         st.markdown(_chip("LPV/Cliques", r1, lpv_cli_low, lpv_cli_high))
@@ -962,13 +962,14 @@ with tab_daily:
             st.warning(
                 f"**⚠️ Recomendação: {foco}**\n\n"
                 f"- Motivo: {foco_dat['explain']}\n"
-                f"- Queda concentrada nessa etapa: **{_fmt_int_br(foco_dat['drop'])}** pessoas (intensidade **{intensidade}** → {faixa_verba})."
+                f"- Queda concentrada nessa etapa: **{_fmt_int_br(foco_dat['drop'])}** pessoas "
+                f"(intensidade **{intensidade}** → {faixa_verba})."
             )
             st.markdown("**O que fazer agora**")
             for tip in foco_dat["todo"]:
                 st.markdown(f"- {tip}")
 
-    # dica rápida extra (facilita leitura)
+    # ajuda didática
     with st.expander("ℹ️ Como interpretar"):
         st.markdown(
             """
