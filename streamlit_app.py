@@ -1023,11 +1023,13 @@ with tab_daily:
     # === NOTIFICAÇÃO DIDÁTICA DE ALOCAÇÃO DE VERBA =================================
     st.subheader("🔔 Para onde vai a verba? (recomendação automática)")
 
-    with st.expander("Ajuste as faixas saudáveis (%) — use valores que façam sentido no seu negócio", expanded=True):
-        lpv_cli_low, lpv_cli_high = st.slider("LPV / Cliques (Qualidade do clique + LP)", 0, 100, (70, 85), 1)
-        co_lpv_low,  co_lpv_high  = st.slider("Checkout / LPV (Aderência do público + oferta)", 0, 100, (10, 20), 1)
-        buy_co_low,  buy_co_high  = st.slider("Compra / Checkout (Atritos no pagamento)", 0, 100, (30, 40), 1)
-        min_purchases_to_scale    = st.number_input("Compras mínimas para sugerir Escala (volume)", 0, 1_000_000, 50)
+    # usa as MESMAS faixas saudáveis definidas no bloco "Taxas por dia"
+    # lpv_cli_low/high, co_lpv_low/high, buy_co_low/high
+    # adiciona apenas o volume mínimo para liberar "Escala"
+    min_purchases_to_scale = st.number_input(
+        "Compras mínimas para sugerir Escala (volume)",
+        min_value=0, value=50, step=1
+    )
 
     # taxas do período (a partir do funil total já calculado)
     r1 = _safe_div(values_total[1], values_total[0])   # LPV/Cliques
@@ -1060,7 +1062,7 @@ with tab_daily:
             return f"🟢 **{label}** — {_fmt_pct_br(val)} (acima de {hi}%)"
         return f"⛔ **{label}** — sem dados suficientes"
 
-    # mapa didático das etapas
+    # mapa didático das etapas (reaproveitando faixas)
     stages = {
         "Teste de criativo": {
             "rate": r1, "lo": lpv_cli_low, "hi": lpv_cli_high, "drop": drop1,
@@ -1134,7 +1136,8 @@ with tab_daily:
             st.success(
                 f"**✅ Recomendação: Escala**\n\n"
                 f"- Motivo: {foco_dat['explain']}\n"
-                f"- Compras no período: **{_fmt_int_br(values_total[4])}** (mín. para escalar: **{_fmt_int_br(min_purchases_to_scale)}**)\n"
+                f"- Compras no período: **{_fmt_int_br(values_total[4])}** "
+                f"(mín. para escalar: **{_fmt_int_br(min_purchases_to_scale)}**)\n"
                 f"- Ação: aumentar orçamento nas campanhas com melhor ROAS; manter horários e públicos vencedores."
             )
         else:
@@ -1152,9 +1155,9 @@ with tab_daily:
     with st.expander("ℹ️ Como interpretar"):
         st.markdown(
             """
-- **LPV/Cliques** baixo → problema de **Criativo/LP** (as pessoas clicam mas não engajam na página).
-- **Checkout/LPV** baixo → problema de **Interesse/Oferta** (as pessoas veem, mas não avançam).
-- **Compra/Checkout** baixo → problema de **Remarketing/Pagamento** (travou na finalização).
+- **LPV/Cliques** baixo → **Criativo/LP** (as pessoas clicam mas não engajam na página).
+- **Checkout/LPV** baixo → **Interesse/Oferta** (as pessoas veem, mas não avançam).
+- **Compra/Checkout** baixo → **Remarketing/Pagamento** (travou na finalização).
 - Se tudo está saudável **e** há volume de compras → **Escala**.
             """
         )
