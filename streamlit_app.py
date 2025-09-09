@@ -962,12 +962,12 @@ with tab_daily:
 
             ### ADD: linha do período anterior
             if not daily_prev.empty and col in daily_prev.columns:
-                x_prev = daily_prev["date"]
+                x_aligned = df["date"].values[:len(daily_prev)]
                 y_prev = _fmt_pct_series(daily_prev[col])
                 fig.add_trace(go.Scatter(
-                    x=x_prev, y=y_prev,
+                    x=x_aligned, y=y_prev,
                     mode="lines",
-                    name="Período anterior",
+                    name="Período anterior (sobreposto)",
                     line=dict(width=2.2, color="#ef4444", dash="dot")
                 ))
 
