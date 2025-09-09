@@ -963,36 +963,95 @@ with tab_daily:
             fig.update_yaxes(range=[y_min, y_max])
             return fig
 
-        # mini-resumo por taxa
-        def _resume_box(df, col, lo_pct, hi_pct, label):
-            vals = df[col].dropna()
+        # ======== RESUMO DAS TAXAS (dinâmico por período) ========
+        def _trend_vs_previous_period(series_vals: pd.Series,
+                                      since_dt: date,
+                                      until_dt: date,
+                                      rate_name: str,
+                                      produto_nome: str | None) -> tuple[float | None, float | None]:
+            cur_mean = float(series_vals.mean() * 100.0) if series_vals.size else None
+            period_len = (until_dt - since_dt).days + 1
+            prev_since = since_dt - timedelta(days=period_len)
+            prev_until = since_dt - timedelta(days=1)
+
+            try:
+                df_prev = fetch_insights_daily(
+                    act_id=act_id,
+                    token=token,
+                    api_version=api_version,
+                    since_str=str(prev_since),
+                    until_str=str(prev_until),
+                    level=level,
+                    product_name=produto_nome
+                )
+                if df_prev is not None and not df_prev.empty:
+                    prev = (
+                        df_prev.groupby("date", as_index=False)[
+                            ["link_clicks", "lpv", "init_checkout", "purchases"]
+                        ]
+                        .sum()
+                        .rename(columns={"link_clicks": "clicks", "init_checkout": "checkout"})
+                    )
+                    if rate_name == "LPV/Cliques":
+                        prev["rate"] = prev.apply(lambda r: _safe_div(r["lpv"], r["clicks"]), axis=1)
+                    elif rate_name == "Checkout/LPV":
+                        prev["rate"] = prev.apply(lambda r: _safe_div(r["checkout"], r["lpv"]), axis=1)
+                    else:  # "Compra/Checkout"
+                        prev["rate"] = prev.apply(lambda r: _safe_div(r["purchases"], r["checkout"]), axis=1)
+
+                    prev_mean = float(prev["rate"].mean() * 100.0) if not prev.empty else None
+                else:
+                    prev_mean = None
+            except Exception:
+                prev_mean = None
+
+            if prev_mean is not None and cur_mean is not None:
+                return cur_mean, (cur_mean - prev_mean)
+
+            # fallback: metade inicial vs. final do período atual
+            n = series_vals.size
+            if n == 0:
+                return cur_mean, None
+            mid = max(1, n // 2)
+            first_mean = float(series_vals.iloc[:mid].mean() * 100.0)
+            last_mean = float(series_vals.iloc[mid:].mean() * 100.0) if n - mid > 0 else first_mean
+            return cur_mean, (last_mean - first_mean)
+
+        def _resume_box(df_rates: pd.DataFrame,
+                        col: str,
+                        lo_pct: int,
+                        hi_pct: int,
+                        label: str) -> None:
+            """Mostra: média do período, % de dias dentro da banda e tendência vs período anterior."""
+            vals = df_rates[col].dropna()
             if vals.empty:
                 mcol1, mcol2, mcol3 = st.columns(3)
                 mcol1.metric(label, "—")
                 mcol2.metric("% dias dentro", "—")
-                mcol3.metric("Tendência 7d", "—")
+                mcol3.metric("Tendência (período)", "—")
                 return
 
-            mean_pct = vals.mean()*100.0
-            inside = ((vals*100.0 >= lo_pct) & (vals*100.0 <= hi_pct)).mean()*100.0
+            mean_pct = float(vals.mean() * 100.0)
+            inside = float(((vals * 100.0 >= lo_pct) & (vals * 100.0 <= hi_pct)).mean() * 100.0)
 
-            # tendência: média últimos 7 dias vs. 7 anteriores
-            df2 = vals.reset_index(drop=True)
-            n = len(df2)
-            last7 = df2.iloc[max(0, n-7):].mean()*100.0 if n > 0 else np.nan
-            prev7 = df2.iloc[max(0, n-14):max(0, n-7)].mean()*100.0 if n > 7 else np.nan
-            trend = last7 - prev7 if pd.notnull(last7) and pd.notnull(prev7) else np.nan
+            cur_mean, delta_pp = _trend_vs_previous_period(
+                series_vals=vals,
+                since_dt=since,
+                until_dt=until,
+                rate_name=label.split(" (")[0],  # tira o “(média)” do fim
+                produto_nome=st.session_state.get("daily_produto")
+            )
 
             mcol1, mcol2, mcol3 = st.columns(3)
             mcol1.metric(label, f"{mean_pct:,.2f}%".replace(",", "X").replace(".", ",").replace("X", "."))
             mcol2.metric("% dias dentro", f"{inside:,.0f}%".replace(",", "X").replace(".", ",").replace("X", "."))
-            if pd.notnull(trend):
-                delta_txt = f"{trend:,.2f} pp".replace(",", "X").replace(".", ",").replace("X", ".")
-                mcol3.metric("Tendência 7d", ("+" if trend>=0 else "") + delta_txt)
+            if delta_pp is None:
+                mcol3.metric("Tendência (período)", "—")
             else:
-                mcol3.metric("Tendência 7d", "—")
+                delta_txt = f"{delta_pp:,.2f} pp".replace(",", "X").replace(".", ",").replace("X", ".")
+                mcol3.metric("Tendência (período)", ("+" if delta_pp >= 0 else "") + delta_txt)
 
-        # === Resumo rápido (médias e tendência) ===
+        # === Chame as três caixinhas de resumo ===
         st.markdown("**Resumo das taxas (período filtrado)**")
         _resume_box(daily_conv, "LPV/Cliques",     lpv_cli_low, lpv_cli_high, "LPV/Cliques (média)")
         _resume_box(daily_conv, "Checkout/LPV",    co_lpv_low,  co_lpv_high,  "Checkout/LPV (média)")
@@ -1000,7 +1059,7 @@ with tab_daily:
 
         st.markdown("---")
 
-        # === Gráficos lado a lado ===
+        # === Gráficos lado a lado (mantém como estava) ===
         left, mid, right = st.columns(3)
         with left:
             st.plotly_chart(
@@ -1018,7 +1077,11 @@ with tab_daily:
                 use_container_width=True
             )
 
-        st.caption("Leitura: pontos **verdes** estão dentro da banda saudável, **vermelhos** abaixo e **azuis** acima. A área verde mostra o alvo; MM3 (vermelha) suaviza e evidencia a tendência. Fins de semana ganham fundo azul claro (opcional).")
+        st.caption(
+            "Leitura: pontos **verdes** estão dentro da banda saudável, **vermelhos** abaixo e **azuis** acima. "
+            "A área verde mostra o alvo; MM3 (vermelha) suaviza e evidencia a tendência. "
+            "Fins de semana ganham fundo azul claro (opcional)."
+        )
 
     # === NOTIFICAÇÃO DIDÁTICA DE ALOCAÇÃO DE VERBA =================================
     st.subheader("🔔 Para onde vai a verba? (recomendação automática)")
