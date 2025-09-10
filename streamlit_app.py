@@ -697,8 +697,6 @@ else:
     since, until = _since_auto, _until_auto
     st.sidebar.caption(f"**Desde:** {since}  \n**Até:** {until}")
 
-same_day = (since == until)
-
 ready = bool(act_id and token)
 
 # =============== Tela ===============
@@ -843,191 +841,10 @@ with tab_daily:
     height = base_h + row_h * len(extras_selected)
     st.dataframe(sr, use_container_width=True, height=height)
 
-# ========= TAXAS POR DIA/HORA — evolução e leitura guiada (DENTRO da aba) =========
-st.markdown("### Taxas — evolução e leitura guiada")
+    # ========= TAXAS POR DIA (variação diária — com banda saudável e resumo) =========
+    st.markdown("### Taxas por dia — evolução e leitura guiada")
 
-if same_day:
-    with st.expander("Ajustes de exibição (por HORA)", expanded=True):
-        col_cfg1, col_cfg2 = st.columns([2, 1])
-        with col_cfg1:
-            min_clicks_hr = st.slider("Ignorar **horas** com menos de X cliques", 0, 500, 30, 10, key="tx_min_clicks_hr")
-            show_band_hr = st.checkbox("Mostrar banda saudável (faixa alvo)", value=True, key="tx_band_hr")
-        with col_cfg2:
-            st.caption("Faixas saudáveis (%)")
-            lpv_cli_low, lpv_cli_high = st.slider("LPV / Cliques", 0, 100, (70, 85), 1, key="tx_lpv_cli_band_hr")
-            co_lpv_low,  co_lpv_high  = st.slider("Checkout / LPV", 0, 100, (10, 20), 1, key="tx_co_lpv_band_hr")
-            buy_co_low,  buy_co_high  = st.slider("Compra / Checkout", 0, 100, (30, 40), 1, key="tx_buy_co_band_hr")
-
-    # Busca hourly só para o dia selecionado
-    df_hour_rates = fetch_insights_hourly(
-        act_id=act_id, token=token, api_version=api_version,
-        since_str=str(since), until_str=str(until), level=level
-    )
-    df_hour_rates = _filter_by_product(df_hour_rates, st.session_state.get("daily_produto"))
-
-    if df_hour_rates is None or df_hour_rates.empty:
-        st.info("Sem breakdown por hora para este dia. Sem taxas por hora para exibir.")
-    else:
-        hourly_conv = (
-            df_hour_rates.dropna(subset=["hour"])
-                         .assign(hour=lambda x: x["hour"].astype(int).clip(0, 23))
-                         .groupby("hour", as_index=False)[
-                            ["link_clicks","lpv","init_checkout","purchases"]
-                         ].sum()
-                         .rename(columns={"link_clicks":"clicks","init_checkout":"checkout"})
-                         .sort_values("hour")
-        )
-
-        hourly_conv = hourly_conv[hourly_conv["clicks"] >= min_clicks_hr].copy()
-        if hourly_conv.empty:
-            st.info("Após o filtro de cliques mínimos por hora, não há dados suficientes.")
-        else:
-            # taxas (frações 0–1)
-            hourly_conv["LPV/Cliques"]     = hourly_conv.apply(lambda r: _safe_div(r["lpv"],       r["clicks"]),   axis=1)
-            hourly_conv["Checkout/LPV"]    = hourly_conv.apply(lambda r: _safe_div(r["checkout"],  r["lpv"]),      axis=1)
-            hourly_conv["Compra/Checkout"] = hourly_conv.apply(lambda r: _safe_div(r["purchases"], r["checkout"]), axis=1)
-
-            # dia anterior (sobreposição)
-            prev_since = since - timedelta(days=1)
-            prev_until = since - timedelta(days=1)
-            df_prev_hr = fetch_insights_hourly(
-                act_id=act_id, token=token, api_version=api_version,
-                since_str=str(prev_since), until_str=str(prev_until), level=level
-            )
-            if df_prev_hr is not None and not df_prev_hr.empty:
-                df_prev_hr = _filter_by_product(df_prev_hr, st.session_state.get("daily_produto"))
-                hourly_prev = (
-                    df_prev_hr.dropna(subset=["hour"])
-                              .assign(hour=lambda x: x["hour"].astype(int).clip(0, 23))
-                              .groupby("hour", as_index=False)[
-                                  ["link_clicks","lpv","init_checkout","purchases"]
-                              ].sum()
-                              .rename(columns={"link_clicks":"clicks","init_checkout":"checkout"})
-                              .sort_values("hour")
-                )
-                hourly_prev["LPV/Cliques"]     = hourly_prev.apply(lambda r: _safe_div(r["lpv"],       r["clicks"]),   axis=1)
-                hourly_prev["Checkout/LPV"]    = hourly_prev.apply(lambda r: _safe_div(r["checkout"],  r["lpv"]),      axis=1)
-                hourly_prev["Compra/Checkout"] = hourly_prev.apply(lambda r: _safe_div(r["purchases"], r["checkout"]), axis=1)
-            else:
-                hourly_prev = pd.DataFrame()
-
-            def _fmt_pct_series(s):  # 0–1 -> 0–100
-                return (s*100).round(2)
-
-            def _line_pct_banded_hour(df_cur: pd.DataFrame, df_prev: pd.DataFrame,
-                                      col: str, lo_pct: int, hi_pct: int, title: str):
-                x = df_cur["hour"].astype(int)
-                y = _fmt_pct_series(df_cur[col])
-
-                fig = go.Figure()
-
-                # banda saudável no fundo
-                if show_band_hr:
-                    fig.add_shape(
-                        type="rect", xref="x", yref="y",
-                        x0=0, x1=23, y0=lo_pct, y1=hi_pct,
-                        fillcolor="rgba(34,197,94,0.08)", line=dict(width=0), layer="below"
-                    )
-
-                # série atual
-                fig.add_trace(go.Scatter(
-                    x=x, y=y, mode="lines+markers",
-                    name=f"{title} (hoje)",
-                    marker=dict(size=7),
-                    line=dict(width=1.8),
-                    hovertemplate=title+"<br>Hora: %{x}h<br>Taxa: %{y:.2f}%<extra></extra>"
-                ))
-
-                # dia anterior
-                if not df_prev.empty and col in df_prev.columns:
-                    x_prev = df_prev["hour"].astype(int)
-                    y_prev = _fmt_pct_series(df_prev[col])
-                    fig.add_trace(go.Scatter(
-                        x=x_prev, y=y_prev,
-                        mode="lines",
-                        name=f"{title} (dia anterior)",
-                        line=dict(width=2.0, dash="dot")
-                    ))
-
-                fig.update_layout(
-                    title=title,
-                    yaxis_title="%",
-                    xaxis_title="Hora do dia",
-                    height=340,
-                    template="plotly_white",
-                    margin=dict(l=10, r=10, t=48, b=10),
-                    separators=",.",
-                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0)
-                )
-                fig.update_xaxes(tickmode="linear", tick0=0, dtick=1, range=[-0.5, 23.5])
-                y_min = max(0, min(y.min(), lo_pct) - 5)
-                y_max = min(100, max(y.max(), hi_pct) + 5)
-                fig.update_yaxes(range=[y_min, y_max])
-                return fig
-
-            def _resume_box_hour(df_cur: pd.DataFrame, df_prev: pd.DataFrame,
-                                 col: str, lo_pct: int, hi_pct: int, label: str) -> None:
-                vals = df_cur[col].dropna()
-                if vals.empty:
-                    m1, m2, m3 = st.columns(3)
-                    m1.metric(label, "—"); m2.metric("% horas dentro", "—"); m3.metric("Tendência (vs. dia -1)", "—")
-                    return
-                mean_pct = float(vals.mean() * 100.0)
-                inside   = float(((vals*100.0 >= lo_pct) & (vals*100.0 <= hi_pct)).mean() * 100.0)
-
-                if not df_prev.empty and col in df_prev.columns and df_prev[col].notna().any():
-                    prev_mean = float(df_prev[col].mean() * 100.0)
-                    delta_pp = mean_pct - prev_mean
-                else:
-                    mid = 12
-                    first_mean = float(vals.iloc[:mid].mean() * 100.0) if len(vals) else np.nan
-                    last_mean  = float(vals.iloc[mid:].mean() * 100.0) if len(vals) > mid else first_mean
-                    delta_pp   = (last_mean - first_mean) if pd.notnull(first_mean) and pd.notnull(last_mean) else np.nan
-
-                m1, m2, m3 = st.columns(3)
-                m1.metric(label, f"{mean_pct:,.2f}%".replace(",", "X").replace(".", ",").replace("X", "."))
-                m2.metric("% horas dentro", f"{inside:,.0f}%".replace(",", "X").replace(".", ",").replace("X", "."))
-                if pd.notnull(delta_pp):
-                    delta_txt = f"{delta_pp:,.2f} pp".replace(",", "X").replace(".", ",").replace("X", ".")
-                    m3.metric("Tendência (vs. dia -1)", ("+" if delta_pp>=0 else "") + delta_txt)
-                else:
-                    m3.metric("Tendência (vs. dia -1)", "—")
-
-            st.markdown("**Resumo das taxas (dia selecionado)**")
-            _resume_box_hour(hourly_conv, hourly_prev, "LPV/Cliques",     lpv_cli_low, lpv_cli_high, "LPV/Cliques (média)")
-            _resume_box_hour(hourly_conv, hourly_prev, "Checkout/LPV",    co_lpv_low,  co_lpv_high,  "Checkout/LPV (média)")
-            _resume_box_hour(hourly_conv, hourly_prev, "Compra/Checkout", buy_co_low,  buy_co_high,  "Compra/Checkout (média)")
-
-            st.markdown("---")
-            left, mid, right = st.columns(3)
-            with left:
-                st.plotly_chart(
-                    _line_pct_banded_hour(hourly_conv, hourly_prev, "LPV/Cliques", lpv_cli_low, lpv_cli_high, "LPV/Cliques"),
-                    use_container_width=True
-                )
-            with mid:
-                st.plotly_chart(
-                    _line_pct_banded_hour(hourly_conv, hourly_prev, "Checkout/LPV", co_lpv_low, co_lpv_high, "Checkout/LPV"),
-                    use_container_width=True
-                )
-            with right:
-                st.plotly_chart(
-                    _line_pct_banded_hour(hourly_conv, hourly_prev, "Compra/Checkout", buy_co_low, buy_co_high, "Compra/Checkout"),
-                    use_container_width=True
-                )
-
-            st.caption(
-                "Leitura por **hora**: área verde = faixa saudável; linha pontilhada = **dia anterior**. "
-                "Use o filtro de cliques mínimos para evitar ruído em horas com pouco volume."
-            )
-
-    # 👉 Guarda as faixas escolhidas para a Notificação Didática
-    lpv_cli_low_g, lpv_cli_high_g = lpv_cli_low, lpv_cli_high
-    co_lpv_low_g,  co_lpv_high_g  = co_lpv_low,  co_lpv_high
-    buy_co_low_g,  buy_co_high_g  = buy_co_low,  buy_co_high
-
-else:
-    with st.expander("Ajustes de exibição (por DIA)", expanded=True):
+    with st.expander("Ajustes de exibição", expanded=True):
         col_cfg1, col_cfg2 = st.columns([2, 1])
         with col_cfg1:
             min_clicks_day = st.slider("Ignorar dias com menos de X cliques", 0, 500, 30, 10)
@@ -1047,22 +864,28 @@ else:
         .rename(columns={"link_clicks":"clicks","init_checkout":"checkout","add_payment":"addpay"})
     )
 
+    # evita ruído (dias com pouquíssimos eventos)
     daily_conv = daily_conv[daily_conv["clicks"] >= min_clicks_day].copy()
     if daily_conv.empty:
         st.info("Sem dias suficientes após o filtro de cliques mínimos.")
     else:
+        # taxas (frações 0–1)
         daily_conv["LPV/Cliques"]     = daily_conv.apply(lambda r: _safe_div(r["lpv"],       r["clicks"]),   axis=1)
         daily_conv["Checkout/LPV"]    = daily_conv.apply(lambda r: _safe_div(r["checkout"],  r["lpv"]),      axis=1)
         daily_conv["Compra/Checkout"] = daily_conv.apply(lambda r: _safe_div(r["purchases"], r["checkout"]), axis=1)
 
-        # período anterior com mesma duração
+        ### ADD: calcula período anterior com mesma duração
         period_len = (until - since).days + 1
         prev_since = since - timedelta(days=period_len)
         prev_until = since - timedelta(days=1)
 
         df_prev = fetch_insights_daily(
-            act_id=act_id, token=token, api_version=api_version,
-            since_str=str(prev_since), until_str=str(prev_until), level=level,
+            act_id=act_id,
+            token=token,
+            api_version=api_version,
+            since_str=str(prev_since),
+            until_str=str(prev_until),
+            level=level,
             product_name=st.session_state.get("daily_produto")
         )
 
@@ -1078,13 +901,17 @@ else:
             daily_prev["Checkout/LPV"]    = daily_prev.apply(lambda r: _safe_div(r["checkout"],  r["lpv"]),      axis=1)
             daily_prev["Compra/Checkout"] = daily_prev.apply(lambda r: _safe_div(r["purchases"], r["checkout"]), axis=1)
 
+
         def _fmt_pct_series(s):  # 0–1 -> 0–100
             return (s*100).round(2)
 
+        # helper geral do gráfico
         def _line_pct_banded(df, col, lo_pct, hi_pct, title):
+            import plotly.graph_objects as go
             x = df["date"]
             y = _fmt_pct_series(df[col])
 
+            # status por ponto (abaixo/dentro/acima)
             def _status(v):
                 if not pd.notnull(v): return "sem"
                 v100 = v*100.0
@@ -1094,28 +921,37 @@ else:
 
             status = df[col].map(_status).tolist()
             colors = [ {"abaixo":"#dc2626","dentro":"#16a34a","acima":"#0ea5e9","sem":"#9ca3af"}[s] for s in status ]
-            hover = [f"{title}<br>{d:%Y-%m-%d}<br>Taxa: {v:.2f}%" for d, v in zip(x, y.fillna(0))]
+            hover = [
+                f"{title}<br>{d:%Y-%m-%d}<br>Taxa: {v:.2f}%"
+                for d, v in zip(x, y.fillna(0))
+            ]
 
             fig = go.Figure()
 
+            # banda saudável
             if show_band:
                 fig.add_shape(
-                    type="rect", xref="x", yref="y",
+                    type="rect",
+                    xref="x", yref="y",
                     x0=x.min(), x1=x.max(),
                     y0=lo_pct, y1=hi_pct,
-                    fillcolor="rgba(34,197,94,0.08)", line=dict(width=0), layer="below"
+                    fillcolor="rgba(34,197,94,0.08)", line=dict(width=0),
+                    layer="below"
                 )
 
+            # fins de semana (fundo suave por dia)
             if mark_weekends:
                 for d in x:
-                    if d.weekday() >= 5:
+                    if d.weekday() >= 5:  # 5=sábado, 6=domingo
                         fig.add_shape(
                             type="rect", xref="x", yref="paper",
-                            x0=d, x1=d + pd.Timedelta(days=1),
-                            y0=0, y1=1, line=dict(width=0),
+                            x0=d, x1=d + pd.Timedelta(days=1),  # largura = 1 dia
+                            y0=0, y1=1,
+                            line=dict(width=0),
                             fillcolor="rgba(2,132,199,0.06)"
                         )
 
+            # série diária (pontos coloridos por status)
             fig.add_trace(go.Scatter(
                 x=x, y=y, mode="lines+markers",
                 name="Diário",
@@ -1124,6 +960,7 @@ else:
                 hovertext=hover, hoverinfo="text"
             ))
 
+            ### ADD: linha do período anterior
             if not daily_prev.empty and col in daily_prev.columns:
                 x_aligned = df["date"].values[:len(daily_prev)]
                 y_prev = _fmt_pct_series(daily_prev[col])
@@ -1135,19 +972,81 @@ else:
                 ))
 
             fig.update_layout(
-                title=title, yaxis_title="%", xaxis_title="Data",
-                height=340, template="plotly_white",
+                title=title,
+                yaxis_title="%",
+                xaxis_title="Data",
+                height=340,
+                template="plotly_white",
                 margin=dict(l=10, r=10, t=48, b=10),
                 separators=",.",
                 legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0)
             )
+            # limites Y dinâmicos com folga
             y_min = max(0, min(y.min(), lo_pct) - 5)
             y_max = min(100, max(y.max(), hi_pct) + 5)
             fig.update_yaxes(range=[y_min, y_max])
             return fig
 
-        st.markdown("**Resumo das taxas (período filtrado)**")
-        def _resume_box(df_rates: pd.DataFrame, col: str, lo_pct: int, hi_pct: int, label: str) -> None:
+        # ======== RESUMO DAS TAXAS (dinâmico por período) ========
+        def _trend_vs_previous_period(series_vals: pd.Series,
+                                      since_dt: date,
+                                      until_dt: date,
+                                      rate_name: str,
+                                      produto_nome: str | None) -> tuple[float | None, float | None]:
+            cur_mean = float(series_vals.mean() * 100.0) if series_vals.size else None
+            period_len = (until_dt - since_dt).days + 1
+            prev_since = since_dt - timedelta(days=period_len)
+            prev_until = since_dt - timedelta(days=1)
+
+            try:
+                df_prev = fetch_insights_daily(
+                    act_id=act_id,
+                    token=token,
+                    api_version=api_version,
+                    since_str=str(prev_since),
+                    until_str=str(prev_until),
+                    level=level,
+                    product_name=produto_nome
+                )
+                if df_prev is not None and not df_prev.empty:
+                    prev = (
+                        df_prev.groupby("date", as_index=False)[
+                            ["link_clicks", "lpv", "init_checkout", "purchases"]
+                        ]
+                        .sum()
+                        .rename(columns={"link_clicks": "clicks", "init_checkout": "checkout"})
+                    )
+                    if rate_name == "LPV/Cliques":
+                        prev["rate"] = prev.apply(lambda r: _safe_div(r["lpv"], r["clicks"]), axis=1)
+                    elif rate_name == "Checkout/LPV":
+                        prev["rate"] = prev.apply(lambda r: _safe_div(r["checkout"], r["lpv"]), axis=1)
+                    else:  # "Compra/Checkout"
+                        prev["rate"] = prev.apply(lambda r: _safe_div(r["purchases"], r["checkout"]), axis=1)
+
+                    prev_mean = float(prev["rate"].mean() * 100.0) if not prev.empty else None
+                else:
+                    prev_mean = None
+            except Exception:
+                prev_mean = None
+
+            if prev_mean is not None and cur_mean is not None:
+                return cur_mean, (cur_mean - prev_mean)
+
+            # fallback: metade inicial vs. final do período atual
+            n = series_vals.size
+            if n == 0:
+                return cur_mean, None
+            mid = max(1, n // 2)
+            first_mean = float(series_vals.iloc[:mid].mean() * 100.0)
+            last_mean = float(series_vals.iloc[mid:].mean() * 100.0) if n - mid > 0 else first_mean
+            return cur_mean, (last_mean - first_mean)
+
+        def _resume_box(df_rates: pd.DataFrame,
+                        col: str,
+                        lo_pct: int,
+                        hi_pct: int,
+                        label: str) -> None:
+            """Mostra: média do período, % de dias dentro da banda e tendência vs período anterior."""
             vals = df_rates[col].dropna()
             if vals.empty:
                 mcol1, mcol2, mcol3 = st.columns(3)
@@ -1155,169 +1054,58 @@ else:
                 mcol2.metric("% dias dentro", "—")
                 mcol3.metric("Tendência (período)", "—")
                 return
+
             mean_pct = float(vals.mean() * 100.0)
             inside = float(((vals * 100.0 >= lo_pct) & (vals * 100.0 <= hi_pct)).mean() * 100.0)
-            # fallback de tendência: metade inicial vs final
-            n = vals.size
-            mid = max(1, n // 2)
-            first_mean = float(vals.iloc[:mid].mean() * 100.0)
-            last_mean  = float(vals.iloc[mid:].mean() * 100.0) if n - mid > 0 else first_mean
-            delta_pp   = last_mean - first_mean
+
+            cur_mean, delta_pp = _trend_vs_previous_period(
+                series_vals=vals,
+                since_dt=since,
+                until_dt=until,
+                rate_name=label.split(" (")[0],  # tira o “(média)” do fim
+                produto_nome=st.session_state.get("daily_produto")
+            )
+
             mcol1, mcol2, mcol3 = st.columns(3)
             mcol1.metric(label, f"{mean_pct:,.2f}%".replace(",", "X").replace(".", ",").replace("X", "."))
             mcol2.metric("% dias dentro", f"{inside:,.0f}%".replace(",", "X").replace(".", ",").replace("X", "."))
-            mcol3.metric("Tendência (período)", ("+" if delta_pp >= 0 else "") + f"{delta_pp:,.2f} pp".replace(",", "X").replace(".", ",").replace("X", "."))
+            if delta_pp is None:
+                mcol3.metric("Tendência (período)", "—")
+            else:
+                delta_txt = f"{delta_pp:,.2f} pp".replace(",", "X").replace(".", ",").replace("X", ".")
+                mcol3.metric("Tendência (período)", ("+" if delta_pp >= 0 else "") + delta_txt)
 
+        # === Chame as três caixinhas de resumo ===
+        st.markdown("**Resumo das taxas (período filtrado)**")
         _resume_box(daily_conv, "LPV/Cliques",     lpv_cli_low, lpv_cli_high, "LPV/Cliques (média)")
         _resume_box(daily_conv, "Checkout/LPV",    co_lpv_low,  co_lpv_high,  "Checkout/LPV (média)")
         _resume_box(daily_conv, "Compra/Checkout", buy_co_low,  buy_co_high,  "Compra/Checkout (média)")
 
         st.markdown("---")
+
+        # === Gráficos lado a lado (mantém como estava) ===
         left, mid, right = st.columns(3)
         with left:
-            st.plotly_chart(_line_pct_banded(daily_conv, "LPV/Cliques", lpv_cli_low, lpv_cli_high, "LPV/Cliques"), use_container_width=True)
+            st.plotly_chart(
+                _line_pct_banded(daily_conv, "LPV/Cliques", lpv_cli_low, lpv_cli_high, "LPV/Cliques"),
+                use_container_width=True
+            )
         with mid:
-            st.plotly_chart(_line_pct_banded(daily_conv, "Checkout/LPV", co_lpv_low, co_lpv_high, "Checkout/LPV"), use_container_width=True)
+            st.plotly_chart(
+                _line_pct_banded(daily_conv, "Checkout/LPV", co_lpv_low, co_lpv_high, "Checkout/LPV"),
+                use_container_width=True
+            )
         with right:
-            st.plotly_chart(_line_pct_banded(daily_conv, "Compra/Checkout", buy_co_low, buy_co_high, "Compra/Checkout"), use_container_width=True)
+            st.plotly_chart(
+                _line_pct_banded(daily_conv, "Compra/Checkout", buy_co_low, buy_co_high, "Compra/Checkout"),
+                use_container_width=True
+            )
 
         st.caption(
             "Leitura: pontos **verdes** estão dentro da banda saudável, **vermelhos** abaixo e **azuis** acima. "
             "A área verde mostra o alvo; a linha vermelha tracejada mostra o **período anterior** para comparação. "
             "Fins de semana ganham fundo azul claro (opcional)."
         )
-
-    # 👉 Guarda as faixas escolhidas para a Notificação Didática
-    lpv_cli_low_g, lpv_cli_high_g = lpv_cli_low, lpv_cli_high
-    co_lpv_low_g,  co_lpv_high_g  = co_lpv_low,  co_lpv_high
-    buy_co_low_g,  buy_co_high_g  = buy_co_low,  buy_co_high
-
-
-# =============== NOTIFICAÇÃO DIDÁTICA DE ALOCAÇÃO DE VERBA (usa *_g) ===============
-st.subheader("🔔 Para onde vai a verba? (recomendação automática)")
-
-min_purchases_to_scale = st.number_input(
-    "Compras mínimas para sugerir Escala (volume)",
-    min_value=0, value=50, step=1
-)
-
-# taxas do período (a partir do funil total já calculado)
-r1 = _safe_div(values_total[1], values_total[0])   # LPV/Cliques
-r2 = _safe_div(values_total[2], values_total[1])   # Checkout/LPV
-r3 = _safe_div(values_total[4], values_total[2])   # Compra/Checkout
-
-# quedas absolutas por etapa (onde as pessoas “somem”)
-drop1 = max(0, values_total[0] - values_total[1])  # Cliques -> LPV (Criativo/LP)
-drop2 = max(0, values_total[1] - values_total[2])  # LPV -> Checkout (Interesse/Oferta)
-drop3 = max(0, values_total[2] - values_total[4])  # Checkout -> Compra (RMK/Pagamento)
-
-def _band_status(val, lo, hi):
-    if not pd.notnull(val): return "sem_dado"
-    v = val * 100
-    if v < lo: return "abaixo"
-    if v > hi: return "acima"
-    return "dentro"
-
-def _chip(label, val, lo, hi):
-    status = _band_status(val, lo, hi)
-    if status == "abaixo":
-        return f"❌ **{label}** — {_fmt_pct_br(val)} (alvo {lo}–{hi}%)"
-    if status == "dentro":
-        return f"✅ **{label}** — {_fmt_pct_br(val)} (dentro de {lo}–{hi}%)"
-    if status == "acima":
-        return f"🟢 **{label}** — {_fmt_pct_br(val)} (acima de {hi}%)"
-    return f"⛔ **{label}** — sem dados suficientes"
-
-stages = {
-    "Teste de criativo": {
-        "rate": r1, "lo": lpv_cli_low_g, "hi": lpv_cli_high_g, "drop": drop1,
-        "explain": "Perda entre Cliques → LPV (qualidade do clique, criativo, velocidade e UX da landing).",
-        "todo": [
-            "Testar variações de criativo (ângulo, thumb, 3s iniciais, CTA).",
-            "Melhorar tempo de carregamento e primeira dobra da LP.",
-            "Revisar promessa/título para alinhar com o anúncio."
-        ]
-    },
-    "Teste de interesse": {
-        "rate": r2, "lo": co_lpv_low_g, "hi": co_lpv_high_g, "drop": drop2,
-        "explain": "Perda entre LPV → Checkout (público/segmentação e proposta de valor).",
-        "todo": [
-            "Refinar públicos/lookalikes e excluir desinteressados.",
-            "Evidenciar prova social e benefícios acima do CTA.",
-            "Harmonizar oferta (preço/parcelas/bundle) com o público certo."
-        ]
-    },
-    "Remarketing": {
-        "rate": r3, "lo": buy_co_low_g, "hi": buy_co_high_g, "drop": drop3,
-        "explain": "Perda entre Checkout → Compra (confiança, meios de pagamento, follow-up).",
-        "todo": [
-            "RMK dinâmico com objeções, frete e garantia claros.",
-            "Oferecer alternativas de pagamento (pix/boleto/parcelas).",
-            "Recuperar carrinhos (e-mail/SMS/Whats) em até 24h."
-        ]
-    }
-}
-
-abaixos = {k: v for k, v in stages.items() if _band_status(v["rate"], v["lo"], v["hi"]) == "abaixo"}
-
-if abaixos:
-    foco, foco_dat = max(abaixos.items(), key=lambda kv: kv[1]["drop"])
-else:
-    total_purch = values_total[4]
-    todas_ok = all(_band_status(v["rate"], v["lo"], v["hi"]) in ["dentro", "acima"] for v in stages.values())
-    if todas_ok and total_purch >= min_purchases_to_scale:
-        foco, foco_dat = "Escala", {
-            "rate": None, "lo": None, "hi": None, "drop": 0,
-            "explain": "Taxas saudáveis e volume suficiente. Hora de aumentar alcance nas melhores campanhas."
-        }
-    else:
-        foco, foco_dat = max(stages.items(), key=lambda kv: kv[1]["drop"])
-
-total_drop = max(1, drop1 + drop2 + drop3)
-share = foco_dat["drop"] / total_drop
-if share > 0.60:
-    intensidade = "Alta"; faixa_verba = "↑ realocar **20–30%** do budget"
-elif share >= 0.30:
-    intensidade = "Média"; faixa_verba = "↑ realocar **10–15%** do budget"
-else:
-    intensidade = "Baixa"; faixa_verba = "↑ realocar **5–10%** do budget"
-
-colA, colB = st.columns([1, 2])
-with colA:
-    st.markdown("**Taxas do período**")
-    st.markdown(_chip("LPV/Cliques", r1, lpv_cli_low_g, lpv_cli_high_g))
-    st.markdown(_chip("Checkout/LPV", r2, co_lpv_low_g,  co_lpv_high_g))
-    st.markdown(_chip("Compra/Checkout", r3, buy_co_low_g,  buy_co_high_g))
-
-with colB:
-    if foco == "Escala":
-        st.success(
-            f"**✅ Recomendação: Escala**\n\n"
-            f"- Motivo: {foco_dat['explain']}\n"
-            f"- Compras no período: **{_fmt_int_br(values_total[4])}** "
-            f"(mín. para escalar: **{_fmt_int_br(min_purchases_to_scale)}**)\n"
-            f"- Ação: aumentar orçamento nas campanhas com melhor ROAS; manter horários e públicos vencedores."
-        )
-    else:
-        st.warning(
-            f"**⚠️ Recomendação: {foco}**\n\n"
-            f"- Motivo: {foco_dat['explain']}\n"
-            f"- Queda concentrada nessa etapa: **{_fmt_int_br(foco_dat['drop'])}** pessoas "
-            f"(intensidade **{intensidade}** → {faixa_verba})."
-        )
-        st.markdown("**O que fazer agora**")
-        for tip in foco_dat["todo"]:
-            st.markdown(f"- {tip}")
-
-with st.expander("ℹ️ Como interpretar"):
-    st.markdown(
-        """
-- **LPV/Cliques** baixo → **Criativo/LP** (as pessoas clicam mas não engajam na página).
-- **Checkout/LPV** baixo → **Interesse/Oferta** (as pessoas veem, mas não avançam).
-- **Compra/Checkout** baixo → **Remarketing/Pagamento** (travou na finalização).
-- Se tudo está saudável **e** há volume de compras → **Escala**.
-        """
-    )
 
     # === NOTIFICAÇÃO DIDÁTICA DE ALOCAÇÃO DE VERBA =================================
     st.subheader("🔔 Para onde vai a verba? (recomendação automática)")
