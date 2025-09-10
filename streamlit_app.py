@@ -1578,7 +1578,7 @@ with tab_daypart:
     st.markdown("---")
 
     # ============== 2) TAXAS POR HORA — evolução e leitura guiada ==============
-    # <<< INÍCIO BLOCO NOVO: TAXAS POR HORA >>>
+    # <<< INÍCIO BLOCO: TAXAS POR HORA COM PERÍODO ANTERIOR >>>
 
     st.subheader("📈 Taxas por hora — evolução e leitura guiada")
 
@@ -1593,56 +1593,54 @@ with tab_daypart:
             hr_co_lpv_low,  hr_co_lpv_high  = st.slider("Checkout / LPV", 0, 100, (10, 20), 1, key="hr_tx_co_lpv_band")
             hr_buy_co_low,  hr_buy_co_high  = st.slider("Compra / Checkout", 0, 100, (30, 40), 1, key="hr_tx_buy_co_band")
 
-    # Agrega por HORA no período filtrado da aba
+    # --- PERÍODO ATUAL (já filtrado por produto acima em `d`) ---
     hourly_conv = (
         d.groupby("hour", as_index=False)[["link_clicks","lpv","init_checkout","purchases"]]
          .sum()
          .rename(columns={"link_clicks":"clicks","init_checkout":"checkout"})
     )
 
-    # Filtra horas com poucos cliques (evita ruído)
-    hourly_conv = hourly_conv[hourly_conv["clicks"] >= min_clicks_hour].copy()
+    # --- PERÍODO ANTERIOR (mesma duração, imediatamente antes) ---
+    period_len_days = (until - since).days + 1
+    prev_since = since - timedelta(days=period_len_days)
+    prev_until = since - timedelta(days=1)
 
-        # === NOVO: período anterior com MESMA duração (para comparar por hora) ===
-        period_len_days = (until - since).days + 1
-        prev_since_hr = since - timedelta(days=period_len_days)
-        prev_until_hr = since - timedelta(days=1)
-
-        df_hourly_prev = fetch_insights_hourly(
+    # Busca dados por hora cobrindo o período anterior
+    with st.spinner("Carregando período anterior (hora a hora)…"):
+        df_prev_hourly = fetch_insights_hourly(
             act_id=act_id, token=token, api_version=api_version,
-            since_str=str(prev_since_hr), until_str=str(prev_until_hr),
-            level=level_hourly
+            since_str=str(prev_since), until_str=str(prev_until), level=level_hourly
         )
 
-        # aplica o MESMO filtro de produto
-        hourly_prev = pd.DataFrame()
-        if df_hourly_prev is not None and not df_hourly_prev.empty:
-            dprev = df_hourly_prev.copy()
-            if produto_sel_hr != "(Todos)":
-                mask_prev = dprev["campaign_name"].str.contains(produto_sel_hr, case=False, na=False)
-                dprev = dprev[mask_prev].copy()
+    # Aplica o mesmo filtro de produto ao período anterior
+    if df_prev_hourly is not None and not df_prev_hourly.empty and st.session_state.get("daypart_produto") != "(Todos)":
+        mask_prev = df_prev_hourly["campaign_name"].str.contains(st.session_state.get("daypart_produto"), case=False, na=False)
+        df_prev_hourly = df_prev_hourly[mask_prev].copy()
 
-            # agrega por HORA e renomeia como no atual
-            hourly_prev = (
-                dprev.groupby("hour", as_index=False)[["link_clicks","lpv","init_checkout","purchases"]]
-                     .sum()
-                     .rename(columns={"link_clicks":"clicks","init_checkout":"checkout"})
-            )
+    hourly_prev = pd.DataFrame()
+    if df_prev_hourly is not None and not df_prev_hourly.empty:
+        hourly_prev = (
+            df_prev_hourly.dropna(subset=["hour"]).copy()
+        )
+        hourly_prev["hour"] = hourly_prev["hour"].astype(int).clip(0, 23)
+        hourly_prev = (
+            hourly_prev.groupby("hour", as_index=False)[["link_clicks","lpv","init_checkout","purchases"]]
+            .sum()
+            .rename(columns={"link_clicks":"clicks","init_checkout":"checkout"})
+        )
 
-            # filtra por cliques mínimos (mesmo threshold)
-            hourly_prev = hourly_prev[hourly_prev["clicks"] >= min_clicks_hour].copy()
+        # Calcula as taxas do período anterior
+        hourly_prev["LPV/Cliques"]     = hourly_prev.apply(lambda r: _safe_div(r["lpv"],       r["clicks"]),   axis=1)
+        hourly_prev["Checkout/LPV"]    = hourly_prev.apply(lambda r: _safe_div(r["checkout"],  r["lpv"]),      axis=1)
+        hourly_prev["Compra/Checkout"] = hourly_prev.apply(lambda r: _safe_div(r["purchases"], r["checkout"]), axis=1)
 
-            # calcula as 3 taxas (frações 0–1) para já passar prontas ao gráfico
-            if not hourly_prev.empty:
-                hourly_prev["LPV/Cliques"]     = hourly_prev.apply(lambda r: _safe_div(r["lpv"],       r["clicks"]),   axis=1)
-                hourly_prev["Checkout/LPV"]    = hourly_prev.apply(lambda r: _safe_div(r["checkout"],  r["lpv"]),      axis=1)
-                hourly_prev["Compra/Checkout"] = hourly_prev.apply(lambda r: _safe_div(r["purchases"], r["checkout"]), axis=1)
-
+    # Filtra horas com poucos cliques (evita ruído) — aplica no período atual
+    hourly_conv = hourly_conv[hourly_conv["clicks"] >= min_clicks_hour].copy()
 
     if hourly_conv.empty:
         st.info("Sem horas suficientes após o filtro de cliques mínimos.")
     else:
-        # Calcula taxas (frações 0–1)
+        # Calcula taxas (frações 0–1) — período atual
         hourly_conv["LPV/Cliques"]     = hourly_conv.apply(lambda r: _safe_div(r["lpv"],       r["clicks"]),   axis=1)
         hourly_conv["Checkout/LPV"]    = hourly_conv.apply(lambda r: _safe_div(r["checkout"],  r["lpv"]),      axis=1)
         hourly_conv["Compra/Checkout"] = hourly_conv.apply(lambda r: _safe_div(r["purchases"], r["checkout"]), axis=1)
@@ -1650,28 +1648,23 @@ with tab_daypart:
         def _fmt_pct_series(s):  # 0–1 -> 0–100
             return (s*100).round(2)
 
-        # Helper do gráfico (igual à versão diária, mas no eixo X são as horas 0..23)
+        # Helper do gráfico (recebe também o df do período anterior)
         def _line_pct_banded_hr(df, col, lo_pct, hi_pct, title, prev_df=None):
             import plotly.graph_objects as go
-
-            # base 0..23 para alinhar as duas séries
-            base = pd.DataFrame({"hour": np.arange(24, dtype=int)})
-
-            cur = base.merge(df[["hour", col]], on="hour", how="left")
-            x = cur["hour"].astype(int)
-            y = (cur[col] * 100).round(2)
+            x = df["hour"].astype(int)
+            y = _fmt_pct_series(df[col])
 
             # status por ponto
             def _status(v):
                 if not pd.notnull(v): return "sem"
-                if v < lo_pct: return "abaixo"
-                if v > hi_pct: return "acima"
+                v100 = v*100.0
+                if v100 < lo_pct: return "abaixo"
+                if v100 > hi_pct: return "acima"
                 return "dentro"
 
-            status = y.map(_status).tolist()
+            status = df[col].map(_status).tolist()
             colors = [{"abaixo":"#dc2626","dentro":"#16a34a","acima":"#0ea5e9","sem":"#9ca3af"}[s] for s in status]
-            hover = [f"{title}<br>Hora: {int(h)}h<br>Taxa: {val if pd.notnull(val) else 0:.2f}%"
-                     for h, val in zip(x, y.fillna(0))]
+            hover = [f"{title}<br>Hora: {int(h)}h<br>Taxa: {val:.2f}%" for h, val in zip(x, y.fillna(0))]
 
             fig = go.Figure()
 
@@ -1686,24 +1679,32 @@ with tab_daypart:
                     layer="below"
                 )
 
-            # linha do PERÍODO ATUAL
+            # série por hora — período atual
             fig.add_trace(go.Scatter(
                 x=x, y=y, mode="lines+markers",
-                name="Por hora (Atual)",
+                name="Por hora (período atual)",
                 marker=dict(size=7, color=colors),
-                line=dict(width=1.8, color="#1f77b4"),
+                line=dict(width=1.5, color="#1f77b4"),
                 hovertext=hover, hoverinfo="text"
             ))
 
-            # linha do PERÍODO ANTERIOR (se existir)
+            # linha do período anterior (se existir)
             if prev_df is not None and not prev_df.empty and col in prev_df.columns:
-                prev = base.merge(prev_df[["hour", col]], on="hour", how="left")
-                y_prev = (prev[col] * 100).round(2)
+                # Garante horas 0..23 com 0 para posições faltantes
+                prev_aligned = (
+                    prev_df.set_index("hour")
+                           .reindex(range(24))
+                           .reset_index()
+                           .rename(columns={"index":"hour"})
+                )
+                x_prev = prev_aligned["hour"].astype(int)
+                y_prev = _fmt_pct_series(prev_aligned[col])
+
                 fig.add_trace(go.Scatter(
-                    x=x, y=y_prev,
+                    x=x_prev, y=y_prev,
                     mode="lines",
-                    name=f"Período anterior ({prev_since_hr} a {prev_until_hr})",
-                    line=dict(width=2.2, dash="dot", color="#ef4444")
+                    name=f"Período anterior ({prev_since} a {prev_until})",
+                    line=dict(width=2.2, color="#ef4444", dash="dot")
                 ))
 
             fig.update_layout(
@@ -1717,18 +1718,10 @@ with tab_daypart:
                 legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0)
             )
             fig.update_xaxes(tickmode="linear", tick0=0, dtick=1, range=[-0.5, 23.5])
-
-            # limites Y considerando as duas séries
-            y_all = [v for v in y.tolist() if pd.notnull(v)]
-            if prev_df is not None and not prev_df.empty and col in prev_df.columns:
-                y_prev_vals = ((prev_df[col] * 100).round(2)).tolist()
-                y_all += [v for v in y_prev_vals if pd.notnull(v)]
-            y_min = max(0, (min(y_all+[lo_pct]) if y_all else lo_pct) - 5)
-            y_max = min(100, (max(y_all+[hi_pct]) if y_all else hi_pct) + 5)
+            y_min = max(0, min(y.min(), lo_pct) - 5)
+            y_max = min(100, max(y.max(), hi_pct) + 5)
             fig.update_yaxes(range=[y_min, y_max])
-
             return fig
-
 
         # ===== Resumo das taxas (por hora no período) =====
         def _resume_box_hr(df_rates: pd.DataFrame, col: str, lo_pct: int, hi_pct: int, label: str) -> None:
@@ -1751,43 +1744,31 @@ with tab_daypart:
 
         st.markdown("---")
 
-        # === Três gráficos lado a lado (taxas por hora) ===
-        # === Três gráficos lado a lado (taxas por hora) ===
+        # === Três gráficos lado a lado (taxas por hora) — COM PERÍODO ANTERIOR ===
         cL, cM, cR = st.columns(3)
         with cL:
             st.plotly_chart(
-                _line_pct_banded_hr(
-                    hourly_conv, "LPV/Cliques",
-                    hr_lpv_cli_low, hr_lpv_cli_high, "LPV/Cliques",
-                    prev_df=(hourly_prev if 'hourly_prev' in locals() and not hourly_prev.empty else None)
-                ),
+                _line_pct_banded_hr(hourly_conv, "LPV/Cliques", hr_lpv_cli_low, hr_lpv_cli_high, "LPV/Cliques", prev_df=hourly_prev),
                 use_container_width=True
             )
         with cM:
             st.plotly_chart(
-                _line_pct_banded_hr(
-                    hourly_conv, "Checkout/LPV",
-                    hr_co_lpv_low, hr_co_lpv_high, "Checkout/LPV",
-                    prev_df=(hourly_prev if 'hourly_prev' in locals() and not hourly_prev.empty else None)
-                ),
+                _line_pct_banded_hr(hourly_conv, "Checkout/LPV", hr_co_lpv_low, hr_co_lpv_high, "Checkout/LPV", prev_df=hourly_prev),
                 use_container_width=True
             )
         with cR:
             st.plotly_chart(
-                _line_pct_banded_hr(
-                    hourly_conv, "Compra/Checkout",
-                    hr_buy_co_low, hr_buy_co_high, "Compra/Checkout",
-                    prev_df=(hourly_prev if 'hourly_prev' in locals() and not hourly_prev.empty else None)
-                ),
+                _line_pct_banded_hr(hourly_conv, "Compra/Checkout", hr_buy_co_low, hr_buy_co_high, "Compra/Checkout", prev_df=hourly_prev),
                 use_container_width=True
             )
 
-
         st.caption(
             "Leitura: pontos **verdes** estão dentro da banda saudável, **vermelhos** abaixo e **azuis** acima. "
-            "A faixa verde é o alvo definido nos sliders."
+            "A faixa verde é o alvo; a **linha vermelha tracejada** mostra o **período anterior** sobreposto, para ver padrão de queda/subida."
         )
-    
+
+    # <<< FIM BLOCO: TAXAS POR HORA COM PERÍODO ANTERIOR >>>
+
     # ============== 3) APANHADO GERAL POR HORA (no período) ==============
     st.subheader("📦 Apanhado geral por hora (período selecionado)")
     cube_hr = d.groupby("hour", as_index=False)[
