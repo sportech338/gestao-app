@@ -85,16 +85,23 @@ def _to_float(x):
         return 0.0
 
 def _sum_item(item, allowed_keys=None):
-    """Usa 'value' quando existir; senão soma SOMENTE as chaves permitidas (ex.: 7d_click, 1d_view)."""
+    """
+    Usa 'value' quando existir (total consolidado pela API).
+    Senão, pega o MAIOR valor entre as janelas permitidas (evita dupla contagem).
+    """
     if not isinstance(item, dict):
         return _to_float(item)
     if "value" in item:
         return _to_float(item.get("value"))
+    
     keys = allowed_keys or ATTR_KEYS
-    s = 0.0
+    
+    # Em vez de somar, pega o maior valor entre as janelas de atribuição
+    max_val = 0.0
     for k in keys:
-        s += _to_float(item.get(k))
-    return s
+        max_val = max(max_val, _to_float(item.get(k)))
+    return max_val
+
 
 def _sum_actions_exact(rows, exact_names, allowed_keys=None) -> float:
     """Soma totals de actions pelos nomes exatos (case-insensitive), respeitando a janela (allowed_keys)."""
@@ -366,16 +373,15 @@ def fetch_insights_daily(act_id: str, token: str, api_version: str,
                 actions = rec.get("actions") or []
                 action_values = rec.get("action_values") or []
 
-                link_clicks = rec.get("link_clicks", None)
+                link_clicks = rec.get("link_clicks")
                 if link_clicks is None:
-                    link_clicks = _sum_actions_exact(actions, ["link_click"], allowed_keys=ATTR_KEYS)
+                    link_clicks = _sum_actions_exact(actions, ["link_click"])
 
-                lpv = rec.get("landing_page_views", None)
+                lpv = rec.get("landing_page_views")
                 if lpv is None:
-                    lpv = _sum_actions_exact(actions, ["landing_page_view"], allowed_keys=ATTR_KEYS)
-                    if lpv == 0:
-                        lpv = (_sum_actions_exact(actions, ["view_content"], allowed_keys=ATTR_KEYS)
-                               or _sum_actions_contains(actions, ["landing_page"], allowed_keys=ATTR_KEYS))
+                    lpv = _sum_actions_exact(actions, ["landing_page_view"])
+                    if not lpv or lpv == 0:
+                        lpv = _sum_actions_exact(actions, ["view_content"])
 
                 ic  = _sum_actions_exact(actions, CHECKOUT_NAMES, allowed_keys=ATTR_KEYS)
                 api = _sum_actions_exact(actions, ADDPAY_NAMES,   allowed_keys=ATTR_KEYS)
