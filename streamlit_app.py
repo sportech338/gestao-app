@@ -1567,7 +1567,7 @@ with st.expander("Ajustes de exibição", expanded=True):
     col_cfg1, col_cfg2 = st.columns([2, 1])
     with col_cfg1:
         min_clicks_hour = st.slider("Ignorar horas com menos de X cliques", 0, 500, 30, 10)
-        show_band_hr = st.checkbox("Mostrar banda saudável (faixa alvo)", value=True)
+        show_band_hr = st.checkbox("Mostrar banda saudável (faixa alvo)", value=True, key="show_band_hr")
     with col_cfg2:
         st.caption("Faixas saudáveis (%)")
         lpv_cli_low_hr, lpv_cli_high_hr = st.slider("LPV / Cliques", 0, 100, (70, 85), 1, key="txh_lpv_cli_band")
