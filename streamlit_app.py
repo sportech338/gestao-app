@@ -1561,52 +1561,105 @@ with tab_daypart:
     st.markdown("---")
 
         # ========= TAXAS POR HORA (variação por hora — com banda saudável e resumo) =========
-    st.subheader("📈 Taxas por hora — evolução e leitura guiada")
+st.markdown("### Taxas por hora — evolução e leitura guiada")
 
-    # Agrega por hora (no período inteiro)
-    hourly_conv = (
-        d.groupby("hour", as_index=False)[
-            ["link_clicks","lpv","init_checkout","add_payment","purchases"]
-        ].sum()
-        .rename(columns={"link_clicks":"clicks","init_checkout":"checkout","add_payment":"addpay"})
-    )
+with st.expander("Ajustes de exibição", expanded=True):
+    col_cfg1, col_cfg2 = st.columns([2, 1])
+    with col_cfg1:
+        min_clicks_hour = st.slider("Ignorar horas com menos de X cliques", 0, 500, 30, 10)
+        show_band_hr = st.checkbox("Mostrar banda saudável (faixa alvo)", value=True)
+    with col_cfg2:
+        st.caption("Faixas saudáveis (%)")
+        lpv_cli_low_hr, lpv_cli_high_hr = st.slider("LPV / Cliques", 0, 100, (70, 85), 1, key="txh_lpv_cli_band")
+        co_lpv_low_hr,  co_lpv_high_hr  = st.slider("Checkout / LPV", 0, 100, (10, 20), 1, key="txh_co_lpv_band")
+        buy_co_low_hr,  buy_co_high_hr  = st.slider("Compra / Checkout", 0, 100, (30, 40), 1, key="txh_buy_co_band")
 
-    if hourly_conv.empty:
-        st.info("Sem dados suficientes após aplicar os filtros.")
-    else:
-        hourly_conv["LPV/Cliques"]     = hourly_conv.apply(lambda r: _safe_div(r["lpv"],       r["clicks"]),   axis=1)
-        hourly_conv["Checkout/LPV"]    = hourly_conv.apply(lambda r: _safe_div(r["checkout"],  r["lpv"]),      axis=1)
-        hourly_conv["Compra/Checkout"] = hourly_conv.apply(lambda r: _safe_div(r["purchases"], r["checkout"]), axis=1)
+# agrega por hora
+hourly_conv = (
+    d.groupby("hour", as_index=False)[
+        ["link_clicks","lpv","init_checkout","add_payment","purchases"]
+    ].sum()
+    .rename(columns={"link_clicks":"clicks","init_checkout":"checkout","add_payment":"addpay"})
+)
 
-        fig_rates = go.Figure()
-        for col, color in zip(
-            ["LPV/Cliques","Checkout/LPV","Compra/Checkout"],
-            ["#0ea5e9","#f97316","#16a34a"]
-        ):
-            fig_rates.add_trace(go.Scatter(
-                x=hourly_conv["hour"],
-                y=(hourly_conv[col]*100).round(2),
-                mode="lines+markers",
-                name=col,
-                line=dict(width=2, color=color)
-            ))
-        fig_rates.update_layout(
-            title="Taxas por hora (%)",
-            xaxis_title="Hora do dia",
-            yaxis_title="%",
-            height=420,
-            template="plotly_white",
-            margin=dict(l=10, r=10, t=48, b=10),
-            separators=",."
+# filtra mínimo de cliques
+hourly_conv = hourly_conv[hourly_conv["clicks"] >= min_clicks_hour].copy()
+
+if hourly_conv.empty:
+    st.info("Sem horas suficientes após o filtro de cliques mínimos.")
+else:
+    hourly_conv["LPV/Cliques"]     = hourly_conv.apply(lambda r: _safe_div(r["lpv"],       r["clicks"]),   axis=1)
+    hourly_conv["Checkout/LPV"]    = hourly_conv.apply(lambda r: _safe_div(r["checkout"],  r["lpv"]),      axis=1)
+    hourly_conv["Compra/Checkout"] = hourly_conv.apply(lambda r: _safe_div(r["purchases"], r["checkout"]), axis=1)
+
+    # helper gráfico (igual ao do diário, mas eixo X = hora)
+    def _line_pct_banded_hr(df, col, lo_pct, hi_pct, title):
+        import plotly.graph_objects as go
+        x = df["hour"]
+        y = (df[col]*100).round(2)
+
+        # status
+        def _status(v):
+            if not pd.notnull(v): return "sem"
+            if v*100 < lo_pct: return "abaixo"
+            if v*100 > hi_pct: return "acima"
+            return "dentro"
+
+        status = df[col].map(_status).tolist()
+        colors = [{"abaixo":"#dc2626","dentro":"#16a34a","acima":"#0ea5e9","sem":"#9ca3af"}[s] for s in status]
+
+        fig = go.Figure()
+        if show_band_hr:
+            fig.add_shape(
+                type="rect", xref="x", yref="y",
+                x0=x.min(), x1=x.max(),
+                y0=lo_pct, y1=hi_pct,
+                fillcolor="rgba(34,197,94,0.08)", line=dict(width=0), layer="below"
+            )
+
+        fig.add_trace(go.Scatter(
+            x=x, y=y, mode="lines+markers",
+            name=col,
+            marker=dict(size=7, color=colors),
+            line=dict(width=2, color="#1f77b4"),
+        ))
+        fig.update_layout(
+            title=title, yaxis_title="%", xaxis_title="Hora do dia",
+            height=320, template="plotly_white",
+            margin=dict(l=10, r=10, t=40, b=10), separators=",."
         )
-        st.plotly_chart(fig_rates, use_container_width=True)
+        return fig
 
-        # Resumo rápido
-        st.markdown("**Resumo das taxas (período inteiro)**")
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Média LPV/Cliques", f"{hourly_conv['LPV/Cliques'].mean()*100:,.2f}%".replace(",", "X").replace(".", ",").replace("X", "."))
-        c2.metric("Média Checkout/LPV", f"{hourly_conv['Checkout/LPV'].mean()*100:,.2f}%".replace(",", "X").replace(".", ",").replace("X", "."))
-        c3.metric("Média Compra/Checkout", f"{hourly_conv['Compra/Checkout'].mean()*100:,.2f}%".replace(",", "X").replace(".", ",").replace("X", "."))
+    # === Resumo das taxas (igual ao dia) ===
+    st.markdown("**Resumo das taxas (período filtrado)**")
+
+    def _resume_box_hr(df_rates, col, lo, hi, label):
+        vals = df_rates[col].dropna()
+        if vals.empty:
+            c1, c2 = st.columns(2)
+            c1.metric(label, "—")
+            c2.metric("% horas dentro", "—")
+            return
+        mean_pct = float(vals.mean()*100)
+        inside   = float(((vals*100 >= lo) & (vals*100 <= hi)).mean()*100)
+        c1, c2 = st.columns(2)
+        c1.metric(label, f"{mean_pct:,.2f}%".replace(",", "X").replace(".", ",").replace("X", "."))
+        c2.metric("% horas dentro", f"{inside:,.0f}%".replace(",", "X").replace(".", ",").replace("X", "."))
+
+    _resume_box_hr(hourly_conv, "LPV/Cliques",     lpv_cli_low_hr, lpv_cli_high_hr, "LPV/Cliques (média)")
+    _resume_box_hr(hourly_conv, "Checkout/LPV",    co_lpv_low_hr,  co_lpv_high_hr,  "Checkout/LPV (média)")
+    _resume_box_hr(hourly_conv, "Compra/Checkout", buy_co_low_hr,  buy_co_high_hr,  "Compra/Checkout (média)")
+
+    st.markdown("---")
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.plotly_chart(_line_pct_banded_hr(hourly_conv,"LPV/Cliques",lpv_cli_low_hr,lpv_cli_high_hr,"LPV/Cliques"), use_container_width=True)
+    with c2:
+        st.plotly_chart(_line_pct_banded_hr(hourly_conv,"Checkout/LPV",co_lpv_low_hr,co_lpv_high_hr,"Checkout/LPV"), use_container_width=True)
+    with c3:
+        st.plotly_chart(_line_pct_banded_hr(hourly_conv,"Compra/Checkout",buy_co_low_hr,buy_co_high_hr,"Compra/Checkout"), use_container_width=True)
+
+    st.caption("Leitura: pontos verdes dentro da banda saudável, vermelhos abaixo, azuis acima. Área verde = alvo.")
 
 
     # ============== 3) APANHADO GERAL POR HORA (no período) ==============
