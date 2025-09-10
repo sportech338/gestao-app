@@ -1,4 +1,3 @@
-# lib/meta_helpers.py
 import time, json, numpy as np, pandas as pd, requests
 from datetime import timedelta, datetime, date
 from zoneinfo import ZoneInfo
@@ -19,8 +18,7 @@ def get_session():
         _session = s
     return _session
 
-# ==== Helpers genéricos ====  (cole os seus aqui)
-# === PASTE: _retry_call -> renomeie para retry_call ===
+# ==== Helpers genéricos ====
 def retry_call(fn, max_retries=5, base_wait=1.2):
     for i in range(max_retries):
         try:
@@ -32,12 +30,10 @@ def retry_call(fn, max_retries=5, base_wait=1.2):
             raise
     raise RuntimeError("Falha após múltiplas tentativas.")
 
-# === PASTE: _ensure_act_prefix -> ensure_act_prefix ===
 def ensure_act_prefix(ad_account_id: str) -> str:
     s = (ad_account_id or "").strip()
     return s if s.startswith("act_") else f"act_{s}"
 
-# === PASTE: _to_float/_sum_item/_sum_actions_exact/_sum_actions_contains/_pick_purchase_totals ===
 def to_float(x):
     try: return float(x or 0)
     except: return 0.0
@@ -88,9 +84,28 @@ def pick_purchase_totals(rows, allowed_keys=None) -> float:
             grp[r["action_type"]] += sum_item(r, allowed_keys)
     return float(max(grp.values()) if grp else 0.0)
 
-# === PASTE: formatadores / utilitários ===
+# ==== Formatação / util ====
 def fmt_money_br(v: float) -> str:
     return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+def fmt_ratio_br(x):
+    return (f"{x:,.2f}x".replace(",", "X").replace(".", ",").replace("X", ".")
+            if pd.notnull(x) else "")
+
+def fmt_pct_br(x):
+    return (f"{x*100:,.2f}%".replace(",", "X").replace(".", ",").replace("X", ".")
+            if pd.notnull(x) else "")
+
+def fmt_int_br(x):
+    try: return f"{int(round(float(x))):,}".replace(",", ".")
+    except: return ""
+
+def fmt_int_signed_br(x):
+    try:
+        v = int(round(float(x)))
+        s = f"{abs(v):,}".replace(",", ".")
+        return f"+{s}" if v > 0 else (f"-{s}" if v < 0 else "0")
+    except: return ""
 
 def enforce_monotonic(values):
     out, cur = [], None
@@ -102,20 +117,6 @@ def enforce_monotonic(values):
 def safe_div(n, d):
     n = float(n or 0); d = float(d or 0)
     return (n / d) if d > 0 else np.nan
-
-def fmt_pct_br(x):
-    import pandas as pd
-    return (f"{x*100:,.2f}%".replace(",", "X").replace(".", ",").replace("X", ".")
-            if pd.notnull(x) else "")
-
-def fmt_ratio_br(x):
-    import pandas as pd
-    return (f"{x:,.2f}x".replace(",", "X").replace(".", ",").replace("X", ".")
-            if pd.notnull(x) else "")
-
-def fmt_int_br(x):
-    try: return f"{int(round(float(x))):,}".replace(",", ".")
-    except: return ""
 
 def chunks_by_days(since_str: str, until_str: str, max_days: int = 30):
     s = datetime.fromisoformat(str(since_str)).date()
