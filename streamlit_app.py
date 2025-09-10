@@ -84,68 +84,37 @@ def _to_float(x):
     except:
         return 0.0
 
-def _sum_item(item, allowed_keys=None):
-    """Usa 'value' quando existir; senão soma SOMENTE as chaves permitidas (ex.: 7d_click, 1d_view)."""
+def _sum_item(item):
+    """Extrai o valor consolidado de uma métrica, que a API retorna no campo 'value'."""
     if not isinstance(item, dict):
         return _to_float(item)
-    if "value" in item:
-        return _to_float(item.get("value"))
-    keys = allowed_keys or ATTR_KEYS
-    s = 0.0
-    for k in keys:
-        s += _to_float(item.get(k))
-    return s
+    return _to_float(item.get("value"))
 
-def _sum_actions_exact(rows, exact_names, allowed_keys=None) -> float:
-    """Soma totals de actions pelos nomes exatos (case-insensitive), respeitando a janela (allowed_keys)."""
+def _sum_actions_exact(rows, exact_names) -> float:
+    """Soma os totais de 'actions' com base nos nomes exatos fornecidos."""
     if not rows:
         return 0.0
     names = {str(n).lower() for n in exact_names}
-    tot = 0.0
+    total = 0.0
     for r in rows:
-        at = str(r.get("action_type", "")).lower()
-        if at in names:
-            tot += _sum_item(r, allowed_keys)
-    return float(tot)
+        if str(r.get("action_type", "")).lower() in names:
+            total += _sum_item(r)
+    return float(total)
 
-def _sum_actions_contains(rows, substrs, allowed_keys=None) -> float:
-    """Soma totals de actions que CONTENHAM qualquer substring, respeitando a janela (allowed_keys)."""
+def _pick_purchase_totals(rows) -> float:
+    """Soma o valor de todos os tipos de eventos de compra."""
     if not rows:
         return 0.0
-    ss = [str(s).lower() for s in substrs]
-    tot = 0.0
+    total = 0.0
+    purchase_event_names = [
+        "omni_purchase", "purchase",
+        "offsite_conversion.fb_pixel_purchase", "onsite_conversion.purchase"
+    ]
     for r in rows:
-        at = str(r.get("action_type", "")).lower()
-        if any(s in at for s in ss):
-            tot += _sum_item(r, allowed_keys)
-    return float(tot)
+        if str(r.get("action_type", "")).lower() in purchase_event_names:
+            total += _sum_item(r)
+    return float(total)
 
-def _pick_purchase_totals(rows, allowed_keys=None) -> float:
-    """Prioriza omni_purchase; senão pega o MAIOR entre tipos específicos (sem duplicar janelas)."""
-    if not rows:
-        return 0.0
-    rows = [{**r, "action_type": str(r.get("action_type", "")).lower()} for r in rows]
-    omni = [r for r in rows if r["action_type"] == "omni_purchase"]
-    if omni:
-        return float(sum(_sum_item(r, allowed_keys) for r in omni))
-    candidates = {
-        "purchase": 0.0,
-        "onsite_conversion.purchase": 0.0,
-        "offsite_conversion.fb_pixel_purchase": 0.0,
-    }
-    for r in rows:
-        at = r["action_type"]
-        if at in candidates:
-            candidates[at] += _sum_item(r, allowed_keys)
-    if any(v > 0 for v in candidates.values()):
-        return float(max(candidates.values()))
-    # fallback amplo (respeitando allowed_keys)
-    grp = {}
-    for r in rows:
-        if "purchase" in r["action_type"]:
-            grp.setdefault(r["action_type"], 0.0)
-            grp[r["action_type"]] += _sum_item(r, allowed_keys)
-    return float(max(grp.values()) if grp else 0.0)
 
 def _fmt_money_br(v: float) -> str:
     return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
@@ -309,42 +278,34 @@ def _filter_by_product(df: pd.DataFrame, produto: str) -> pd.DataFrame:
 def fetch_insights_daily(act_id: str, token: str, api_version: str,
                          since_str: str, until_str: str,
                          level: str = "campaign",
-                         try_extra_fields: bool = True,
+                         try_extra_fields: bool = True, # Este parâmetro não será mais usado, mas mantido por compatibilidade
                          product_name: str | None = None) -> pd.DataFrame:
     """
-    - time_range (since/until) + time_increment=1
-    - level único ('campaign' recomendado)
-    - Usa action_report_time=conversion e action_attribution_windows fixos (paridade com Ads Manager)
-    - Traz fields extras (link_clicks, landing_page_views) e faz fallback se houver erro #100.
-    - Paraleliza chunks de 30d e usa requests.Session para keep-alive.
-    - Opcional: filtering por nome da campanha (product_name) direto na API.
+    Coleta dados diários da API da Meta, garantindo paridade com o Ads Manager.
     """
     act_id = _ensure_act_prefix(act_id)
     base_url = f"https://graph.facebook.com/{api_version}/{act_id}/insights"
 
-    base_fields = [
+    # Campos que correspondem diretamente às colunas do Ads Manager
+    fields_to_fetch = [
         "spend", "impressions", "clicks", "actions", "action_values",
-        "account_currency", "date_start", "campaign_id", "campaign_name"
+        "account_currency", "date_start", "campaign_id", "campaign_name",
+        "link_clicks", "landing_page_views", "inline_link_clicks" # Adicionado para garantir o clique correto
     ]
-    extra_fields = ["link_clicks", "landing_page_views"]
 
-    def _fetch_range(_since: str, _until: str, _try_extra: bool) -> list[dict]:
-        fields = base_fields + (extra_fields if _try_extra else [])
+    def _fetch_range(_since: str, _until: str ) -> list[dict]:
         params = {
             "access_token": token,
             "level": level,
             "time_range": json.dumps({"since": _since, "until": _until}),
             "time_increment": 1,
-            "fields": ",".join(fields),
+            "fields": ",".join(fields_to_fetch),
             "limit": 500,
             "action_report_time": "conversion",
-            "action_attribution_windows": ",".join(ATTR_KEYS),
+            # A linha 'action_attribution_windows' foi REMOVIDA para obter os totais corretos
         }
-        # filtro por campanha (produto) direto na API, quando aplicável
         if level == "campaign" and product_name and product_name != "(Todos)":
-            params["filtering"] = json.dumps([{
-                "field": "campaign.name", "operator": "CONTAIN", "value": product_name
-            }])
+            params["filtering"] = json.dumps([{"field": "campaign.name", "operator": "CONTAIN", "value": product_name}])
 
         rows_local, next_url, next_params = [], base_url, params.copy()
         while next_url:
@@ -354,34 +315,16 @@ def fetch_insights_daily(act_id: str, token: str, api_version: str,
                 payload = resp.json()
             except Exception:
                 raise RuntimeError("Resposta inválida da Graph API.")
+            
             if resp.status_code != 200:
                 err = (payload or {}).get("error", {})
-                code, sub, msg = err.get("code"), err.get("error_subcode"), err.get("message")
-                if code == 100 and _try_extra:
-                    # refaz sem extras só para ESTA janela
-                    return _fetch_range(_since, _until, _try_extra=False)
-                raise RuntimeError(f"Graph API error {resp.status_code} | code={code} subcode={sub} | {msg}")
+                raise RuntimeError(f"Graph API error {resp.status_code}: {err.get('message')}")
 
             for rec in payload.get("data", []):
                 actions = rec.get("actions") or []
                 action_values = rec.get("action_values") or []
 
-                link_clicks = rec.get("link_clicks", None)
-                if link_clicks is None:
-                    link_clicks = _sum_actions_exact(actions, ["link_click"], allowed_keys=ATTR_KEYS)
-
-                lpv = rec.get("landing_page_views", None)
-                if lpv is None:
-                    lpv = _sum_actions_exact(actions, ["landing_page_view"], allowed_keys=ATTR_KEYS)
-                    if lpv == 0:
-                        lpv = (_sum_actions_exact(actions, ["view_content"], allowed_keys=ATTR_KEYS)
-                               or _sum_actions_contains(actions, ["landing_page"], allowed_keys=ATTR_KEYS))
-
-                ic  = _sum_actions_exact(actions, CHECKOUT_NAMES, allowed_keys=ATTR_KEYS)
-                api = _sum_actions_exact(actions, ADDPAY_NAMES,   allowed_keys=ATTR_KEYS)
-                purchases_cnt = _pick_purchase_totals(actions, allowed_keys=ATTR_KEYS)
-                revenue_val   = _pick_purchase_totals(action_values, allowed_keys=ATTR_KEYS)
-
+                # Mapeamento direto das métricas desejadas
                 rows_local.append({
                     "date":           pd.to_datetime(rec.get("date_start")),
                     "currency":       rec.get("account_currency", "BRL"),
@@ -390,12 +333,12 @@ def fetch_insights_daily(act_id: str, token: str, api_version: str,
                     "spend":          _to_float(rec.get("spend")),
                     "impressions":    _to_float(rec.get("impressions")),
                     "clicks":         _to_float(rec.get("clicks")),
-                    "link_clicks":    _to_float(link_clicks),
-                    "lpv":            _to_float(lpv),
-                    "init_checkout":  _to_float(ic),
-                    "add_payment":    _to_float(api),
-                    "purchases":      _to_float(purchases_cnt),
-                    "revenue":        _to_float(revenue_val),
+                    "link_clicks":    _to_float(rec.get("inline_link_clicks")), # Usar 'inline_link_clicks' para paridade
+                    "lpv":            _to_float(rec.get("landing_page_views")),
+                    "init_checkout":  _sum_actions_exact(actions, CHECKOUT_NAMES),
+                    "add_payment":    _sum_actions_exact(actions, ADDPAY_NAMES),
+                    "purchases":      _pick_purchase_totals(actions),
+                    "revenue":        _pick_purchase_totals(action_values),
                 })
 
             paging = (payload or {}).get("paging", {})
@@ -408,29 +351,28 @@ def fetch_insights_daily(act_id: str, token: str, api_version: str,
                     next_params["after"] = after
                 else:
                     break
-
         return rows_local
 
-    # Busca em paralelo (3-5 workers é seguro)
+    # O resto da função continua igual...
     chunks = list(_chunks_by_days(since_str, until_str, max_days=30))
     all_rows: list[dict] = []
     with ThreadPoolExecutor(max_workers=min(5, len(chunks))) as ex:
-        futs = [ex.submit(_fetch_range, s, u, try_extra_fields) for s, u in chunks]
+        futs = [ex.submit(_fetch_range, s, u) for s, u in chunks]
         for f in as_completed(futs):
             all_rows.extend(f.result() or [])
 
-    df = pd.DataFrame(all_rows)
-    if df.empty:
-        return df
+    if not all_rows:
+        return pd.DataFrame()
 
-    num_cols = ["spend", "impressions", "clicks", "link_clicks",
-                "lpv", "init_checkout", "add_payment", "purchases", "revenue"]
+    df = pd.DataFrame(all_rows)
+    num_cols = ["spend", "impressions", "clicks", "link_clicks", "lpv", "init_checkout", "add_payment", "purchases", "revenue"]
     for c in num_cols:
         df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0.0)
 
     df["roas"] = np.where(df["spend"] > 0, df["revenue"] / df["spend"], np.nan)
     df = df.sort_values("date")
     return df
+
 
 # --- Coleta por hora (dayparting)
 @st.cache_data(ttl=600, show_spinner=True)
