@@ -1560,6 +1560,146 @@ with tab_daypart:
 
     st.markdown("---")
 
+# ============== 2) TAXAS POR HORA — evolução e leitura guiada ==============
+# <<< INÍCIO BLOCO NOVO: TAXAS POR HORA >>>
+
+st.subheader("📈 Taxas por hora — evolução e leitura guiada")
+
+with st.expander("Ajustes de exibição (taxas por hora)", expanded=True):
+    col_cfg1, col_cfg2 = st.columns([2, 1])
+    with col_cfg1:
+        min_clicks_hour = st.slider("Ignorar horas com menos de X cliques", 0, 1000, 30, 10, key="hr_min_clicks")
+        show_band_hr = st.checkbox("Mostrar banda saudável (faixa alvo)", value=True, key="hr_show_band")
+    with col_cfg2:
+        st.caption("Faixas saudáveis (%) — mesmas definições do diário")
+        hr_lpv_cli_low, hr_lpv_cli_high = st.slider("LPV / Cliques", 0, 100, (70, 85), 1, key="hr_tx_lpv_cli_band")
+        hr_co_lpv_low,  hr_co_lpv_high  = st.slider("Checkout / LPV", 0, 100, (10, 20), 1, key="hr_tx_co_lpv_band")
+        hr_buy_co_low,  hr_buy_co_high  = st.slider("Compra / Checkout", 0, 100, (30, 40), 1, key="hr_tx_buy_co_band")
+
+# Agrega por HORA no período filtrado da aba
+hourly_conv = (
+    d.groupby("hour", as_index=False)[["link_clicks","lpv","init_checkout","purchases"]]
+     .sum()
+     .rename(columns={"link_clicks":"clicks","init_checkout":"checkout"})
+)
+
+# Filtra horas com poucos cliques (evita ruído)
+hourly_conv = hourly_conv[hourly_conv["clicks"] >= min_clicks_hour].copy()
+
+if hourly_conv.empty:
+    st.info("Sem horas suficientes após o filtro de cliques mínimos.")
+else:
+    # Calcula taxas (frações 0–1)
+    hourly_conv["LPV/Cliques"]     = hourly_conv.apply(lambda r: _safe_div(r["lpv"],       r["clicks"]),   axis=1)
+    hourly_conv["Checkout/LPV"]    = hourly_conv.apply(lambda r: _safe_div(r["checkout"],  r["lpv"]),      axis=1)
+    hourly_conv["Compra/Checkout"] = hourly_conv.apply(lambda r: _safe_div(r["purchases"], r["checkout"]), axis=1)
+
+    def _fmt_pct_series(s):  # 0–1 -> 0–100
+        return (s*100).round(2)
+
+    # Helper do gráfico (igual à versão diária, mas no eixo X são as horas 0..23)
+    def _line_pct_banded_hr(df, col, lo_pct, hi_pct, title):
+        import plotly.graph_objects as go
+        x = df["hour"].astype(int)
+        y = _fmt_pct_series(df[col])
+
+        # status por ponto
+        def _status(v):
+            if not pd.notnull(v): return "sem"
+            v100 = v*100.0
+            if v100 < lo_pct: return "abaixo"
+            if v100 > hi_pct: return "acima"
+            return "dentro"
+
+        status = df[col].map(_status).tolist()
+        colors = [{"abaixo":"#dc2626","dentro":"#16a34a","acima":"#0ea5e9","sem":"#9ca3af"}[s] for s in status]
+        hover = [f"{title}<br>Hora: {int(h)}h<br>Taxa: {val:.2f}%" for h, val in zip(x, y.fillna(0))]
+
+        fig = go.Figure()
+
+        # banda saudável (faixa alvo)
+        if show_band_hr:
+            fig.add_shape(
+                type="rect",
+                xref="paper", yref="y",
+                x0=0, x1=1,
+                y0=lo_pct, y1=hi_pct,
+                fillcolor="rgba(34,197,94,0.08)", line=dict(width=0),
+                layer="below"
+            )
+
+        # série por hora
+        fig.add_trace(go.Scatter(
+            x=x, y=y, mode="lines+markers",
+            name="Por hora",
+            marker=dict(size=7, color=colors),
+            line=dict(width=1.5, color="#1f77b4"),
+            hovertext=hover, hoverinfo="text"
+        ))
+
+        fig.update_layout(
+            title=title,
+            yaxis_title="%",
+            xaxis_title="Hora do dia",
+            height=340,
+            template="plotly_white",
+            margin=dict(l=10, r=10, t=48, b=10),
+            separators=",.",
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0)
+        )
+        fig.update_xaxes(tickmode="linear", tick0=0, dtick=1, range=[-0.5, 23.5])
+        y_min = max(0, min(y.min(), lo_pct) - 5)
+        y_max = min(100, max(y.max(), hi_pct) + 5)
+        fig.update_yaxes(range=[y_min, y_max])
+        return fig
+
+    # ===== Resumo das taxas (por hora no período) =====
+    def _resume_box_hr(df_rates: pd.DataFrame, col: str, lo_pct: int, hi_pct: int, label: str) -> None:
+        vals = df_rates[col].dropna()
+        if vals.empty:
+            m1, m2 = st.columns(2)
+            m1.metric(label, "—")
+            m2.metric("% horas dentro", "—")
+            return
+        mean_pct = float(vals.mean() * 100.0)
+        inside   = float(((vals*100.0 >= lo_pct) & (vals*100.0 <= hi_pct)).mean() * 100.0)
+        m1, m2 = st.columns(2)
+        m1.metric(label, f"{mean_pct:,.2f}%".replace(",", "X").replace(".", ",").replace("X", "."))
+        m2.metric("% horas dentro", f"{inside:,.0f}%".replace(",", "X").replace(".", ",").replace("X", "."))
+
+    st.markdown("**Resumo das taxas (por hora no período filtrado)**")
+    _resume_box_hr(hourly_conv, "LPV/Cliques",     hr_lpv_cli_low, hr_lpv_cli_high, "LPV/Cliques (média)")
+    _resume_box_hr(hourly_conv, "Checkout/LPV",    hr_co_lpv_low,  hr_co_lpv_high,  "Checkout/LPV (média)")
+    _resume_box_hr(hourly_conv, "Compra/Checkout", hr_buy_co_low,  hr_buy_co_high,  "Compra/Checkout (média)")
+
+    st.markdown("---")
+
+    # === Três gráficos lado a lado (taxas por hora) ===
+    cL, cM, cR = st.columns(3)
+    with cL:
+        st.plotly_chart(
+            _line_pct_banded_hr(hourly_conv, "LPV/Cliques", hr_lpv_cli_low, hr_lpv_cli_high, "LPV/Cliques"),
+            use_container_width=True
+        )
+    with cM:
+        st.plotly_chart(
+            _line_pct_banded_hr(hourly_conv, "Checkout/LPV", hr_co_lpv_low, hr_co_lpv_high, "Checkout/LPV"),
+            use_container_width=True
+        )
+    with cR:
+        st.plotly_chart(
+            _line_pct_banded_hr(hourly_conv, "Compra/Checkout", hr_buy_co_low, hr_buy_co_high, "Compra/Checkout"),
+            use_container_width=True
+        )
+
+    st.caption(
+        "Leitura: pontos **verdes** estão dentro da banda saudável, **vermelhos** abaixo e **azuis** acima. "
+        "A faixa verde é o alvo definido nos sliders."
+    )
+
+# <<< FIM BLOCO NOVO: TAXAS POR HORA >>>
+
+    
     # ============== 3) APANHADO GERAL POR HORA (no período) ==============
     st.subheader("📦 Apanhado geral por hora (período selecionado)")
     cube_hr = d.groupby("hour", as_index=False)[
