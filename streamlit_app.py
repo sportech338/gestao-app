@@ -974,6 +974,7 @@ with tab_daily:
             ))
 
             ### ADD: linha do período anterior
+            # linha do período anterior (hover legível)
             if not daily_prev.empty and col in daily_prev.columns:
                 x_aligned = df["date"].values[:len(daily_prev)]
                 y_prev = _fmt_pct_series(daily_prev[col])
@@ -981,7 +982,12 @@ with tab_daily:
                     x=x_aligned, y=y_prev,
                     mode="lines",
                     name="Período anterior (sobreposto)",
-                    line=dict(width=2.2, color="#ef4444", dash="dot")
+                    line=dict(width=2.2, color="#ef4444", dash="dot"),
+                    hovertemplate=(
+                        "Período anterior<br>"
+                        "Data: %{x|%Y-%m-%d}<br>"
+                        "Taxa: %{y:.2f}%<extra></extra>"
+                    )
                 ))
 
             fig.update_layout(
@@ -1688,9 +1694,8 @@ with tab_daypart:
                 hovertext=hover, hoverinfo="text"
             ))
 
-            # linha do período anterior (se existir)
+            # linha do período anterior (hover legível)
             if prev_df is not None and not prev_df.empty and col in prev_df.columns:
-                # Garante horas 0..23 com 0 para posições faltantes
                 prev_aligned = (
                     prev_df.set_index("hour")
                            .reindex(range(24))
@@ -1704,8 +1709,14 @@ with tab_daypart:
                     x=x_prev, y=y_prev,
                     mode="lines",
                     name=f"Período anterior ({prev_since} a {prev_until})",
-                    line=dict(width=2.2, color="#ef4444", dash="dot")
+                    line=dict(width=2.2, color="#ef4444", dash="dot"),
+                    hovertemplate=(
+                        "Período anterior<br>"
+                        "Hora: %{x}h<br>"
+                        "Taxa: %{y:.2f}%<extra></extra>"
+                    )
                 ))
+
 
             fig.update_layout(
                 title=title,
