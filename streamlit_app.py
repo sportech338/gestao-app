@@ -31,19 +31,6 @@ st.markdown("""
 
 # Janelas de atribuição (paridade com Ads Manager)
 ATTR_KEYS = ["7d_click", "1d_view"]
-CHECKOUT_NAMES = [
-    "omni_initiated_checkout",
-    "initiate_checkout",
-    "onsite_conversion.initiated_checkout",
-    "offsite_conversion.fb_pixel_initiate_checkout",
-]
-
-ADDPAY_NAMES = [
-    "omni_add_payment_info",
-    "add_payment_info",
-    "onsite_conversion.add_payment_info",
-    "offsite_conversion.fb_pixel_add_payment_info",
-]
 PRODUTOS = ["Flexlive", "KneePro", "NasalFlex", "Meniscus"]
 
 # --- Constantes e parser para breakdown por hora
@@ -84,37 +71,68 @@ def _to_float(x):
     except:
         return 0.0
 
-def _sum_item(item):
-    """Extrai o valor consolidado de uma métrica, que a API retorna no campo 'value'."""
+def _sum_item(item, allowed_keys=None):
+    """Usa 'value' quando existir; senão soma SOMENTE as chaves permitidas (ex.: 7d_click, 1d_view)."""
     if not isinstance(item, dict):
         return _to_float(item)
-    return _to_float(item.get("value"))
+    if "value" in item:
+        return _to_float(item.get("value"))
+    keys = allowed_keys or ATTR_KEYS
+    s = 0.0
+    for k in keys:
+        s += _to_float(item.get(k))
+    return s
 
-def _sum_actions_exact(rows, exact_names) -> float:
-    """Soma os totais de 'actions' com base nos nomes exatos fornecidos."""
+def _sum_actions_exact(rows, exact_names, allowed_keys=None) -> float:
+    """Soma totals de actions pelos nomes exatos (case-insensitive), respeitando a janela (allowed_keys)."""
     if not rows:
         return 0.0
     names = {str(n).lower() for n in exact_names}
-    total = 0.0
+    tot = 0.0
     for r in rows:
-        if str(r.get("action_type", "")).lower() in names:
-            total += _sum_item(r)
-    return float(total)
+        at = str(r.get("action_type", "")).lower()
+        if at in names:
+            tot += _sum_item(r, allowed_keys)
+    return float(tot)
 
-def _pick_purchase_totals(rows) -> float:
-    """Soma o valor de todos os tipos de eventos de compra."""
+def _sum_actions_contains(rows, substrs, allowed_keys=None) -> float:
+    """Soma totals de actions que CONTENHAM qualquer substring, respeitando a janela (allowed_keys)."""
     if not rows:
         return 0.0
-    total = 0.0
-    purchase_event_names = [
-        "omni_purchase", "purchase",
-        "offsite_conversion.fb_pixel_purchase", "onsite_conversion.purchase"
-    ]
+    ss = [str(s).lower() for s in substrs]
+    tot = 0.0
     for r in rows:
-        if str(r.get("action_type", "")).lower() in purchase_event_names:
-            total += _sum_item(r)
-    return float(total)
+        at = str(r.get("action_type", "")).lower()
+        if any(s in at for s in ss):
+            tot += _sum_item(r, allowed_keys)
+    return float(tot)
 
+def _pick_purchase_totals(rows, allowed_keys=None) -> float:
+    """Prioriza omni_purchase; senão pega o MAIOR entre tipos específicos (sem duplicar janelas)."""
+    if not rows:
+        return 0.0
+    rows = [{**r, "action_type": str(r.get("action_type", "")).lower()} for r in rows]
+    omni = [r for r in rows if r["action_type"] == "omni_purchase"]
+    if omni:
+        return float(sum(_sum_item(r, allowed_keys) for r in omni))
+    candidates = {
+        "purchase": 0.0,
+        "onsite_conversion.purchase": 0.0,
+        "offsite_conversion.fb_pixel_purchase": 0.0,
+    }
+    for r in rows:
+        at = r["action_type"]
+        if at in candidates:
+            candidates[at] += _sum_item(r, allowed_keys)
+    if any(v > 0 for v in candidates.values()):
+        return float(max(candidates.values()))
+    # fallback amplo (respeitando allowed_keys)
+    grp = {}
+    for r in rows:
+        if "purchase" in r["action_type"]:
+            grp.setdefault(r["action_type"], 0.0)
+            grp[r["action_type"]] += _sum_item(r, allowed_keys)
+    return float(max(grp.values()) if grp else 0.0)
 
 def _fmt_money_br(v: float) -> str:
     return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
@@ -278,34 +296,42 @@ def _filter_by_product(df: pd.DataFrame, produto: str) -> pd.DataFrame:
 def fetch_insights_daily(act_id: str, token: str, api_version: str,
                          since_str: str, until_str: str,
                          level: str = "campaign",
-                         try_extra_fields: bool = True, # Este parâmetro não será mais usado, mas mantido por compatibilidade
+                         try_extra_fields: bool = True,
                          product_name: str | None = None) -> pd.DataFrame:
     """
-    Coleta dados diários da API da Meta, garantindo paridade com o Ads Manager.
+    - time_range (since/until) + time_increment=1
+    - level único ('campaign' recomendado)
+    - Usa action_report_time=conversion e action_attribution_windows fixos (paridade com Ads Manager)
+    - Traz fields extras (link_clicks, landing_page_views) e faz fallback se houver erro #100.
+    - Paraleliza chunks de 30d e usa requests.Session para keep-alive.
+    - Opcional: filtering por nome da campanha (product_name) direto na API.
     """
     act_id = _ensure_act_prefix(act_id)
     base_url = f"https://graph.facebook.com/{api_version}/{act_id}/insights"
 
-    # Campos que correspondem diretamente às colunas do Ads Manager
-    fields_to_fetch = [
+    base_fields = [
         "spend", "impressions", "clicks", "actions", "action_values",
-        "account_currency", "date_start", "campaign_id", "campaign_name",
-        "link_clicks", "landing_page_views", "inline_link_clicks" # Adicionado para garantir o clique correto
+        "account_currency", "date_start", "campaign_id", "campaign_name"
     ]
+    extra_fields = ["link_clicks", "landing_page_views"]
 
-    def _fetch_range(_since: str, _until: str ) -> list[dict]:
+    def _fetch_range(_since: str, _until: str, _try_extra: bool) -> list[dict]:
+        fields = base_fields + (extra_fields if _try_extra else [])
         params = {
             "access_token": token,
             "level": level,
             "time_range": json.dumps({"since": _since, "until": _until}),
             "time_increment": 1,
-            "fields": ",".join(fields_to_fetch),
+            "fields": ",".join(fields),
             "limit": 500,
             "action_report_time": "conversion",
-            # A linha 'action_attribution_windows' foi REMOVIDA para obter os totais corretos
+            "action_attribution_windows": ",".join(ATTR_KEYS),
         }
+        # filtro por campanha (produto) direto na API, quando aplicável
         if level == "campaign" and product_name and product_name != "(Todos)":
-            params["filtering"] = json.dumps([{"field": "campaign.name", "operator": "CONTAIN", "value": product_name}])
+            params["filtering"] = json.dumps([{
+                "field": "campaign.name", "operator": "CONTAIN", "value": product_name
+            }])
 
         rows_local, next_url, next_params = [], base_url, params.copy()
         while next_url:
@@ -315,16 +341,34 @@ def fetch_insights_daily(act_id: str, token: str, api_version: str,
                 payload = resp.json()
             except Exception:
                 raise RuntimeError("Resposta inválida da Graph API.")
-            
             if resp.status_code != 200:
                 err = (payload or {}).get("error", {})
-                raise RuntimeError(f"Graph API error {resp.status_code}: {err.get('message')}")
+                code, sub, msg = err.get("code"), err.get("error_subcode"), err.get("message")
+                if code == 100 and _try_extra:
+                    # refaz sem extras só para ESTA janela
+                    return _fetch_range(_since, _until, _try_extra=False)
+                raise RuntimeError(f"Graph API error {resp.status_code} | code={code} subcode={sub} | {msg}")
 
             for rec in payload.get("data", []):
                 actions = rec.get("actions") or []
                 action_values = rec.get("action_values") or []
 
-                # Mapeamento direto das métricas desejadas
+                link_clicks = rec.get("link_clicks", None)
+                if link_clicks is None:
+                    link_clicks = _sum_actions_exact(actions, ["link_click"], allowed_keys=ATTR_KEYS)
+
+                lpv = rec.get("landing_page_views", None)
+                if lpv is None:
+                    lpv = _sum_actions_exact(actions, ["landing_page_view"], allowed_keys=ATTR_KEYS)
+                    if lpv == 0:
+                        lpv = (_sum_actions_exact(actions, ["view_content"], allowed_keys=ATTR_KEYS)
+                               or _sum_actions_contains(actions, ["landing_page"], allowed_keys=ATTR_KEYS))
+
+                ic  = _sum_actions_exact(actions, ["initiate_checkout"], allowed_keys=ATTR_KEYS)
+                api = _sum_actions_exact(actions, ["add_payment_info"], allowed_keys=ATTR_KEYS)
+                purchases_cnt = _pick_purchase_totals(actions, allowed_keys=ATTR_KEYS)
+                revenue_val   = _pick_purchase_totals(action_values, allowed_keys=ATTR_KEYS)
+
                 rows_local.append({
                     "date":           pd.to_datetime(rec.get("date_start")),
                     "currency":       rec.get("account_currency", "BRL"),
@@ -333,12 +377,12 @@ def fetch_insights_daily(act_id: str, token: str, api_version: str,
                     "spend":          _to_float(rec.get("spend")),
                     "impressions":    _to_float(rec.get("impressions")),
                     "clicks":         _to_float(rec.get("clicks")),
-                    "link_clicks":    _to_float(rec.get("inline_link_clicks")), # Usar 'inline_link_clicks' para paridade
-                    "lpv":            _to_float(rec.get("landing_page_views")),
-                    "init_checkout":  _sum_actions_exact(actions, CHECKOUT_NAMES),
-                    "add_payment":    _sum_actions_exact(actions, ADDPAY_NAMES),
-                    "purchases":      _pick_purchase_totals(actions),
-                    "revenue":        _pick_purchase_totals(action_values),
+                    "link_clicks":    _to_float(link_clicks),
+                    "lpv":            _to_float(lpv),
+                    "init_checkout":  _to_float(ic),
+                    "add_payment":    _to_float(api),
+                    "purchases":      _to_float(purchases_cnt),
+                    "revenue":        _to_float(revenue_val),
                 })
 
             paging = (payload or {}).get("paging", {})
@@ -351,28 +395,29 @@ def fetch_insights_daily(act_id: str, token: str, api_version: str,
                     next_params["after"] = after
                 else:
                     break
+
         return rows_local
 
-    # O resto da função continua igual...
+    # Busca em paralelo (3-5 workers é seguro)
     chunks = list(_chunks_by_days(since_str, until_str, max_days=30))
     all_rows: list[dict] = []
     with ThreadPoolExecutor(max_workers=min(5, len(chunks))) as ex:
-        futs = [ex.submit(_fetch_range, s, u) for s, u in chunks]
+        futs = [ex.submit(_fetch_range, s, u, try_extra_fields) for s, u in chunks]
         for f in as_completed(futs):
             all_rows.extend(f.result() or [])
 
-    if not all_rows:
-        return pd.DataFrame()
-
     df = pd.DataFrame(all_rows)
-    num_cols = ["spend", "impressions", "clicks", "link_clicks", "lpv", "init_checkout", "add_payment", "purchases", "revenue"]
+    if df.empty:
+        return df
+
+    num_cols = ["spend", "impressions", "clicks", "link_clicks",
+                "lpv", "init_checkout", "add_payment", "purchases", "revenue"]
     for c in num_cols:
         df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0.0)
 
     df["roas"] = np.where(df["spend"] > 0, df["revenue"] / df["spend"], np.nan)
     df = df.sort_values("date")
     return df
-
 
 # --- Coleta por hora (dayparting)
 @st.cache_data(ttl=600, show_spinner=True)
@@ -432,8 +477,8 @@ def fetch_insights_hourly(act_id: str, token: str, api_version: str,
                            or _sum_actions_exact(actions, ["view_content"], allowed_keys=ATTR_KEYS)
                            or _sum_actions_contains(actions, ["landing_page"], allowed_keys=ATTR_KEYS))
 
-                ic   = _sum_actions_exact(actions, CHECKOUT_NAMES, allowed_keys=ATTR_KEYS)
-                api_ = _sum_actions_exact(actions, ADDPAY_NAMES,   allowed_keys=ATTR_KEYS)
+                ic   = _sum_actions_exact(actions, ["initiate_checkout"], allowed_keys=ATTR_KEYS)
+                api_ = _sum_actions_exact(actions, ["add_payment_info"], allowed_keys=ATTR_KEYS)
                 pur  = _pick_purchase_totals(actions, allowed_keys=ATTR_KEYS)
                 rev  = _pick_purchase_totals(action_values, allowed_keys=ATTR_KEYS)
 
@@ -549,8 +594,8 @@ def fetch_insights_breakdown(act_id: str, token: str, api_version: str,
                 lpv = (_sum_actions_exact(actions, ["landing_page_view"], allowed_keys=ATTR_KEYS)
                        or _sum_actions_exact(actions, ["view_content"], allowed_keys=ATTR_KEYS)
                        or _sum_actions_contains(actions, ["landing_page"], allowed_keys=ATTR_KEYS))
-                ic   = _sum_actions_exact(actions, CHECKOUT_NAMES, allowed_keys=ATTR_KEYS)
-                api_ = _sum_actions_exact(actions, ADDPAY_NAMES,   allowed_keys=ATTR_KEYS)
+                ic   = _sum_actions_exact(actions, ["initiate_checkout"], allowed_keys=ATTR_KEYS)
+                api_ = _sum_actions_exact(actions, ["add_payment_info"], allowed_keys=ATTR_KEYS)
                 pur  = _pick_purchase_totals(actions, allowed_keys=ATTR_KEYS)
                 rev  = _pick_purchase_totals(action_values, allowed_keys=ATTR_KEYS)
 
@@ -916,7 +961,6 @@ with tab_daily:
             ))
 
             ### ADD: linha do período anterior
-            # linha do período anterior (hover legível)
             if not daily_prev.empty and col in daily_prev.columns:
                 x_aligned = df["date"].values[:len(daily_prev)]
                 y_prev = _fmt_pct_series(daily_prev[col])
@@ -924,12 +968,7 @@ with tab_daily:
                     x=x_aligned, y=y_prev,
                     mode="lines",
                     name="Período anterior (sobreposto)",
-                    line=dict(width=2.2, color="#ef4444", dash="dot"),
-                    hovertemplate=(
-                        "Período anterior<br>"
-                        "Data: %{x|%Y-%m-%d}<br>"
-                        "Taxa: %{y:.2f}%<extra></extra>"
-                    )
+                    line=dict(width=2.2, color="#ef4444", dash="dot")
                 ))
 
             fig.update_layout(
@@ -1520,207 +1559,6 @@ with tab_daypart:
     st.plotly_chart(fig_hm, use_container_width=True)
 
     st.markdown("---")
-
-with tab_daypart:
-
-    st.markdown("---")
-
-    # ============== 2) TAXAS POR HORA — evolução e leitura guiada ==============
-    # <<< INÍCIO BLOCO: TAXAS POR HORA COM PERÍODO ANTERIOR >>>
-
-    st.subheader("📈 Taxas por hora — evolução e leitura guiada")
-
-    with st.expander("Ajustes de exibição (taxas por hora)", expanded=True):
-        col_cfg1, col_cfg2 = st.columns([2, 1])
-        with col_cfg1:
-            min_clicks_hour = st.slider("Ignorar horas com menos de X cliques", 0, 1000, 30, 10, key="hr_min_clicks")
-            show_band_hr = st.checkbox("Mostrar banda saudável (faixa alvo)", value=True, key="hr_show_band")
-        with col_cfg2:
-            st.caption("Faixas saudáveis (%) — mesmas definições do diário")
-            hr_lpv_cli_low, hr_lpv_cli_high = st.slider("LPV / Cliques", 0, 100, (70, 85), 1, key="hr_tx_lpv_cli_band")
-            hr_co_lpv_low,  hr_co_lpv_high  = st.slider("Checkout / LPV", 0, 100, (10, 20), 1, key="hr_tx_co_lpv_band")
-            hr_buy_co_low,  hr_buy_co_high  = st.slider("Compra / Checkout", 0, 100, (30, 40), 1, key="hr_tx_buy_co_band")
-
-    # --- PERÍODO ATUAL (já filtrado por produto acima em `d`) ---
-    hourly_conv = (
-        d.groupby("hour", as_index=False)[["link_clicks","lpv","init_checkout","purchases"]]
-         .sum()
-         .rename(columns={"link_clicks":"clicks","init_checkout":"checkout"})
-    )
-
-    # --- PERÍODO ANTERIOR (mesma duração, imediatamente antes) ---
-    period_len_days = (until - since).days + 1
-    prev_since = since - timedelta(days=period_len_days)
-    prev_until = since - timedelta(days=1)
-
-    # Busca dados por hora cobrindo o período anterior
-    with st.spinner("Carregando período anterior (hora a hora)…"):
-        df_prev_hourly = fetch_insights_hourly(
-            act_id=act_id, token=token, api_version=api_version,
-            since_str=str(prev_since), until_str=str(prev_until), level=level_hourly
-        )
-
-    # Aplica o mesmo filtro de produto ao período anterior
-    if df_prev_hourly is not None and not df_prev_hourly.empty and st.session_state.get("daypart_produto") != "(Todos)":
-        mask_prev = df_prev_hourly["campaign_name"].str.contains(st.session_state.get("daypart_produto"), case=False, na=False)
-        df_prev_hourly = df_prev_hourly[mask_prev].copy()
-
-    hourly_prev = pd.DataFrame()
-    if df_prev_hourly is not None and not df_prev_hourly.empty:
-        hourly_prev = (
-            df_prev_hourly.dropna(subset=["hour"]).copy()
-        )
-        hourly_prev["hour"] = hourly_prev["hour"].astype(int).clip(0, 23)
-        hourly_prev = (
-            hourly_prev.groupby("hour", as_index=False)[["link_clicks","lpv","init_checkout","purchases"]]
-            .sum()
-            .rename(columns={"link_clicks":"clicks","init_checkout":"checkout"})
-        )
-
-        # Calcula as taxas do período anterior
-        hourly_prev["LPV/Cliques"]     = hourly_prev.apply(lambda r: _safe_div(r["lpv"],       r["clicks"]),   axis=1)
-        hourly_prev["Checkout/LPV"]    = hourly_prev.apply(lambda r: _safe_div(r["checkout"],  r["lpv"]),      axis=1)
-        hourly_prev["Compra/Checkout"] = hourly_prev.apply(lambda r: _safe_div(r["purchases"], r["checkout"]), axis=1)
-
-    # Filtra horas com poucos cliques (evita ruído) — aplica no período atual
-    hourly_conv = hourly_conv[hourly_conv["clicks"] >= min_clicks_hour].copy()
-
-    if hourly_conv.empty:
-        st.info("Sem horas suficientes após o filtro de cliques mínimos.")
-    else:
-        # Calcula taxas (frações 0–1) — período atual
-        hourly_conv["LPV/Cliques"]     = hourly_conv.apply(lambda r: _safe_div(r["lpv"],       r["clicks"]),   axis=1)
-        hourly_conv["Checkout/LPV"]    = hourly_conv.apply(lambda r: _safe_div(r["checkout"],  r["lpv"]),      axis=1)
-        hourly_conv["Compra/Checkout"] = hourly_conv.apply(lambda r: _safe_div(r["purchases"], r["checkout"]), axis=1)
-
-        def _fmt_pct_series(s):  # 0–1 -> 0–100
-            return (s*100).round(2)
-
-        # Helper do gráfico (recebe também o df do período anterior)
-        def _line_pct_banded_hr(df, col, lo_pct, hi_pct, title, prev_df=None):
-            import plotly.graph_objects as go
-            x = df["hour"].astype(int)
-            y = _fmt_pct_series(df[col])
-
-            # status por ponto
-            def _status(v):
-                if not pd.notnull(v): return "sem"
-                v100 = v*100.0
-                if v100 < lo_pct: return "abaixo"
-                if v100 > hi_pct: return "acima"
-                return "dentro"
-
-            status = df[col].map(_status).tolist()
-            colors = [{"abaixo":"#dc2626","dentro":"#16a34a","acima":"#0ea5e9","sem":"#9ca3af"}[s] for s in status]
-            hover = [f"{title}<br>Hora: {int(h)}h<br>Taxa: {val:.2f}%" for h, val in zip(x, y.fillna(0))]
-
-            fig = go.Figure()
-
-            # banda saudável (faixa alvo)
-            if show_band_hr:
-                fig.add_shape(
-                    type="rect",
-                    xref="paper", yref="y",
-                    x0=0, x1=1,
-                    y0=lo_pct, y1=hi_pct,
-                    fillcolor="rgba(34,197,94,0.08)", line=dict(width=0),
-                    layer="below"
-                )
-
-            # série por hora — período atual
-            fig.add_trace(go.Scatter(
-                x=x, y=y, mode="lines+markers",
-                name="Por hora (período atual)",
-                marker=dict(size=7, color=colors),
-                line=dict(width=1.5, color="#1f77b4"),
-                hovertext=hover, hoverinfo="text"
-            ))
-
-            # linha do período anterior (hover legível)
-            if prev_df is not None and not prev_df.empty and col in prev_df.columns:
-                prev_aligned = (
-                    prev_df.set_index("hour")
-                           .reindex(range(24))
-                           .reset_index()
-                           .rename(columns={"index":"hour"})
-                )
-                x_prev = prev_aligned["hour"].astype(int)
-                y_prev = _fmt_pct_series(prev_aligned[col])
-
-                fig.add_trace(go.Scatter(
-                    x=x_prev, y=y_prev,
-                    mode="lines",
-                    name=f"Período anterior ({prev_since} a {prev_until})",
-                    line=dict(width=2.2, color="#ef4444", dash="dot"),
-                    hovertemplate=(
-                        "Período anterior<br>"
-                        "Hora: %{x}h<br>"
-                        "Taxa: %{y:.2f}%<extra></extra>"
-                    )
-                ))
-
-
-            fig.update_layout(
-                title=title,
-                yaxis_title="%",
-                xaxis_title="Hora do dia",
-                height=340,
-                template="plotly_white",
-                margin=dict(l=10, r=10, t=48, b=10),
-                separators=",.",
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0)
-            )
-            fig.update_xaxes(tickmode="linear", tick0=0, dtick=1, range=[-0.5, 23.5])
-            y_min = max(0, min(y.min(), lo_pct) - 5)
-            y_max = min(100, max(y.max(), hi_pct) + 5)
-            fig.update_yaxes(range=[y_min, y_max])
-            return fig
-
-        # ===== Resumo das taxas (por hora no período) =====
-        def _resume_box_hr(df_rates: pd.DataFrame, col: str, lo_pct: int, hi_pct: int, label: str) -> None:
-            vals = df_rates[col].dropna()
-            if vals.empty:
-                m1, m2 = st.columns(2)
-                m1.metric(label, "—")
-                m2.metric("% horas dentro", "—")
-                return
-            mean_pct = float(vals.mean() * 100.0)
-            inside   = float(((vals*100.0 >= lo_pct) & (vals*100.0 <= hi_pct)).mean() * 100.0)
-            m1, m2 = st.columns(2)
-            m1.metric(label, f"{mean_pct:,.2f}%".replace(",", "X").replace(".", ",").replace("X", "."))
-            m2.metric("% horas dentro", f"{inside:,.0f}%".replace(",", "X").replace(".", ",").replace("X", "."))
-
-        st.markdown("**Resumo das taxas (por hora no período filtrado)**")
-        _resume_box_hr(hourly_conv, "LPV/Cliques",     hr_lpv_cli_low, hr_lpv_cli_high, "LPV/Cliques (média)")
-        _resume_box_hr(hourly_conv, "Checkout/LPV",    hr_co_lpv_low,  hr_co_lpv_high,  "Checkout/LPV (média)")
-        _resume_box_hr(hourly_conv, "Compra/Checkout", hr_buy_co_low,  hr_buy_co_high,  "Compra/Checkout (média)")
-
-        st.markdown("---")
-
-        # === Três gráficos lado a lado (taxas por hora) — COM PERÍODO ANTERIOR ===
-        cL, cM, cR = st.columns(3)
-        with cL:
-            st.plotly_chart(
-                _line_pct_banded_hr(hourly_conv, "LPV/Cliques", hr_lpv_cli_low, hr_lpv_cli_high, "LPV/Cliques", prev_df=hourly_prev),
-                use_container_width=True
-            )
-        with cM:
-            st.plotly_chart(
-                _line_pct_banded_hr(hourly_conv, "Checkout/LPV", hr_co_lpv_low, hr_co_lpv_high, "Checkout/LPV", prev_df=hourly_prev),
-                use_container_width=True
-            )
-        with cR:
-            st.plotly_chart(
-                _line_pct_banded_hr(hourly_conv, "Compra/Checkout", hr_buy_co_low, hr_buy_co_high, "Compra/Checkout", prev_df=hourly_prev),
-                use_container_width=True
-            )
-
-        st.caption(
-            "Leitura: pontos **verdes** estão dentro da banda saudável, **vermelhos** abaixo e **azuis** acima. "
-            "A faixa verde é o alvo; a **linha vermelha tracejada** mostra o **período anterior** sobreposto, para ver padrão de queda/subida."
-        )
-
-    # <<< FIM BLOCO: TAXAS POR HORA COM PERÍODO ANTERIOR >>>
 
     # ============== 3) APANHADO GERAL POR HORA (no período) ==============
     st.subheader("📦 Apanhado geral por hora (período selecionado)")
