@@ -31,6 +31,19 @@ st.markdown("""
 
 # Janelas de atribuição (paridade com Ads Manager)
 ATTR_KEYS = ["7d_click", "1d_view"]
+CHECKOUT_NAMES = [
+    "omni_initiated_checkout",
+    "initiate_checkout",
+    "onsite_conversion.initiated_checkout",
+    "offsite_conversion.fb_pixel_initiate_checkout",
+]
+
+ADDPAY_NAMES = [
+    "omni_add_payment_info",
+    "add_payment_info",
+    "onsite_conversion.add_payment_info",
+    "offsite_conversion.fb_pixel_add_payment_info",
+]
 PRODUTOS = ["Flexlive", "KneePro", "NasalFlex", "Meniscus"]
 
 # --- Constantes e parser para breakdown por hora
@@ -364,8 +377,8 @@ def fetch_insights_daily(act_id: str, token: str, api_version: str,
                         lpv = (_sum_actions_exact(actions, ["view_content"], allowed_keys=ATTR_KEYS)
                                or _sum_actions_contains(actions, ["landing_page"], allowed_keys=ATTR_KEYS))
 
-                ic  = _sum_actions_exact(actions, ["initiate_checkout"], allowed_keys=ATTR_KEYS)
-                api = _sum_actions_exact(actions, ["add_payment_info"], allowed_keys=ATTR_KEYS)
+                ic  = _sum_actions_exact(actions, CHECKOUT_NAMES, allowed_keys=ATTR_KEYS)
+                api = _sum_actions_exact(actions, ADDPAY_NAMES,   allowed_keys=ATTR_KEYS)
                 purchases_cnt = _pick_purchase_totals(actions, allowed_keys=ATTR_KEYS)
                 revenue_val   = _pick_purchase_totals(action_values, allowed_keys=ATTR_KEYS)
 
@@ -477,8 +490,8 @@ def fetch_insights_hourly(act_id: str, token: str, api_version: str,
                            or _sum_actions_exact(actions, ["view_content"], allowed_keys=ATTR_KEYS)
                            or _sum_actions_contains(actions, ["landing_page"], allowed_keys=ATTR_KEYS))
 
-                ic   = _sum_actions_exact(actions, ["initiate_checkout"], allowed_keys=ATTR_KEYS)
-                api_ = _sum_actions_exact(actions, ["add_payment_info"], allowed_keys=ATTR_KEYS)
+                ic   = _sum_actions_exact(actions, CHECKOUT_NAMES, allowed_keys=ATTR_KEYS)
+                api_ = _sum_actions_exact(actions, ADDPAY_NAMES,   allowed_keys=ATTR_KEYS)
                 pur  = _pick_purchase_totals(actions, allowed_keys=ATTR_KEYS)
                 rev  = _pick_purchase_totals(action_values, allowed_keys=ATTR_KEYS)
 
@@ -594,8 +607,8 @@ def fetch_insights_breakdown(act_id: str, token: str, api_version: str,
                 lpv = (_sum_actions_exact(actions, ["landing_page_view"], allowed_keys=ATTR_KEYS)
                        or _sum_actions_exact(actions, ["view_content"], allowed_keys=ATTR_KEYS)
                        or _sum_actions_contains(actions, ["landing_page"], allowed_keys=ATTR_KEYS))
-                ic   = _sum_actions_exact(actions, ["initiate_checkout"], allowed_keys=ATTR_KEYS)
-                api_ = _sum_actions_exact(actions, ["add_payment_info"], allowed_keys=ATTR_KEYS)
+                ic   = _sum_actions_exact(actions, CHECKOUT_NAMES, allowed_keys=ATTR_KEYS)
+                api_ = _sum_actions_exact(actions, ADDPAY_NAMES,   allowed_keys=ATTR_KEYS)
                 pur  = _pick_purchase_totals(actions, allowed_keys=ATTR_KEYS)
                 rev  = _pick_purchase_totals(action_values, allowed_keys=ATTR_KEYS)
 
