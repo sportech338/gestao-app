@@ -1560,6 +1560,55 @@ with tab_daypart:
 
     st.markdown("---")
 
+        # ========= TAXAS POR HORA (variação por hora — com banda saudável e resumo) =========
+    st.subheader("📈 Taxas por hora — evolução e leitura guiada")
+
+    # Agrega por hora (no período inteiro)
+    hourly_conv = (
+        d.groupby("hour", as_index=False)[
+            ["link_clicks","lpv","init_checkout","add_payment","purchases"]
+        ].sum()
+        .rename(columns={"link_clicks":"clicks","init_checkout":"checkout","add_payment":"addpay"})
+    )
+
+    if hourly_conv.empty:
+        st.info("Sem dados suficientes após aplicar os filtros.")
+    else:
+        hourly_conv["LPV/Cliques"]     = hourly_conv.apply(lambda r: _safe_div(r["lpv"],       r["clicks"]),   axis=1)
+        hourly_conv["Checkout/LPV"]    = hourly_conv.apply(lambda r: _safe_div(r["checkout"],  r["lpv"]),      axis=1)
+        hourly_conv["Compra/Checkout"] = hourly_conv.apply(lambda r: _safe_div(r["purchases"], r["checkout"]), axis=1)
+
+        fig_rates = go.Figure()
+        for col, color in zip(
+            ["LPV/Cliques","Checkout/LPV","Compra/Checkout"],
+            ["#0ea5e9","#f97316","#16a34a"]
+        ):
+            fig_rates.add_trace(go.Scatter(
+                x=hourly_conv["hour"],
+                y=(hourly_conv[col]*100).round(2),
+                mode="lines+markers",
+                name=col,
+                line=dict(width=2, color=color)
+            ))
+        fig_rates.update_layout(
+            title="Taxas por hora (%)",
+            xaxis_title="Hora do dia",
+            yaxis_title="%",
+            height=420,
+            template="plotly_white",
+            margin=dict(l=10, r=10, t=48, b=10),
+            separators=",."
+        )
+        st.plotly_chart(fig_rates, use_container_width=True)
+
+        # Resumo rápido
+        st.markdown("**Resumo das taxas (período inteiro)**")
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Média LPV/Cliques", f"{hourly_conv['LPV/Cliques'].mean()*100:,.2f}%".replace(",", "X").replace(".", ",").replace("X", "."))
+        c2.metric("Média Checkout/LPV", f"{hourly_conv['Checkout/LPV'].mean()*100:,.2f}%".replace(",", "X").replace(".", ",").replace("X", "."))
+        c3.metric("Média Compra/Checkout", f"{hourly_conv['Compra/Checkout'].mean()*100:,.2f}%".replace(",", "X").replace(".", ",").replace("X", "."))
+
+
     # ============== 3) APANHADO GERAL POR HORA (no período) ==============
     st.subheader("📦 Apanhado geral por hora (período selecionado)")
     cube_hr = d.groupby("hour", as_index=False)[
