@@ -1473,6 +1473,119 @@ with tab_daily:
         
 # -------------------- ABA DE HORÁRIOS (Heatmap no topo) --------------------
 with tab_daypart:
+    # ========= TAXAS POR HORA (variação por hora — com banda saudável e resumo) =========
+    st.markdown("### Taxas por hora — evolução e leitura guiada")
+
+    if df_hourly is None:
+        with st.spinner("Carregando dados horários…"):
+            df_hourly = fetch_insights_hourly(
+                act_id=act_id,
+                token=token,
+                api_version=api_version,
+                since_str=str(since),
+                until_str=str(until),
+                level=level
+            )
+
+    if df_hourly is None or df_hourly.empty:
+        st.info("Sem dados horários para o período selecionado.")
+    else:
+        df_h_view = df_hourly.groupby("hour", as_index=False)[
+            ["spend", "revenue", "purchases", "clicks", "lpv", "init_checkout"]
+        ].sum()
+        df_h_view["ROAS"] = np.where(df_h_view["spend"] > 0,
+                                     df_h_view["revenue"] / df_h_view["spend"], np.nan)
+
+        with st.expander("Ajustes de exibição (horários)", expanded=True):
+            col1, col2 = st.columns([2, 1])
+            with col1:
+                min_clicks_hr = st.slider("Ignorar horas com menos de X cliques",
+                                          0, 200, 20, 5, key="tx_hr_min_clicks")
+                show_band_hr = st.checkbox("Mostrar banda saudável (faixa alvo)", value=True)
+            with col2:
+                st.caption("Faixas saudáveis (%)")
+                hr_lpv_cli_lo, hr_lpv_cli_hi = st.slider("LPV / Cliques", 0, 100, (70, 85), 1)
+                hr_co_lpv_lo,  hr_co_lpv_hi  = st.slider("Checkout / LPV", 0, 100, (10, 20), 1)
+                hr_buy_co_lo,  hr_buy_co_hi  = st.slider("Compra / Checkout", 0, 100, (30, 40), 1)
+
+        # agrega por hora (somente horas com cliques mínimos)
+        hourly_conv = (
+            df_hourly.groupby("hour", as_index=False)[
+                ["clicks", "lpv", "init_checkout", "purchases"]
+            ].sum()
+            .rename(columns={"init_checkout": "checkout"})
+        )
+        hourly_conv = hourly_conv[hourly_conv["clicks"] >= min_clicks_hr].copy()
+
+        if hourly_conv.empty:
+            st.info("Sem horas suficientes após o filtro de cliques mínimos.")
+        else:
+            hourly_conv["LPV/Cliques"]     = hourly_conv.apply(lambda r: _safe_div(r["lpv"], r["clicks"]), axis=1)
+            hourly_conv["Checkout/LPV"]    = hourly_conv.apply(lambda r: _safe_div(r["checkout"], r["lpv"]), axis=1)
+            hourly_conv["Compra/Checkout"] = hourly_conv.apply(lambda r: _safe_div(r["purchases"], r["checkout"]), axis=1)
+
+            def _line_pct_banded_hr(df, col, lo_pct, hi_pct, title):
+                import plotly.graph_objects as go
+                x = df["hour"]
+                y = (df[col] * 100).round(2)
+                colors = [
+                    "#dc2626" if v < lo_pct else "#0ea5e9" if v > hi_pct else "#16a34a"
+                    for v in y.fillna(0)
+                ]
+                fig = go.Figure(go.Scatter(
+                    x=x, y=y, mode="lines+markers",
+                    marker=dict(size=8, color=colors),
+                    line=dict(width=2, color="#1f77b4"),
+                    hovertext=[f"Hora {h}: {v:.2f}%" for h, v in zip(x, y.fillna(0))],
+                    hoverinfo="text"
+                ))
+                if show_band_hr:
+                    fig.add_shape(
+                        type="rect", xref="x", yref="y",
+                        x0=x.min(), x1=x.max(),
+                        y0=lo_pct, y1=hi_pct,
+                        fillcolor="rgba(34,197,94,0.08)", line=dict(width=0),
+                        layer="below"
+                    )
+                fig.update_layout(
+                    title=title,
+                    yaxis_title="%",
+                    xaxis_title="Hora do dia",
+                    template="plotly_white",
+                    height=320
+                )
+                return fig
+
+            st.markdown("**Resumo das taxas por hora (período filtrado)**")
+            c1, c2, c3 = st.columns(3)
+            for col, lo, hi, label, container in [
+                ("LPV/Cliques", hr_lpv_cli_lo, hr_lpv_cli_hi, "LPV/Cliques (média)", c1),
+                ("Checkout/LPV", hr_co_lpv_lo, hr_co_lpv_hi, "Checkout/LPV (média)", c2),
+                ("Compra/Checkout", hr_buy_co_lo, hr_buy_co_hi, "Compra/Checkout (média)", c3),
+            ]:
+                vals = hourly_conv[col].dropna()
+                mean_pct = float(vals.mean() * 100) if not vals.empty else None
+                inside = float(((vals*100 >= lo) & (vals*100 <= hi)).mean() * 100) if not vals.empty else None
+                if mean_pct is None:
+                    container.metric(label, "—")
+                else:
+                    container.metric(label, f"{mean_pct:,.2f}%".replace(".", ","))
+
+            st.markdown("---")
+            colA, colB, colC = st.columns(3)
+            with colA:
+                st.plotly_chart(_line_pct_banded_hr(hourly_conv, "LPV/Cliques",
+                                                    hr_lpv_cli_lo, hr_lpv_cli_hi,
+                                                    "LPV/Cliques por hora"), use_container_width=True)
+            with colB:
+                st.plotly_chart(_line_pct_banded_hr(hourly_conv, "Checkout/LPV",
+                                                    hr_co_lpv_lo, hr_co_lpv_hi,
+                                                    "Checkout/LPV por hora"), use_container_width=True)
+            with colC:
+                st.plotly_chart(_line_pct_banded_hr(hourly_conv, "Compra/Checkout",
+                                                    hr_buy_co_lo, hr_buy_co_hi,
+                                                    "Compra/Checkout por hora"), use_container_width=True)
+    
     st.caption("Explore desempenho por hora: Heatmap no topo, depois comparação de dias e apanhado geral.")
 
     level_hourly = "campaign"
