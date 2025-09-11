@@ -1674,7 +1674,7 @@ with tab_daypart:
 
     st.info("Dica: use o 'Gasto mínimo' para filtrar horas com investimento muito baixo e evitar falsos positivos.")
 
-    # ============== 2) TAXAS POR HORA (tabela de quantidades + 3 gráficos de taxas) ==============
+    # ============== 2) TAXAS POR HORA (gráficos em cima + tabela de quantidades abaixo) ==============
     st.subheader("🎯 Taxas por hora — médias diárias (sinais puros, com cap de funil)")
 
     # --- Base SEM filtro de gasto: somas por hora no período selecionado
@@ -1696,24 +1696,11 @@ with tab_daypart:
     cube_hr_all["Checkout_cap"] = np.minimum(cube_hr_all["init_checkout"], cube_hr_all["LPV_cap"])
 
     # ---- Taxas (frações 0–1)
-    cube_hr_all["tx_lpv_clicks"]     = cube_hr_all.apply(lambda r: _safe_div(r["LPV_cap"],      r["link_clicks"]),  axis=1)
-    cube_hr_all["tx_checkout_lpv"]   = cube_hr_all.apply(lambda r: _safe_div(r["Checkout_cap"], r["LPV_cap"]),      axis=1)
-    cube_hr_all["tx_compra_checkout"]= cube_hr_all.apply(lambda r: _safe_div(r["purchases"],    r["Checkout_cap"]), axis=1)
+    cube_hr_all["tx_lpv_clicks"]      = cube_hr_all.apply(lambda r: _safe_div(r["LPV_cap"],      r["link_clicks"]),  axis=1)
+    cube_hr_all["tx_checkout_lpv"]    = cube_hr_all.apply(lambda r: _safe_div(r["Checkout_cap"], r["LPV_cap"]),      axis=1)
+    cube_hr_all["tx_compra_checkout"] = cube_hr_all.apply(lambda r: _safe_div(r["purchases"],    r["Checkout_cap"]), axis=1)
 
-    # =================== TABELA — mostrar APENAS QUANTIDADES ===================
-    taxas_qtd = cube_hr_all[[
-        "hour", "link_clicks", "lpv", "init_checkout", "add_payment", "purchases"
-    ]].copy().rename(columns={
-        "hour": "Hora",
-        "link_clicks": "Cliques",
-        "lpv": "LPV",
-        "init_checkout": "Checkout",
-        "add_payment": "Add Pagto",
-        "purchases": "Compras",
-    })
-    st.dataframe(taxas_qtd, use_container_width=True, height=360)
-
-    # =================== GRÁFICOS — 3 linhas de TAXAS (%) ===================
+    # =================== GRÁFICOS — 3 linhas de TAXAS (%) (EM CIMA) ===================
     def _line_hour_pct(x, y, title):
         fig = go.Figure(go.Scatter(
             x=x, y=y, mode="lines+markers", name=title,
@@ -1738,22 +1725,27 @@ with tab_daypart:
 
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.plotly_chart(
-            _line_hour_pct(x_hours, cube_hr_all["tx_lpv_clicks"]*100, "LPV/Cliques (%)"),
-            use_container_width=True
-        )
+        st.plotly_chart(_line_hour_pct(x_hours, cube_hr_all["tx_lpv_clicks"]*100, "LPV/Cliques (%)"), use_container_width=True)
     with col2:
-        st.plotly_chart(
-            _line_hour_pct(x_hours, cube_hr_all["tx_checkout_lpv"]*100, "Checkout/LPV (%)"),
-            use_container_width=True
-        )
+        st.plotly_chart(_line_hour_pct(x_hours, cube_hr_all["tx_checkout_lpv"]*100, "Checkout/LPV (%)"), use_container_width=True)
     with col3:
-        st.plotly_chart(
-            _line_hour_pct(x_hours, cube_hr_all["tx_compra_checkout"]*100, "Compra/Checkout (%)"),
-            use_container_width=True
-        )
+        st.plotly_chart(_line_hour_pct(x_hours, cube_hr_all["tx_compra_checkout"]*100, "Compra/Checkout (%)"), use_container_width=True)
 
     st.markdown("---")
+
+    # =================== TABELA — mostrar APENAS QUANTIDADES (EMBAIXO) ===================
+    taxas_qtd = cube_hr_all[[
+        "hour", "link_clicks", "lpv", "init_checkout", "add_payment", "purchases"
+    ]].copy().rename(columns={
+        "hour": "Hora",
+        "link_clicks": "Cliques",
+        "lpv": "LPV",
+        "init_checkout": "Checkout",
+        "add_payment": "Add Pagto",
+        "purchases": "Compras",
+    })
+    st.caption("Contagens por hora no período selecionado")
+    st.dataframe(taxas_qtd, use_container_width=True, height=360)
 
     # ============== 4) COMPARAR DOIS PERÍODOS (A vs B) — HORA A HORA ==============
     st.subheader("🆚 Comparar dois períodos (A vs B) — hora a hora")
