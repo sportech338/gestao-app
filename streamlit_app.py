@@ -978,25 +978,26 @@ with tab_daily:
             return (s*100).round(2)
 
         # helper geral do gráfico
+        # helper geral do gráfico
         def _line_pct_banded(df, col, lo_pct, hi_pct, title):
             import plotly.graph_objects as go
-            x = df["date"]
-            y = _fmt_pct_series(df[col])
 
-            # status por ponto (abaixo/dentro/acima)
+            x = df["date"]
+            y = (df[col] * 100).round(2)
+
             def _status(v):
-                if not pd.notnull(v): return "sem"
-                v100 = v*100.0
-                if v100 < lo_pct: return "abaixo"
-                if v100 > hi_pct: return "acima"
+                if not pd.notnull(v):
+                    return "sem"
+                v_pct = float(v) * 100.0  # fração -> %
+                if v_pct < lo_pct:
+                    return "abaixo"
+                if v_pct > hi_pct:
+                    return "acima"
                 return "dentro"
 
             status = df[col].map(_status).tolist()
-            colors = [ {"abaixo":"#dc2626","dentro":"#16a34a","acima":"#0ea5e9","sem":"#9ca3af"}[s] for s in status ]
-            hover = [
-                f"{title}<br>{d:%Y-%m-%d}<br>Taxa: {v:.2f}%"
-                for d, v in zip(x, y.fillna(0))
-            ]
+            colors = [{"abaixo": "#dc2626", "dentro": "#16a34a", "acima": "#0ea5e9", "sem": "#9ca3af"}[s] for s in status]
+            hover = [f"{title}<br>{d:%Y-%m-%d}<br>Taxa: {val:.2f}%" for d, val in zip(x, y.fillna(0))]
 
             fig = go.Figure()
 
@@ -1011,19 +1012,19 @@ with tab_daily:
                     layer="below"
                 )
 
-            # fins de semana (fundo suave por dia)
+            # fins de semana
             if mark_weekends:
                 for d in x:
-                    if d.weekday() >= 5:  # 5=sábado, 6=domingo
+                    if d.weekday() >= 5:
                         fig.add_shape(
                             type="rect", xref="x", yref="paper",
-                            x0=d, x1=d + pd.Timedelta(days=1),  # largura = 1 dia
+                            x0=d, x1=d + pd.Timedelta(days=1),
                             y0=0, y1=1,
                             line=dict(width=0),
                             fillcolor="rgba(2,132,199,0.06)"
                         )
 
-            # série diária (pontos coloridos por status)
+            # série
             fig.add_trace(go.Scatter(
                 x=x, y=y, mode="lines+markers",
                 name="Diário",
@@ -1032,10 +1033,10 @@ with tab_daily:
                 hovertext=hover, hoverinfo="text"
             ))
 
-            ### ADD: linha do período anterior
+            # período anterior (se houver)
             if not daily_prev.empty and col in daily_prev.columns:
                 x_aligned = df["date"].values[:len(daily_prev)]
-                y_prev = _fmt_pct_series(daily_prev[col])
+                y_prev = (daily_prev[col] * 100).round(2)
                 fig.add_trace(go.Scatter(
                     x=x_aligned, y=y_prev,
                     mode="lines",
@@ -1053,11 +1054,20 @@ with tab_daily:
                 separators=",.",
                 legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0)
             )
-            # limites Y dinâmicos com folga
+
+            # limites Y
             y_min = max(0, min(y.min(), lo_pct) - 5)
             y_max = min(100, max(y.max(), hi_pct) + 5)
             fig.update_yaxes(range=[y_min, y_max])
+
+            # 🔧 hover e formato — DENTRO DA FUNÇÃO
+            fig.update_traces(hovertemplate="%{x|%Y-%m-%d}<br>Taxa: %{y:.2f}%<extra></extra>")
+            fig.update_layout(hovermode="x unified")
+            fig.update_xaxes(hoverformat="%Y-%m-%d", showspikes=False)
+            fig.update_yaxes(hoverformat=".2f%", ticksuffix="%", showspikes=False)
+
             return fig
+
 
         # ======== RESUMO DAS TAXAS (dinâmico por período) ========
         def _trend_vs_previous_period(series_vals: pd.Series,
