@@ -926,7 +926,7 @@ with tab_daily:
             st.caption("Faixas saudáveis (%)")
             lpv_cli_low, lpv_cli_high = st.slider("LPV / Cliques", 0, 100, (70, 85), 1, key="tx_lpv_cli_band")
             co_lpv_low,  co_lpv_high  = st.slider("Checkout / LPV", 0, 100, (10, 20), 1, key="tx_co_lpv_band")
-            buy_co_low,  buy_co_high  = st.slider("Compra / Checkout", 0, 100, (30, 40), 1, key="tx_buy_co_band")
+            buy_co_low,  buy_co_high  = st.slider("Compra / Checkout", 0, 100, (25, 40), 1, key="tx_buy_co_band")
 
     # agrega por dia
     daily_conv = (
@@ -1708,7 +1708,7 @@ with tab_daypart:
     # tenta herdar as faixas que você já definiu na aba diária, senão usa defaults
     _lpv_lo_def, _lpv_hi_def = _get_band_from_state("tx_lpv_cli_band", (70, 85))
     _co_lo_def,  _co_hi_def  = _get_band_from_state("tx_co_lpv_band",  (10, 20))
-    _buy_lo_def, _buy_hi_def = _get_band_from_state("tx_buy_co_band",  (30, 40))
+    _buy_lo_def, _buy_hi_def = _get_band_from_state("tx_buy_co_band",  (25, 40))
 
     with st.expander("Ajustes de exibição das bandas (opcional)", expanded=True):
         show_band_hour = st.checkbox("Mostrar banda saudável (faixa alvo)", value=True, key="hour_show_band")
