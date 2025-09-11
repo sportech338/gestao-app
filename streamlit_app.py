@@ -1678,11 +1678,35 @@ with tab_daypart:
     st.subheader("🎯 Taxas por hora (sem filtro de volume)")
 
     # Base SEM aplicar min_spend; usa 'd' (já com filtro de produto, se houver)
-    cube_hr_all = d.groupby("hour", as_index=False)[
+    base = d.dropna(subset=["hour"]).copy()
+    base["hour"] = base["hour"].astype(int).clip(0, 23)
+    base["date_only"] = base["date"].dt.date
+
+    if base.empty:
+        st.info("Sem dados horários após aplicar filtros.")
+        st.stop()
+
+    # 1) Agrega por DIA + HORA (não some tudo direto por hora)
+    daily_hr = base.groupby(["date_only", "hour"], as_index=False)[
         ["link_clicks", "lpv", "init_checkout", "purchases"]
     ].sum()
 
-    # Garante 0..23 mesmo que falte hora no período
+    # 2) Aplica 'cap' de funil por dia/hora
+    daily_hr["LPV_cap"] = np.minimum(daily_hr["lpv"], daily_hr["link_clicks"])
+    daily_hr["Checkout_cap"] = np.minimum(daily_hr["init_checkout"], daily_hr["LPV_cap"])
+
+    # 3) Calcula as taxas por DIA/HORA (frações 0–1)
+    daily_hr["LPV/Cliques"]     = daily_hr.apply(lambda r: _safe_div(r["LPV_cap"],      r["link_clicks"]), axis=1)
+    daily_hr["Checkout/LPV"]    = daily_hr.apply(lambda r: _safe_div(r["Checkout_cap"], r["LPV_cap"]),      axis=1)
+    daily_hr["Compra/Checkout"] = daily_hr.apply(lambda r: _safe_div(r["purchases"],    r["Checkout_cap"]), axis=1)
+
+    # 4) Agora sim: tira a MÉDIA entre os dias para cada hora (0..23)
+    cube_hr_all = daily_hr.groupby("hour", as_index=False)[
+        ["link_clicks", "lpv", "init_checkout", "purchases",
+         "LPV_cap", "Checkout_cap", "LPV/Cliques", "Checkout/LPV", "Compra/Checkout"]
+    ].mean()
+
+    # Garante presença de todas as horas 0..23
     hours_full = list(range(24))
     cube_hr_all = (
         cube_hr_all.set_index("hour")
@@ -1691,30 +1715,20 @@ with tab_daypart:
                    .reset_index()
     )
 
-    # Sanidade de funil (cap)
-    cube_hr_all["LPV_cap"] = np.minimum(cube_hr_all["lpv"], cube_hr_all["link_clicks"])
-    cube_hr_all["Checkout_cap"] = np.minimum(cube_hr_all["init_checkout"], cube_hr_all["LPV_cap"])
-
-    # Taxas (frações 0–1)
-    cube_hr_all["LPV/Cliques"]     = cube_hr_all.apply(lambda r: _safe_div(r["LPV_cap"],      r["link_clicks"]),  axis=1)
-    cube_hr_all["Checkout/LPV"]    = cube_hr_all.apply(lambda r: _safe_div(r["Checkout_cap"], r["LPV_cap"]),      axis=1)
-    cube_hr_all["Compra/Checkout"] = cube_hr_all.apply(lambda r: _safe_div(r["purchases"],    r["Checkout_cap"]), axis=1)
-
-    # Tabela (contagens + taxas)
+    # ----- Tabela (contagens médias/dia + taxas médias) -----
     taxas_disp = cube_hr_all[[
         "hour", "link_clicks", "lpv", "init_checkout", "purchases",
-        "LPV_cap", "Checkout_cap",
-        "LPV/Cliques", "Checkout/LPV", "Compra/Checkout"
+        "LPV_cap", "Checkout_cap", "LPV/Cliques", "Checkout/LPV", "Compra/Checkout"
     ]].copy()
 
     taxas_disp.rename(columns={
         "hour": "Hora",
-        "link_clicks": "Cliques",
-        "lpv": "LPV (bruto)",
-        "init_checkout": "Checkout (bruto)",
-        "purchases": "Compras",
-        "LPV_cap": "LPV (cap)",
-        "Checkout_cap": "Checkout (cap)"
+        "link_clicks": "Cliques (média/dia)",
+        "lpv": "LPV (bruto, média/dia)",
+        "init_checkout": "Checkout (bruto, média/dia)",
+        "purchases": "Compras (média/dia)",
+        "LPV_cap": "LPV (cap, média/dia)",
+        "Checkout_cap": "Checkout (cap, média/dia)"
     }, inplace=True)
 
     for col in ["LPV/Cliques", "Checkout/LPV", "Compra/Checkout"]:
@@ -1722,7 +1736,7 @@ with tab_daypart:
 
     st.dataframe(taxas_disp, use_container_width=True, height=520)
 
-    # Gráfico de taxas 0–100%
+    # ----- Gráfico de taxas (médias entre dias) -----
     fig_rates = go.Figure()
     fig_rates.add_trace(go.Scatter(
         x=cube_hr_all["hour"], y=cube_hr_all["LPV/Cliques"]*100,
@@ -1737,7 +1751,7 @@ with tab_daypart:
         mode="lines+markers", name="Compra/Checkout (%)"
     ))
     fig_rates.update_layout(
-        title="Taxas por hora (%) — sem filtro de volume (sinais puros, com cap de funil)",
+        title="Taxas por hora (%) — médias diárias (sinais puros, com cap de funil)",
         xaxis_title="Hora do dia",
         yaxis_title="Taxa (%)",
         height=420,
