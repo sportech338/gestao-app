@@ -1593,6 +1593,73 @@ with tab_daypart:
 
     st.info("Dica: use o 'Gasto mínimo' para filtrar horas com investimento muito baixo e evitar falsos positivos.")
 
+        # ============== 2) TAXAS POR HORA (SEM FILTRO DE VOLUME) ==============
+    st.subheader("🎯 Taxas por hora (sem filtro de volume)")
+
+    # Observação: usamos a base 'd' (pré-filtro de produto) para não aplicar o min_spend aqui.
+    cube_hr_all = d.groupby("hour", as_index=False)[
+        ["link_clicks","lpv","init_checkout","purchases"]
+    ].sum()
+
+    # garante 0..23 mesmo que falte hora no período
+    hours_full = list(range(24))
+    cube_hr_all = (
+        cube_hr_all.set_index("hour")
+                   .reindex(hours_full, fill_value=0.0)
+                   .rename_axis("hour")
+                   .reset_index()
+    )
+
+    # taxas (frações 0-1)
+    cube_hr_all["LPV/Cliques"]     = cube_hr_all.apply(lambda r: _safe_div(r["lpv"],       r["link_clicks"]), axis=1)
+    cube_hr_all["Checkout/LPV"]    = cube_hr_all.apply(lambda r: _safe_div(r["init_checkout"], r["lpv"]),     axis=1)
+    cube_hr_all["Compra/Checkout"] = cube_hr_all.apply(lambda r: _safe_div(r["purchases"], r["init_checkout"]), axis=1)
+
+    # tabela exibida (com contagens absolutas + taxas em %)
+    taxas_disp = cube_hr_all[[
+        "hour","link_clicks","lpv","init_checkout","purchases",
+        "LPV/Cliques","Checkout/LPV","Compra/Checkout"
+    ]].copy()
+
+    taxas_disp.rename(columns={
+        "hour":"Hora","link_clicks":"Cliques","lpv":"LPV",
+        "init_checkout":"Checkout","purchases":"Compras"
+    }, inplace=True)
+
+    # formatação pt-BR para %
+    taxas_disp["LPV/Cliques"]     = taxas_disp["LPV/Cliques"].map(lambda x: _fmt_pct_br(x) if pd.notnull(x) else "")
+    taxas_disp["Checkout/LPV"]    = taxas_disp["Checkout/LPV"].map(lambda x: _fmt_pct_br(x) if pd.notnull(x) else "")
+    taxas_disp["Compra/Checkout"] = taxas_disp["Compra/Checkout"].map(lambda x: _fmt_pct_br(x) if pd.notnull(x) else "")
+
+    st.dataframe(taxas_disp, use_container_width=True, height=500)
+
+    # ============== 2.1) GRÁFICO — Taxas por hora ==============
+    fig_rates = go.Figure()
+    fig_rates.add_trace(go.Scatter(
+        x=cube_hr_all["hour"], y=cube_hr_all["LPV/Cliques"]*100,
+        mode="lines+markers", name="LPV/Cliques (%)"
+    ))
+    fig_rates.add_trace(go.Scatter(
+        x=cube_hr_all["hour"], y=cube_hr_all["Checkout/LPV"]*100,
+        mode="lines+markers", name="Checkout/LPV (%)"
+    ))
+    fig_rates.add_trace(go.Scatter(
+        x=cube_hr_all["hour"], y=cube_hr_all["Compra/Checkout"]*100,
+        mode="lines+markers", name="Compra/Checkout (%)"
+    ))
+    fig_rates.update_layout(
+        title="Taxas por hora (%) — sem filtro de volume",
+        xaxis_title="Hora do dia",
+        yaxis_title="Taxa (%)",
+        height=420,
+        template="plotly_white",
+        margin=dict(l=10, r=10, t=48, b=10),
+        separators=",.",
+    )
+    fig_rates.update_xaxes(tickmode="linear", tick0=0, dtick=1, range=[-0.5, 23.5])
+    st.plotly_chart(fig_rates, use_container_width=True)
+
+
     # ============== 4) COMPARAR DOIS PERÍODOS (A vs B) — HORA A HORA ==============
     st.subheader("🆚 Comparar dois períodos (A vs B) — hora a hora")
 
