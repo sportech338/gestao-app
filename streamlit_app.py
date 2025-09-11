@@ -1471,7 +1471,6 @@ with tab_daily:
     else:
         st.info("Troque o nível para 'campaign' para ver o detalhamento por campanha.")
         
-# -------------------- ABA DE HORÁRIOS (Heatmap no topo) --------------------
 with tab_daypart:
     st.caption("Explore desempenho por hora: Heatmap no topo, depois comparação de dias e apanhado geral.")
 
@@ -1502,7 +1501,7 @@ with tab_daypart:
         st.info("A conta/período não retornou breakdown por hora. Use a visão diária.")
         st.stop()
 
-    # Agora aplicamos o filtro por produto no campaign_name (como no modelo antigo)
+    # Agora aplicamos o filtro por produto no campaign_name
     d = df_hourly.copy()
     if produto_sel_hr != "(Todos)":
         mask_hr = d["campaign_name"].str.contains(produto_sel_hr, case=False, na=False)
@@ -1560,7 +1559,7 @@ with tab_daypart:
 
     st.markdown("---")
 
-    # ============== 3) APANHADO GERAL POR HORA (no período) ==============
+    # ============== 3) APANHADO GERAL POR HORA (período) ==============
     st.subheader("📦 Apanhado geral por hora (período selecionado)")
     cube_hr = d.groupby("hour", as_index=False)[
         ["spend","revenue","purchases","link_clicks","lpv","init_checkout","add_payment"]
@@ -1593,15 +1592,15 @@ with tab_daypart:
 
     st.info("Dica: use o 'Gasto mínimo' para filtrar horas com investimento muito baixo e evitar falsos positivos.")
 
-        # ============== 2) TAXAS POR HORA (SEM FILTRO DE VOLUME) ==============
+    # ============== 2) TAXAS POR HORA (SEM FILTRO DE VOLUME) ==============
     st.subheader("🎯 Taxas por hora (sem filtro de volume)")
 
-    # Observação: usamos a base 'd' (pré-filtro de produto) para não aplicar o min_spend aqui.
+    # Base SEM aplicar min_spend; usa 'd' (já com filtro de produto, se houver)
     cube_hr_all = d.groupby("hour", as_index=False)[
-        ["link_clicks","lpv","init_checkout","purchases"]
+        ["link_clicks", "lpv", "init_checkout", "purchases"]
     ].sum()
 
-    # garante 0..23 mesmo que falte hora no período
+    # Garante 0..23 mesmo que falte hora no período
     hours_full = list(range(24))
     cube_hr_all = (
         cube_hr_all.set_index("hour")
@@ -1610,30 +1609,38 @@ with tab_daypart:
                    .reset_index()
     )
 
-    # taxas (frações 0-1)
-    cube_hr_all["LPV/Cliques"]     = cube_hr_all.apply(lambda r: _safe_div(r["lpv"],       r["link_clicks"]), axis=1)
-    cube_hr_all["Checkout/LPV"]    = cube_hr_all.apply(lambda r: _safe_div(r["init_checkout"], r["lpv"]),     axis=1)
-    cube_hr_all["Compra/Checkout"] = cube_hr_all.apply(lambda r: _safe_div(r["purchases"], r["init_checkout"]), axis=1)
+    # Sanidade de funil (cap)
+    cube_hr_all["LPV_cap"] = np.minimum(cube_hr_all["lpv"], cube_hr_all["link_clicks"])
+    cube_hr_all["Checkout_cap"] = np.minimum(cube_hr_all["init_checkout"], cube_hr_all["LPV_cap"])
 
-    # tabela exibida (com contagens absolutas + taxas em %)
+    # Taxas (frações 0–1)
+    cube_hr_all["LPV/Cliques"]     = cube_hr_all.apply(lambda r: _safe_div(r["LPV_cap"],      r["link_clicks"]),  axis=1)
+    cube_hr_all["Checkout/LPV"]    = cube_hr_all.apply(lambda r: _safe_div(r["Checkout_cap"], r["LPV_cap"]),      axis=1)
+    cube_hr_all["Compra/Checkout"] = cube_hr_all.apply(lambda r: _safe_div(r["purchases"],    r["Checkout_cap"]), axis=1)
+
+    # Tabela (contagens + taxas)
     taxas_disp = cube_hr_all[[
-        "hour","link_clicks","lpv","init_checkout","purchases",
-        "LPV/Cliques","Checkout/LPV","Compra/Checkout"
+        "hour", "link_clicks", "lpv", "init_checkout", "purchases",
+        "LPV_cap", "Checkout_cap",
+        "LPV/Cliques", "Checkout/LPV", "Compra/Checkout"
     ]].copy()
 
     taxas_disp.rename(columns={
-        "hour":"Hora","link_clicks":"Cliques","lpv":"LPV",
-        "init_checkout":"Checkout","purchases":"Compras"
+        "hour": "Hora",
+        "link_clicks": "Cliques",
+        "lpv": "LPV (bruto)",
+        "init_checkout": "Checkout (bruto)",
+        "purchases": "Compras",
+        "LPV_cap": "LPV (cap)",
+        "Checkout_cap": "Checkout (cap)"
     }, inplace=True)
 
-    # formatação pt-BR para %
-    taxas_disp["LPV/Cliques"]     = taxas_disp["LPV/Cliques"].map(lambda x: _fmt_pct_br(x) if pd.notnull(x) else "")
-    taxas_disp["Checkout/LPV"]    = taxas_disp["Checkout/LPV"].map(lambda x: _fmt_pct_br(x) if pd.notnull(x) else "")
-    taxas_disp["Compra/Checkout"] = taxas_disp["Compra/Checkout"].map(lambda x: _fmt_pct_br(x) if pd.notnull(x) else "")
+    for col in ["LPV/Cliques", "Checkout/LPV", "Compra/Checkout"]:
+        taxas_disp[col] = taxas_disp[col].map(lambda x: _fmt_pct_br(x) if pd.notnull(x) else "")
 
-    st.dataframe(taxas_disp, use_container_width=True, height=500)
+    st.dataframe(taxas_disp, use_container_width=True, height=520)
 
-    # ============== 2.1) GRÁFICO — Taxas por hora ==============
+    # Gráfico de taxas 0–100%
     fig_rates = go.Figure()
     fig_rates.add_trace(go.Scatter(
         x=cube_hr_all["hour"], y=cube_hr_all["LPV/Cliques"]*100,
@@ -1648,7 +1655,7 @@ with tab_daypart:
         mode="lines+markers", name="Compra/Checkout (%)"
     ))
     fig_rates.update_layout(
-        title="Taxas por hora (%) — sem filtro de volume",
+        title="Taxas por hora (%) — sem filtro de volume (sinais puros, com cap de funil)",
         xaxis_title="Hora do dia",
         yaxis_title="Taxa (%)",
         height=420,
@@ -1657,8 +1664,8 @@ with tab_daypart:
         separators=",.",
     )
     fig_rates.update_xaxes(tickmode="linear", tick0=0, dtick=1, range=[-0.5, 23.5])
+    fig_rates.update_yaxes(range=[0, 100])
     st.plotly_chart(fig_rates, use_container_width=True)
-
 
     # ============== 4) COMPARAR DOIS PERÍODOS (A vs B) — HORA A HORA ==============
     st.subheader("🆚 Comparar dois períodos (A vs B) — hora a hora")
@@ -1698,7 +1705,6 @@ with tab_daypart:
         if df_hourly_union is not None and not df_hourly_union.empty and produto_sel_hr != "(Todos)":
             mask_union = df_hourly_union["campaign_name"].str.contains(produto_sel_hr, case=False, na=False)
             df_hourly_union = df_hourly_union[mask_union].copy()
-
 
         if df_hourly_union is None or df_hourly_union.empty:
             st.info("Sem dados no intervalo combinado dos períodos selecionados.")
@@ -1864,7 +1870,6 @@ with tab_daypart:
 
                     st.plotly_chart(fig_B, use_container_width=True)
 
-
                     # ===== INSIGHTS — Período A =====
                     st.markdown("### 🔎 Insights — Período A")
                     a = merged.sort_values("hour").copy()
@@ -1937,12 +1942,10 @@ with tab_daypart:
                         st.dataframe(topA_r, use_container_width=True, height=220)
 
                     st.info("Sugestões (A): priorize a janela forte, aumente orçamento nas horas de melhor ROAS (com gasto mínimo atendido) e reavalie criativo/lance nas horas com gasto e 0 compras.")
-
                     st.markdown("---")
 
                     # ===== INSIGHTS — Período B =====
                     st.markdown("### 🔎 Insights — Período B")
-
                     b = merged.sort_values("hour").copy()
                     b_spend     = b["spend (B)"]
                     b_rev       = b["revenue (B)"]
@@ -2012,7 +2015,6 @@ with tab_daypart:
                         st.dataframe(topB_r, use_container_width=True, height=220)
 
                     st.info("Sugestões (B): direcione orçamento para as horas com melhor ROAS e pause/teste criativos nas horas com gasto e 0 compras.")
-
 
 # -------------------- ABA 3: 📊 DETALHAMENTO --------------------
 with tab_detail:
