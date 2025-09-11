@@ -1694,45 +1694,109 @@ with tab_daypart:
                         line_max = 1.0
                     line_max *= 1.05  # folga de 5%
 
-                    # ===== Gráfico do Período A =====
+                    # ==================== CORES ====================
+                    COLOR_SPEND   = "#E74C3C"  # vermelho (Gasto)
+                    COLOR_REVENUE = "#3498DB"  # azul (Faturamento)
+                    COLOR_LINE    = "#2ECC71"  # verde (Compras)
+
+                    # ==================== GRÁFICO — Período A ====================
                     fig_A = make_subplots(specs=[[{"secondary_y": True}]])
-                    fig_A.add_trace(go.Bar(name="Gasto (A)", x=x, y=merged["spend (A)"], legendgroup="A", offsetgroup="A"))
-                    fig_A.add_trace(go.Bar(name="Faturamento (A)", x=x, y=merged["revenue (A)"], legendgroup="A", offsetgroup="A"))
+
                     fig_A.add_trace(
-                        go.Scatter(name=f"Compras (A) — {period_sinceA} a {period_untilA}",
-                                   x=x, y=merged["purchases (A)"], mode="lines+markers", legendgroup="A"),
-                        secondary_y=True
+                        go.Bar(
+                            name="Gasto (A)",
+                            x=x, y=merged["spend (A)"],
+                            legendgroup="A",
+                            offsetgroup="A",
+                            marker_color=COLOR_SPEND,
+                        )
                     )
+                    fig_A.add_trace(
+                        go.Bar(
+                            name="Faturamento (A)",
+                            x=x, y=merged["revenue (A)"],
+                            legendgroup="A",
+                            offsetgroup="A",
+                            marker_color=COLOR_REVENUE,
+                        )
+                    )
+                    fig_A.add_trace(
+                        go.Scatter(
+                            name=f"Compras (A) — {period_sinceA} a {period_untilA}",
+                            x=x, y=merged["purchases (A)"],
+                            mode="lines+markers",
+                            legendgroup="A",
+                            line=dict(color=COLOR_LINE, width=2),
+                        ),
+                        secondary_y=True,
+                    )
+
                     fig_A.update_layout(
                         title=f"Período A — {period_sinceA} a {period_untilA} (Gasto + Faturamento + Compras)",
-                        barmode="stack", bargap=0.15, bargroupgap=0.12,
-                        template="plotly_white", height=460,
-                        margin=dict(l=10, r=10, t=48, b=10), legend_title_text="", separators=",."
+                        barmode="stack",
+                        bargap=0.15,
+                        bargroupgap=0.12,
+                        template="plotly_white",
+                        height=460,
+                        margin=dict(l=10, r=10, t=48, b=10),
+                        legend_title_text="",
+                        separators=",.",
                     )
                     fig_A.update_xaxes(title_text="Hora do dia", tickmode="linear", tick0=0, dtick=1, range=[-0.5, 23.5])
                     fig_A.update_yaxes(title_text="Valores (R$)", secondary_y=False, range=[0, bars_max])
                     fig_A.update_yaxes(title_text="Compras (unid.)", secondary_y=True, range=[0, line_max])
+
                     st.plotly_chart(fig_A, use_container_width=True)
 
-                    # ===== Gráfico do Período B =====
+                    # ==================== GRÁFICO — Período B ====================
                     fig_B = make_subplots(specs=[[{"secondary_y": True}]])
-                    fig_B.add_trace(go.Bar(name="Gasto (B)", x=x, y=merged["spend (B)"], legendgroup="B", offsetgroup="B"))
-                    fig_B.add_trace(go.Bar(name="Faturamento (B)", x=x, y=merged["revenue (B)"], legendgroup="B", offsetgroup="B"))
+
                     fig_B.add_trace(
-                        go.Scatter(name=f"Compras (B) — {period_sinceB} a {period_untilB}",
-                                   x=x, y=merged["purchases (B)"], mode="lines+markers", legendgroup="B"),
-                        secondary_y=True
+                        go.Bar(
+                            name="Gasto (B)",
+                            x=x, y=merged["spend (B)"],
+                            legendgroup="B",
+                            offsetgroup="B",
+                            marker_color=COLOR_SPEND,
+                        )
                     )
+                    fig_B.add_trace(
+                        go.Bar(
+                            name="Faturamento (B)",
+                            x=x, y=merged["revenue (B)"],
+                            legendgroup="B",
+                            offsetgroup="B",
+                            marker_color=COLOR_REVENUE,
+                        )
+                    )
+                    fig_B.add_trace(
+                        go.Scatter(
+                            name=f"Compras (B) — {period_sinceB} a {period_untilB}",
+                            x=x, y=merged["purchases (B)"],
+                            mode="lines+markers",
+                            legendgroup="B",
+                            line=dict(color=COLOR_LINE, width=2),
+                        ),
+                        secondary_y=True,
+                    )
+
                     fig_B.update_layout(
                         title=f"Período B — {period_sinceB} a {period_untilB} (Gasto + Faturamento + Compras)",
-                        barmode="stack", bargap=0.15, bargroupgap=0.12,
-                        template="plotly_white", height=460,
-                        margin=dict(l=10, r=10, t=48, b=10), legend_title_text="", separators=",."
+                        barmode="stack",
+                        bargap=0.15,
+                        bargroupgap=0.12,
+                        template="plotly_white",
+                        height=460,
+                        margin=dict(l=10, r=10, t=48, b=10),
+                        legend_title_text="",
+                        separators=",.",
                     )
                     fig_B.update_xaxes(title_text="Hora do dia", tickmode="linear", tick0=0, dtick=1, range=[-0.5, 23.5])
                     fig_B.update_yaxes(title_text="Valores (R$)", secondary_y=False, range=[0, bars_max])
                     fig_B.update_yaxes(title_text="Compras (unid.)", secondary_y=True, range=[0, line_max])
+
                     st.plotly_chart(fig_B, use_container_width=True)
+
 
                     # ===== INSIGHTS — Período A =====
                     st.markdown("### 🔎 Insights — Período A")
