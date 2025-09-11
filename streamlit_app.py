@@ -1674,101 +1674,64 @@ with tab_daypart:
 
     st.info("Dica: use o 'Gasto mínimo' para filtrar horas com investimento muito baixo e evitar falsos positivos.")
 
-    # ============== 2) TAXAS POR HORA — GRÁFICO EM % (médias diárias) + TABELA EM QUANTIDADES ==============
-    st.subheader("🎯 Taxas por hora")
+    # ============== 2) TAXAS POR HORA (3 gráficos) ==============
+    st.subheader("🎯 Taxas por hora — médias diárias (sinais puros, com cap de funil)")
 
-    # Base já filtrada por produto em `d`
-    base = d.dropna(subset=["hour"]).copy()
-    base["hour"] = base["hour"].astype(int).clip(0, 23)
-    base["date_only"] = base["date"].dt.date
+    # Base SEM filtro de gasto (já calculada acima como cube_hr_all)
+    # -> Garantimos que a tabela mostre apenas QUANTIDADES
+    taxas_qtd = cube_hr_all[[
+        "hour", "link_clicks", "lpv", "init_checkout", "add_payment", "purchases"
+    ]].copy().rename(columns={
+        "hour": "Hora",
+        "link_clicks": "Cliques",
+        "lpv": "LPV",
+        "init_checkout": "Checkout",
+        "add_payment": "Add Pagto",
+        "purchases": "Compras",
+    })
+    st.dataframe(taxas_qtd, use_container_width=True, height=360)
 
-    # ---------- 2A) GRÁFICO: TAXAS (%) — média por hora após cap POR DIA ----------
-    by_day_hour = (
-        base.groupby(["date_only", "hour"], as_index=False)[
-            ["link_clicks", "lpv", "init_checkout", "purchases"]
-        ].sum()
-    )
-    # cap por dia
-    by_day_hour["LPV_cap"] = np.minimum(by_day_hour["lpv"], by_day_hour["link_clicks"])
-    by_day_hour["Checkout_cap"] = np.minimum(by_day_hour["init_checkout"], by_day_hour["LPV_cap"])
-
-    # taxas por dia (frações)
-    by_day_hour["r_lpv_cli"] = by_day_hour.apply(lambda r: _safe_div(r["LPV_cap"],      r["link_clicks"]),  axis=1)
-    by_day_hour["r_co_lpv"]  = by_day_hour.apply(lambda r: _safe_div(r["Checkout_cap"], r["LPV_cap"]),      axis=1)
-    by_day_hour["r_buy_co"]  = by_day_hour.apply(lambda r: _safe_div(r["purchases"],    r["Checkout_cap"]), axis=1)
-
-    # médias diárias por hora (→ %)
-    avg_hr = (
-        by_day_hour.groupby("hour", as_index=False)[["r_lpv_cli", "r_co_lpv", "r_buy_co"]].mean()
-        .rename(columns={
-            "r_lpv_cli": "LPV/Cliques (%)",
-            "r_co_lpv":  "Checkout/LPV (%)",
-            "r_buy_co":  "Compra/Checkout (%)"
-        })
-    )
-    for c in ["LPV/Cliques (%)","Checkout/LPV (%)","Compra/Checkout (%)"]:
-        avg_hr[c] = (avg_hr[c] * 100.0).round(2)
-
-    # gráfico
-    fig_rates = go.Figure()
-    def _add_line(ycol, nome):
-        fig_rates.add_trace(go.Scatter(
-            x=avg_hr["hour"], y=avg_hr[ycol],
-            mode="lines+markers",
-            name=nome,
-            # IMPORTANTE: escapar chaves em f-string → %{{x}} / %{{y:.2f}}
-            hovertemplate=f"<b>{nome}</b><br>Hora: %{{x}}h<br>Taxa: %{{y:.2f}}%<extra></extra>"
+    # --- Linhas (%): 3 gráficos, cada um com uma taxa
+    def _line_hour_pct(x, y, title):
+        fig = go.Figure(go.Scatter(
+            x=x, y=y, mode="lines+markers", name=title,
+            hovertemplate=f"<b>{title}</b><br>Hora: %{{x}}h<br>Taxa: %{{y:.2f}}%<extra></extra>"
         ))
-    _add_line("LPV/Cliques (%)", "LPV/Cliques (%)")
-    _add_line("Checkout/LPV (%)", "Checkout/LPV (%)")
-    _add_line("Compra/Checkout (%)", "Compra/Checkout (%)")
+        fig.update_layout(
+            title=title,
+            xaxis_title="Hora do dia",
+            yaxis_title="Taxa (%)",
+            height=340,
+            template="plotly_white",
+            margin=dict(l=10, r=10, t=48, b=10),
+            separators=",.",
+            hovermode="x unified",
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0)
+        )
+        fig.update_xaxes(tickmode="linear", tick0=0, dtick=1, range=[-0.5, 23.5])
+        fig.update_yaxes(range=[0, 100], ticksuffix="%")
+        return fig
 
-    fig_rates.update_layout(
-        title="Taxas por hora (%) — médias diárias (sinais puros, com cap de funil)",
-        xaxis_title="Hora do dia",
-        yaxis_title="Taxa (%)",
-        height=420, template="plotly_white",
-        margin=dict(l=10, r=10, t=48, b=10), separators=",.",
-        hovermode="x unified",
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0)
-    )
-    fig_rates.update_xaxes(tickmode="linear", tick0=0, dtick=1, range=[-0.5, 23.5])
-    fig_rates.update_yaxes(range=[0, 100], ticksuffix="%")
-    st.plotly_chart(fig_rates, use_container_width=True)
+    x_hours = cube_hr_all["hour"]
 
-    # ---------- 2B) TABELA: QUANTIDADES (NÃO %), somas do período ----------
-    sums_raw = (
-        base.groupby("hour", as_index=False)[
-            ["link_clicks","lpv","init_checkout","purchases"]
-        ].sum()
-        .rename(columns={
-            "link_clicks":"Cliques",
-            "lpv":"LPV (bruto)",
-            "init_checkout":"Checkout (bruto)",
-            "purchases":"Compras"
-        })
-    )
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.plotly_chart(
+            _line_hour_pct(x_hours, cube_hr_all["LPV/Cliques"]*100, "LPV/Cliques"),
+            use_container_width=True
+        )
+    with col2:
+        st.plotly_chart(
+            _line_hour_pct(x_hours, cube_hr_all["Checkout/LPV"]*100, "Checkout/LPV"),
+            use_container_width=True
+        )
+    with col3:
+        st.plotly_chart(
+            _line_hour_pct(x_hours, cube_hr_all["Compra/Checkout"]*100, "Compra/Checkout"),
+            use_container_width=True
+        )
 
-    sums_cap = (
-        by_day_hour.groupby("hour", as_index=False)[["LPV_cap","Checkout_cap"]].sum()
-    )
-
-    tbl = pd.merge(sums_raw, sums_cap, on="hour", how="outer").fillna(0.0)
-    tbl = (
-        tbl.set_index("hour")
-           .reindex(list(range(24)), fill_value=0.0)
-           .rename_axis("Hora")
-           .reset_index()
-    )
-    tbl.rename(columns={"LPV_cap":"LPV (cap)", "Checkout_cap":"Checkout (cap)"}, inplace=True)
-
-    for c in ["Cliques","LPV (bruto)","LPV (cap)","Checkout (bruto)","Checkout (cap)","Compras"]:
-        tbl[c] = tbl[c].map(lambda x: f"{int(round(float(x))):,}".replace(",", "."))
-
-    st.dataframe(tbl, use_container_width=True, height=520)
-
-
-
+    st.markdown("---")
     # ============== 4) COMPARAR DOIS PERÍODOS (A vs B) — HORA A HORA ==============
     st.subheader("🆚 Comparar dois períodos (A vs B) — hora a hora")
 
