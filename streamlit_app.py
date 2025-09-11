@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -1711,7 +1712,7 @@ with tab_daypart:
     _buy_lo_def, _buy_hi_def = _get_band_from_state("tx_buy_co_band",  (25, 40))
 
     with st.expander("Ajustes de exibição das bandas (opcional)", expanded=True):
-        show_band_hour = st.checkbox("Mostrar banda saudável (faixa alvo)", value=True, key="hr_show_band")
+        show_band_hour = st.checkbox("Mostrar banda saudável (faixa alvo)", value=True, key="hour_show_band")
         b1, b2, b3 = st.columns(3)
         with b1:
             lpv_cli_low, lpv_cli_high = st.slider("LPV/Cliques alvo (%)", 0, 100, (_lpv_lo_def, _lpv_hi_def), 1, key="hr_band_lpv_clicks")
