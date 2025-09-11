@@ -160,6 +160,78 @@ def funnel_fig(labels, values, title=None):
     )
     return fig
 
+def _pick_checkout_totals(rows, allowed_keys=None) -> float:
+    """
+    Soma Initiate Checkout priorizando omni; senão pega o MAIOR entre variantes
+    (sem duplicar janelas). Aceita initiated/initiate e offsite/onsite.
+    """
+    if not rows:
+        return 0.0
+    rows = [{**r, "action_type": str(r.get("action_type","")).lower()} for r in rows]
+
+    # 1) preferir omni
+    omni = [r for r in rows if r["action_type"] in ("omni_initiated_checkout","omni_initiate_checkout")]
+    if omni:
+        return float(sum(_sum_item(r, allowed_keys) for r in omni))
+
+    # 2) variantes conhecidas
+    candidates = {
+        "initiate_checkout": 0.0,
+        "initiated_checkout": 0.0,
+        "onsite_conversion.initiated_checkout": 0.0,
+        "offsite_conversion.fb_pixel_initiate_checkout": 0.0,
+        "offsite_conversion.fb_pixel_initiated_checkout": 0.0,
+    }
+    for r in rows:
+        at = r["action_type"]
+        if at in candidates:
+            candidates[at] += _sum_item(r, allowed_keys)
+
+    if any(v > 0 for v in candidates.values()):
+        return float(max(candidates.values()))
+
+    # 3) fallback amplo por substring
+    grp = {}
+    for r in rows:
+        if "initiate" in r["action_type"] and "checkout" in r["action_type"]:
+            grp.setdefault(r["action_type"], 0.0)
+            grp[r["action_type"]] += _sum_item(r, allowed_keys)
+    return float(max(grp.values()) if grp else 0.0)
+
+
+def _pick_add_payment_totals(rows, allowed_keys=None) -> float:
+    """
+    Soma Add Payment Info com suporte a omni/onsite/offsite.
+    """
+    if not rows:
+        return 0.0
+    rows = [{**r, "action_type": str(r.get("action_type","")).lower()} for r in rows]
+
+    omni = [r for r in rows if r["action_type"] in ("omni_add_payment_info","add_payment_info.omni")]
+    if omni:
+        return float(sum(_sum_item(r, allowed_keys) for r in omni))
+
+    candidates = {
+        "add_payment_info": 0.0,
+        "onsite_conversion.add_payment_info": 0.0,
+        "offsite_conversion.fb_pixel_add_payment_info": 0.0,
+    }
+    for r in rows:
+        at = r["action_type"]
+        if at in candidates:
+            candidates[at] += _sum_item(r, allowed_keys)
+
+    if any(v > 0 for v in candidates.values()):
+        return float(max(candidates.values()))
+
+    grp = {}
+    for r in rows:
+        if "add_payment" in r["action_type"]:
+            grp.setdefault(r["action_type"], 0.0)
+            grp[r["action_type"]] += _sum_item(r, allowed_keys)
+    return float(max(grp.values()) if grp else 0.0)
+
+
 def enforce_monotonic(values):
     """Garante formato de funil: cada etapa <= etapa anterior (só para o desenho)."""
     out, cur = [], None
@@ -364,8 +436,8 @@ def fetch_insights_daily(act_id: str, token: str, api_version: str,
                         lpv = (_sum_actions_exact(actions, ["view_content"], allowed_keys=ATTR_KEYS)
                                or _sum_actions_contains(actions, ["landing_page"], allowed_keys=ATTR_KEYS))
 
-                ic  = _sum_actions_exact(actions, ["initiate_checkout"], allowed_keys=ATTR_KEYS)
-                api = _sum_actions_exact(actions, ["add_payment_info"], allowed_keys=ATTR_KEYS)
+                ic  = _pick_checkout_totals(actions, allowed_keys=ATTR_KEYS)
+                api = _pick_add_payment_totals(actions, allowed_keys=ATTR_KEYS)
                 purchases_cnt = _pick_purchase_totals(actions, allowed_keys=ATTR_KEYS)
                 revenue_val   = _pick_purchase_totals(action_values, allowed_keys=ATTR_KEYS)
 
@@ -477,8 +549,8 @@ def fetch_insights_hourly(act_id: str, token: str, api_version: str,
                            or _sum_actions_exact(actions, ["view_content"], allowed_keys=ATTR_KEYS)
                            or _sum_actions_contains(actions, ["landing_page"], allowed_keys=ATTR_KEYS))
 
-                ic   = _sum_actions_exact(actions, ["initiate_checkout"], allowed_keys=ATTR_KEYS)
-                api_ = _sum_actions_exact(actions, ["add_payment_info"], allowed_keys=ATTR_KEYS)
+                ic   = _pick_checkout_totals(actions, allowed_keys=ATTR_KEYS)
+                api_ = _pick_add_payment_totals(actions, allowed_keys=ATTR_KEYS)
                 pur  = _pick_purchase_totals(actions, allowed_keys=ATTR_KEYS)
                 rev  = _pick_purchase_totals(action_values, allowed_keys=ATTR_KEYS)
 
@@ -594,8 +666,8 @@ def fetch_insights_breakdown(act_id: str, token: str, api_version: str,
                 lpv = (_sum_actions_exact(actions, ["landing_page_view"], allowed_keys=ATTR_KEYS)
                        or _sum_actions_exact(actions, ["view_content"], allowed_keys=ATTR_KEYS)
                        or _sum_actions_contains(actions, ["landing_page"], allowed_keys=ATTR_KEYS))
-                ic   = _sum_actions_exact(actions, ["initiate_checkout"], allowed_keys=ATTR_KEYS)
-                api_ = _sum_actions_exact(actions, ["add_payment_info"], allowed_keys=ATTR_KEYS)
+                ic   = _pick_checkout_totals(actions, allowed_keys=ATTR_KEYS)
+                api_ = _pick_add_payment_totals(actions, allowed_keys=ATTR_KEYS)
                 pur  = _pick_purchase_totals(actions, allowed_keys=ATTR_KEYS)
                 rev  = _pick_purchase_totals(action_values, allowed_keys=ATTR_KEYS)
 
