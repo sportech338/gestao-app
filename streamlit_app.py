@@ -1700,12 +1700,42 @@ with tab_daypart:
     cube_hr_all["tx_checkout_lpv"]    = cube_hr_all.apply(lambda r: _safe_div(r["Checkout_cap"], r["LPV_cap"]),      axis=1)
     cube_hr_all["tx_compra_checkout"] = cube_hr_all.apply(lambda r: _safe_div(r["purchases"],    r["Checkout_cap"]), axis=1)
 
+    # =================== CONTROLES — banda saudável ===================
+    def _get_band_from_state(key, default_pair):
+        v = st.session_state.get(key)
+        return v if (isinstance(v, tuple) and len(v) == 2) else default_pair
+
+    # tenta herdar as faixas que você já definiu na aba diária, senão usa defaults
+    _lpv_lo_def, _lpv_hi_def = _get_band_from_state("tx_lpv_cli_band", (70, 85))
+    _co_lo_def,  _co_hi_def  = _get_band_from_state("tx_co_lpv_band",  (10, 20))
+    _buy_lo_def, _buy_hi_def = _get_band_from_state("tx_buy_co_band",  (30, 40))
+
+    with st.expander("Ajustes de exibição das bandas (opcional)", expanded=True):
+        show_band_hour = st.checkbox("Mostrar banda saudável (faixa alvo)", value=True, key="hour_show_band")
+        b1, b2, b3 = st.columns(3)
+        with b1:
+            lpv_cli_low, lpv_cli_high = st.slider("LPV/Cliques alvo (%)", 0, 100, (_lpv_lo_def, _lpv_hi_def), 1, key="hr_band_lpv_clicks")
+        with b2:
+            co_lpv_low,  co_lpv_high  = st.slider("Checkout/LPV alvo (%)", 0, 100, (_co_lo_def,  _co_hi_def),  1, key="hr_band_checkout_lpv")
+        with b3:
+            buy_co_low,  buy_co_high  = st.slider("Compra/Checkout alvo (%)", 0, 100, (_buy_lo_def, _buy_hi_def), 1, key="hr_band_buy_checkout")
+
     # =================== GRÁFICOS — 3 linhas de TAXAS (%) (EM CIMA) ===================
-    def _line_hour_pct(x, y, title):
+    def _line_hour_pct(x, y, title, band_range=None, show_band=False):
         fig = go.Figure(go.Scatter(
             x=x, y=y, mode="lines+markers", name=title,
             hovertemplate=f"<b>{title}</b><br>Hora: %{{x}}h<br>Taxa: %{{y:.2f}}%<extra></extra>"
         ))
+        # banda saudável (faixa alvo)
+        if show_band and band_range and len(band_range) == 2:
+            lo, hi = band_range
+            # retângulo de -0.5 a 23.5 para cobrir o eixo inteiro
+            fig.add_shape(
+                type="rect", xref="x", yref="y",
+                x0=-0.5, x1=23.5, y0=lo, y1=hi,
+                fillcolor="rgba(34,197,94,0.10)", line=dict(width=0), layer="below"
+            )
+
         fig.update_layout(
             title=title,
             xaxis_title="Hora do dia",
@@ -1725,11 +1755,35 @@ with tab_daypart:
 
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.plotly_chart(_line_hour_pct(x_hours, cube_hr_all["tx_lpv_clicks"]*100, "LPV/Cliques (%)"), use_container_width=True)
+        st.plotly_chart(
+            _line_hour_pct(
+                x_hours, cube_hr_all["tx_lpv_clicks"]*100,
+                "LPV/Cliques (%)",
+                band_range=(lpv_cli_low, lpv_cli_high),
+                show_band=show_band_hour
+            ),
+            use_container_width=True
+        )
     with col2:
-        st.plotly_chart(_line_hour_pct(x_hours, cube_hr_all["tx_checkout_lpv"]*100, "Checkout/LPV (%)"), use_container_width=True)
+        st.plotly_chart(
+            _line_hour_pct(
+                x_hours, cube_hr_all["tx_checkout_lpv"]*100,
+                "Checkout/LPV (%)",
+                band_range=(co_lpv_low, co_lpv_high),
+                show_band=show_band_hour
+            ),
+            use_container_width=True
+        )
     with col3:
-        st.plotly_chart(_line_hour_pct(x_hours, cube_hr_all["tx_compra_checkout"]*100, "Compra/Checkout (%)"), use_container_width=True)
+        st.plotly_chart(
+            _line_hour_pct(
+                x_hours, cube_hr_all["tx_compra_checkout"]*100,
+                "Compra/Checkout (%)",
+                band_range=(buy_co_low, buy_co_high),
+                show_band=show_band_hour
+            ),
+            use_container_width=True
+        )
 
     st.markdown("---")
 
@@ -1746,6 +1800,7 @@ with tab_daypart:
     })
     st.caption("Contagens por hora no período selecionado")
     st.dataframe(taxas_qtd, use_container_width=True, height=360)
+
 
     # ============== 4) COMPARAR DOIS PERÍODOS (A vs B) — HORA A HORA ==============
     st.subheader("🆚 Comparar dois períodos (A vs B) — hora a hora")
