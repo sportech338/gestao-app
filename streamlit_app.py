@@ -1716,7 +1716,8 @@ with tab_daypart:
             x=avg_hr["hour"], y=avg_hr[ycol],
             mode="lines+markers",
             name=nome,
-            hovertemplate=f"<b>{nome}</b><br>Hora: %{x}h<br>Taxa: %{y:.2f}%<extra></extra>"
+            # IMPORTANTE: escapar chaves em f-string → %{{x}} / %{{y:.2f}}
+            hovertemplate=f"<b>{nome}</b><br>Hora: %{{x}}h<br>Taxa: %{{y:.2f}}%<extra></extra>"
         ))
     _add_line("LPV/Cliques (%)", "LPV/Cliques (%)")
     _add_line("Checkout/LPV (%)", "Checkout/LPV (%)")
@@ -1736,7 +1737,6 @@ with tab_daypart:
     st.plotly_chart(fig_rates, use_container_width=True)
 
     # ---------- 2B) TABELA: QUANTIDADES (NÃO %), somas do período ----------
-    # brutos somados no período
     sums_raw = (
         base.groupby("hour", as_index=False)[
             ["link_clicks","lpv","init_checkout","purchases"]
@@ -1749,12 +1749,10 @@ with tab_daypart:
         })
     )
 
-    # caps aplicados por dia e somados no período (mais fiel ao funil)
     sums_cap = (
         by_day_hour.groupby("hour", as_index=False)[["LPV_cap","Checkout_cap"]].sum()
     )
 
-    # merge e ordenar 0..23
     tbl = pd.merge(sums_raw, sums_cap, on="hour", how="outer").fillna(0.0)
     tbl = (
         tbl.set_index("hour")
@@ -1764,11 +1762,11 @@ with tab_daypart:
     )
     tbl.rename(columns={"LPV_cap":"LPV (cap)", "Checkout_cap":"Checkout (cap)"}, inplace=True)
 
-    # formatação inteira com separador pt-BR
     for c in ["Cliques","LPV (bruto)","LPV (cap)","Checkout (bruto)","Checkout (cap)","Compras"]:
         tbl[c] = tbl[c].map(lambda x: f"{int(round(float(x))):,}".replace(",", "."))
 
     st.dataframe(tbl, use_container_width=True, height=520)
+
 
 
     # ============== 4) COMPARAR DOIS PERÍODOS (A vs B) — HORA A HORA ==============
