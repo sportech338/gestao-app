@@ -1682,44 +1682,59 @@ with tab_daypart:
     base["hour"] = base["hour"].astype(int).clip(0, 23)
     base["date_only"] = base["date"].dt.date
 
-    # ---------- 2A) GRÁFICOS: 3 linhas separadas (%, médias por hora) ----------
-    def _line_hour_pct(x, y, title):
-        fig = go.Figure(go.Scatter(
-            x=x, y=y, mode="lines+markers", name=title,
-            hovertemplate=f"<b>{title}</b><br>Hora: %{{x}}h<br>Taxa: %{{y:.2f}}%<extra></extra>"
+    # ---------- 2A) GRÁFICO: TAXAS (%) — média por hora após cap POR DIA ----------
+    by_day_hour = (
+        base.groupby(["date_only", "hour"], as_index=False)[
+            ["link_clicks", "lpv", "init_checkout", "purchases"]
+        ].sum()
+    )
+    # cap por dia
+    by_day_hour["LPV_cap"] = np.minimum(by_day_hour["lpv"], by_day_hour["link_clicks"])
+    by_day_hour["Checkout_cap"] = np.minimum(by_day_hour["init_checkout"], by_day_hour["LPV_cap"])
+
+    # taxas por dia (frações)
+    by_day_hour["r_lpv_cli"] = by_day_hour.apply(lambda r: _safe_div(r["LPV_cap"],      r["link_clicks"]),  axis=1)
+    by_day_hour["r_co_lpv"]  = by_day_hour.apply(lambda r: _safe_div(r["Checkout_cap"], r["LPV_cap"]),      axis=1)
+    by_day_hour["r_buy_co"]  = by_day_hour.apply(lambda r: _safe_div(r["purchases"],    r["Checkout_cap"]), axis=1)
+
+    # médias diárias por hora (→ %)
+    avg_hr = (
+        by_day_hour.groupby("hour", as_index=False)[["r_lpv_cli", "r_co_lpv", "r_buy_co"]].mean()
+        .rename(columns={
+            "r_lpv_cli": "LPV/Cliques (%)",
+            "r_co_lpv":  "Checkout/LPV (%)",
+            "r_buy_co":  "Compra/Checkout (%)"
+        })
+    )
+    for c in ["LPV/Cliques (%)","Checkout/LPV (%)","Compra/Checkout (%)"]:
+        avg_hr[c] = (avg_hr[c] * 100.0).round(2)
+
+    # gráfico
+    fig_rates = go.Figure()
+    def _add_line(ycol, nome):
+        fig_rates.add_trace(go.Scatter(
+            x=avg_hr["hour"], y=avg_hr[ycol],
+            mode="lines+markers",
+            name=nome,
+            # IMPORTANTE: escapar chaves em f-string → %{{x}} / %{{y:.2f}}
+            hovertemplate=f"<b>{nome}</b><br>Hora: %{{x}}h<br>Taxa: %{{y:.2f}}%<extra></extra>"
         ))
-        fig.update_layout(
-            title=title,
-            xaxis_title="Hora do dia",
-            yaxis_title="Taxa (%)",
-            height=340,
-            template="plotly_white",
-            margin=dict(l=10, r=10, t=48, b=10),
-            separators=",.",
-            hovermode="x unified",
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0)
-        )
-        fig.update_xaxes(tickmode="linear", tick0=0, dtick=1, range=[-0.5, 23.5])
-        fig.update_yaxes(range=[0, 100], ticksuffix="%")
-        return fig
+    _add_line("LPV/Cliques (%)", "LPV/Cliques (%)")
+    _add_line("Checkout/LPV (%)", "Checkout/LPV (%)")
+    _add_line("Compra/Checkout (%)", "Compra/Checkout (%)")
 
-    cA, cB, cC = st.columns(3)
-    with cA:
-        st.plotly_chart(
-            _line_hour_pct(avg_hr["hour"], avg_hr["LPV/Cliques (%)"], "LPV/Cliques"),
-            use_container_width=True
-        )
-    with cB:
-        st.plotly_chart(
-            _line_hour_pct(avg_hr["hour"], avg_hr["Checkout/LPV (%)"], "Checkout/LPV"),
-            use_container_width=True
-        )
-    with cC:
-        st.plotly_chart(
-            _line_hour_pct(avg_hr["hour"], avg_hr["Compra/Checkout (%)"], "Compra/Checkout"),
-            use_container_width=True
-        )
-
+    fig_rates.update_layout(
+        title="Taxas por hora (%) — médias diárias (sinais puros, com cap de funil)",
+        xaxis_title="Hora do dia",
+        yaxis_title="Taxa (%)",
+        height=420, template="plotly_white",
+        margin=dict(l=10, r=10, t=48, b=10), separators=",.",
+        hovermode="x unified",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0)
+    )
+    fig_rates.update_xaxes(tickmode="linear", tick0=0, dtick=1, range=[-0.5, 23.5])
+    fig_rates.update_yaxes(range=[0, 100], ticksuffix="%")
+    st.plotly_chart(fig_rates, use_container_width=True)
 
     # ---------- 2B) TABELA: QUANTIDADES (NÃO %), somas do período ----------
     sums_raw = (
