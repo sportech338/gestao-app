@@ -1695,18 +1695,27 @@ with tab_daypart:
     cube_hr_all["LPV_cap"] = np.minimum(cube_hr_all["lpv"], cube_hr_all["link_clicks"])
     cube_hr_all["Checkout_cap"] = np.minimum(cube_hr_all["init_checkout"], cube_hr_all["LPV_cap"])
 
-    # ---- Taxas (frações 0–1)
+    # ---- Taxas (frações 0–1) — taxa da HORA (instantânea)
     cube_hr_all["tx_lpv_clicks"]      = cube_hr_all.apply(lambda r: _safe_div(r["LPV_cap"],      r["link_clicks"]),  axis=1)
     cube_hr_all["tx_checkout_lpv"]    = cube_hr_all.apply(lambda r: _safe_div(r["Checkout_cap"], r["LPV_cap"]),      axis=1)
     cube_hr_all["tx_compra_checkout"] = cube_hr_all.apply(lambda r: _safe_div(r["purchases"],    r["Checkout_cap"]), axis=1)
 
-    # ---- Média móvel (linha amarela) ----
-    show_ma = st.checkbox("Mostrar média móvel por hora", value=True, key="hr_show_ma")
-    ma_win  = st.slider("Janela da média móvel (horas)", 2, 6, 3, 1, key="hr_ma_window")
+    # ---- Linha cumulativa (até a hora) — soma horas para trás e calcula a taxa no acumulado
+    show_cum = st.checkbox("Mostrar linha cumulativa (até a hora)", value=True, key="hr_show_cum")
+    cum = cube_hr_all.sort_values("hour").copy()
+    cum["cum_clicks"] = cum["link_clicks"].cumsum()
+    cum["cum_lpv"]    = cum["lpv"].cumsum()
+    cum["cum_ic"]     = cum["init_checkout"].cumsum()
+    cum["cum_purch"]  = cum["purchases"].cumsum()
 
-    def _add_ma(y_vals, win):
-        s = pd.Series(y_vals, dtype="float")
-        return s.rolling(window=win, min_periods=1, center=True).mean().values
+    # cap no ACUMULADO
+    cum["LPV_cap_cum"]      = np.minimum(cum["cum_lpv"], cum["cum_clicks"])
+    cum["Checkout_cap_cum"] = np.minimum(cum["cum_ic"],  cum["LPV_cap_cum"])
+
+    # taxas cumulativas (frações 0–1)
+    tx_lpv_clicks_cum      = np.divide(cum["LPV_cap_cum"],      cum["cum_clicks"],      out=np.full(len(cum), np.nan), where=cum["cum_clicks"]>0)
+    tx_checkout_lpv_cum    = np.divide(cum["Checkout_cap_cum"], cum["LPV_cap_cum"],     out=np.full(len(cum), np.nan), where=cum["LPV_cap_cum"]>0)
+    tx_compra_checkout_cum = np.divide(cum["cum_purch"],        cum["Checkout_cap_cum"],out=np.full(len(cum), np.nan), where=cum["Checkout_cap_cum"]>0)
 
     # =================== CONTROLES — banda saudável ===================
     def _get_band_from_state(key, default_pair):
@@ -1729,7 +1738,7 @@ with tab_daypart:
             buy_co_low,  buy_co_high  = st.slider("Compra/Checkout alvo (%)", 0, 100, (_buy_lo_def, _buy_hi_def), 1, key="hr_band_buy_checkout")
 
     # =================== GRÁFICOS — 3 linhas de TAXAS (%) (EM CIMA) ===================
-    def _line_hour_pct(x, y, title, band_range=None, show_band=False, y_ma=None, ma_label="Média móvel"):
+    def _line_hour_pct(x, y, title, band_range=None, show_band=False, y_aux=None, aux_label="Cumulativa"):
         fig = go.Figure(go.Scatter(
             x=x, y=y, mode="lines+markers", name=title,
             hovertemplate=f"<b>{title}</b><br>Hora: %{{x}}h<br>Taxa: %{{y:.2f}}%<extra></extra>"
@@ -1743,10 +1752,10 @@ with tab_daypart:
                 x0=-0.5, x1=23.5, y0=lo, y1=hi,
                 fillcolor="rgba(34,197,94,0.10)", line=dict(width=0), layer="below"
             )
-        # linha amarela (média móvel)
-        if y_ma is not None:
+        # linha amarela cumulativa (até a hora)
+        if show_cum and y_aux is not None:
             fig.add_trace(go.Scatter(
-                x=x, y=y_ma, mode="lines", name=f"{ma_label} ({ma_win}h)",
+                x=x, y=y_aux, mode="lines", name=f"{aux_label}",
                 line=dict(width=3, color="#f59e0b")
             ))
         fig.update_layout(
@@ -1765,42 +1774,38 @@ with tab_daypart:
         return fig
 
     x_hours = cube_hr_all["hour"]
-    y1 = (cube_hr_all["tx_lpv_clicks"]*100).values
-    y2 = (cube_hr_all["tx_checkout_lpv"]*100).values
-    y3 = (cube_hr_all["tx_compra_checkout"]*100).values
-
-    y1_ma = _add_ma(y1, ma_win) if show_ma else None
-    y2_ma = _add_ma(y2, ma_win) if show_ma else None
-    y3_ma = _add_ma(y3, ma_win) if show_ma else None
 
     col1, col2, col3 = st.columns(3)
     with col1:
         st.plotly_chart(
             _line_hour_pct(
-                x_hours, y1,
+                x_hours, cube_hr_all["tx_lpv_clicks"]*100,
                 "LPV/Cliques (%)",
                 band_range=(lpv_cli_low, lpv_cli_high),
-                show_band=show_band_hour, y_ma=y1_ma
+                show_band=show_band_hour,
+                y_aux=tx_lpv_clicks_cum*100, aux_label="Cumulativa (até a hora)"
             ),
             use_container_width=True
         )
     with col2:
         st.plotly_chart(
             _line_hour_pct(
-                x_hours, y2,
+                x_hours, cube_hr_all["tx_checkout_lpv"]*100,
                 "Checkout/LPV (%)",
                 band_range=(co_lpv_low, co_lpv_high),
-                show_band=show_band_hour, y_ma=y2_ma
+                show_band=show_band_hour,
+                y_aux=tx_checkout_lpv_cum*100, aux_label="Cumulativa (até a hora)"
             ),
             use_container_width=True
         )
     with col3:
         st.plotly_chart(
             _line_hour_pct(
-                x_hours, y3,
+                x_hours, cube_hr_all["tx_compra_checkout"]*100,
                 "Compra/Checkout (%)",
                 band_range=(buy_co_low, buy_co_high),
-                show_band=show_band_hour, y_ma=y3_ma
+                show_band=show_band_hour,
+                y_aux=tx_compra_checkout_cum*100, aux_label="Cumulativa (até a hora)"
             ),
             use_container_width=True
         )
