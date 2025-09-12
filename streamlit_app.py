@@ -1700,6 +1700,14 @@ with tab_daypart:
     cube_hr_all["tx_checkout_lpv"]    = cube_hr_all.apply(lambda r: _safe_div(r["Checkout_cap"], r["LPV_cap"]),      axis=1)
     cube_hr_all["tx_compra_checkout"] = cube_hr_all.apply(lambda r: _safe_div(r["purchases"],    r["Checkout_cap"]), axis=1)
 
+    # ---- Média móvel (linha amarela) ----
+    show_ma = st.checkbox("Mostrar média móvel por hora", value=True, key="hr_show_ma")
+    ma_win  = st.slider("Janela da média móvel (horas)", 2, 6, 3, 1, key="hr_ma_window")
+
+    def _add_ma(y_vals, win):
+        s = pd.Series(y_vals, dtype="float")
+        return s.rolling(window=win, min_periods=1, center=True).mean().values
+
     # =================== CONTROLES — banda saudável ===================
     def _get_band_from_state(key, default_pair):
         v = st.session_state.get(key)
@@ -1721,7 +1729,7 @@ with tab_daypart:
             buy_co_low,  buy_co_high  = st.slider("Compra/Checkout alvo (%)", 0, 100, (_buy_lo_def, _buy_hi_def), 1, key="hr_band_buy_checkout")
 
     # =================== GRÁFICOS — 3 linhas de TAXAS (%) (EM CIMA) ===================
-    def _line_hour_pct(x, y, title, band_range=None, show_band=False):
+    def _line_hour_pct(x, y, title, band_range=None, show_band=False, y_ma=None, ma_label="Média móvel"):
         fig = go.Figure(go.Scatter(
             x=x, y=y, mode="lines+markers", name=title,
             hovertemplate=f"<b>{title}</b><br>Hora: %{{x}}h<br>Taxa: %{{y:.2f}}%<extra></extra>"
@@ -1735,7 +1743,12 @@ with tab_daypart:
                 x0=-0.5, x1=23.5, y0=lo, y1=hi,
                 fillcolor="rgba(34,197,94,0.10)", line=dict(width=0), layer="below"
             )
-
+        # linha amarela (média móvel)
+        if y_ma is not None:
+            fig.add_trace(go.Scatter(
+                x=x, y=y_ma, mode="lines", name=f"{ma_label} ({ma_win}h)",
+                line=dict(width=3, color="#f59e0b")
+            ))
         fig.update_layout(
             title=title,
             xaxis_title="Hora do dia",
@@ -1752,35 +1765,42 @@ with tab_daypart:
         return fig
 
     x_hours = cube_hr_all["hour"]
+    y1 = (cube_hr_all["tx_lpv_clicks"]*100).values
+    y2 = (cube_hr_all["tx_checkout_lpv"]*100).values
+    y3 = (cube_hr_all["tx_compra_checkout"]*100).values
+
+    y1_ma = _add_ma(y1, ma_win) if show_ma else None
+    y2_ma = _add_ma(y2, ma_win) if show_ma else None
+    y3_ma = _add_ma(y3, ma_win) if show_ma else None
 
     col1, col2, col3 = st.columns(3)
     with col1:
         st.plotly_chart(
             _line_hour_pct(
-                x_hours, cube_hr_all["tx_lpv_clicks"]*100,
+                x_hours, y1,
                 "LPV/Cliques (%)",
                 band_range=(lpv_cli_low, lpv_cli_high),
-                show_band=show_band_hour
+                show_band=show_band_hour, y_ma=y1_ma
             ),
             use_container_width=True
         )
     with col2:
         st.plotly_chart(
             _line_hour_pct(
-                x_hours, cube_hr_all["tx_checkout_lpv"]*100,
+                x_hours, y2,
                 "Checkout/LPV (%)",
                 band_range=(co_lpv_low, co_lpv_high),
-                show_band=show_band_hour
+                show_band=show_band_hour, y_ma=y2_ma
             ),
             use_container_width=True
         )
     with col3:
         st.plotly_chart(
             _line_hour_pct(
-                x_hours, cube_hr_all["tx_compra_checkout"]*100,
+                x_hours, y3,
                 "Compra/Checkout (%)",
                 band_range=(buy_co_low, buy_co_high),
-                show_band=show_band_hour
+                show_band=show_band_hour, y_ma=y3_ma
             ),
             use_container_width=True
         )
