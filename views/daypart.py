@@ -1,4 +1,3 @@
-# views/daypart.py
 from __future__ import annotations
 
 import numpy as np
@@ -62,7 +61,9 @@ def render_daypart_tab(act_id: str, token: str, api_version: str, since, until):
     if min_spend > 0:
         cube_hm = cube_hm[cube_hm["spend"] >= min_spend]
 
-    metric_hm = st.selectbox("Métrica do heatmap", ["Compras", "Faturamento", "Gasto", "ROAS"], index=0, key="hm_metric_top")
+    metric_hm = st.selectbox(
+        "Métrica do heatmap", ["Compras", "Faturamento", "Gasto", "ROAS"], index=0, key="hm_metric_top"
+    )
     mcol = {"Compras": "purchases", "Faturamento": "revenue", "Gasto": "spend", "ROAS": "roas"}[metric_hm]
 
     if mcol == "roas":
@@ -253,6 +254,29 @@ def render_daypart_tab(act_id: str, token: str, api_version: str, since, until):
         )
 
     st.caption("A linha amarela (opcional) mostra as taxas cumulativas até a hora. As faixas verdes indicam a banda saudável.")
+
+    # --- TABELA — Contagens por hora (apenas quantidades) ---
+    st.markdown("---")
+    st.subheader("📋 Contagens por hora (período selecionado)")
+
+    taxas_qtd = cube_hr_all[[
+        "hour", "link_clicks", "lpv", "init_checkout", "add_payment", "purchases"
+    ]].copy().rename(columns={
+        "hour": "Hora",
+        "link_clicks": "Cliques",
+        "lpv": "LPV",
+        "init_checkout": "Checkout",
+        "add_payment": "Add Pagto",
+        "purchases": "Compras",
+    })
+
+    st.dataframe(taxas_qtd, use_container_width=True, height=360)
+    st.download_button(
+        "⬇️ Baixar CSV — Contagens por hora",
+        data=taxas_qtd.to_csv(index=False).encode("utf-8-sig"),
+        file_name="contagens_por_hora.csv",
+        mime="text/csv",
+    )
 
     st.markdown("---")
 
