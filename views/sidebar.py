@@ -32,6 +32,7 @@ def sidebar_controls():
         until = st.sidebar.date_input("Até", value=_until_auto, key="until_custom")
     else:
         since, until = _since_auto, _until_auto
+
     st.sidebar.caption(f"**Desde:** {since} \n**Até:** {until}")
     ready = bool(act_id and token)
     return act_id, token, api_version, level, preset, since, until, ready
