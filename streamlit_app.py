@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -1721,72 +1720,121 @@ with tab_daypart:
         with b3:
             buy_co_low,  buy_co_high  = st.slider("Compra/Checkout alvo (%)", 0, 100, (_buy_lo_def, _buy_hi_def), 1, key="hr_band_buy_checkout")
 
-    # =================== GRÁFICOS — 3 linhas de TAXAS (%) (EM CIMA) ===================
-    def _line_hour_pct(x, y, title, band_range=None, show_band=False):
-        fig = go.Figure(go.Scatter(
-            x=x, y=y, mode="lines+markers", name=title,
-            hovertemplate=f"<b>{title}</b><br>Hora: %{{x}}h<br>Taxa: %{{y:.2f}}%<extra></extra>"
-        ))
-        # banda saudável (faixa alvo)
-        if show_band and band_range and len(band_range) == 2:
-            lo, hi = band_range
-            # retângulo de -0.5 a 23.5 para cobrir o eixo inteiro
-            fig.add_shape(
-                type="rect", xref="x", yref="y",
-                x0=-0.5, x1=23.5, y0=lo, y1=hi,
-                fillcolor="rgba(34,197,94,0.10)", line=dict(width=0), layer="below"
-            )
+# =================== GRÁFICOS — 3 linhas de TAXAS (%) (EM CIMA) ===================
+def _line_hour_pct(x, y, title, band_range=None, show_band=False):
+    import numpy as np
+    import pandas as pd
+    import plotly.graph_objects as go
 
-        fig.update_layout(
-            title=title,
-            xaxis_title="Hora do dia",
-            yaxis_title="Taxa (%)",
-            height=340,
-            template="plotly_white",
-            margin=dict(l=10, r=10, t=48, b=10),
-            separators=",.",
-            hovermode="x unified",
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+    fig = go.Figure(
+        go.Scatter(
+            x=x,
+            y=y,
+            mode="lines+markers",
+            name=title,
+            hovertemplate=f"<b>{title}</b><br>Hora: %{{x}}h<br>Taxa: %{{y:.2f}}%<extra></extra>",
         )
-        fig.update_xaxes(tickmode="linear", tick0=0, dtick=1, range=[-0.5, 23.5])
-        fig.update_yaxes(range=[0, 100], ticksuffix="%")
-        return fig
+    )
 
-    x_hours = cube_hr_all["hour"]
-
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.plotly_chart(
-            _line_hour_pct(
-                x_hours, cube_hr_all["tx_lpv_clicks"]*100,
-                "LPV/Cliques (%)",
-                band_range=(lpv_cli_low, lpv_cli_high),
-                show_band=show_band_hour
-            ),
-            use_container_width=True
-        )
-    with col2:
-        st.plotly_chart(
-            _line_hour_pct(
-                x_hours, cube_hr_all["tx_checkout_lpv"]*100,
-                "Checkout/LPV (%)",
-                band_range=(co_lpv_low, co_lpv_high),
-                show_band=show_band_hour
-            ),
-            use_container_width=True
-        )
-    with col3:
-        st.plotly_chart(
-            _line_hour_pct(
-                x_hours, cube_hr_all["tx_compra_checkout"]*100,
-                "Compra/Checkout (%)",
-                band_range=(buy_co_low, buy_co_high),
-                show_band=show_band_hour
-            ),
-            use_container_width=True
+    if show_band and band_range and len(band_range) == 2:
+        lo, hi = band_range
+        fig.add_shape(
+            type="rect",
+            xref="x",
+            yref="y",
+            x0=-0.5,
+            x1=23.5,
+            y0=lo,
+            y1=hi,
+            fillcolor="rgba(34,197,94,0.10)",
+            line=dict(width=0),
+            layer="below",
         )
 
-    st.markdown("---")
+    y_series = pd.Series(y, index=pd.Index(x, name="hour"), dtype="float64")
+    running_avg = y_series.expanding(min_periods=1).mean().values
+
+    fig.add_trace(
+        go.Scatter(
+            x=x,
+            y=running_avg,
+            mode="lines",
+            name="Média acumulada",
+            line=dict(color="#f59e0b", width=3),
+            hovertemplate="<b>Média acumulada</b><br>Hora: %{x}h<br>Taxa: %{y:.2f}%<extra></extra>",
+        )
+    )
+
+    try:
+        last_x = x.iloc[-1] if hasattr(x, "iloc") else list(x)[-1]
+        last_avg = float(running_avg[-1])
+        fig.add_annotation(
+            x=last_x,
+            y=last_avg,
+            showarrow=False,
+            text=f"Média: {last_avg:.2f}%",
+            font=dict(color="#f59e0b", size=12),
+            xanchor="right",
+            yanchor="bottom",
+            xshift=-6,
+            yshift=6,
+        )
+    except Exception:
+        pass
+
+    fig.update_layout(
+        title=title,
+        xaxis_title="Hora do dia",
+        yaxis_title="Taxa (%)",
+        height=340,
+        template="plotly_white",
+        margin=dict(l=10, r=10, t=48, b=10),
+        separators=",.",
+        hovermode="x unified",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+    )
+    fig.update_xaxes(tickmode="linear", tick0=0, dtick=1, range=[-0.5, 23.5])
+    fig.update_yaxes(range=[0, 100], ticksuffix="%")
+
+    return fig
+
+
+# ===== chamadas dos 3 gráficos (fora da função) =====
+x_hours = cube_hr_all["hour"]
+
+col1, col2, col3 = st.columns(3)
+with col1:
+    st.plotly_chart(
+        _line_hour_pct(
+            x_hours, cube_hr_all["tx_lpv_clicks"]*100,
+            "LPV/Cliques (%)",
+            band_range=(lpv_cli_low, lpv_cli_high),
+            show_band=show_band_hour
+        ),
+        use_container_width=True
+    )
+with col2:
+    st.plotly_chart(
+        _line_hour_pct(
+            x_hours, cube_hr_all["tx_checkout_lpv"]*100,
+            "Checkout/LPV (%)",
+            band_range=(co_lpv_low, co_lpv_high),
+            show_band=show_band_hour
+        ),
+        use_container_width=True
+    )
+with col3:
+    st.plotly_chart(
+        _line_hour_pct(
+            x_hours, cube_hr_all["tx_compra_checkout"]*100,
+            "Compra/Checkout (%)",
+            band_range=(buy_co_low, buy_co_high),
+            show_band=show_band_hour
+        ),
+        use_container_width=True
+    )
+
+st.markdown("---")
 
     # =================== TABELA — mostrar APENAS QUANTIDADES (EMBAIXO) ===================
     taxas_qtd = cube_hr_all[[
