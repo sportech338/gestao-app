@@ -18,9 +18,7 @@ def render_daily_tab(df_daily: pd.DataFrame,
                      level: str,
                      since,
                      until) -> None:
-    """Aba 'Visão diária' simplificada: moeda, filtro por produto, KPIs,
-    série diária e funil total do período.
-    """
+    """Aba 'Visão diária': moeda, filtro por produto, KPIs, série diária e funil total."""
 
     # ---- Guardas mínimos (evita quebra se colunas faltarem) ----
     needed_cols = {
@@ -30,7 +28,7 @@ def render_daily_tab(df_daily: pd.DataFrame,
     missing = [c for c in needed_cols if c not in df_daily.columns]
     if missing:
         st.warning(f"As colunas a seguir estão faltando nos dados: {', '.join(missing)}")
-    # cria colunas vazias que faltarem para não quebrar os .sum()
+    df_daily = df_daily.copy()
     for c in missing:
         if c == "date":
             df_daily["date"] = pd.to_datetime(pd.NaT)
@@ -39,7 +37,7 @@ def render_daily_tab(df_daily: pd.DataFrame,
         else:
             df_daily[c] = 0.0
 
-    # moeda detectada
+    # ---- Moeda detectada ----
     currency_detected = (
         df_daily["currency"].dropna().iloc[0]
         if "currency" in df_daily.columns and not df_daily["currency"].dropna().empty
@@ -53,14 +51,18 @@ def render_daily_tab(df_daily: pd.DataFrame,
             st.caption("⚠️ Símbolo **R$** só para formatação visual. Valores permanecem na moeda da conta.")
         st.caption(f"Moeda da conta: **{currency_detected}**")
 
-    # filtro por produto
+    # ---- Filtro por produto ----
     produto_sel = st.selectbox("Filtrar por produto (opcional)", ["(Todos)"] + PRODUTOS, key="daily_produto")
+    # persiste para outras abas usarem
+    st.session_state["daily_produto"] = produto_sel
+
     df_view = filter_by_product(df_daily, produto_sel)
     if df_view is None or df_view.empty:
         st.info("Sem dados para o produto selecionado nesse período.")
         return
+    df_view = df_view.copy()
 
-    # KPIs totais
+    # ---- KPIs totais ----
     tot_spend = float(df_view["spend"].sum())
     tot_purch = float(df_view["purchases"].sum())
     tot_rev   = float(df_view["revenue"].sum())
@@ -90,21 +92,24 @@ def render_daily_tab(df_daily: pd.DataFrame,
 
     st.divider()
 
-    # Série diária
+    # ---- Série diária (Gasto x Faturamento) ----
     st.subheader("Série diária — Investimento e Conversão")
+    # garante datetime e remove NaT
+    df_view["date"] = pd.to_datetime(df_view["date"], errors="coerce")
     daily = (
-        df_view.groupby("date", as_index=False)[["spend", "revenue"]]
-        .sum()
-        .rename(columns={"spend": "Gasto", "revenue": "Faturamento"})
+        df_view.dropna(subset=["date"])
+               .groupby("date", as_index=False)[["spend", "revenue"]]
+               .sum()
+               .rename(columns={"spend": "Gasto", "revenue": "Faturamento"})
+               .sort_values("date")
     )
-    # garante que 'date' é datetime e ordena
-    if not np.issubdtype(daily["date"].dtype, np.datetime64):
-        daily["date"] = pd.to_datetime(daily["date"], errors="coerce")
-    daily = daily.sort_values("date")
-    st.line_chart(daily.set_index("date")[["Faturamento", "Gasto"]])
-    st.caption("Linhas diárias de Receita e Gasto.")
+    if daily.empty:
+        st.info("Sem datas válidas para plotar a série diária.")
+    else:
+        st.line_chart(daily.set_index("date")[["Faturamento", "Gasto"]])
+        st.caption("Linhas diárias de Receita e Gasto.")
 
-    # Funil total
+    # ---- Funil total (Cliques → LPV → Checkout → Add Pagamento → Compra) ----
     st.subheader("Funil do período (Total) — Cliques → LPV → Checkout → Add Pagamento → Compra")
     f_clicks = float(df_view["link_clicks"].sum())
     f_lpv    = float(df_view["lpv"].sum())
@@ -113,22 +118,13 @@ def render_daily_tab(df_daily: pd.DataFrame,
     f_pur    = float(df_view["purchases"].sum())
 
     labels_total = ["Cliques", "LPV", "Checkout", "Add Pagamento", "Compra"]
-    values_total = [
-        int(round(f_clicks)),
-        int(round(f_lpv)),
-        int(round(f_ic)),
-        int(round(f_api)),
-        int(round(f_pur)),
-    ]
+    values_total = [int(round(f_clicks)), int(round(f_lpv)), int(round(f_ic)), int(round(f_api)), int(round(f_pur))]
 
     force_shape = st.checkbox("Forçar formato de funil (sempre decrescente)", value=True)
     values_plot = enforce_monotonic(values_total) if force_shape else values_total
 
-    st.plotly_chart(
-        funnel_fig(labels_total, values_plot, title="Funil do período"),
-        use_container_width=True
-    )
+    st.plotly_chart(funnel_fig(labels_total, values_plot, title="Funil do período"), use_container_width=True)
 
-    # espaço para evolução futura (taxas/bandas/comparativos)
+    # ---- Espaço para evoluções futuras ----
     with st.expander("Extras (em breve)"):
-        st.write("Você pode colar aqui os gráficos de taxas/deltas/comparativos do seu código original.")
+        st.write("Você pode colar aqui gráficos de taxas/deltas/comparativos do seu código original.")
