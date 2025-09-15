@@ -1737,6 +1737,59 @@ with tab_daypart:
         with b3:
             buy_co_low,  buy_co_high  = st.slider("Compra/Checkout alvo (%)", 0, 100, (_buy_lo_def, _buy_hi_def), 1, key="hr_band_buy_checkout")
 
+    # =================== INDICADORES — médias do período (com cap) ===================
+    st.markdown("### Resumo das taxas (período filtrado)")
+
+    # pega o último ponto do acumulado do dia (representa o período inteiro)
+    _last = cum.iloc[-1]
+    _clicks_tot   = float(_last["cum_clicks"])
+    _lpv_cap_tot  = float(_last["LPV_cap_cum"])
+    _chk_cap_tot  = float(_last["Checkout_cap_cum"])
+    _purch_tot    = float(_last["cum_purch"])
+
+    # médias do período (frações 0–1) com cap no acumulado
+    avg_lpv_clicks   = _safe_div(_lpv_cap_tot, _clicks_tot)
+    avg_chk_lpv      = _safe_div(_chk_cap_tot, _lpv_cap_tot)
+    avg_buy_checkout = _safe_div(_purch_tot,   _chk_cap_tot)
+
+    # formato %
+    def _pct(x): 
+        return "–" if (x is None or np.isnan(x)) else f"{x*100:,.2f}%"
+
+    # cards bonitos tipo o exemplo (escuros e com número grande)
+    card_css = """
+    <style>
+    .kpi-wrap {display:grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 14px; margin: 6px 0 12px;}
+    .kpi {
+      background: #0f172a; /* slate-900 */
+      border: 1px solid #1f2937; /* gray-800 */
+      border-radius: 12px; padding: 14px 16px;
+    }
+    .kpi h4 {margin: 0 0 6px; font-size: 0.92rem; color: #cbd5e1; font-weight: 600;}
+    .kpi .val {font-size: 2rem; font-weight: 700; color: #ffffff; letter-spacing: .2px;}
+    @media (max-width: 900px){ .kpi-wrap{grid-template-columns:1fr;}}
+    </style>
+    """
+    st.markdown(card_css, unsafe_allow_html=True)
+
+    cards_html = f"""
+    <div class="kpi-wrap">
+      <div class="kpi">
+        <h4>LPV/Cliques (média)</h4>
+        <div class="val">{_pct(avg_lpv_clicks)}</div>
+      </div>
+      <div class="kpi">
+        <h4>Checkout/LPV (média)</h4>
+        <div class="val">{_pct(avg_chk_lpv)}</div>
+      </div>
+      <div class="kpi">
+        <h4>Compra/Checkout (média)</h4>
+        <div class="val">{_pct(avg_buy_checkout)}</div>
+      </div>
+    </div>
+    """
+    st.markdown(cards_html, unsafe_allow_html=True)
+
     # =================== GRÁFICOS — 3 linhas de TAXAS (%) (EM CIMA) ===================
     def _line_hour_pct(x, y, title, band_range=None, show_band=False, y_aux=None, aux_label="Cumulativa"):
         fig = go.Figure(go.Scatter(
