@@ -1737,10 +1737,10 @@ with tab_daypart:
         with b3:
             buy_co_low,  buy_co_high  = st.slider("Compra/Checkout alvo (%)", 0, 100, (_buy_lo_def, _buy_hi_def), 1, key="hr_band_buy_checkout")
 
-    # =================== INDICADORES — médias do período (com cap) + cores ===================
+    # =================== INDICADORES — médias do período (com cap) ===================
     st.markdown("### Resumo das taxas (período filtrado)")
 
-    # pega o último ponto do acumulado (representa o período inteiro)
+    # pega o último ponto do acumulado do dia (representa o período inteiro)
     _last = cum.iloc[-1]
     _clicks_tot   = float(_last["cum_clicks"])
     _lpv_cap_tot  = float(_last["LPV_cap_cum"])
@@ -1752,59 +1752,43 @@ with tab_daypart:
     avg_chk_lpv      = _safe_div(_chk_cap_tot, _lpv_cap_tot)
     avg_buy_checkout = _safe_div(_purch_tot,   _chk_cap_tot)
 
-    def _pct_txt(x):
-        return "—" if (x is None or np.isnan(x)) else f"{x*100:,.2f}%".replace(",", "X").replace(".", ",").replace("X", ".")
+    # formato %
+    def _pct(x): 
+        return "–" if (x is None or np.isnan(x)) else f"{x*100:,.2f}%"
 
-    # status -> cor
-    def _status_color(val, lo, hi):
-        if val is None or not np.isfinite(val):
-            return "sem", "#9ca3af"
-        v = val * 100.0
-        if v < lo:
-            return "abaixo", "#dc2626"   # vermelho
-        if v > hi:
-            return "acima", "#0ea5e9"   # azul
-        return "dentro", "#16a34a"      # verde
-
-    s1, c1 = _status_color(avg_lpv_clicks,   lpv_cli_low, lpv_cli_high)
-    s2, c2 = _status_color(avg_chk_lpv,      co_lpv_low,  co_lpv_high)
-    s3, c3 = _status_color(avg_buy_checkout, buy_co_low,  buy_co_high)
-
-    # CSS dos cards
-    kpi_css = f"""
+    # cards bonitos tipo o exemplo (escuros e com número grande)
+    card_css = """
     <style>
-    .kpi-wrap {{display:grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap:14px; margin:6px 0 12px;}}
-    .kpi {{
-      background:#0f172a; border:1px solid #1f2937; border-radius:12px; padding:14px 16px;
-    }}
-    .kpi h4 {{margin:0 0 6px; font-size:.92rem; color:#cbd5e1; font-weight:600;}}
-    .kpi .val {{font-size:2rem; font-weight:700; color:#fff; letter-spacing:.2px;}}
-    .pill {{display:inline-block; margin-top:6px; font-size:.75rem; padding:2px 8px; border-radius:999px; background:#111827; border:1px solid #1f2937; color:#cbd5e1;}}
-    @media (max-width:900px){{ .kpi-wrap{{grid-template-columns:1fr;}} }}
+    .kpi-wrap {display:grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 14px; margin: 6px 0 12px;}
+    .kpi {
+      background: #0f172a; /* slate-900 */
+      border: 1px solid #1f2937; /* gray-800 */
+      border-radius: 12px; padding: 14px 16px;
+    }
+    .kpi h4 {margin: 0 0 6px; font-size: 0.92rem; color: #cbd5e1; font-weight: 600;}
+    .kpi .val {font-size: 2rem; font-weight: 700; color: #ffffff; letter-spacing: .2px;}
+    @media (max-width: 900px){ .kpi-wrap{grid-template-columns:1fr;}}
     </style>
     """
-    st.markdown(kpi_css, unsafe_allow_html=True)
-
-    def _card(title, value_txt, color_hex, status_txt):
-        return f"""
-        <div class="kpi" style="border-left:6px solid {color_hex}">
-          <h4>{title}</h4>
-          <div class="val" style="color:{color_hex}">{value_txt}</div>
-          <span class="pill">{status_txt.title()}</span>
-        </div>
-        """
+    st.markdown(card_css, unsafe_allow_html=True)
 
     cards_html = f"""
     <div class="kpi-wrap">
-      {_card("LPV/Cliques (média)",   _pct_txt(avg_lpv_clicks),   c1, s1)}
-      {_card("Checkout/LPV (média)",  _pct_txt(avg_chk_lpv),      c2, s2)}
-      {_card("Compra/Checkout (média)", _pct_txt(avg_buy_checkout), c3, s3)}
+      <div class="kpi">
+        <h4>LPV/Cliques (média)</h4>
+        <div class="val">{_pct(avg_lpv_clicks)}</div>
+      </div>
+      <div class="kpi">
+        <h4>Checkout/LPV (média)</h4>
+        <div class="val">{_pct(avg_chk_lpv)}</div>
+      </div>
+      <div class="kpi">
+        <h4>Compra/Checkout (média)</h4>
+        <div class="val">{_pct(avg_buy_checkout)}</div>
+      </div>
     </div>
     """
     st.markdown(cards_html, unsafe_allow_html=True)
-
-    # =================== GRÁFICOS — 3 linhas de TAXAS (%) (EM CIMA) ===================
-
 
     # =================== GRÁFICOS — 3 linhas de TAXAS (%) (EM CIMA) ===================
     def _line_hour_pct(x, y, title, band_range=None, show_band=False, y_aux=None, aux_label="Cumulativa"):
