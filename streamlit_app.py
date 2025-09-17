@@ -2638,7 +2638,7 @@ with tab_detail:
             "Add Pagto/Checkout B", "Compra/Add Pagto B",
         ]
 
-        RED_TRANSP  = "rgba(239, 68, 68, 0.15)"   # Período A
+        ORANGE_TRANSP  = "rgba(255, 165, 0, 0.15)"   # Período A
         BLUE_TRANSP = "rgba(59, 130, 246, 0.15)"  # Período B
 
         def _style_rate_columns(df: pd.DataFrame, rate_cols: list[str], rgba_bg: str):
@@ -2659,7 +2659,7 @@ with tab_detail:
             ]
             return sty.set_table_styles(header_styles)
 
-        A_styled = _style_rate_columns(A_fmt, RATE_COLS_A, RED_TRANSP)
+        A_styled = _style_rate_columns(A_fmt, RATE_COLS_A, ORANGE_TRANSP)
         B_styled = _style_rate_columns(B_fmt, RATE_COLS_B, BLUE_TRANSP)
 
         # ------- EXIBIÇÃO: duas tabelas separadas -------
