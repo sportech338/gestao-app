@@ -2392,7 +2392,7 @@ with tab_detail:
     }
 
     level_bd = level
-    if dimensao == "Posicionamento" e level_bd not in ["adset", "ad"]:
+    if dimensao == "Posicionamento" and level_bd not in ["adset", "ad"]:
         level_bd = "adset"
 
     if dimensao in dim_to_breakdowns:
