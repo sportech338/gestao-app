@@ -2725,11 +2725,8 @@ with tab_detail:
                 return ""
 
             st.markdown("#### Variação — Taxas (p.p.)")
-            st.dataframe(
-                deltas_pp.style.applymap(_style_delta_bg, subset=pp_cols),
-                use_container_width=True,
-                height=300,
-            )
+            # IMPORTANTE: usar st.table para manter o estilo do Styler
+            st.table(deltas_pp.style.applymap(_style_delta_bg, subset=pp_cols))
 
         st.caption(
             f"Período A: **{_fmt_range_br(since_A, until_A)}**  |  "
