@@ -2317,36 +2317,14 @@ with tab_detail:
         )
         st.plotly_chart(fig, use_container_width=True)
 
-    # === Cores e legenda para comparação de períodos ===
+    # === Cores/legenda de períodos ===
     COLOR_A = "#636EFA"  # azul
     COLOR_B = "#EF553B"  # laranja
 
     def _fmt_range_br(d1, d2) -> str:
-        """Converte (date|str) -> 'dd/mm/aaaa → dd/mm/aaaa'."""
         d1 = pd.to_datetime(str(d1)).date()
         d2 = pd.to_datetime(str(d2)).date()
         return f"{d1.strftime('%d/%m/%Y')} → {d2.strftime('%d/%m/%Y')}"
-
-    def _legend_periodos(labelA: str, labelB: str | None):
-        # legenda própria (fora do gráfico) pra não embolar
-        if not labelB:
-            st.caption(f"🟦 **Período A:** {labelA}")
-            return
-        st.markdown(
-            f"""
-            <div style="display:flex; gap:22px; align-items:center; margin:6px 0 6px;">
-              <div>
-                <span style="display:inline-block;width:14px;height:14px;background:{COLOR_A};border-radius:3px;margin-right:6px;"></span>
-                <b>Período A</b>: {labelA}
-              </div>
-              <div>
-                <span style="display:inline-block;width:14px;height:14px;background:{COLOR_B};border-radius:3px;margin-right:6px;"></span>
-                <b>Período B</b>: {labelB}
-              </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
 
     # ========= Helpers p/ taxas =========
     def _rates_from_raw(df: pd.DataFrame, group_cols: list[str]) -> pd.DataFrame:
@@ -2357,50 +2335,6 @@ with tab_detail:
         df["Add Pagto/Checkout"] = df.apply(lambda r: _safe_div(r["add_payment"], r["init_checkout"]), axis=1)
         df["Compra/Add Pagto"]   = df.apply(lambda r: _safe_div(r["purchases"], r["add_payment"]), axis=1)
         return df
-
-    def _compare_rate_chart(rate_col, dim_col, dfA, dfB=None, labelA="Período A", labelB="Período B"):
-        x = dfA[dim_col].astype(str)
-        fig = go.Figure()
-
-        # Série A (azul)
-        fig.add_bar(
-            name=labelA,
-            x=x,
-            y=dfA[rate_col],
-            text=dfA[rate_col],
-            texttemplate="%{text:.0%}",
-            textposition="outside",
-            hovertemplate=f"{dim_col}: %{{x}}<br>{rate_col}: %{{y:.2%}}<extra></extra>",
-            marker_color=COLOR_A,
-        )
-
-        # Série B (laranja), alinhando categorias
-        if dfB is not None:
-            dfB2 = dfB.set_index(dim_col).reindex(x).reset_index()
-            fig.add_bar(
-                name=labelB,
-                x=x,
-                y=dfB2[rate_col],
-                text=dfB2[rate_col],
-                texttemplate="%{text:.0%}",
-                textposition="outside",
-                hovertemplate=f"{dim_col}: %{{x}}<br>{rate_col}: %{{y:.2%}}<extra></extra>",
-                marker_color=COLOR_B,
-            )
-
-        fig.update_layout(
-            barmode="group",
-            title=f"{rate_col} por {dim_col}",
-            xaxis_title=dim_col,
-            yaxis_title="Taxa",
-            yaxis=dict(tickformat=".0%"),
-            height=420,
-            template="plotly_white",
-            margin=dict(l=10, r=10, t=48, b=10),
-            separators=",.",
-            showlegend=False,  # <<< evita a legenda do Plotly embolar com o título
-        )
-        st.plotly_chart(fig, use_container_width=True)
 
     # ========= POPULARES =========
     if dimensao == "Populares":
@@ -2490,27 +2424,80 @@ with tab_detail:
         }
         group_cols = [rename_map.get(c, c) for c in bks]
 
-        raw, disp = _agg_and_format(df_bd.rename(columns=rename_map), group_cols)
-        if disp.empty:
-            st.info(f"Sem dados para {dimensao} após aplicar filtros.")
-            st.stop()
+        # --- A (período atual do topo da página)
+        raw_A, _ = _agg_and_format(df_bd.rename(columns=rename_map), group_cols)
+        raw_A = _rates_from_raw(raw_A, group_cols)
+        labelA = _fmt_range_br(since, until)
+
+        # --- B (opcional)
+        compare = st.checkbox("Comparar com outro período", value=True, key="det_compare_rates")
+
+        df_B_rates = None
+        labelB = None
+        if compare:
+            from datetime import timedelta
+
+            since_dt = pd.to_datetime(str(since)).date()
+            until_dt = pd.to_datetime(str(until)).date()
+            delta = until_dt - since_dt
+
+            colp1, colp2 = st.columns(2)
+            with colp1:
+                perA = st.date_input(
+                    "Período A", (since_dt, until_dt),
+                    key="perA_det_rates", format="DD/MM/YYYY"
+                )
+            with colp2:
+                default_b_end = since_dt - timedelta(days=1)
+                default_b_start = default_b_end - delta
+                perB = st.date_input(
+                    "Período B", (default_b_start, default_b_end),
+                    key="perB_det_rates", format="DD/MM/YYYY"
+                )
+
+            since_A, until_A = perA
+            since_B, until_B = perB
+
+            # refaz A com o intervalo customizado
+            df_A = fetch_insights_breakdown(
+                act_id, token, api_version, str(since_A), str(until_A),
+                bks, level_bd, product_name=st.session_state.get("det_produto")
+            )
+            raw_A, _ = _agg_and_format(df_A.rename(columns=rename_map), group_cols)
+            raw_A = _rates_from_raw(raw_A, group_cols)
+            labelA = _fmt_range_br(since_A, until_A)
+
+            # carrega B
+            df_B = fetch_insights_breakdown(
+                act_id, token, api_version, str(since_B), str(until_B),
+                bks, level_bd, product_name=st.session_state.get("det_produto")
+            )
+            raw_B, _ = _agg_and_format(df_B.rename(columns=rename_map), group_cols)
+            raw_B = _rates_from_raw(raw_B, group_cols)
+            labelB = _fmt_range_br(since_B, until_B)
+        else:
+            raw_B = None
 
         st.subheader(f"Desempenho por {dimensao}")
 
-        # ----- gráfico logo abaixo do título -----
+        # ----- gráfico de compras por dimensão (mantido) -----
         if len(group_cols) == 1:
             xlab = group_cols[0]
-            _bar_chart(raw[xlab], raw["purchases"], f"Compras por {xlab}", xlab, "Compras")
+            _bar_chart(raw_A[xlab], raw_A["purchases"], f"Compras por {xlab}", xlab, "Compras")
         else:
             idx, col = group_cols
-            pvt = raw.pivot_table(index=idx, columns=col, values="purchases", aggfunc="sum").fillna(0)
+            pvt = raw_A.pivot_table(index=idx, columns=col, values="purchases", aggfunc="sum").fillna(0)
             fig = go.Figure(
                 data=go.Heatmap(
                     z=pvt.values,
                     x=pvt.columns.astype(str),
                     y=pvt.index.astype(str),
                     colorbar=dict(title="Compras"),
-                    hovertemplate=f"{idx}: " + "%{y}<br>" + f"{col}: " + "%{x}<br>" + "Compras: %{z}<extra></extra>",
+                    hovertemplate=(
+                        f"{idx}: " + "%{y}<br>"
+                        + f"{col}: " + "%{x}<br>"
+                        + "Compras: %{z}<extra></extra>"
+                    ),
                 )
             )
             fig.update_layout(
@@ -2522,120 +2509,168 @@ with tab_detail:
             )
             st.plotly_chart(fig, use_container_width=True)
 
-        # ----- tabela integrada com taxas -----
-        raw = _rates_from_raw(raw, group_cols)
-
-        disp = raw.rename(
-            columns={
-                "link_clicks": "Cliques",
-                "lpv": "LPV",
-                "init_checkout": "Checkout",
-                "add_payment": "Add Pagto",
-                "purchases": "Compras",
-                "revenue": "Valor de conversão",
-                "spend": "Valor usado",
+        # ================== TABELA COMPARATIVA ==================
+        # 1) Prepara bases (A e B) em nomes amigáveis
+        def _alias_cols(df, suffix):
+            m = {
+                "spend": f"Valor usado {suffix}",
+                "revenue": f"Valor de conversão {suffix}",
+                "link_clicks": f"Cliques {suffix}",
+                "lpv": f"LPV {suffix}",
+                "init_checkout": f"Checkout {suffix}",
+                "add_payment": f"Add Pagto {suffix}",
+                "purchases": f"Compras {suffix}",
+                "ROAS": f"ROAS {suffix}",
+                "LPV/Cliques": f"LPV/Cliques {suffix}",
+                "Checkout/LPV": f"Checkout/LPV {suffix}",
+                "Compra/Checkout": f"Compra/Checkout {suffix}",
+                "Add Pagto/Checkout": f"Add Pagto/Checkout {suffix}",
+                "Compra/Add Pagto": f"Compra/Add Pagto {suffix}",
             }
-        )
+            cols = group_cols + list(m.keys())
+            df2 = df[cols].copy()
+            return df2.rename(columns=m)
 
-        # formata valores monetários e taxas
-        disp["Valor usado"] = disp["Valor usado"].apply(_fmt_money_br)
-        disp["Valor de conversão"] = disp["Valor de conversão"].apply(_fmt_money_br)
-        disp["ROAS"] = disp["ROAS"].map(_fmt_ratio_br)
-        for col_taxa in ["LPV/Cliques", "Checkout/LPV", "Compra/Checkout", "Add Pagto/Checkout", "Compra/Add Pagto"]:
-            if col_taxa in disp.columns:
-                disp[col_taxa] = disp[col_taxa].map(_fmt_pct_br)
-
-        # força inteiros nas métricas absolutas
-        for col_abs in ["Cliques", "LPV", "Checkout", "Add Pagto", "Compras"]:
-            if col_abs in disp.columns:
-                disp[col_abs] = disp[col_abs].astype(int)
-
-        final_cols = group_cols + [
-            "ROAS", "Valor usado", "Valor de conversão",
-            "Cliques", "LPV", "LPV/Cliques",
-            "Checkout", "Checkout/LPV",
-            "Add Pagto", "Add Pagto/Checkout",
-            "Compras", "Compra/Checkout", "Compra/Add Pagto",
-        ]
-
-        # estilo (somente cabeçalho) amarelo translúcido nas taxas
-        taxa_cols = ["LPV/Cliques", "Checkout/LPV", "Compra/Checkout"]
-        def highlight_headers(x):
-            return [
-                "background-color: rgba(255, 255, 0, 0.3); font-weight: bold;"
-                if col in taxa_cols else ""
-                for col in x
-            ]
-
-        styled_disp = disp[final_cols].style.apply(
-            lambda _: highlight_headers(disp[final_cols].columns),
-            axis=1,
-        )
-        st.dataframe(styled_disp, use_container_width=True, height=520)
-
-        # ====== Gráficos das taxas por dimensão (com comparação) ======
-        st.markdown("### Comparar taxas por dimensão")
-        compare = st.checkbox("Comparar com outro período", value=True, key="det_compare_rates")
-
-        # Período A = o atual
-        dfA_rates = raw[group_cols + ["LPV/Cliques", "Checkout/LPV", "Compra/Checkout", "Add Pagto/Checkout", "Compra/Add Pagto"]].copy()
-        labelA = _fmt_range_br(since, until)  # <<< formata BR
-
-        dfB_rates, labelB = None, None
-        if compare:
-            from datetime import timedelta
-
-            # período B padrão: anterior de mesmo tamanho
-            since_dt = pd.to_datetime(str(since)).date()
-            until_dt = pd.to_datetime(str(until)).date()
-            delta = until_dt - since_dt
-
-            colp1, colp2 = st.columns(2)
-            with colp1:
-                perA = st.date_input("Período A", (since_dt, until_dt), key="perA_det_rates", format="DD/MM/YYYY")
-            with colp2:
-                default_b_end = since_dt - timedelta(days=1)
-                default_b_start = default_b_end - delta
-                perB = st.date_input("Período B", (default_b_start, default_b_end), key="perB_det_rates", format="DD/MM/YYYY")
-
-            since_A, until_A = perA
-            since_B, until_B = perB
-
-            # A
-            df_A = fetch_insights_breakdown(act_id, token, api_version, str(since_A), str(until_A), bks, level_bd, product_name=st.session_state.get("det_produto"))
-            raw_A, _ = _agg_and_format(df_A.rename(columns=rename_map), group_cols)
-            raw_A = _rates_from_raw(raw_A, group_cols)
-            dfA_rates = raw_A[group_cols + ["LPV/Cliques", "Checkout/LPV", "Compra/Checkout", "Add Pagto/Checkout", "Compra/Add Pagto"]].copy()
-            labelA = _fmt_range_br(since_A, until_A)  # <<< formata BR
-
-            # B
-            df_B = fetch_insights_breakdown(act_id, token, api_version, str(since_B), str(until_B), bks, level_bd, product_name=st.session_state.get("det_produto"))
-            raw_B, _ = _agg_and_format(df_B.rename(columns=rename_map), group_cols)
-            raw_B = _rates_from_raw(raw_B, group_cols)
-            dfB_rates = raw_B[group_cols + ["LPV/Cliques", "Checkout/LPV", "Compra/Checkout", "Add Pagto/Checkout", "Compra/Add Pagto"]].copy()
-            labelB = _fmt_range_br(since_B, until_B)  # <<< formata BR
-
-        rate_cols = ["LPV/Cliques", "Checkout/LPV", "Compra/Checkout", "Add Pagto/Checkout", "Compra/Add Pagto"]
-
-        # Se houver 2 dimensões, agrega a segunda para comparar pela primeira
-        if len(group_cols) > 1:
-            idx = group_cols[0]
-
-            def _collapse(df):
-                keep = [idx] + rate_cols
-                return df[keep].groupby(idx, as_index=False).mean(numeric_only=True)
-
-            dfA_rates = _collapse(dfA_rates)
-            if dfB_rates is not None:
-                dfB_rates = _collapse(dfB_rates)
-            dim_col = idx
+        A = _alias_cols(raw_A, "A")
+        if raw_B is not None and not raw_B.empty:
+            B = _alias_cols(raw_B, "B")
+            disp = pd.merge(A, B, on=group_cols, how="outer")
         else:
-            dim_col = group_cols[0]
+            disp = A.copy()
 
-        # Legenda acima dos gráficos (fora do Plotly)
-        _legend_periodos(labelA, labelB)
+        # 2) Colunas Δ% (somente para MÉTRICAS de volume/dinheiro/ROAS)
+        def _pct_change(a, b):
+            a = float(a or 0); b = float(b or 0)
+            return (a / b - 1.0) if b > 0 else (np.nan if a == 0 else np.inf)
 
-        for rc in rate_cols:
-            _compare_rate_chart(rc, dim_col, dfA_rates, dfB_rates, labelA, labelB)
+        delta_specs = [
+            ("Cliques", "Cliques A", "Cliques B"),
+            ("LPV", "LPV A", "LPV B"),
+            ("Checkout", "Checkout A", "Checkout B"),
+            ("Add Pagto", "Add Pagto A", "Add Pagto B"),
+            ("Compras", "Compras A", "Compras B"),
+            ("Valor usado", "Valor usado A", "Valor usado B"),
+            ("Valor de conversão", "Valor de conversão A", "Valor de conversão B"),
+            ("ROAS", "ROAS A", "ROAS B"),
+        ]
+        if raw_B is not None and not raw_B.empty:
+            for label, colA, colB in delta_specs:
+                disp[f"Δ {label}"] = disp.apply(lambda r: _pct_change(r.get(colA), r.get(colB)), axis=1)
 
+        # 3) Formatação (A e B) — dinheiro/inteiros/roas/percentuais
+        money_cols = ["Valor usado A", "Valor de conversão A", "Valor usado B", "Valor de conversão B"]
+        int_cols = ["Cliques A", "LPV A", "Checkout A", "Add Pagto A", "Compras A",
+                    "Cliques B", "LPV B", "Checkout B", "Add Pagto B", "Compras B"]
+        roas_cols = ["ROAS A", "ROAS B"]
+        rate_cols = ["LPV/Cliques A", "Checkout/LPV A", "Compra/Checkout A", "Add Pagto/Checkout A", "Compra/Add Pagto A",
+                     "LPV/Cliques B", "Checkout/LPV B", "Compra/Checkout B", "Add Pagto/Checkout B", "Compra/Add Pagto B"]
+
+        for c in money_cols:
+            if c in disp.columns:
+                disp[c] = disp[c].apply(_fmt_money_br)
+        for c in int_cols:
+            if c in disp.columns:
+                disp[c] = disp[c].fillna(0).astype(float).round(0).astype(int)
+        for c in roas_cols:
+            if c in disp.columns:
+                disp[c] = disp[c].map(_fmt_ratio_br)
+        for c in rate_cols:
+            if c in disp.columns:
+                disp[c] = disp[c].map(_fmt_pct_br)
+
+        # 4) Formatação dos Δ% (verde/vermelho)
+        def _fmt_delta_pct(x):
+            if not pd.notnull(x) or np.isinf(x):
+                return ""
+            sign = "+" if x >= 0 else ""
+            return f"{sign}{x*100:,.1f}%".replace(",", "X").replace(".", ",").replace("X", ".")
+
+        delta_cols = [f"Δ {lbl}" for (lbl, _, _) in delta_specs] if (raw_B is not None and not raw_B.empty) else []
+        for c in delta_cols:
+            if c in disp.columns:
+                disp[c] = disp[c].map(_fmt_delta_pct)
+
+        def _style_delta(val):
+            if isinstance(val, str) and val.endswith("%"):
+                try:
+                    v = float(val.replace(".", "").replace("%", "").replace(",", "."))
+                except:
+                    return ""
+                if v > 0:
+                    return "color:#16a34a; font-weight:bold;"   # verde
+                if v < 0:
+                    return "color:#dc2626; font-weight:bold;"   # vermelho
+            return ""
+
+        # 5) Ordena colunas (grupos + A/B + Δ)
+        ordered = group_cols + [
+            # A
+            "Valor usado A", "Valor de conversão A", "ROAS A",
+            "Cliques A", "LPV A", "Checkout A", "Add Pagto A", "Compras A",
+            # B (se houver)
+            "Valor usado B", "Valor de conversão B", "ROAS B",
+            "Cliques B", "LPV B", "Checkout B", "Add Pagto B", "Compras B",
+        ]
+        # taxas (A e B) SEM Δ na tabela
+        ordered += ["LPV/Cliques A", "Checkout/LPV A", "Compra/Checkout A", "Add Pagto/Checkout A", "Compra/Add Pagto A"]
+        if raw_B is not None and not raw_B.empty:
+            ordered += ["LPV/Cliques B", "Checkout/LPV B", "Compra/Checkout B", "Add Pagto/Checkout B", "Compra/Add Pagto B"]
+            ordered += delta_cols  # deltas das métricas (não das taxas)
+
+        disp = disp[[c for c in ordered if c in disp.columns]].copy()
+
+        styled = disp.style.applymap(_style_delta, subset=[c for c in disp.columns if c.startswith("Δ ")])
+
+        st.dataframe(styled, use_container_width=True, height=560)
+
+        # ================== CARDS: DIFERENÇA EM P.P. (TAXAS) ==================
+        if raw_B is not None and not raw_B.empty:
+            # médias ponderadas por denominador adequado
+            def _weighted_pp(dfA, dfB, rate_name, denom_name):
+                # pega colunas A/B
+                rA = f"{rate_name} A"; rB = f"{rate_name} B"
+                dA = f"{denom_name} A"; dB = f"{denom_name} B"
+                if rA not in disp.columns or rB not in disp.columns:
+                    return np.nan
+                # recuperar valores numéricos originais (antes da formatação)
+                # Recalcula a partir dos raws para precisão
+                col_map = {
+                    "LPV/Cliques": ("lpv", "link_clicks"),
+                    "Checkout/LPV": ("init_checkout", "lpv"),
+                    "Compra/Checkout": ("purchases", "init_checkout"),
+                    "Add Pagto/Checkout": ("add_payment", "init_checkout"),
+                    "Compra/Add Pagto": ("purchases", "add_payment"),
+                }
+                num, den = col_map[rate_name]
+
+                def _avg(df, num, den):
+                    num_t = df[num].sum()
+                    den_t = df[den].sum()
+                    return _safe_div(num_t, den_t)
+
+                a = _avg(raw_A, num, den)
+                b = _avg(raw_B, num, den)
+                return (a - b) * 100.0  # pontos percentuais
+
+            cards = [
+                ("LPV/Cliques", "link_clicks"),
+                ("Checkout/LPV", "lpv"),
+                ("Compra/Checkout", "init_checkout"),
+                ("Add Pagto/Checkout", "init_checkout"),
+                ("Compra/Add Pagto", "add_payment"),
+            ]
+            st.markdown("#### Diferença de taxas (pontos percentuais) — média ponderada")
+            cc1, cc2, cc3, cc4, cc5 = st.columns(5)
+            cols_cards = [cc1, cc2, cc3, cc4, cc5]
+
+            for (i, (rate_label, denom)) in enumerate(cards):
+                pp = _weighted_pp(raw_A, raw_B, rate_label, denom)
+                with cols_cards[i]:
+                    if pd.isna(pp):
+                        st.metric(rate_label, "—", delta=None)
+                    else:
+                        val = f"{pp:+.1f} p.p.".replace(".", ",")
+                        st.metric(rate_label, val, delta=None)
+
+        st.caption(f"Período A: **{labelA}**" + (f"  |  Período B: **{labelB}**" if labelB else ""))
         st.stop()
