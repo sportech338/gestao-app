@@ -2282,23 +2282,32 @@ with tab_detail:
     def _agg_and_format(df: pd.DataFrame, group_cols: list[str]):
         if df is None or df.empty:
             return pd.DataFrame(), pd.DataFrame()
+
         df2 = _apply_prod_filter(df)
         if df2.empty:
             return pd.DataFrame(), pd.DataFrame()
+
         df2 = _ensure_cols_exist(df2)
 
-        agg_cols = ["spend", "revenue", "purchases", "link_clicks", "lpv", "init_checkout", "add_payment"]
+        agg_cols = [
+            "spend", "revenue", "purchases",
+            "link_clicks", "lpv", "init_checkout", "add_payment",
+        ]
         g = df2.groupby(group_cols, dropna=False, as_index=False)[agg_cols].sum()
         g["ROAS"] = np.where(g["spend"] > 0, g["revenue"] / g["spend"], np.nan)
 
         if min_spend_det and float(min_spend_det) > 0:
             g = g[g["spend"] >= float(min_spend_det)]
+
         if not g.empty:
             g = g.sort_values(["purchases", "ROAS"], ascending=[False, False])
+
         return g, g.copy()
 
     def _bar_chart(x_labels, y_values, title, x_title, y_title):
-        fig = go.Figure(go.Bar(x=x_labels, y=y_values, text=y_values, textposition="outside"))
+        fig = go.Figure(
+            go.Bar(x=x_labels, y=y_values, text=y_values, textposition="outside")
+        )
         fig.update_layout(
             title=title,
             xaxis_title=x_title,
@@ -2311,8 +2320,8 @@ with tab_detail:
         st.plotly_chart(fig, use_container_width=True)
 
     # === Cores e formatação de período ===
-    COLOR_A = "#636EFA"  # azul
-    COLOR_B = "#EF553B"  # laranja
+    COLOR_A = "#636EFA"   # azul
+    COLOR_B = "#EF553B"   # laranja
 
     def _fmt_range_br(d1, d2) -> str:
         """Converte (date|str) -> 'dd/mm/aaaa → dd/mm/aaaa'."""
@@ -2351,9 +2360,9 @@ with tab_detail:
 
         def _fmt_disp(df_):
             out = df_.copy()
-            out["Valor usado"] = out["spend"].apply(_fmt_money_br)
-            out["Valor de conversão"] = out["revenue"].apply(_fmt_money_br)
-            out["ROAS"] = out["ROAS"].map(_fmt_ratio_br)
+            out["Valor usado"]         = out["spend"].apply(_fmt_money_br)
+            out["Valor de conversão"]  = out["revenue"].apply(_fmt_money_br)
+            out["ROAS"]                = out["ROAS"].map(_fmt_ratio_br)
             out.rename(
                 columns={
                     "campaign_name": "Campanha",
@@ -2492,6 +2501,7 @@ with tab_detail:
 
         # estilo (somente cabeçalho) amarelo translúcido nas taxas
         taxa_cols = ["LPV/Cliques", "Checkout/LPV", "Compra/Checkout"]
+
         def highlight_headers(x):
             return [
                 "background-color: rgba(255, 255, 0, 0.3); font-weight: bold;"
@@ -2628,8 +2638,8 @@ with tab_detail:
             "Add Pagto/Checkout B", "Compra/Add Pagto B",
         ]
 
-        RED_TRANSP  = "rgba(239, 68, 68, 0.15)"   # A
-        BLUE_TRANSP = "rgba(59, 130, 246, 0.15)"  # B
+        RED_TRANSP  = "rgba(239, 68, 68, 0.15)"   # Período A
+        BLUE_TRANSP = "rgba(59, 130, 246, 0.15)"  # Período B
 
         def _style_rate_columns(df: pd.DataFrame, rate_cols: list[str], rgba_bg: str):
             sty = df.style.apply(
@@ -2661,20 +2671,22 @@ with tab_detail:
 
         # ------- (Opcional) Tabela de variação A vs B -------
         show_deltas = st.checkbox(
-            "Mostrar variação (%) entre A e B",
+            "Mostrar variação entre A e B (métricas em %, taxas em p.p.)",
             value=False,
             key="det_show_deltas_tbl",
         )
 
         if show_deltas:
+            # merge numérico para cálculo
             comp_num = pd.merge(A_num, B_num, on=group_cols, how="outer")
 
+            # ---- Variação % para métricas (não-taxas) ----
             def _pct_change(a, b):
                 a = float(0 if pd.isna(a) else a)
                 b = float(0 if pd.isna(b) else b)
                 return (a / b - 1.0) if b > 0 else (np.nan if a == 0 else np.inf)
 
-            delta_specs = [
+            metrics_specs = [
                 ("Valor usado", "Valor usado A", "Valor usado B"),
                 ("Valor de conversão", "Valor de conversão A", "Valor de conversão B"),
                 ("ROAS", "ROAS A", "ROAS B"),
@@ -2683,17 +2695,12 @@ with tab_detail:
                 ("Checkout", "Checkout A", "Checkout B"),
                 ("Add Pagto", "Add Pagto A", "Add Pagto B"),
                 ("Compras", "Compras A", "Compras B"),
-                ("LPV/Cliques", "LPV/Cliques A", "LPV/Cliques B"),
-                ("Checkout/LPV", "Checkout/LPV A", "Checkout/LPV B"),
-                ("Compra/Checkout", "Compra/Checkout A", "Compra/Checkout B"),
-                ("Add Pagto/Checkout", "Add Pagto/Checkout A", "Add Pagto/Checkout B"),
-                ("Compra/Add Pagto", "Compra/Add Pagto A", "Compra/Add Pagto B"),
             ]
 
-            deltas = comp_num[group_cols].copy()
-            for label, colA, colB in delta_specs:
+            deltas_pct = comp_num[group_cols].copy()
+            for label, colA, colB in metrics_specs:
                 if colA in comp_num.columns and colB in comp_num.columns:
-                    deltas[f"Δ {label}"] = comp_num.apply(
+                    deltas_pct[f"Δ {label} (%)"] = comp_num.apply(
                         lambda r: _pct_change(r.get(colA), r.get(colB)),
                         axis=1,
                     )
@@ -2704,27 +2711,64 @@ with tab_detail:
                 sign = "+" if x >= 0 else ""
                 return f"{sign}{x*100:,.1f}%".replace(",", "X").replace(".", ",").replace("X", ".")
 
-            delta_cols = [c for c in deltas.columns if c.startswith("Δ ")]
-            for c in delta_cols:
-                deltas[c] = deltas[c].map(_fmt_delta_pct)
+            pct_cols = [c for c in deltas_pct.columns if c.endswith("(%)")]
+            for c in pct_cols:
+                deltas_pct[c] = deltas_pct[c].map(_fmt_delta_pct)
 
+            # ---- Variação em pontos percentuais (taxas) ----
+            rate_specs = [
+                ("LPV/Cliques", "LPV/Cliques A", "LPV/Cliques B"),
+                ("Checkout/LPV", "Checkout/LPV A", "Checkout/LPV B"),
+                ("Compra/Checkout", "Compra/Checkout A", "Compra/Checkout B"),
+                ("Add Pagto/Checkout", "Add Pagto/Checkout A", "Add Pagto/Checkout B"),
+                ("Compra/Add Pagto", "Compra/Add Pagto A", "Compra/Add Pagto B"),
+            ]
+
+            deltas_pp = comp_num[group_cols].copy()
+            for label, colA, colB in rate_specs:
+                if colA in comp_num.columns and colB in comp_num.columns:
+                    deltas_pp[f"Δ {label} (p.p.)"] = comp_num.apply(
+                        lambda r: (float(0 if pd.isna(r.get(colA)) else r.get(colA)) -
+                                   float(0 if pd.isna(r.get(colB)) else r.get(colB))) * 100.0,
+                        axis=1,
+                    )
+
+            def _fmt_delta_pp(x):
+                if not pd.notnull(x) or np.isinf(x):
+                    return ""
+                sign = "+" if x >= 0 else ""
+                return f"{sign}{x:,.1f} p.p.".replace(",", "X").replace(".", ",").replace("X", ".")
+
+            pp_cols = [c for c in deltas_pp.columns if c.endswith("(p.p.)")]
+            for c in pp_cols:
+                deltas_pp[c] = deltas_pp[c].map(_fmt_delta_pp)
+
+            # ---- Estilo (+ verde, - vermelho) ----
             def _style_delta(val):
-                if isinstance(val, str) and val.endswith("%"):
+                if isinstance(val, str) and (val.endswith("%") or val.endswith("p.p.")):
                     try:
-                        v = float(val.replace(".", "").replace("%", "").replace(",", "."))
+                        num = val.replace(" p.p.", "").replace("%", "")
+                        v = float(num.replace(".", "").replace(",", "."))
                     except Exception:
                         return ""
                     if v > 0:
-                        return "color:#16a34a; font-weight:bold;"  # verde
+                        return "color:#16a34a; font-weight:bold;"
                     if v < 0:
-                        return "color:#dc2626; font-weight:bold;"  # vermelho
+                        return "color:#dc2626; font-weight:bold;"
                 return ""
 
-            st.markdown("#### Variação A vs B (%)")
+            st.markdown("#### Variação — Métricas (%)")
             st.dataframe(
-                deltas.style.applymap(_style_delta, subset=delta_cols),
+                deltas_pct.style.applymap(_style_delta, subset=pct_cols),
                 use_container_width=True,
-                height=360,
+                height=300,
+            )
+
+            st.markdown("#### Variação — Taxas (p.p.)")
+            st.dataframe(
+                deltas_pp.style.applymap(_style_delta, subset=pp_cols),
+                use_container_width=True,
+                height=300,
             )
 
         st.caption(
