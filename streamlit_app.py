@@ -2252,8 +2252,10 @@ with tab_detail:
 
     dimensao = st.radio(
         "Dimensão",
-        ["Populares", "Idade", "Gênero", "Idade + Gênero",
-         "Região", "País", "Plataforma", "Posicionamento"],
+        [
+            "Populares", "Idade", "Gênero", "Idade + Gênero",
+            "Região", "País", "Plataforma", "Posicionamento"
+        ],
         index=0,
         horizontal=True,
     )
@@ -2524,13 +2526,16 @@ with tab_detail:
                 .fillna(0)
             )
             fig = go.Figure(
-                data=go.H
-eatmap(
+                data=go.Heatmap(
                     z=pvt.values,
                     x=pvt.columns.astype(str),
                     y=pvt.index.astype(str),
                     colorbar=dict(title="Compras"),
-                    hovertemplate=f"{idx}: " + "%{y}<br>" + f"{col}: " + "%{x}<br>" + "Compras: %{z}<extra></extra>",
+                    hovertemplate=(
+                        f"{idx}: " + "%{y}<br>"
+                        + f"{col}: " + "%{x}<br>"
+                        + "Compras: %{z}<extra></extra>"
+                    ),
                 )
             )
             fig.update_layout(
@@ -2538,7 +2543,7 @@ eatmap(
                 height=460,
                 template="plotly_white",
                 margin=dict(l=10, r=10, t=48, b=10),
-                separators=".,",
+                separators=",.",
             )
             st.plotly_chart(fig, use_container_width=True)
 
