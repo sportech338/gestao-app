@@ -2465,20 +2465,19 @@ with tab_detail:
         dfB_rates = None
         labelB = None
         if compare:
-            from datetime import date
-            import pandas as pd as _pd  # só para usar Timedelta se precisar
+            from datetime import timedelta  # ✅ sem pandas extra aqui
 
             # período B padrão: anterior de mesmo tamanho
             since_dt = pd.to_datetime(str(since)).date()
             until_dt = pd.to_datetime(str(until)).date()
-            delta = until_dt - since_dt
+            delta = until_dt - since_dt  # datetime.timedelta
 
             colp1, colp2 = st.columns(2)
             with colp1:
                 perA = st.date_input("Período A", (since_dt, until_dt), key="perA_det_rates")
             with colp2:
-                default_b_start = since_dt - (delta + pd.Timedelta(days=1)).to_pytimedelta()
-                default_b_end   = since_dt - pd.Timedelta(days=1).to_pytimedelta()
+                default_b_end   = since_dt - timedelta(days=1)
+                default_b_start = default_b_end - delta
                 perB = st.date_input("Período B", (default_b_start, default_b_end), key="perB_det_rates")
 
             since_A, until_A = perA
