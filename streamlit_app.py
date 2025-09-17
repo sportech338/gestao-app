@@ -2485,12 +2485,12 @@ with tab_detail:
             "Compras", "Compra/Checkout", "Compra/Add Pagto",
         ]
 
-        # cabeçalhos das taxas em amarelo
+        # cabeçalhos das taxas em azul
         taxa_cols = ["LPV/Cliques", "Checkout/LPV", "Compra/Checkout"]
 
         def highlight_headers(x):
             return [
-                "background-color: rgba(255, 255, 0, 0.3); font-weight: bold;"
+                "background-color: rgba(59, 130, 246, 0.15); font-weight: bold;"
                 if col in taxa_cols else ""
                 for col in x
             ]
@@ -2619,7 +2619,7 @@ with tab_detail:
         RATE_COLS_B = ["LPV/Cliques B", "Checkout/LPV B", "Compra/Checkout B", "Add Pagto/Checkout B", "Compra/Add Pagto B"]
 
         RED_TRANSP  = "rgba(239, 68, 68, 0.15)"   # A
-        BLUE_TRANSP = "rgba(59, 130, 246, 0.15)"  # B
+        YELLOW_TRANSP = "rgba(255, 255, 0, 0.3)"  # B
 
         def _style_rate_columns(df: pd.DataFrame, rate_cols: list[str], rgba_bg: str):
             sty = df.style.apply(
@@ -2637,7 +2637,7 @@ with tab_detail:
             return sty.set_table_styles(header_styles)
 
         A_styled = _style_rate_columns(A_fmt, RATE_COLS_A, RED_TRANSP)
-        B_styled = _style_rate_columns(B_fmt, RATE_COLS_B, BLUE_TRANSP)
+        B_styled = _style_rate_columns(B_fmt, RATE_COLS_B, YELLOW_TRANSP)
 
         # ------- EXIBIÇÃO: duas tabelas separadas -------
         st.markdown("#### Período A")
