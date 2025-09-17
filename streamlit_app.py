@@ -2412,7 +2412,7 @@ with tab_detail:
         taxa_cols = ["LPV/Cliques","Checkout/LPV","Add Pagto/Checkout","Compra/Add Pagto"]
         def highlight_headers(x):
             return [
-                "background-color: #ffffce; font-weight: bold;" if col in taxa_cols else "" 
+                "background-color: rgba(255, 255, 0, 0.3); font-weight: bold;" if col in taxa_cols else ""
                 for col in x
             ]
 
