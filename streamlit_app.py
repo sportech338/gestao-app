@@ -2670,11 +2670,15 @@ with tab_detail:
             ordered_cols = group_cols + [f"Δ {lbl} (p.p.)" for (lbl, _, _) in rate_specs]
             deltas_num = deltas_num[[c for c in ordered_cols if c in deltas_num.columns]]
 
+            # >>> CABEÇALHO CORRIGIDO AQUI <<<
+            # deixa a 1ª célula de cabeçalho vazia e mantém a coluna de índice
+            deltas_num.index.name = ""
+
             pp_cols = [c for c in deltas_num.columns if c.endswith("(p.p.)")]
 
-            # ---- Estilo de fundo (+ verde, - vermelho) ----
-            POS_BG = "rgba(22, 163, 74, 0.45)"   # positivo
-            NEG_BG = "rgba(239, 68, 68, 0.45)"   # negativo
+            # Estilo de fundo (+ verde, - vermelho)
+            POS_BG = "rgba(22, 163, 74, 0.45)"
+            NEG_BG = "rgba(239, 68, 68, 0.45)"
 
             def _bg_sign(val):
                 try:
@@ -2687,7 +2691,7 @@ with tab_detail:
                     return f"background-color: {NEG_BG}; font-weight: 700;"
                 return ""
 
-            # ---- Formatação pt-BR para exibição (+x,x p.p.) ----
+            # Formatação pt-BR (+x,x p.p.)
             def _fmt_pp(v):
                 if pd.isna(v) or np.isinf(v):
                     return "—"
@@ -2697,15 +2701,17 @@ with tab_detail:
 
             styled = (
                 deltas_num.style
-                .hide(axis="index")  # oculta índice para alinhar o cabeçalho à esquerda
+                # NÃO esconda o índice (para não deslocar cabeçalho).
+                # Apenas esconda visualmente os números, mantendo a coluna:
+                .set_table_styles([
+                    {"selector": "th.row_heading, td.row_heading", "props": [("visibility", "hidden")]},
+                    {"selector": "th.blank", "props": [("background-color", "transparent")]},  # mantém a 'stub' vazia
+                    {"selector": "th.col_heading", "props": [("text-align", "center"), ("white-space", "nowrap")]},
+                    {"selector": "td", "props": [("vertical-align", "middle")]},
+                ])
                 .applymap(_bg_sign, subset=pp_cols)
                 .format({c: _fmt_pp for c in pp_cols})
                 .set_properties(subset=pp_cols, **{"padding": "6px 8px", "text-align": "center"})
-                .set_table_styles([
-                    {"selector": "th.blank",       "props": [("display", "none")]},
-                    {"selector": "th.col_heading", "props": [("text-align", "center"), ("white-space", "nowrap")]},
-                    {"selector": "td",             "props": [("vertical-align", "middle")]},
-                ])
             )
 
             st.markdown("#### Variação — Taxas (p.p.)")
