@@ -2408,18 +2408,21 @@ with tab_detail:
             "Compras","Compra/Add Pagto"
         ]
 
-        # estilo amarelo no cabeçalho das taxas
+        # estilo cabeçalho amarelo transparente nas taxas
         taxa_cols = ["LPV/Cliques","Checkout/LPV","Add Pagto/Checkout","Compra/Add Pagto"]
-        def highlight_headers(x):
-            return [
-                "background-color: yellow; font-weight: bold;" if col in taxa_cols else "" 
-                for col in x
-            ]
+        styles = [
+            {
+                "selector": f"th.col{i}",
+                "props": [
+                    ("background-color", "rgba(255, 255, 0, 0.3)"),
+                    ("color", "black"),
+                    ("font-weight", "bold")
+                ]
+            }
+            for i, col in enumerate(final_cols) if col in taxa_cols
+        ]
 
-        styled_disp = disp[final_cols].style.apply(
-            lambda _: highlight_headers(disp[final_cols].columns), 
-            axis=1
-        )
+        styled_disp = disp[final_cols].style.set_table_styles(styles)
 
         st.dataframe(styled_disp, use_container_width=True, height=520)
 
