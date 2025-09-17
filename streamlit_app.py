@@ -2276,13 +2276,7 @@ with tab_detail:
         if not g.empty:
             g = g.sort_values(["purchases","ROAS"], ascending=[False, False])
 
-        gf = g.copy()
-        if not gf.empty:
-            gf["Valor usado"] = gf["spend"].apply(_fmt_money_br)
-            gf["Valor de conversão"] = gf["revenue"].apply(_fmt_money_br)
-            gf["ROAS"] = gf["ROAS"].map(_fmt_ratio_br)
-            gf = gf.drop(columns=["spend","revenue"])
-        return g, gf
+        return g, g.copy()
 
     def _bar_chart(x_labels, y_values, title, x_title, y_title):
         fig = go.Figure(go.Bar(
@@ -2295,23 +2289,6 @@ with tab_detail:
             margin=dict(l=10, r=10, t=48, b=10), separators=",."
         )
         st.plotly_chart(fig, use_container_width=True)
-
-    def _kpi_card(label, value):
-        st.markdown(
-            f"""
-            <div style="
-                background-color:#1e1e1e;
-                padding:18px;
-                border-radius:8px;
-                text-align:center;
-                margin:5px;
-            ">
-                <div style="font-size:14px; color:#bbb;">{label}</div>
-                <div style="font-size:20px; font-weight:bold; color:white;">{value}</div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
 
     # ========= POPULARES =========
     if dimensao == "Populares":
@@ -2404,28 +2381,34 @@ with tab_detail:
             )
             st.plotly_chart(fig, use_container_width=True)
 
-        # ----- tabela depois do gráfico -----
-        base_cols = group_cols + ["ROAS","Valor usado","Valor de conversão",
-                                  "Cliques","LPV","Checkout","Add Pagto","Compras"]
-        disp = disp.rename(columns={
+        # ----- tabela integrada com taxas -----
+        raw["LPV/Cliques"]        = raw.apply(lambda r: _safe_div(r["lpv"], r["link_clicks"]), axis=1)
+        raw["Checkout/LPV"]       = raw.apply(lambda r: _safe_div(r["init_checkout"], r["lpv"]), axis=1)
+        raw["Add Pagto/Checkout"] = raw.apply(lambda r: _safe_div(r["add_payment"], r["init_checkout"]), axis=1)
+        raw["Compra/Add Pagto"]   = raw.apply(lambda r: _safe_div(r["purchases"], r["add_payment"]), axis=1)
+
+        disp = raw.rename(columns={
             "link_clicks":"Cliques","lpv":"LPV",
-            "init_checkout":"Checkout","add_payment":"Add Pagto","purchases":"Compras"
+            "init_checkout":"Checkout","add_payment":"Add Pagto","purchases":"Compras",
+            "revenue":"Valor de conversão","spend":"Valor usado"
         })
-        cols_presentes = [c for c in base_cols if c in disp.columns]
-        st.dataframe(disp[cols_presentes], use_container_width=True, height=520)
 
-        # ----- métricas de conversão em cards -----
-        st.markdown("### Taxas de Conversão por Dimensão")
+        # formata valores monetários e taxas
+        disp["Valor usado"] = disp["Valor usado"].apply(_fmt_money_br)
+        disp["Valor de conversão"] = disp["Valor de conversão"].apply(_fmt_money_br)
+        disp["ROAS"] = disp["ROAS"].map(_fmt_ratio_br)
+        for col in ["LPV/Cliques","Checkout/LPV","Add Pagto/Checkout","Compra/Add Pagto"]:
+            disp[col] = disp[col].map(_fmt_pct_br)
 
-        for _, row in raw.iterrows():
-            dim_label = " × ".join(str(row[c]) for c in group_cols)
-            st.markdown(f"#### {dim_label}")
+        final_cols = group_cols + [
+            "ROAS","Valor usado","Valor de conversão",
+            "Cliques","LPV","LPV/Cliques",
+            "Checkout","Checkout/LPV",
+            "Add Pagto","Add Pagto/Checkout",
+            "Compras","Compra/Add Pagto"
+        ]
 
-            c1, c2, c3, c4, c5 = st.columns(5)
-            with c1: _kpi_card("LPV / Cliques", _fmt_pct_br(_safe_div(row["lpv"], row["link_clicks"])))
-            with c2: _kpi_card("Checkout / LPV", _fmt_pct_br(_safe_div(row["init_checkout"], row["lpv"])))
-            with c3: _kpi_card("Compra / Checkout", _fmt_pct_br(_safe_div(row["purchases"], row["init_checkout"])))
-            with c4: _kpi_card("Add Pagto / Checkout", _fmt_pct_br(_safe_div(row["add_payment"], row["init_checkout"])))
-            with c5: _kpi_card("Compra / Add Pagto", _fmt_pct_br(_safe_div(row["purchases"], row["add_payment"])))
+        st.dataframe(disp[final_cols], use_container_width=True, height=520)
 
         st.stop()
+
