@@ -2638,7 +2638,7 @@ with tab_detail:
             "Add Pagto/Checkout B", "Compra/Add Pagto B",
         ]
 
-        ORANGE_TRANSP  = "rgba(255, 165, 0, 0.15)"   # Período A
+        RED_TRANSP  = "rgba(239, 68, 68, 0.15)"   # Período A
         BLUE_TRANSP = "rgba(59, 130, 246, 0.15)"  # Período B
 
         def _style_rate_columns(df: pd.DataFrame, rate_cols: list[str], rgba_bg: str):
@@ -2659,7 +2659,7 @@ with tab_detail:
             ]
             return sty.set_table_styles(header_styles)
 
-        A_styled = _style_rate_columns(A_fmt, RATE_COLS_A, ORANGE_TRANSP)
+        A_styled = _style_rate_columns(A_fmt, RATE_COLS_A, RED_TRANSP)
         B_styled = _style_rate_columns(B_fmt, RATE_COLS_B, BLUE_TRANSP)
 
         # ------- EXIBIÇÃO: duas tabelas separadas -------
@@ -2708,22 +2708,26 @@ with tab_detail:
             for c in pp_cols:
                 deltas_pp[c] = deltas_pp[c].map(_fmt_delta_pp)
 
-            # ---- Estilo (+ verde, - vermelho) ----
-            def _style_delta(val):
+            # ---- Estilo de fundo (+ verde, - vermelho) ----
+            POS_BG = "rgba(22, 163, 74, 0.18)"   # verde translúcido
+            NEG_BG = "rgba(239, 68, 68, 0.18)"   # vermelho translúcido
+
+            def _style_delta_bg(val: str) -> str:
                 if isinstance(val, str) and val.endswith("p.p."):
                     try:
-                        v = float(val.replace(" p.p.", "").replace(".", "").replace(",", "."))
+                        num = val.replace(" p.p.", "")
+                        v = float(num.replace(".", "").replace(",", "."))
                     except Exception:
                         return ""
                     if v > 0:
-                        return "color:#16a34a; font-weight:bold;"
+                        return f"background-color: {POS_BG}; font-weight: bold;"
                     if v < 0:
-                        return "color:#dc2626; font-weight:bold;"
+                        return f"background-color: {NEG_BG}; font-weight: bold;"
                 return ""
 
             st.markdown("#### Variação — Taxas (p.p.)")
             st.dataframe(
-                deltas_pp.style.applymap(_style_delta, subset=pp_cols),
+                deltas_pp.style.applymap(_style_delta_bg, subset=pp_cols),
                 use_container_width=True,
                 height=300,
             )
