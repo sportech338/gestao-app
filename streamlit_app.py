@@ -2245,7 +2245,7 @@ with tab_detail:
         index=0, horizontal=True
     )
 
-    # ========= Helpers locais =========
+    # ========= Helpers =========
     def _apply_prod_filter(df_base: pd.DataFrame) -> pd.DataFrame:
         if produto_sel_det and produto_sel_det != "(Todos)":
             mask = df_base["campaign_name"].str.contains(produto_sel_det, case=False, na=False)
@@ -2264,7 +2264,6 @@ with tab_detail:
         df2 = _apply_prod_filter(df)
         if df2.empty:
             return pd.DataFrame(), pd.DataFrame()
-
         df2 = _ensure_cols_exist(df2)
 
         agg_cols = ["spend","revenue","purchases","link_clicks","lpv","init_checkout","add_payment"]
@@ -2273,7 +2272,6 @@ with tab_detail:
 
         if min_spend_det and float(min_spend_det) > 0:
             g = g[g["spend"] >= float(min_spend_det)]
-
         if not g.empty:
             g = g.sort_values(["purchases","ROAS"], ascending=[False, False])
 
@@ -2288,7 +2286,7 @@ with tab_detail:
     def _bar_chart(x_labels, y_values, title, x_title, y_title):
         fig = go.Figure(go.Bar(
             x=x_labels, y=y_values,
-            text=y_values, textposition="outside"  # 👈 mostra números nas barras
+            text=y_values, textposition="outside"
         ))
         fig.update_layout(
             title=title, xaxis_title=x_title, yaxis_title=y_title,
@@ -2296,6 +2294,23 @@ with tab_detail:
             margin=dict(l=10, r=10, t=48, b=10), separators=",."
         )
         st.plotly_chart(fig, use_container_width=True)
+
+    def _kpi_card(label, value):
+        st.markdown(
+            f"""
+            <div style="
+                background-color:#1e1e1e;
+                padding:18px;
+                border-radius:8px;
+                text-align:center;
+                margin:5px;
+            ">
+                <div style="font-size:14px; color:#bbb;">{label}</div>
+                <div style="font-size:20px; font-weight:bold; color:white;">{value}</div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
 
     # ========= POPULARES =========
     if dimensao == "Populares":
@@ -2307,7 +2322,6 @@ with tab_detail:
                   [["spend","revenue","purchases","link_clicks","lpv","init_checkout","add_payment"]]
                   .sum())
         g["ROAS"] = np.where(g["spend"]>0, g["revenue"]/g["spend"], np.nan)
-
         if min_spend_det and float(min_spend_det) > 0:
             g = g[g["spend"] >= float(min_spend_det)]
 
@@ -2331,24 +2345,15 @@ with tab_detail:
 
         st.subheader("TOP 5 — Campanhas")
         c1, c2 = st.columns(2)
-        with c1:
-            st.markdown("**Por Compras**")
-            st.dataframe(disp_comp, use_container_width=True, height=260)
-        with c2:
-            st.markdown("**Por ROAS** (com gasto > 0)")
-            st.dataframe(disp_roas, use_container_width=True, height=260)
-
+        with c1: st.dataframe(disp_comp, use_container_width=True, height=260)
+        with c2: st.dataframe(disp_roas, use_container_width=True, height=260)
         st.stop()
 
     # ========= DEMAIS DIMENSÕES =========
     dim_to_breakdowns = {
-        "Idade": ["age"],
-        "Gênero": ["gender"],
-        "Idade + Gênero": ["age","gender"],
-        "Região": ["region"],
-        "País": ["country"],
-        "Plataforma": ["publisher_platform"],
-        "Posicionamento": ["publisher_platform","platform_position"],
+        "Idade": ["age"], "Gênero": ["gender"], "Idade + Gênero": ["age","gender"],
+        "Região": ["region"], "País": ["country"],
+        "Plataforma": ["publisher_platform"], "Posicionamento": ["publisher_platform","platform_position"],
     }
 
     level_bd = level
@@ -2407,19 +2412,18 @@ with tab_detail:
             )
             st.plotly_chart(fig, use_container_width=True)
 
-        # ----- métricas de conversão -----
+        # ----- métricas de conversão em cards -----
         st.markdown("### Taxas de Conversão por Dimensão")
-        raw["LPV/Cliques"]        = raw.apply(lambda r: _safe_div(r["lpv"], r["link_clicks"]), axis=1)
-        raw["Checkout/LPV"]       = raw.apply(lambda r: _safe_div(r["init_checkout"], r["lpv"]), axis=1)
-        raw["Compra/Checkout"]    = raw.apply(lambda r: _safe_div(r["purchases"], r["init_checkout"]), axis=1)
-        raw["Add Pagto/Checkout"] = raw.apply(lambda r: _safe_div(r["add_payment"], r["init_checkout"]), axis=1)
-        raw["Compra/Add Pagto"]   = raw.apply(lambda r: _safe_div(r["purchases"], r["add_payment"]), axis=1)
 
-        conv_cols = ["LPV/Cliques","Checkout/LPV","Compra/Checkout","Add Pagto/Checkout","Compra/Add Pagto"]
-        conv_disp = raw[group_cols + conv_cols].copy()
-        for c in conv_cols:
-            conv_disp[c] = conv_disp[c].map(_fmt_pct_br)
+        for _, row in raw.iterrows():
+            dim_label = " × ".join(str(row[c]) for c in group_cols)
+            st.markdown(f"#### {dim_label}")
 
-        st.dataframe(conv_disp, use_container_width=True, height=360)
+            c1, c2, c3, c4, c5 = st.columns(5)
+            with c1: _kpi_card("LPV / Cliques", _fmt_pct_br(_safe_div(row["lpv"], row["link_clicks"])))
+            with c2: _kpi_card("Checkout / LPV", _fmt_pct_br(_safe_div(row["init_checkout"], row["lpv"])))
+            with c3: _kpi_card("Compra / Checkout", _fmt_pct_br(_safe_div(row["purchases"], row["init_checkout"])))
+            with c4: _kpi_card("Add Pagto / Checkout", _fmt_pct_br(_safe_div(row["add_payment"], row["init_checkout"])))
+            with c5: _kpi_card("Compra / Add Pagto", _fmt_pct_br(_safe_div(row["purchases"], row["add_payment"])))
 
         st.stop()
