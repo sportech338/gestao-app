@@ -2392,7 +2392,7 @@ with tab_detail:
     }
 
     level_bd = level
-    if dimensao == "Posicionamento" and level_bd not in ["adset", "ad"]:
+    if dimensao == "Posicionamento" e level_bd not in ["adset", "ad"]:
         level_bd = "adset"
 
     if dimensao in dim_to_breakdowns:
@@ -2436,7 +2436,11 @@ with tab_detail:
                     x=pvt.columns.astype(str),
                     y=pvt.index.astype(str),
                     colorbar=dict(title="Compras"),
-                    hovertemplate=(f"{idx}: " + "%{y}<br>" + f"{col}: " + "%{x}<br>" + "Compras: %{z}<extra></extra>"),
+                    hovertemplate=(
+                        f"{idx}: " + "%{y}<br>"
+                        + f"{col}: " + "%{x}<br>"
+                        + "Compras: %{z}<extra></extra>"
+                    ),
                 )
             )
             fig.update_layout(
@@ -2481,7 +2485,7 @@ with tab_detail:
             "Compras", "Compra/Checkout", "Compra/Add Pagto",
         ]
 
-        # cabeçalhos das taxas em azul
+        # cabeçalhos das taxas (destaque)
         taxa_cols = ["LPV/Cliques", "Checkout/LPV", "Compra/Checkout"]
 
         def highlight_headers(x):
@@ -2502,7 +2506,6 @@ with tab_detail:
 
         from datetime import timedelta
 
-        # Período A padrão = since → until
         since_dt = pd.to_datetime(str(since)).date()
         until_dt = pd.to_datetime(str(until)).date()
         delta = until_dt - since_dt
@@ -2579,17 +2582,14 @@ with tab_detail:
                 f"Compra/Add Pagto {suffix}",
             ]
 
-            # Inteiros
             for c in int_cols:
                 if c in df.columns:
                     df[c] = df[c].fillna(0).astype(float).round(0).astype(int)
 
-            # Dinheiro
             for c in money_cols:
                 if c in df.columns:
                     df[c] = df[c].apply(_fmt_money_br)
 
-            # ROAS e taxas
             for c in roas_cols:
                 if c in df.columns:
                     df[c] = df[c].map(_fmt_ratio_br)
@@ -2614,8 +2614,8 @@ with tab_detail:
         RATE_COLS_A = ["LPV/Cliques A", "Checkout/LPV A", "Compra/Checkout A", "Add Pagto/Checkout A", "Compra/Add Pagto A"]
         RATE_COLS_B = ["LPV/Cliques B", "Checkout/LPV B", "Compra/Checkout B", "Add Pagto/Checkout B", "Compra/Add Pagto B"]
 
-        RED_TRANSP     = "rgba(239, 68, 68, 0.15)"  # A
-        YELLOW_TRANSP  = "rgba(255, 255, 0, 0.30)"  # B
+        RED_TRANSP    = "rgba(239, 68, 68, 0.15)"  # A
+        YELLOW_TRANSP = "rgba(255, 255, 0, 0.30)"  # B
 
         def _style_rate_columns(df: pd.DataFrame, rate_cols: list[str], rgba_bg: str):
             sty = df.style.apply(
@@ -2650,10 +2650,8 @@ with tab_detail:
         )
 
         if show_deltas:
-            # ---- Merge numérico para cálculo ----
             comp_num = pd.merge(A_num, B_num, on=group_cols, how="outer")
 
-            # ---- Variação em pontos percentuais (taxas) ----
             rate_specs = [
                 ("LPV/Cliques", "LPV/Cliques A", "LPV/Cliques B"),
                 ("Checkout/LPV", "Checkout/LPV A", "Checkout/LPV B"),
@@ -2662,7 +2660,6 @@ with tab_detail:
                 ("Compra/Add Pagto", "Compra/Add Pagto A", "Compra/Add Pagto B"),
             ]
 
-            # DataFrame NUMÉRICO (sem strings) para aplicar cor por sinal
             deltas_num = comp_num[group_cols].copy()
             for label, colA, colB in rate_specs:
                 if colA in comp_num.columns and colB in comp_num.columns:
@@ -2673,7 +2670,6 @@ with tab_detail:
 
             pp_cols = [c for c in deltas_num.columns if c.endswith("(p.p.)")]
 
-            # ---- Estilo de fundo (+ verde, - vermelho) ----
             POS_BG = "rgba(22, 163, 74, 0.45)"   # positivo
             NEG_BG = "rgba(239, 68, 68, 0.45)"   # negativo
 
@@ -2688,7 +2684,6 @@ with tab_detail:
                     return f"background-color: {NEG_BG}; font-weight: 700;"
                 return ""
 
-            # ---- Formatação pt-BR para exibição (+x,x p.p.) ----
             def _fmt_pp(v):
                 if pd.isna(v) or np.isinf(v):
                     return "—"
@@ -2698,14 +2693,14 @@ with tab_detail:
 
             styled = (
                 deltas_num.style
-                .applymap(_bg_sign, subset=pp_cols)     # pinta pelo valor numérico
-                .format({c: _fmt_pp for c in pp_cols})  # formatação BR
+                .applymap(_bg_sign, subset=pp_cols)
+                .format({c: _fmt_pp for c in pp_cols})
                 .set_properties(subset=pp_cols, **{
                     "padding": "6px 8px",
                     "text-align": "center",
                 })
                 .set_table_styles([
-                    {"selector": "th.row_heading", "props": [("display", "none")]},      # esconde índice
+                    {"selector": "th.row_heading", "props": [("display", "none")]},
                     {"selector": "th.row_heading.level0", "props": [("display", "none")]},
                     {"selector": "th.blank.level0", "props": [("display", "none")]},
                     {"selector": "th.col_heading", "props": [("text-align", "center"), ("white-space", "nowrap")]},
