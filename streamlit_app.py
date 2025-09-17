@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -2400,6 +2399,11 @@ with tab_detail:
         for col in ["LPV/Cliques","Checkout/LPV","Add Pagto/Checkout","Compra/Add Pagto"]:
             disp[col] = disp[col].map(_fmt_pct_br)
 
+        # força inteiros nas métricas absolutas
+        for col in ["Cliques", "LPV", "Checkout", "Add Pagto", "Compras"]:
+            if col in disp.columns:
+                disp[col] = disp[col].astype(int)
+
         final_cols = group_cols + [
             "ROAS","Valor usado","Valor de conversão",
             "Cliques","LPV","LPV/Cliques",
@@ -2408,7 +2412,7 @@ with tab_detail:
             "Compras","Compra/Add Pagto"
         ]
 
-        # estilo amarelo no cabeçalho das taxas
+        # estilo cabeçalho amarelo transparente nas taxas
         taxa_cols = ["LPV/Cliques","Checkout/LPV","Add Pagto/Checkout","Compra/Add Pagto"]
         def highlight_headers(x):
             return [
