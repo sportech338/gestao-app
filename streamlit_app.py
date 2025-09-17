@@ -2617,14 +2617,14 @@ with tab_detail:
             colp1, colp2 = st.columns(2)
             with colp1:
                 perA = st.date_input(
-                    "Período A", (since_dt, until_dt), key="perA_det_rates"
+                    "Período A", (since_dt, until_dt), key="perA_det_rates",format="DD/MM/YYYY"
                 )
             with colp2:
                 default_b_end = since_dt - timedelta(days=1)
                 default_b_start = default_b_end - delta
                 perB = st.date_input(
                     "Período B", (default_b_start, default_b_end),
-                    key="perB_det_rates"
+                    key="perB_det_rates",format="DD/MM/YYYY"
                 )
 
             since_A, until_A = perA
