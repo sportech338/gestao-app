@@ -2638,8 +2638,8 @@ with tab_detail:
             "Add Pagto/Checkout B", "Compra/Add Pagto B",
         ]
 
-        RED_TRANSP  = "rgba(239, 68, 68, 0.15)"   # Período A
-        BLUE_TRANSP = "rgba(59, 130, 246, 0.15)"  # Período B
+        RED_TRANSP  = "rgba(239, 68, 68, 0.15)"   # Período A (vermelho translúcido)
+        BLUE_TRANSP = "rgba(59, 130, 246, 0.15)"  # Período B (azul translúcido)
 
         def _style_rate_columns(df: pd.DataFrame, rate_cols: list[str], rgba_bg: str):
             sty = df.style.apply(
@@ -2709,14 +2709,13 @@ with tab_detail:
                 deltas_pp[c] = deltas_pp[c].map(_fmt_delta_pp)
 
             # ---- Estilo de fundo (+ verde, - vermelho) ----
-            POS_BG = "rgba(22, 163, 74, 0.18)"   # verde translúcido
-            NEG_BG = "rgba(239, 68, 68, 0.18)"   # vermelho translúcido
+            POS_BG = "rgba(22, 163, 74, 0.18)"   # positivo: verde translúcido
+            NEG_BG = "rgba(239, 68, 68, 0.18)"   # negativo: vermelho translúcido
 
             def _style_delta_bg(val: str) -> str:
                 if isinstance(val, str) and val.endswith("p.p."):
                     try:
-                        num = val.replace(" p.p.", "")
-                        v = float(num.replace(".", "").replace(",", "."))
+                        v = float(val.replace(" p.p.", "").replace(".", "").replace(",", "."))
                     except Exception:
                         return ""
                     if v > 0:
