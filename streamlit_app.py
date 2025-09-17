@@ -2385,16 +2385,7 @@ with tab_detail:
 
         st.subheader(f"Desempenho por {dimensao}")
 
-        base_cols = group_cols + ["ROAS","Valor usado","Valor de conversão",
-                                  "Cliques","LPV","Checkout","Add Pagto","Compras"]
-        disp = disp.rename(columns={
-            "link_clicks":"Cliques","lpv":"LPV",
-            "init_checkout":"Checkout","add_payment":"Add Pagto","purchases":"Compras"
-        })
-        cols_presentes = [c for c in base_cols if c in disp.columns]
-        st.dataframe(disp[cols_presentes], use_container_width=True, height=520)
-
-        # ----- gráfico -----
+        # ----- gráfico logo abaixo do título -----
         if len(group_cols) == 1:
             xlab = group_cols[0]
             _bar_chart(raw[xlab], raw["purchases"], f"Compras por {xlab}", xlab, "Compras")
@@ -2412,6 +2403,16 @@ with tab_detail:
                 margin=dict(l=10, r=10, t=48, b=10), separators=",."
             )
             st.plotly_chart(fig, use_container_width=True)
+
+        # ----- tabela depois do gráfico -----
+        base_cols = group_cols + ["ROAS","Valor usado","Valor de conversão",
+                                  "Cliques","LPV","Checkout","Add Pagto","Compras"]
+        disp = disp.rename(columns={
+            "link_clicks":"Cliques","lpv":"LPV",
+            "init_checkout":"Checkout","add_payment":"Add Pagto","purchases":"Compras"
+        })
+        cols_presentes = [c for c in base_cols if c in disp.columns]
+        st.dataframe(disp[cols_presentes], use_container_width=True, height=520)
 
         # ----- métricas de conversão em cards -----
         st.markdown("### Taxas de Conversão por Dimensão")
