@@ -2255,7 +2255,7 @@ with tab_detail:
         "Dimensão",
         [
             "Populares", "Idade", "Gênero", "Idade + Gênero",
-            "Região", "País", "Plataforma", "Posicionamento"
+            "Região", "País", "Plataforma", "Posicionamento",
         ],
         index=0,
         horizontal=True,
@@ -2273,7 +2273,7 @@ with tab_detail:
     def _ensure_cols_exist(df: pd.DataFrame) -> pd.DataFrame:
         for col in [
             "spend", "revenue", "purchases",
-            "link_clicks", "lpv", "init_checkout", "add_payment"
+            "link_clicks", "lpv", "init_checkout", "add_payment",
         ]:
             if col not in df.columns:
                 df[col] = 0.0
@@ -2291,7 +2291,7 @@ with tab_detail:
 
         agg_cols = [
             "spend", "revenue", "purchases",
-            "link_clicks", "lpv", "init_checkout", "add_payment"
+            "link_clicks", "lpv", "init_checkout", "add_payment",
         ]
         g = df2.groupby(group_cols, dropna=False, as_index=False)[agg_cols].sum()
         g["ROAS"] = np.where(g["spend"] > 0, g["revenue"] / g["spend"], np.nan)
@@ -2313,7 +2313,7 @@ with tab_detail:
             height=420,
             template="plotly_white",
             margin=dict(l=10, r=10, t=48, b=10),
-            separators=",.",
+            separators=".,",
         )
         st.plotly_chart(fig, use_container_width=True)
 
@@ -2330,11 +2330,11 @@ with tab_detail:
     # ========= Helpers p/ taxas =========
     def _rates_from_raw(df: pd.DataFrame, group_cols: list[str]) -> pd.DataFrame:
         df = df.copy()
-        df["LPV/Cliques"]        = df.apply(lambda r: _safe_div(r["lpv"], r["link_clicks"]), axis=1)
-        df["Checkout/LPV"]       = df.apply(lambda r: _safe_div(r["init_checkout"], r["lpv"]), axis=1)
-        df["Compra/Checkout"]    = df.apply(lambda r: _safe_div(r["purchases"], r["init_checkout"]), axis=1)
+        df["LPV/Cliques"] = df.apply(lambda r: _safe_div(r["lpv"], r["link_clicks"]), axis=1)
+        df["Checkout/LPV"] = df.apply(lambda r: _safe_div(r["init_checkout"], r["lpv"]), axis=1)
+        df["Compra/Checkout"] = df.apply(lambda r: _safe_div(r["purchases"], r["init_checkout"]), axis=1)
         df["Add Pagto/Checkout"] = df.apply(lambda r: _safe_div(r["add_payment"], r["init_checkout"]), axis=1)
-        df["Compra/Add Pagto"]   = df.apply(lambda r: _safe_div(r["purchases"], r["add_payment"]), axis=1)
+        df["Compra/Add Pagto"] = df.apply(lambda r: _safe_div(r["purchases"], r["add_payment"]), axis=1)
         return df
 
     # ========= POPULARES =========
@@ -2408,7 +2408,7 @@ with tab_detail:
         bks = dim_to_breakdowns[dimensao]
         df_bd = fetch_insights_breakdown(
             act_id, token, api_version, str(since), str(until),
-            bks, level_bd, product_name=st.session_state.get("det_produto")
+            bks, level_bd, product_name=st.session_state.get("det_produto"),
         )
 
         if df_bd.empty:
@@ -2457,7 +2457,7 @@ with tab_detail:
                 height=460,
                 template="plotly_white",
                 margin=dict(l=10, r=10, t=48, b=10),
-                separators=",.",
+                separators=".,",
             )
             st.plotly_chart(fig, use_container_width=True)
 
@@ -2499,6 +2499,7 @@ with tab_detail:
 
         # estilo (somente cabeçalho) amarelo translúcido nas taxas
         taxa_cols = ["LPV/Cliques", "Checkout/LPV", "Compra/Checkout"]
+
         def highlight_headers(x):
             return [
                 "background-color: rgba(255, 255, 0, 0.3); font-weight: bold;"
@@ -2546,7 +2547,7 @@ with tab_detail:
         def _load_rates_for_range(d1, d2):
             dfR = fetch_insights_breakdown(
                 act_id, token, api_version, str(d1), str(d2),
-                bks, level_bd, product_name=st.session_state.get("det_produto")
+                bks, level_bd, product_name=st.session_state.get("det_produto"),
             )
             rawR, _ = _agg_and_format(dfR.rename(columns=rename_map), group_cols)
             return _rates_from_raw(rawR, group_cols)
@@ -2629,7 +2630,8 @@ with tab_detail:
 
         if show_deltas:
             def _pct_change(a, b):
-                a = float(a or 0); b = float(b or 0)
+                a = float(a or 0)
+                b = float(b or 0)
                 return (a / b - 1.0) if b > 0 else (np.nan if a == 0 else np.inf)
 
             delta_specs = [
@@ -2663,12 +2665,12 @@ with tab_detail:
                 if isinstance(val, str) and val.endswith("%"):
                     try:
                         v = float(val.replace(".", "").replace("%", "").replace(",", "."))
-                    except:
+                    except Exception:
                         return ""
                     if v > 0:
-                        return "color:#16a34a; font-weight:bold;"   # verde
+                        return "color:#16a34a; font-weight:bold;"  # verde
                     if v < 0:
-                        return "color:#dc2626; font-weight:bold;"   # vermelho
+                        return "color:#dc2626; font-weight:bold;"  # vermelho
                 return ""
 
             comp_styled = comp.style.applymap(_style_delta, subset=delta_cols)
