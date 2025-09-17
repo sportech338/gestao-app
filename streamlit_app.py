@@ -2394,11 +2394,11 @@ with tab_detail:
 
         st.subheader(f"Desempenho por {dimensao}")
 
-        base_cols = group_cols + ["Compras","ROAS","Valor usado","Valor de conversão",
-                                  "Cliques","LPV","Checkout","Add Pagto"]
+        base_cols = group_cols + ["ROAS","Valor usado","Valor de conversão",
+                                  "Cliques","LPV","Checkout","Add Pagto","Compras"]
         disp = disp.rename(columns={
-            "purchases":"Compras","link_clicks":"Cliques","lpv":"LPV",
-            "init_checkout":"Checkout","add_payment":"Add Pagto"
+            "link_clicks":"Cliques","lpv":"LPV",
+            "init_checkout":"Checkout","add_payment":"Add Pagto","purchases":"Compras"
         })
         cols_presentes = [c for c in base_cols if c in disp.columns]
 
