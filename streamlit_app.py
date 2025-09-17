@@ -2697,7 +2697,7 @@ with tab_detail:
 
             styled = (
                 deltas_num.style
-                .hide(axis="index")
+                .hide(axis="index")  # oculta índice para alinhar o cabeçalho à esquerda
                 .applymap(_bg_sign, subset=pp_cols)
                 .format({c: _fmt_pp for c in pp_cols})
                 .set_properties(subset=pp_cols, **{"padding": "6px 8px", "text-align": "center"})
