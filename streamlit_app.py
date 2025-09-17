@@ -2360,9 +2360,9 @@ with tab_detail:
 
         def _fmt_disp(df_):
             out = df_.copy()
-            out["Valor usado"]         = out["spend"].apply(_fmt_money_br)
-            out["Valor de conversão"]  = out["revenue"].apply(_fmt_money_br)
-            out["ROAS"]                = out["ROAS"].map(_fmt_ratio_br)
+            out["Valor usado"]        = out["spend"].apply(_fmt_money_br)
+            out["Valor de conversão"] = out["revenue"].apply(_fmt_money_br)
+            out["ROAS"]               = out["ROAS"].map(_fmt_ratio_br)
             out.rename(
                 columns={
                     "campaign_name": "Campanha",
