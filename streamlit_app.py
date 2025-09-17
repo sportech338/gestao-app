@@ -2297,8 +2297,13 @@ with tab_detail:
     def _bar_chart(x_labels, y_values, title, x_title, y_title):
         fig = go.Figure(go.Bar(x=x_labels, y=y_values, text=y_values, textposition="outside"))
         fig.update_layout(
-            title=title, xaxis_title=x_title, yaxis_title=y_title, height=420,
-            template="plotly_white", margin=dict(l=10, r=10, t=48, b=10), separators=".,",
+            title=title,
+            xaxis_title=x_title,
+            yaxis_title=y_title,
+            height=420,
+            template="plotly_white",
+            margin=dict(l=10, r=10, t=48, b=10),
+            separators=".,",
         )
         st.plotly_chart(fig, use_container_width=True)
 
@@ -2347,8 +2352,12 @@ with tab_detail:
             out["ROAS"]               = out["ROAS"].map(_fmt_ratio_br)
             out.rename(
                 columns={
-                    "campaign_name": "Campanha", "purchases": "Compras", "link_clicks": "Cliques",
-                    "lpv": "LPV", "init_checkout": "Checkout", "add_payment": "Add Pagto",
+                    "campaign_name": "Campanha",
+                    "purchases": "Compras",
+                    "link_clicks": "Cliques",
+                    "lpv": "LPV",
+                    "init_checkout": "Checkout",
+                    "add_payment": "Add Pagto",
                 },
                 inplace=True,
             )
@@ -2371,8 +2380,12 @@ with tab_detail:
 
     # ========= DEMAIS DIMENSÕES =========
     dim_to_breakdowns = {
-        "Idade": ["age"], "Gênero": ["gender"], "Idade + Gênero": ["age", "gender"],
-        "Região": ["region"], "País": ["country"], "Plataforma": ["publisher_platform"],
+        "Idade": ["age"],
+        "Gênero": ["gender"],
+        "Idade + Gênero": ["age", "gender"],
+        "Região": ["region"],
+        "País": ["country"],
+        "Plataforma": ["publisher_platform"],
         "Posicionamento": ["publisher_platform", "platform_position"],
     }
 
@@ -2392,8 +2405,12 @@ with tab_detail:
             st.stop()
 
         rename_map = {
-            "age": "Idade", "gender": "Gênero", "region": "Região", "country": "País",
-            "publisher_platform": "Plataforma", "platform_position": "Posicionamento",
+            "age": "Idade",
+            "gender": "Gênero",
+            "region": "Região",
+            "country": "País",
+            "publisher_platform": "Plataforma",
+            "platform_position": "Posicionamento",
         }
         group_cols = [rename_map.get(c, c) for c in bks]
 
@@ -2404,7 +2421,7 @@ with tab_detail:
 
         st.subheader(f"Desempenho por {dimensao}")
 
-        # ----- gráfico logo abaixo do título -----
+        # ----- gráfico -----
         if len(group_cols) == 1:
             xlab = group_cols[0]
             _bar_chart(raw[xlab], raw["purchases"], f"Compras por {xlab}", xlab, "Compras")
@@ -2417,26 +2434,36 @@ with tab_detail:
                     x=pvt.columns.astype(str),
                     y=pvt.index.astype(str),
                     colorbar=dict(title="Compras"),
-                    hovertemplate=(f"{idx}: " + "%{y}<br>" + f"{col}: " + "%{x}<br>" + "Compras: %{z}<extra></extra>"),
+                    hovertemplate=(
+                        f"{idx}: " + "%{y}<br>"
+                        + f"{col}: " + "%{x}<br>"
+                        + "Compras: %{z}<extra></extra>"
+                    ),
                 )
             )
             fig.update_layout(
                 title=f"Heatmap — Compras por {idx} × {col}",
-                height=460, template="plotly_white",
-                margin=dict(l=10, r=10, t=48, b=10), separators=".,",
+                height=460,
+                template="plotly_white",
+                margin=dict(l=10, r=10, t=48, b=10),
+                separators=".,",
             )
             st.plotly_chart(fig, use_container_width=True)
 
-        # ----- tabela integrada com taxas (principal) -----
+        # ----- tabela integrada com taxas -----
         raw = _rates_from_raw(raw, group_cols)
         disp = raw.rename(
             columns={
-                "link_clicks": "Cliques", "lpv": "LPV", "init_checkout": "Checkout", "add_payment": "Add Pagto",
-                "purchases": "Compras", "revenue": "Valor de conversão", "spend": "Valor usado",
+                "link_clicks": "Cliques",
+                "lpv": "LPV",
+                "init_checkout": "Checkout",
+                "add_payment": "Add Pagto",
+                "purchases": "Compras",
+                "revenue": "Valor de conversão",
+                "spend": "Valor usado",
             }
         )
 
-        # formatação
         disp["Valor usado"] = disp["Valor usado"].apply(_fmt_money_br)
         disp["Valor de conversão"] = disp["Valor de conversão"].apply(_fmt_money_br)
         disp["ROAS"] = disp["ROAS"].map(_fmt_ratio_br)
@@ -2449,38 +2476,54 @@ with tab_detail:
                 disp[col_abs] = disp[col_abs].astype(int)
 
         final_cols = group_cols + [
-            "ROAS", "Valor usado", "Valor de conversão", "Cliques", "LPV", "LPV/Cliques",
-            "Checkout", "Checkout/LPV", "Add Pagto", "Add Pagto/Checkout",
+            "ROAS", "Valor usado", "Valor de conversão",
+            "Cliques", "LPV", "LPV/Cliques",
+            "Checkout", "Checkout/LPV",
+            "Add Pagto", "Add Pagto/Checkout",
             "Compras", "Compra/Checkout", "Compra/Add Pagto",
         ]
 
-        # cabeçalhos de taxas
         taxa_cols = ["LPV/Cliques", "Checkout/LPV", "Compra/Checkout"]
 
         def highlight_headers(x):
             return [
-                "background-color: rgba(255, 255, 0, 0.3); font-weight: bold;" if col in taxa_cols else ""
+                "background-color: rgba(255, 255, 0, 0.3); font-weight: bold;"
+                if col in taxa_cols else ""
                 for col in x
             ]
 
-        styled_disp = disp[final_cols].style.apply(lambda _: highlight_headers(disp[final_cols].columns), axis=1)
+        styled_disp = disp[final_cols].style.apply(
+            lambda _: highlight_headers(disp[final_cols].columns),
+            axis=1,
+        )
         st.dataframe(styled_disp, use_container_width=True, height=520)
 
         # ====== Comparação por período ======
         st.markdown("### Comparar períodos")
 
         from datetime import timedelta
+
         since_dt = pd.to_datetime(str(since)).date()
         until_dt = pd.to_datetime(str(until)).date()
         delta = until_dt - since_dt
 
         colp1, colp2 = st.columns(2)
         with colp1:
-            perA = st.date_input("Período A", (since_dt, until_dt), key="perA_det_tbl", format="DD/MM/YYYY")
+            perA = st.date_input(
+                "Período A",
+                (since_dt, until_dt),
+                key="perA_det_tbl",
+                format="DD/MM/YYYY",
+            )
         with colp2:
             default_b_end = since_dt - timedelta(days=1)
             default_b_start = default_b_end - delta
-            perB = st.date_input("Período B", (default_b_start, default_b_end), key="perB_det_tbl", format="DD/MM/YYYY")
+            perB = st.date_input(
+                "Período B",
+                (default_b_start, default_b_end),
+                key="perB_det_tbl",
+                format="DD/MM/YYYY",
+            )
 
         since_A, until_A = perA
         since_B, until_B = perB
@@ -2498,12 +2541,18 @@ with tab_detail:
 
         def _alias_cols(df, suffix):
             m = {
-                "spend": f"Valor usado {suffix}", "revenue": f"Valor de conversão {suffix}",
-                "link_clicks": f"Cliques {suffix}", "lpv": f"LPV {suffix}",
-                "init_checkout": f"Checkout {suffix}", "add_payment": f"Add Pagto {suffix}",
-                "purchases": f"Compras {suffix}", "ROAS": f"ROAS {suffix}",
-                "LPV/Cliques": f"LPV/Cliques {suffix}", "Checkout/LPV": f"Checkout/LPV {suffix}",
-                "Compra/Checkout": f"Compra/Checkout {suffix}", "Add Pagto/Checkout": f"Add Pagto/Checkout {suffix}",
+                "spend": f"Valor usado {suffix}",
+                "revenue": f"Valor de conversão {suffix}",
+                "link_clicks": f"Cliques {suffix}",
+                "lpv": f"LPV {suffix}",
+                "init_checkout": f"Checkout {suffix}",
+                "add_payment": f"Add Pagto {suffix}",
+                "purchases": f"Compras {suffix}",
+                "ROAS": f"ROAS {suffix}",
+                "LPV/Cliques": f"LPV/Cliques {suffix}",
+                "Checkout/LPV": f"Checkout/LPV {suffix}",
+                "Compra/Checkout": f"Compra/Checkout {suffix}",
+                "Add Pagto/Checkout": f"Add Pagto/Checkout {suffix}",
                 "Compra/Add Pagto": f"Compra/Add Pagto {suffix}",
             }
             cols = [c for c in (group_cols + list(m.keys())) if c in df.columns]
@@ -2514,11 +2563,18 @@ with tab_detail:
 
         def _format_period_table(df_num: pd.DataFrame, suffix: str) -> pd.DataFrame:
             df = df_num.copy()
+
             money_cols = [f"Valor usado {suffix}", f"Valor de conversão {suffix}"]
-            int_cols = [f"Cliques {suffix}", f"LPV {suffix}", f"Checkout {suffix}", f"Add Pagto {suffix}", f"Compras {suffix}"]
+            int_cols = [
+                f"Cliques {suffix}", f"LPV {suffix}", f"Checkout {suffix}",
+                f"Add Pagto {suffix}", f"Compras {suffix}",
+            ]
             roas_cols = [f"ROAS {suffix}"]
-            rate_cols = [f"LPV/Cliques {suffix}", f"Checkout/LPV {suffix}",
-                         f"Compra/Checkout {suffix}", f"Add Pagto/Checkout {suffix}", f"Compra/Add Pagto {suffix}"]
+            rate_cols = [
+                f"LPV/Cliques {suffix}", f"Checkout/LPV {suffix}",
+                f"Compra/Checkout {suffix}", f"Add Pagto/Checkout {suffix}",
+                f"Compra/Add Pagto {suffix}",
+            ]
 
             for c in int_cols:
                 if c in df.columns:
@@ -2610,7 +2666,7 @@ with tab_detail:
             for c in pp_cols:
                 deltas_pp[c] = deltas_pp[c].map(_fmt_delta_pp)
 
-            # fundo por sinal (verde/positivo, vermelho/negativo) — mais opaco e com !important
+            # fundo por sinal (verde/positivo, vermelho/negativo)
             POS_BG = "rgba(22, 163, 74, 0.45)"
             NEG_BG = "rgba(239, 68, 68, 0.45)"
 
@@ -2628,12 +2684,18 @@ with tab_detail:
 
             st.markdown("#### Variação — Taxas (p.p.)")
 
-            # Renderiza como HTML para preservar o CSS do Styler
+            # Renderiza como HTML para preservar o CSS do Styler (e esconder o índice via CSS)
             styled = (
                 deltas_pp.style
                 .applymap(_style_delta_bg, subset=pp_cols)
-                .hide_index()
                 .set_properties(subset=pp_cols, **{"padding": "6px 8px"})
+                .set_table_styles([
+                    {"selector": "th.row_heading", "props": [("display", "none")]},
+                    {"selector": "th.row_heading.level0", "props": [("display", "none")]},
+                    {"selector": "th.blank.level0", "props": [("display", "none")]},
+                    {"selector": "th.col_heading", "props": [("text-align", "center"), ("white-space", "nowrap")]},
+                    {"selector": "td", "props": [("vertical-align", "middle")]}
+                ])
             )
             html = styled.to_html()
             st.markdown(html, unsafe_allow_html=True)
