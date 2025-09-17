@@ -2414,7 +2414,7 @@ with tab_detail:
         ]
 
         # estilo cabeçalho amarelo transparente nas taxas
-        taxa_cols = ["LPV/Cliques","Checkout/LPV","Add Pagto/Checkout","Compra/Checkout","Compra/Add Pagto"]
+        taxa_cols = ["LPV/Cliques","Checkout/LPV","Compra/Checkout"]
         def highlight_headers(x):
             return [
                 "background-color: rgba(255, 255, 0, 0.3); font-weight: bold;" if col in taxa_cols else ""
