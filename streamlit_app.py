@@ -2286,7 +2286,10 @@ with tab_detail:
         return g, gf
 
     def _bar_chart(x_labels, y_values, title, x_title, y_title):
-        fig = go.Figure(go.Bar(x=x_labels, y=y_values))
+        fig = go.Figure(go.Bar(
+            x=x_labels, y=y_values,
+            text=y_values, textposition="outside"  # 👈 mostra números nas barras
+        ))
         fig.update_layout(
             title=title, xaxis_title=x_title, yaxis_title=y_title,
             height=420, template="plotly_white",
@@ -2296,26 +2299,21 @@ with tab_detail:
 
     # ========= POPULARES =========
     if dimensao == "Populares":
-        # Base: usa o diário consolidado no período
         base = df_daily.copy()
         base = _apply_prod_filter(base)
         base = _ensure_cols_exist(base)
 
-        # Agrega por campanha
         g = (base.groupby(["campaign_id","campaign_name"], as_index=False)
                   [["spend","revenue","purchases","link_clicks","lpv","init_checkout","add_payment"]]
                   .sum())
         g["ROAS"] = np.where(g["spend"]>0, g["revenue"]/g["spend"], np.nan)
 
-        # Aplica gasto mínimo (detalhe)
         if min_spend_det and float(min_spend_det) > 0:
             g = g[g["spend"] >= float(min_spend_det)]
 
-        # TOP 5
         top_comp = g.sort_values(["purchases","ROAS"], ascending=[False,False]).head(5).copy()
         top_roas = g[g["spend"]>0].sort_values("ROAS", ascending=False).head(5).copy()
 
-        # Formata
         def _fmt_disp(df_):
             out = df_.copy()
             out["Valor usado"] = out["spend"].apply(_fmt_money_br)
@@ -2336,23 +2334,11 @@ with tab_detail:
         with c1:
             st.markdown("**Por Compras**")
             st.dataframe(disp_comp, use_container_width=True, height=260)
-            st.download_button(
-                "⬇️ Baixar CSV — TOP 5 por Compras",
-                data=disp_comp.to_csv(index=False).encode("utf-8-sig"),
-                file_name="top5_campanhas_por_compras.csv",
-                mime="text/csv"
-            )
         with c2:
             st.markdown("**Por ROAS** (com gasto > 0)")
             st.dataframe(disp_roas, use_container_width=True, height=260)
-            st.download_button(
-                "⬇️ Baixar CSV — TOP 5 por ROAS",
-                data=disp_roas.to_csv(index=False).encode("utf-8-sig"),
-                file_name="top5_campanhas_por_roas.csv",
-                mime="text/csv"
-            )
 
-        st.stop()  # evita executar o restante desta aba quando Populares estiver selecionado
+        st.stop()
 
     # ========= DEMAIS DIMENSÕES =========
     dim_to_breakdowns = {
@@ -2365,7 +2351,6 @@ with tab_detail:
         "Posicionamento": ["publisher_platform","platform_position"],
     }
 
-    # Proteção para Posicionamento em nível errado
     level_bd = level
     if dimensao == "Posicionamento" and level_bd not in ["adset", "ad"]:
         level_bd = "adset"
@@ -2401,9 +2386,9 @@ with tab_detail:
             "init_checkout":"Checkout","add_payment":"Add Pagto","purchases":"Compras"
         })
         cols_presentes = [c for c in base_cols if c in disp.columns]
-
         st.dataframe(disp[cols_presentes], use_container_width=True, height=520)
 
+        # ----- gráfico -----
         if len(group_cols) == 1:
             xlab = group_cols[0]
             _bar_chart(raw[xlab], raw["purchases"], f"Compras por {xlab}", xlab, "Compras")
@@ -2421,5 +2406,20 @@ with tab_detail:
                 margin=dict(l=10, r=10, t=48, b=10), separators=",."
             )
             st.plotly_chart(fig, use_container_width=True)
+
+        # ----- métricas de conversão -----
+        st.markdown("### Taxas de Conversão por Dimensão")
+        raw["LPV/Cliques"]        = raw.apply(lambda r: _safe_div(r["lpv"], r["link_clicks"]), axis=1)
+        raw["Checkout/LPV"]       = raw.apply(lambda r: _safe_div(r["init_checkout"], r["lpv"]), axis=1)
+        raw["Compra/Checkout"]    = raw.apply(lambda r: _safe_div(r["purchases"], r["init_checkout"]), axis=1)
+        raw["Add Pagto/Checkout"] = raw.apply(lambda r: _safe_div(r["add_payment"], r["init_checkout"]), axis=1)
+        raw["Compra/Add Pagto"]   = raw.apply(lambda r: _safe_div(r["purchases"], r["add_payment"]), axis=1)
+
+        conv_cols = ["LPV/Cliques","Checkout/LPV","Compra/Checkout","Add Pagto/Checkout","Compra/Add Pagto"]
+        conv_disp = raw[group_cols + conv_cols].copy()
+        for c in conv_cols:
+            conv_disp[c] = conv_disp[c].map(_fmt_pct_br)
+
+        st.dataframe(conv_disp, use_container_width=True, height=360)
 
         st.stop()
