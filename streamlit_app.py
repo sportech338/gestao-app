@@ -2610,9 +2610,9 @@ with tab_detail:
             for c in pp_cols:
                 deltas_pp[c] = deltas_pp[c].map(_fmt_delta_pp)
 
-            # fundo por sinal (verde/positivo, vermelho/negativo)
-            POS_BG = "rgba(22, 163, 74, 0.18)"
-            NEG_BG = "rgba(239, 68, 68, 0.18)"
+            # fundo por sinal (verde/positivo, vermelho/negativo) — mais opaco e com !important
+            POS_BG = "rgba(22, 163, 74, 0.45)"
+            NEG_BG = "rgba(239, 68, 68, 0.45)"
 
             def _style_delta_bg(val: str) -> str:
                 if isinstance(val, str) and val.endswith("p.p."):
@@ -2621,16 +2621,21 @@ with tab_detail:
                     except Exception:
                         return ""
                     if v > 0:
-                        return f"background-color: {POS_BG}; font-weight: bold;"
+                        return f"background-color: {POS_BG} !important; font-weight: 700 !important;"
                     if v < 0:
-                        return f"background-color: {NEG_BG}; font-weight: bold;"
+                        return f"background-color: {NEG_BG} !important; font-weight: 700 !important;"
                 return ""
 
             st.markdown("#### Variação — Taxas (p.p.)")
 
-            # 👉 Renderiza como HTML para garantir as cores
-            styled = deltas_pp.style.applymap(_style_delta_bg, subset=pp_cols)
-            html = styled.to_html()  # preserva CSS do Styler
+            # Renderiza como HTML para preservar o CSS do Styler
+            styled = (
+                deltas_pp.style
+                .applymap(_style_delta_bg, subset=pp_cols)
+                .hide_index()
+                .set_properties(subset=pp_cols, **{"padding": "6px 8px"})
+            )
+            html = styled.to_html()
             st.markdown(html, unsafe_allow_html=True)
 
         st.caption(
