@@ -2397,7 +2397,7 @@ with tab_detail:
         disp["Valor usado"] = disp["Valor usado"].apply(_fmt_money_br)
         disp["Valor de conversão"] = disp["Valor de conversão"].apply(_fmt_money_br)
         disp["ROAS"] = disp["ROAS"].map(_fmt_ratio_br)
-        for col in ["LPV/Cliques","Checkout/LPV","Add Pagto/Checkout","Compra/Add Pagto"]:
+        for col in ["LPV/Cliques","Checkout/LPV","Add Pagto/Checkout","Compra/Checkout","Compra/Add Pagto"]:
             disp[col] = disp[col].map(_fmt_pct_br)
 
         # força inteiros nas métricas absolutas
