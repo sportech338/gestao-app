@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -2312,26 +2313,6 @@ with tab_detail:
             unsafe_allow_html=True
         )
 
-    
-        # ----- gráfico -----
-        if len(group_cols) == 1:
-            xlab = group_cols[0]
-            _bar_chart(raw[xlab], raw["purchases"], f"Compras por {xlab}", xlab, "Compras")
-        else:
-            idx, col = group_cols
-            pvt = raw.pivot_table(index=idx, columns=col, values="purchases", aggfunc="sum").fillna(0)
-            fig = go.Figure(data=go.Heatmap(
-                z=pvt.values, x=pvt.columns.astype(str), y=pvt.index.astype(str),
-                colorbar=dict(title="Compras"),
-                hovertemplate=f"{idx}: "+"%{y}<br>"+f"{col}: "+"%{x}<br>Compras: %{z}<extra></extra>"
-            ))
-            fig.update_layout(
-                title=f"Heatmap — Compras por {idx} × {col}",
-                height=460, template="plotly_white",
-                margin=dict(l=10, r=10, t=48, b=10), separators=",."
-            )
-            st.plotly_chart(fig, use_container_width=True)
-
     # ========= POPULARES =========
     if dimensao == "Populares":
         base = df_daily.copy()
@@ -2412,6 +2393,25 @@ with tab_detail:
         })
         cols_presentes = [c for c in base_cols if c in disp.columns]
         st.dataframe(disp[cols_presentes], use_container_width=True, height=520)
+
+        # ----- gráfico -----
+        if len(group_cols) == 1:
+            xlab = group_cols[0]
+            _bar_chart(raw[xlab], raw["purchases"], f"Compras por {xlab}", xlab, "Compras")
+        else:
+            idx, col = group_cols
+            pvt = raw.pivot_table(index=idx, columns=col, values="purchases", aggfunc="sum").fillna(0)
+            fig = go.Figure(data=go.Heatmap(
+                z=pvt.values, x=pvt.columns.astype(str), y=pvt.index.astype(str),
+                colorbar=dict(title="Compras"),
+                hovertemplate=f"{idx}: "+"%{y}<br>"+f"{col}: "+"%{x}<br>Compras: %{z}<extra></extra>"
+            ))
+            fig.update_layout(
+                title=f"Heatmap — Compras por {idx} × {col}",
+                height=460, template="plotly_white",
+                margin=dict(l=10, r=10, t=48, b=10), separators=",."
+            )
+            st.plotly_chart(fig, use_container_width=True)
 
         # ----- métricas de conversão em cards -----
         st.markdown("### Taxas de Conversão por Dimensão")
