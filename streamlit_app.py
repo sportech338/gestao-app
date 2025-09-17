@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -2422,7 +2421,7 @@ with tab_detail:
             for i, col in enumerate(final_cols) if col in taxa_cols
         ]
 
-        styled_disp = disp[final_cols].style.set_table_styles(styles)
+        styled_disp = disp[final_cols].style.set_table_styles(styles, axis=1)
 
         st.dataframe(styled_disp, use_container_width=True, height=520)
 
