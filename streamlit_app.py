@@ -2236,7 +2236,6 @@ with tab_detail:
         "Posicionamento, Dia e Hora. Há um modo 'Populares' com os TOP 5."
     )
 
-    # ===== Filtros =====
     colf1, colf2 = st.columns([2, 1])
     with colf1:
         produto_sel_det = st.selectbox(
@@ -2297,11 +2296,7 @@ with tab_detail:
             df2.groupby(group_cols, dropna=False, as_index=False)[agg_cols]
             .sum()
         )
-        g["ROAS"] = np.where(
-            g["spend"] > 0,
-            g["revenue"] / g["spend"],
-            np.nan,
-        )
+        g["ROAS"] = np.where(g["spend"] > 0, g["revenue"] / g["spend"], np.nan)
 
         if min_spend_det and float(min_spend_det) > 0:
             g = g[g["spend"] >= float(min_spend_det)]
@@ -2323,87 +2318,6 @@ with tab_detail:
             template="plotly_white",
             margin=dict(l=10, r=10, t=48, b=10),
             separators=",.",
-        )
-        st.plotly_chart(fig, use_container_width=True)
-
-    # === Cores e legenda para comparação de períodos ===
-    COLOR_A = "#636EFA"  # azul
-    COLOR_B = "#EF553B"  # laranja
-
-    def _legend_periodos(labelA: str, labelB: str | None):
-        if not labelB:
-            st.caption(f"🟦 **Período A:** {labelA}")
-            return
-        st.markdown(
-            f"""
-            <div style="display:flex; gap:18px; align-items:center; margin:6px 0 2px;">
-              <div><span style="display:inline-block;width:14px;height:14px;background:{COLOR_A};border-radius:3px;margin-right:6px;"></span>
-                   <b>Período A</b>: {labelA}</div>
-              <div><span style="display:inline-block;width:14px;height:14px;background:{COLOR_B};border-radius:3px;margin-right:6px;"></span>
-                   <b>Período B</b>: {labelB}</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-    # ========= Helpers p/ taxas =========
-    def _rates_from_raw(df: pd.DataFrame, group_cols: list[str]) -> pd.DataFrame:
-        df = df.copy()
-        df["LPV/Cliques"]        = df.apply(lambda r: _safe_div(r["lpv"], r["link_clicks"]), axis=1)
-        df["Checkout/LPV"]       = df.apply(lambda r: _safe_div(r["init_checkout"], r["lpv"]), axis=1)
-        df["Compra/Checkout"]    = df.apply(lambda r: _safe_div(r["purchases"], r["init_checkout"]), axis=1)
-        df["Add Pagto/Checkout"] = df.apply(lambda r: _safe_div(r["add_payment"], r["init_checkout"]), axis=1)
-        df["Compra/Add Pagto"]   = df.apply(lambda r: _safe_div(r["purchases"], r["add_payment"]), axis=1)
-        return df
-
-    def _compare_rate_chart(
-        rate_col,
-        dim_col,
-        dfA,
-        dfB=None,
-        labelA="Período A",
-        labelB="Período B",
-    ):
-        x = dfA[dim_col].astype(str)
-        fig = go.Figure()
-
-        # Série A (azul)
-        fig.add_bar(
-            name=labelA,
-            x=x,
-            y=dfA[rate_col],
-            text=dfA[rate_col],
-            texttemplate="%{text:.0%}",
-            textposition="outside",
-            hovertemplate=f"{dim_col}: %{{x}}<br>{rate_col}: %{{y:.2%}}<extra></extra>",
-            marker_color=COLOR_A,
-        )
-
-        # Série B (laranja) se houver
-        if dfB is not None:
-            dfB2 = dfB.set_index(dim_col).reindex(x).reset_index()
-            fig.add_bar(
-                name=labelB,
-                x=x,
-                y=dfB2[rate_col],
-                text=dfB2[rate_col],
-                texttemplate="%{text:.0%}",
-                textposition="outside",
-                hovertemplate=f"{dim_col}: %{{x}}<br>{rate_col}: %{{y:.2%}}<extra></extra>",
-                marker_color=COLOR_B,
-            )
-
-        fig.update_layout(
-            barmode="group",
-            title=f"{rate_col} por {dim_col}",
-            xaxis_title=dim_col,
-            yaxis_title="Taxa",
-            yaxis=dict(tickformat=".0%"),
-            height=420,
-            template="plotly_white",
-            margin=dict(l=10, r=10, t=48, b=10),
-            separators=",.",
-            showlegend=False,
         )
         st.plotly_chart(fig, use_container_width=True)
 
