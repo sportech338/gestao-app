@@ -2669,9 +2669,9 @@ with tab_detail:
         st.markdown("#### Período B")
         st.dataframe(B_styled, use_container_width=True, height=360)
 
-        # ------- (Opcional) Tabela de variação A vs B -------
+        # ------- (Opcional) Tabela de variação A vs B (APENAS TAXAS) -------
         show_deltas = st.checkbox(
-            "Mostrar variação entre A e B (métricas em %, taxas em p.p.)",
+            "Mostrar variação entre A e B (apenas taxas em p.p.)",
             value=False,
             key="det_show_deltas_tbl",
         )
@@ -2679,41 +2679,6 @@ with tab_detail:
         if show_deltas:
             # merge numérico para cálculo
             comp_num = pd.merge(A_num, B_num, on=group_cols, how="outer")
-
-            # ---- Variação % para métricas (não-taxas) ----
-            def _pct_change(a, b):
-                a = float(0 if pd.isna(a) else a)
-                b = float(0 if pd.isna(b) else b)
-                return (a / b - 1.0) if b > 0 else (np.nan if a == 0 else np.inf)
-
-            metrics_specs = [
-                ("Valor usado", "Valor usado A", "Valor usado B"),
-                ("Valor de conversão", "Valor de conversão A", "Valor de conversão B"),
-                ("ROAS", "ROAS A", "ROAS B"),
-                ("Cliques", "Cliques A", "Cliques B"),
-                ("LPV", "LPV A", "LPV B"),
-                ("Checkout", "Checkout A", "Checkout B"),
-                ("Add Pagto", "Add Pagto A", "Add Pagto B"),
-                ("Compras", "Compras A", "Compras B"),
-            ]
-
-            deltas_pct = comp_num[group_cols].copy()
-            for label, colA, colB in metrics_specs:
-                if colA in comp_num.columns and colB in comp_num.columns:
-                    deltas_pct[f"Δ {label} (%)"] = comp_num.apply(
-                        lambda r: _pct_change(r.get(colA), r.get(colB)),
-                        axis=1,
-                    )
-
-            def _fmt_delta_pct(x):
-                if not pd.notnull(x) or np.isinf(x):
-                    return ""
-                sign = "+" if x >= 0 else ""
-                return f"{sign}{x*100:,.1f}%".replace(",", "X").replace(".", ",").replace("X", ".")
-
-            pct_cols = [c for c in deltas_pct.columns if c.endswith("(%)")]
-            for c in pct_cols:
-                deltas_pct[c] = deltas_pct[c].map(_fmt_delta_pct)
 
             # ---- Variação em pontos percentuais (taxas) ----
             rate_specs = [
@@ -2745,10 +2710,9 @@ with tab_detail:
 
             # ---- Estilo (+ verde, - vermelho) ----
             def _style_delta(val):
-                if isinstance(val, str) and (val.endswith("%") or val.endswith("p.p.")):
+                if isinstance(val, str) and val.endswith("p.p."):
                     try:
-                        num = val.replace(" p.p.", "").replace("%", "")
-                        v = float(num.replace(".", "").replace(",", "."))
+                        v = float(val.replace(" p.p.", "").replace(".", "").replace(",", "."))
                     except Exception:
                         return ""
                     if v > 0:
@@ -2756,13 +2720,6 @@ with tab_detail:
                     if v < 0:
                         return "color:#dc2626; font-weight:bold;"
                 return ""
-
-            st.markdown("#### Variação — Métricas (%)")
-            st.dataframe(
-                deltas_pct.style.applymap(_style_delta, subset=pct_cols),
-                use_container_width=True,
-                height=300,
-            )
 
             st.markdown("#### Variação — Taxas (p.p.)")
             st.dataframe(
