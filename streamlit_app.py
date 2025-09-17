@@ -2282,32 +2282,23 @@ with tab_detail:
     def _agg_and_format(df: pd.DataFrame, group_cols: list[str]):
         if df is None or df.empty:
             return pd.DataFrame(), pd.DataFrame()
-
         df2 = _apply_prod_filter(df)
         if df2.empty:
             return pd.DataFrame(), pd.DataFrame()
-
         df2 = _ensure_cols_exist(df2)
 
-        agg_cols = [
-            "spend", "revenue", "purchases",
-            "link_clicks", "lpv", "init_checkout", "add_payment",
-        ]
+        agg_cols = ["spend", "revenue", "purchases", "link_clicks", "lpv", "init_checkout", "add_payment"]
         g = df2.groupby(group_cols, dropna=False, as_index=False)[agg_cols].sum()
         g["ROAS"] = np.where(g["spend"] > 0, g["revenue"] / g["spend"], np.nan)
 
         if min_spend_det and float(min_spend_det) > 0:
             g = g[g["spend"] >= float(min_spend_det)]
-
         if not g.empty:
             g = g.sort_values(["purchases", "ROAS"], ascending=[False, False])
-
         return g, g.copy()
 
     def _bar_chart(x_labels, y_values, title, x_title, y_title):
-        fig = go.Figure(
-            go.Bar(x=x_labels, y=y_values, text=y_values, textposition="outside")
-        )
+        fig = go.Figure(go.Bar(x=x_labels, y=y_values, text=y_values, textposition="outside"))
         fig.update_layout(
             title=title,
             xaxis_title=x_title,
@@ -2627,12 +2618,46 @@ with tab_detail:
         A_fmt = _format_period_table(A_num, "A")
         B_fmt = _format_period_table(B_num, "B")
 
+        # ------- destaque visual das colunas de taxas -------
+        RATE_COLS_A = [
+            "LPV/Cliques A", "Checkout/LPV A", "Compra/Checkout A",
+            "Add Pagto/Checkout A", "Compra/Add Pagto A",
+        ]
+        RATE_COLS_B = [
+            "LPV/Cliques B", "Checkout/LPV B", "Compra/Checkout B",
+            "Add Pagto/Checkout B", "Compra/Add Pagto B",
+        ]
+
+        RED_TRANSP  = "rgba(239, 68, 68, 0.15)"   # A
+        BLUE_TRANSP = "rgba(59, 130, 246, 0.15)"  # B
+
+        def _style_rate_columns(df: pd.DataFrame, rate_cols: list[str], rgba_bg: str):
+            sty = df.style.apply(
+                lambda _row: [
+                    f"background-color: {rgba_bg};" if col in rate_cols else ""
+                    for col in df.columns
+                ],
+                axis=1,
+            )
+            header_styles = [
+                {
+                    "selector": f"th.col_heading.level0.col{df.columns.get_loc(col)}",
+                    "props": [("background-color", rgba_bg), ("font-weight", "bold")],
+                }
+                for col in rate_cols
+                if col in df.columns
+            ]
+            return sty.set_table_styles(header_styles)
+
+        A_styled = _style_rate_columns(A_fmt, RATE_COLS_A, RED_TRANSP)
+        B_styled = _style_rate_columns(B_fmt, RATE_COLS_B, BLUE_TRANSP)
+
         # ------- EXIBIÇÃO: duas tabelas separadas -------
         st.markdown("#### Período A")
-        st.dataframe(A_fmt, use_container_width=True, height=360)
+        st.dataframe(A_styled, use_container_width=True, height=360)
 
         st.markdown("#### Período B")
-        st.dataframe(B_fmt, use_container_width=True, height=360)
+        st.dataframe(B_styled, use_container_width=True, height=360)
 
         # ------- (Opcional) Tabela de variação A vs B -------
         show_deltas = st.checkbox(
@@ -2642,7 +2667,6 @@ with tab_detail:
         )
 
         if show_deltas:
-            # comp_num: merge numérico para calcular variações
             comp_num = pd.merge(A_num, B_num, on=group_cols, how="outer")
 
             def _pct_change(a, b):
