@@ -2295,7 +2295,9 @@ with tab_detail:
         return g, g.copy()
 
     def _bar_chart(x_labels, y_values, title, x_title, y_title):
-        fig = go.Figure(go.Bar(x=x_labels, y=y_values, text=y_values, textposition="outside"))
+        fig = go.Figure(
+            go.Bar(x=x_labels, y=y_values, text=y_values, textposition="outside")
+        )
         fig.update_layout(
             title=title,
             xaxis_title=x_title,
@@ -2464,13 +2466,13 @@ with tab_detail:
             }
         )
 
+        # formatação para exibição
         disp["Valor usado"] = disp["Valor usado"].apply(_fmt_money_br)
         disp["Valor de conversão"] = disp["Valor de conversão"].apply(_fmt_money_br)
         disp["ROAS"] = disp["ROAS"].map(_fmt_ratio_br)
         for col_taxa in ["LPV/Cliques", "Checkout/LPV", "Compra/Checkout", "Add Pagto/Checkout", "Compra/Add Pagto"]:
             if col_taxa in disp.columns:
                 disp[col_taxa] = disp[col_taxa].map(_fmt_pct_br)
-
         for col_abs in ["Cliques", "LPV", "Checkout", "Add Pagto", "Compras"]:
             if col_abs in disp.columns:
                 disp[col_abs] = disp[col_abs].astype(int)
@@ -2483,6 +2485,7 @@ with tab_detail:
             "Compras", "Compra/Checkout", "Compra/Add Pagto",
         ]
 
+        # cabeçalhos das taxas em amarelo
         taxa_cols = ["LPV/Cliques", "Checkout/LPV", "Compra/Checkout"]
 
         def highlight_headers(x):
@@ -2503,6 +2506,7 @@ with tab_detail:
 
         from datetime import timedelta
 
+        # Período A padrão = since → until
         since_dt = pd.to_datetime(str(since)).date()
         until_dt = pd.to_datetime(str(until)).date()
         delta = until_dt - since_dt
@@ -2536,6 +2540,7 @@ with tab_detail:
             rawR, _ = _agg_and_format(dfR.rename(columns=rename_map), group_cols)
             return _rates_from_raw(rawR, group_cols)
 
+        # Carrega e calcula taxas para A e B
         raw_A = _load_rates_for_range(since_A, until_A)
         raw_B = _load_rates_for_range(since_B, until_B)
 
@@ -2558,9 +2563,11 @@ with tab_detail:
             cols = [c for c in (group_cols + list(m.keys())) if c in df.columns]
             return df[cols].rename(columns=m)
 
+        # Tabelas NUMÉRICAS (base para os cálculos)
         A_num = _alias_cols(raw_A, "A")
         B_num = _alias_cols(raw_B, "B")
 
+        # ------- formatação para exibição (cada período em sua tabela) -------
         def _format_period_table(df_num: pd.DataFrame, suffix: str) -> pd.DataFrame:
             df = df_num.copy()
 
@@ -2576,12 +2583,17 @@ with tab_detail:
                 f"Compra/Add Pagto {suffix}",
             ]
 
+            # Inteiros
             for c in int_cols:
                 if c in df.columns:
                     df[c] = df[c].fillna(0).astype(float).round(0).astype(int)
+
+            # Dinheiro
             for c in money_cols:
                 if c in df.columns:
                     df[c] = df[c].apply(_fmt_money_br)
+
+            # ROAS e taxas
             for c in roas_cols:
                 if c in df.columns:
                     df[c] = df[c].map(_fmt_ratio_br)
@@ -2602,6 +2614,7 @@ with tab_detail:
         A_fmt = _format_period_table(A_num, "A")
         B_fmt = _format_period_table(B_num, "B")
 
+        # Destaque visual das colunas de taxas em A e B
         RATE_COLS_A = ["LPV/Cliques A", "Checkout/LPV A", "Compra/Checkout A", "Add Pagto/Checkout A", "Compra/Add Pagto A"]
         RATE_COLS_B = ["LPV/Cliques B", "Checkout/LPV B", "Compra/Checkout B", "Add Pagto/Checkout B", "Compra/Add Pagto B"]
 
@@ -2614,15 +2627,19 @@ with tab_detail:
                 axis=1,
             )
             header_styles = [
-                {"selector": f"th.col_heading.level0.col{df.columns.get_loc(col)}",
-                 "props": [("background-color", rgba_bg), ("font-weight", "bold")]}
-                for col in rate_cols if col in df.columns
+                {
+                    "selector": f"th.col_heading.level0.col{df.columns.get_loc(col)}",
+                    "props": [("background-color", rgba_bg), ("font-weight", "bold")],
+                }
+                for col in rate_cols
+                if col in df.columns
             ]
             return sty.set_table_styles(header_styles)
 
         A_styled = _style_rate_columns(A_fmt, RATE_COLS_A, RED_TRANSP)
         B_styled = _style_rate_columns(B_fmt, RATE_COLS_B, BLUE_TRANSP)
 
+        # ------- EXIBIÇÃO: duas tabelas separadas -------
         st.markdown("#### Período A")
         st.dataframe(A_styled, use_container_width=True, height=360)
 
@@ -2637,8 +2654,10 @@ with tab_detail:
         )
 
         if show_deltas:
+            # ---- Merge numérico para cálculo ----
             comp_num = pd.merge(A_num, B_num, on=group_cols, how="outer")
 
+            # ---- Variação em pontos percentuais (taxas) ----
             rate_specs = [
                 ("LPV/Cliques", "LPV/Cliques A", "LPV/Cliques B"),
                 ("Checkout/LPV", "Checkout/LPV A", "Checkout/LPV B"),
@@ -2647,58 +2666,60 @@ with tab_detail:
                 ("Compra/Add Pagto", "Compra/Add Pagto A", "Compra/Add Pagto B"),
             ]
 
-            deltas_pp = comp_num[group_cols].copy()
+            # DataFrame NUMÉRICO (sem strings) para aplicar cor por sinal
+            deltas_num = comp_num[group_cols].copy()
             for label, colA, colB in rate_specs:
                 if colA in comp_num.columns and colB in comp_num.columns:
-                    deltas_pp[f"Δ {label} (p.p.)"] = comp_num.apply(
-                        lambda r: (float(0 if pd.isna(r.get(colA)) else r.get(colA)) -
-                                   float(0 if pd.isna(r.get(colB)) else r.get(colB))) * 100.0,
-                        axis=1,
-                    )
+                    deltas_num[f"Δ {label} (p.p.)"] = (
+                        comp_num[colA].fillna(0).astype(float)
+                        - comp_num[colB].fillna(0).astype(float)
+                    ) * 100.0
 
-            def _fmt_delta_pp(x):
-                if not pd.notnull(x) or np.isinf(x):
+            pp_cols = [c for c in deltas_num.columns if c.endswith("(p.p.)")]
+
+            # ---- Estilo de fundo (+ verde, - vermelho) ----
+            POS_BG = "rgba(22, 163, 74, 0.45)"   # positivo
+            NEG_BG = "rgba(239, 68, 68, 0.45)"   # negativo
+
+            def _bg_sign(val):
+                try:
+                    v = float(val)
+                except Exception:
                     return ""
-                sign = "+" if x >= 0 else ""
-                return f"{sign}{x:,.1f} p.p.".replace(",", "X").replace(".", ",").replace("X", ".")
-
-            pp_cols = [c for c in deltas_pp.columns if c.endswith("(p.p.)")]
-            for c in pp_cols:
-                deltas_pp[c] = deltas_pp[c].map(_fmt_delta_pp)
-
-            # fundo por sinal (verde/positivo, vermelho/negativo)
-            POS_BG = "rgba(22, 163, 74, 0.45)"
-            NEG_BG = "rgba(239, 68, 68, 0.45)"
-
-            def _style_delta_bg(val: str) -> str:
-                if isinstance(val, str) and val.endswith("p.p."):
-                    try:
-                        v = float(val.replace(" p.p.", "").replace(".", "").replace(",", "."))
-                    except Exception:
-                        return ""
-                    if v > 0:
-                        return f"background-color: {POS_BG} !important; font-weight: 700 !important;"
-                    if v < 0:
-                        return f"background-color: {NEG_BG} !important; font-weight: 700 !important;"
+                if v > 0:
+                    return f"background-color: {POS_BG}; font-weight: 700;"
+                if v < 0:
+                    return f"background-color: {NEG_BG}; font-weight: 700;"
                 return ""
 
-            st.markdown("#### Variação — Taxas (p.p.)")
+            # ---- Formatação pt-BR para exibição (+x,x p.p.) ----
+            def _fmt_pp(v):
+                if pd.isna(v):
+                    return ""
+                sign = "+" if v >= 0 else ""
+                s = f"{sign}{v:.1f}".replace(".", ",")
+                return f"{s} p.p."
 
-            # Renderiza como HTML para preservar o CSS do Styler (e esconder o índice via CSS)
             styled = (
-                deltas_pp.style
-                .applymap(_style_delta_bg, subset=pp_cols)
-                .set_properties(subset=pp_cols, **{"padding": "6px 8px"})
+                deltas_num.style
+                .applymap(_bg_sign, subset=pp_cols)                 # pinta pelo valor numérico
+                .format({c: _fmt_pp for c in pp_cols})              # formata como string BR
+                .set_properties(subset=pp_cols, **{
+                    "padding": "6px 8px",
+                    "text-align": "center",
+                })
                 .set_table_styles([
-                    {"selector": "th.row_heading", "props": [("display", "none")]},
+                    {"selector": "th.row_heading", "props": [("display", "none")]},      # esconde índice
                     {"selector": "th.row_heading.level0", "props": [("display", "none")]},
                     {"selector": "th.blank.level0", "props": [("display", "none")]},
                     {"selector": "th.col_heading", "props": [("text-align", "center"), ("white-space", "nowrap")]},
-                    {"selector": "td", "props": [("vertical-align", "middle")]}
+                    {"selector": "td", "props": [("vertical-align", "middle")]},
                 ])
             )
-            html = styled.to_html()
-            st.markdown(html, unsafe_allow_html=True)
+
+            st.markdown("#### Variação — Taxas (p.p.)")
+            # ✅ st.table respeita o CSS do Styler; garante as cores no tema escuro
+            st.table(styled)
 
         st.caption(
             f"Período A: **{_fmt_range_br(since_A, until_A)}**  |  "
