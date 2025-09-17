@@ -2306,12 +2306,7 @@ with tab_detail:
 
     def _bar_chart(x_labels, y_values, title, x_title, y_title):
         fig = go.Figure(
-            go.Bar(
-                x=x_labels,
-                y=y_values,
-                text=y_values,
-                textposition="outside",
-            )
+            go.Bar(x=x_labels, y=y_values, text=y_values, textposition="outside")
         )
         fig.update_layout(
             title=title,
@@ -2337,11 +2332,11 @@ with tab_detail:
     # ========= Helpers p/ taxas =========
     def _rates_from_raw(df: pd.DataFrame, group_cols: list[str]) -> pd.DataFrame:
         df = df.copy()
-        df["LPV/Cliques"] = df.apply(lambda r: _safe_div(r["lpv"], r["link_clicks"]), axis=1)
-        df["Checkout/LPV"] = df.apply(lambda r: _safe_div(r["init_checkout"], r["lpv"]), axis=1)
-        df["Compra/Checkout"] = df.apply(lambda r: _safe_div(r["purchases"], r["init_checkout"]), axis=1)
+        df["LPV/Cliques"]        = df.apply(lambda r: _safe_div(r["lpv"], r["link_clicks"]), axis=1)
+        df["Checkout/LPV"]       = df.apply(lambda r: _safe_div(r["init_checkout"], r["lpv"]), axis=1)
+        df["Compra/Checkout"]    = df.apply(lambda r: _safe_div(r["purchases"], r["init_checkout"]), axis=1)
         df["Add Pagto/Checkout"] = df.apply(lambda r: _safe_div(r["add_payment"], r["init_checkout"]), axis=1)
-        df["Compra/Add Pagto"] = df.apply(lambda r: _safe_div(r["purchases"], r["add_payment"]), axis=1)
+        df["Compra/Add Pagto"]   = df.apply(lambda r: _safe_div(r["purchases"], r["add_payment"]), axis=1)
         return df
 
     # ========= POPULARES =========
@@ -2506,7 +2501,6 @@ with tab_detail:
 
         # estilo (somente cabeçalho) amarelo translúcido nas taxas
         taxa_cols = ["LPV/Cliques", "Checkout/LPV", "Compra/Checkout"]
-
         def highlight_headers(x):
             return [
                 "background-color: rgba(255, 255, 0, 0.3); font-weight: bold;"
@@ -2520,8 +2514,8 @@ with tab_detail:
         )
         st.dataframe(styled_disp, use_container_width=True, height=520)
 
-        # ====== Comparação por período (TABELA, substitui os gráficos) ======
-        st.markdown("### Comparar períodos (tabela)")
+        # ====== Comparação por período ======
+        st.markdown("### Comparar períodos")
 
         from datetime import timedelta
 
@@ -2567,7 +2561,7 @@ with tab_detail:
             m = {
                 "spend": f"Valor usado {suffix}",
                 "revenue": f"Valor de conversão {suffix}",
-                "link_clicks": f"CliqueS {suffix}" if False else f"Cliques {suffix}",  # mantém nome
+                "link_clicks": f"Cliques {suffix}",
                 "lpv": f"LPV {suffix}",
                 "init_checkout": f"Checkout {suffix}",
                 "add_payment": f"Add Pagto {suffix}",
@@ -2582,53 +2576,65 @@ with tab_detail:
             cols = [c for c in (group_cols + list(m.keys())) if c in df.columns]
             return df[cols].rename(columns=m)
 
-        A = _alias_cols(raw_A, "A")
-        B = _alias_cols(raw_B, "B")
-        comp = pd.merge(A, B, on=group_cols, how="outer")
+        # Tabelas NUMÉRICAS (base para cálculo)
+        A_num = _alias_cols(raw_A, "A")
+        B_num = _alias_cols(raw_B, "B")
 
-        # ===== Formatação da comparação =====
-        money_cols = ["Valor usado A", "Valor de conversão A", "Valor usado B", "Valor de conversão B"]
-        int_cols = [
-            "Cliques A", "LPV A", "Checkout A", "Add Pagto A", "Compras A",
-            "Cliques B", "LPV B", "Checkout B", "Add Pagto B", "Compras B",
-        ]
-        roas_cols = ["ROAS A", "ROAS B"]
-        rate_cols = [
-            "LPV/Cliques A", "Checkout/LPV A", "Compra/Checkout A", "Add Pagto/Checkout A", "Compra/Add Pagto A",
-            "LPV/Cliques B", "Checkout/LPV B", "Compra/Checkout B", "Add Pagto/Checkout B", "Compra/Add Pagto B",
-        ]
+        # ------- formatação para exibição (cada período em sua tabela) -------
+        def _format_period_table(df_num: pd.DataFrame, suffix: str) -> pd.DataFrame:
+            df = df_num.copy()
 
-        for c in money_cols:
-            if c in comp.columns:
-                comp[c] = comp[c].apply(_fmt_money_br)
+            money_cols = [f"Valor usado {suffix}", f"Valor de conversão {suffix}"]
+            int_cols = [
+                f"Cliques {suffix}", f"LPV {suffix}", f"Checkout {suffix}",
+                f"Add Pagto {suffix}", f"Compras {suffix}",
+            ]
+            roas_cols = [f"ROAS {suffix}"]
+            rate_cols = [
+                f"LPV/Cliques {suffix}", f"Checkout/LPV {suffix}",
+                f"Compra/Checkout {suffix}", f"Add Pagto/Checkout {suffix}",
+                f"Compra/Add Pagto {suffix}",
+            ]
 
-        for c in int_cols:
-            if c in comp.columns:
-                comp[c] = comp[c].fillna(0).astype(float).round(0).astype(int)
+            # Inteiros
+            for c in int_cols:
+                if c in df.columns:
+                    df[c] = df[c].fillna(0).astype(float).round(0).astype(int)
 
-        for c in roas_cols:
-            if c in comp.columns:
-                comp[c] = comp[c].map(_fmt_ratio_br)
+            # Dinheiro
+            for c in money_cols:
+                if c in df.columns:
+                    df[c] = df[c].apply(_fmt_money_br)
 
-        for c in rate_cols:
-            if c in comp.columns:
-                comp[c] = comp[c].map(_fmt_pct_br)
+            # ROAS e taxas
+            for c in roas_cols:
+                if c in df.columns:
+                    df[c] = df[c].map(_fmt_ratio_br)
+            for c in rate_cols:
+                if c in df.columns:
+                    df[c] = df[c].map(_fmt_pct_br)
 
-        # Ordenação das colunas na tabela comparativa
-        ordered = group_cols + [
-            # A (métricas)
-            "Valor usado A", "Valor de conversão A", "ROAS A",
-            "Cliques A", "LPV A", "Checkout A", "Add Pagto A", "Compras A",
-            # B (métricas)
-            "Valor usado B", "Valor de conversão B", "ROAS B",
-            "Cliques B", "LPV B", "Checkout B", "Add Pagto B", "Compras B",
-            # Taxas
-            "LPV/Cliques A", "Checkout/LPV A", "Compra/Checkout A", "Add Pagto/Checkout A", "Compra/Add Pagto A",
-            "LPV/Cliques B", "Checkout/LPV B", "Compra/Checkout B", "Add Pagto/Checkout B", "Compra/Add Pagto B",
-        ]
-        comp = comp[[c for c in ordered if c in comp.columns]].copy()
+            ordered = group_cols + [
+                f"Valor usado {suffix}", f"Valor de conversão {suffix}", f"ROAS {suffix}",
+                f"Cliques {suffix}", f"LPV {suffix}", f"Checkout {suffix}",
+                f"Add Pagto {suffix}", f"Compras {suffix}",
+                f"LPV/Cliques {suffix}", f"Checkout/LPV {suffix}",
+                f"Compra/Checkout {suffix}", f"Add Pagto/Checkout {suffix}",
+                f"Compra/Add Pagto {suffix}",
+            ]
+            return df[[c for c in ordered if c in df.columns]]
 
-        # Toggle para exibir variações (%). Por padrão NÃO mostra.
+        A_fmt = _format_period_table(A_num, "A")
+        B_fmt = _format_period_table(B_num, "B")
+
+        # ------- EXIBIÇÃO: duas tabelas separadas -------
+        st.markdown("#### Período A")
+        st.dataframe(A_fmt, use_container_width=True, height=360)
+
+        st.markdown("#### Período B")
+        st.dataframe(B_fmt, use_container_width=True, height=360)
+
+        # ------- (Opcional) Tabela de variação A vs B -------
         show_deltas = st.checkbox(
             "Mostrar variação (%) entre A e B",
             value=False,
@@ -2636,9 +2642,12 @@ with tab_detail:
         )
 
         if show_deltas:
+            # comp_num: merge numérico para calcular variações
+            comp_num = pd.merge(A_num, B_num, on=group_cols, how="outer")
+
             def _pct_change(a, b):
-                a = float(a or 0)
-                b = float(b or 0)
+                a = float(0 if pd.isna(a) else a)
+                b = float(0 if pd.isna(b) else b)
                 return (a / b - 1.0) if b > 0 else (np.nan if a == 0 else np.inf)
 
             delta_specs = [
@@ -2650,10 +2659,17 @@ with tab_detail:
                 ("Checkout", "Checkout A", "Checkout B"),
                 ("Add Pagto", "Add Pagto A", "Add Pagto B"),
                 ("Compras", "Compras A", "Compras B"),
+                ("LPV/Cliques", "LPV/Cliques A", "LPV/Cliques B"),
+                ("Checkout/LPV", "Checkout/LPV A", "Checkout/LPV B"),
+                ("Compra/Checkout", "Compra/Checkout A", "Compra/Checkout B"),
+                ("Add Pagto/Checkout", "Add Pagto/Checkout A", "Add Pagto/Checkout B"),
+                ("Compra/Add Pagto", "Compra/Add Pagto A", "Compra/Add Pagto B"),
             ]
+
+            deltas = comp_num[group_cols].copy()
             for label, colA, colB in delta_specs:
-                if colA in comp.columns and colB in comp.columns:
-                    comp[f"Δ {label}"] = comp.apply(
+                if colA in comp_num.columns and colB in comp_num.columns:
+                    deltas[f"Δ {label}"] = comp_num.apply(
                         lambda r: _pct_change(r.get(colA), r.get(colB)),
                         axis=1,
                     )
@@ -2664,9 +2680,9 @@ with tab_detail:
                 sign = "+" if x >= 0 else ""
                 return f"{sign}{x*100:,.1f}%".replace(",", "X").replace(".", ",").replace("X", ".")
 
-            delta_cols = [c for c in comp.columns if c.startswith("Δ ")]
+            delta_cols = [c for c in deltas.columns if c.startswith("Δ ")]
             for c in delta_cols:
-                comp[c] = comp[c].map(_fmt_delta_pct)
+                deltas[c] = deltas[c].map(_fmt_delta_pct)
 
             def _style_delta(val):
                 if isinstance(val, str) and val.endswith("%"):
@@ -2680,10 +2696,12 @@ with tab_detail:
                         return "color:#dc2626; font-weight:bold;"  # vermelho
                 return ""
 
-            comp_styled = comp.style.applymap(_style_delta, subset=delta_cols)
-            st.dataframe(comp_styled, use_container_width=True, height=560)
-        else:
-            st.dataframe(comp, use_container_width=True, height=560)
+            st.markdown("#### Variação A vs B (%)")
+            st.dataframe(
+                deltas.style.applymap(_style_delta, subset=delta_cols),
+                use_container_width=True,
+                height=360,
+            )
 
         st.caption(
             f"Período A: **{_fmt_range_br(since_A, until_A)}**  |  "
