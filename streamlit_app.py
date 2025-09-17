@@ -762,8 +762,8 @@ def _range_from_preset(p):
 _since_auto, _until_auto = _range_from_preset(preset)
 
 if preset == "Personalizado":
-    since = st.sidebar.date_input("Desde", value=_since_auto, key="since_custom")
-    until = st.sidebar.date_input("Até",   value=_until_auto, key="until_custom")
+    since = st.sidebar.date_input("Desde", value=_since_auto, key="since_custom", format="DD/MM/YYYY")
+    until = st.sidebar.date_input("Até",   value=_until_auto, key="until_custom", format="DD/MM/YYYY")
 else:
     # ✅ NÃO usar date_input aqui (evita estado preso)
     since, until = _since_auto, _until_auto
