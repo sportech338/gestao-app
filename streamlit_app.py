@@ -2300,60 +2300,50 @@ with tab_detail:
         df["Compra/Add Pagto"]   = df.apply(lambda r: _safe_div(r["purchases"], r["add_payment"]), axis=1)
         return df
 
-def _compare_rate_chart(
-    rate_col: str,
-    dim_col: str,
-    dfA: pd.DataFrame,
-    dfB: pd.DataFrame | None = None,
-    labelA: str = "Período A",
-    labelB: str = "Período B",
-):
-    """
-    Gráfico de barras comparando taxa (0–1) por dimensão, exibida como %.
-    Espera que dfA/dfB já tenham a taxa em fração (ex.: 0.25 = 25%).
-    """
-    x = dfA[dim_col].astype(str)
+    def _compare_rate_chart(rate_col, dim_col, dfA, dfB=None, labelA="Período A", labelB="Período B"):
+        """
+        Gráfico de barras comparando taxa (0–1) por dimensão, exibida como %.
+        Espera que dfA/dfB já tenham a taxa em fração (ex.: 0.25 = 25%).
+        """
+        x = dfA[dim_col].astype(str)
+        fig = go.Figure()
 
-    fig = go.Figure()
-
-    # Série A
-    fig.add_bar(
-        name=labelA,
-        x=x,
-        y=dfA[rate_col],
-        text=dfA[rate_col],
-        texttemplate="%{text:.0%}",  # mostra % no rótulo
-        textposition="outside",
-        hovertemplate=f"{dim_col}: %{x}<br>{rate_col}: %{y:.2%}<extra></extra>",
-    )
-
-    # Série B (opcional), reindexando para alinhar categorias
-    if dfB is not None:
-        dfB2 = dfB.set_index(dim_col).reindex(x).reset_index()
+        # Série A
         fig.add_bar(
-            name=labelB,
+            name=labelA,
             x=x,
-            y=dfB2[rate_col],
-            text=dfB2[rate_col],
-            texttemplate="%{text:.0%}",
+            y=dfA[rate_col],
+            text=dfA[rate_col],
+            texttemplate="%{text:.0%}",  # rótulo em %
             textposition="outside",
             hovertemplate=f"{dim_col}: %{x}<br>{rate_col}: %{y:.2%}<extra></extra>",
         )
 
-    fig.update_layout(
-        barmode="group",
-        title=f"{rate_col} por {dim_col}",
-        xaxis_title=dim_col,
-        yaxis_title="Taxa",
-        yaxis=dict(tickformat=".0%"),  # eixo Y em %
-        height=420,
-        template="plotly_white",
-        margin=dict(l=10, r=10, t=48, b=10),
-        separators=",.",
-    )
+        # Série B (opcional), reindexando para alinhar categorias
+        if dfB is not None:
+            dfB2 = dfB.set_index(dim_col).reindex(x).reset_index()
+            fig.add_bar(
+                name=labelB,
+                x=x,
+                y=dfB2[rate_col],
+                text=dfB2[rate_col],
+                texttemplate="%{text:.0%}",
+                textposition="outside",
+                hovertemplate=f"{dim_col}: %{x}<br>{rate_col}: %{y:.2%}<extra></extra>",
+            )
 
-    st.plotly_chart(fig, use_container_width=True)
-
+        fig.update_layout(
+            barmode="group",
+            title=f"{rate_col} por {dim_col}",
+            xaxis_title=dim_col,
+            yaxis_title="Taxa",
+            yaxis=dict(tickformat=".0%"),  # eixo Y em %
+            height=420,
+            template="plotly_white",
+            margin=dict(l=10, r=10, t=48, b=10),
+            separators=",.",
+        )
+        st.plotly_chart(fig, use_container_width=True)
 
     # ========= POPULARES =========
     if dimensao == "Populares":
@@ -2485,7 +2475,7 @@ def _compare_rate_chart(
             ]
 
         styled_disp = disp[final_cols].style.apply(
-            lambda _: highlight_headers(disp[final_cols].columns), 
+            lambda _: highlight_headers(disp[final_cols].columns),
             axis=1
         )
 
@@ -2502,7 +2492,7 @@ def _compare_rate_chart(
         dfB_rates = None
         labelB = None
         if compare:
-            from datetime import timedelta  # ✅ sem pandas extra aqui
+            from datetime import timedelta
 
             # período B padrão: anterior de mesmo tamanho
             since_dt = pd.to_datetime(str(since)).date()
@@ -2521,14 +2511,20 @@ def _compare_rate_chart(
             since_B, until_B = perB
 
             # A
-            df_A = fetch_insights_breakdown(act_id, token, api_version, str(since_A), str(until_A), bks, level_bd, product_name=st.session_state.get("det_produto"))
+            df_A = fetch_insights_breakdown(
+                act_id, token, api_version, str(since_A), str(until_A),
+                bks, level_bd, product_name=st.session_state.get("det_produto")
+            )
             raw_A, _ = _agg_and_format(df_A.rename(columns=rename_map), group_cols)
             raw_A = _rates_from_raw(raw_A, group_cols)
             dfA_rates = raw_A[group_cols + ["LPV/Cliques","Checkout/LPV","Compra/Checkout","Add Pagto/Checkout","Compra/Add Pagto"]].copy()
             labelA = f"{since_A} → {until_A}"
 
             # B
-            df_B = fetch_insights_breakdown(act_id, token, api_version, str(since_B), str(until_B), bks, level_bd, product_name=st.session_state.get("det_produto"))
+            df_B = fetch_insights_breakdown(
+                act_id, token, api_version, str(since_B), str(until_B),
+                bks, level_bd, product_name=st.session_state.get("det_produto")
+            )
             raw_B, _ = _agg_and_format(df_B.rename(columns=rename_map), group_cols)
             raw_B = _rates_from_raw(raw_B, group_cols)
             dfB_rates = raw_B[group_cols + ["LPV/Cliques","Checkout/LPV","Compra/Checkout","Add Pagto/Checkout","Compra/Add Pagto"]].copy()
