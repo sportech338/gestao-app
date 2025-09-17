@@ -2289,6 +2289,35 @@ with tab_detail:
         )
         st.plotly_chart(fig, use_container_width=True)
 
+    # helpers p/ taxas e gráfico comparativo
+    def _rates_from_raw(df: pd.DataFrame, group_cols: list[str]) -> pd.DataFrame:
+        """Retorna df com taxas numéricas (0-1) calculadas a partir de raw."""
+        df = df.copy()
+        df["LPV/Cliques"]        = df.apply(lambda r: _safe_div(r["lpv"], r["link_clicks"]), axis=1)
+        df["Checkout/LPV"]       = df.apply(lambda r: _safe_div(r["init_checkout"], r["lpv"]), axis=1)
+        df["Compra/Checkout"]    = df.apply(lambda r: _safe_div(r["purchases"], r["init_checkout"]), axis=1)
+        df["Add Pagto/Checkout"] = df.apply(lambda r: _safe_div(r["add_payment"], r["init_checkout"]), axis=1)
+        df["Compra/Add Pagto"]   = df.apply(lambda r: _safe_div(r["purchases"], r["add_payment"]), axis=1)
+        return df
+
+    def _compare_rate_chart(rate_col, dim_col, dfA, dfB=None, labelA="Período A", labelB="Período B"):
+        """Gráfico de barras comparando taxa (%) por dimensão."""
+        x = dfA[dim_col].astype(str)
+        fig = go.Figure()
+        fig.add_bar(name=labelA, x=x, y=(dfA[rate_col] * 100))
+        if dfB is not None:
+            dfB2 = dfB.set_index(dim_col).reindex(x).reset_index()
+            fig.add_bar(name=labelB, x=x, y=(dfB2[rate_col] * 100))
+        fig.update_layout(
+            barmode="group",
+            title=f"{rate_col} por {dim_col}",
+            yaxis_title="Taxa (%)",
+            xaxis_title=dim_col,
+            height=420, template="plotly_white",
+            margin=dict(l=10, r=10, t=48, b=10), separators=",."
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
     # ========= POPULARES =========
     if dimensao == "Populares":
         base = df_daily.copy()
@@ -2381,11 +2410,7 @@ with tab_detail:
             st.plotly_chart(fig, use_container_width=True)
 
         # ----- tabela integrada com taxas -----
-        raw["LPV/Cliques"]        = raw.apply(lambda r: _safe_div(r["lpv"], r["link_clicks"]), axis=1)
-        raw["Checkout/LPV"]       = raw.apply(lambda r: _safe_div(r["init_checkout"], r["lpv"]), axis=1)
-        raw["Compra/Checkout"]    = raw.apply(lambda r: _safe_div(r["purchases"], r["init_checkout"]), axis=1)
-        raw["Add Pagto/Checkout"] = raw.apply(lambda r: _safe_div(r["add_payment"], r["init_checkout"]), axis=1)
-        raw["Compra/Add Pagto"]   = raw.apply(lambda r: _safe_div(r["purchases"], r["add_payment"]), axis=1)
+        raw = _rates_from_raw(raw, group_cols)
 
         disp = raw.rename(columns={
             "link_clicks":"Cliques","lpv":"LPV",
@@ -2397,8 +2422,9 @@ with tab_detail:
         disp["Valor usado"] = disp["Valor usado"].apply(_fmt_money_br)
         disp["Valor de conversão"] = disp["Valor de conversão"].apply(_fmt_money_br)
         disp["ROAS"] = disp["ROAS"].map(_fmt_ratio_br)
-        for col in ["LPV/Cliques","Checkout/LPV","Add Pagto/Checkout","Compra/Checkout","Compra/Add Pagto"]:
-            disp[col] = disp[col].map(_fmt_pct_br)
+        for col in ["LPV/Cliques","Checkout/LPV","Compra/Checkout","Add Pagto/Checkout","Compra/Add Pagto"]:
+            if col in disp.columns:
+                disp[col] = disp[col].map(_fmt_pct_br)
 
         # força inteiros nas métricas absolutas
         for col in ["Cliques", "LPV", "Checkout", "Add Pagto", "Compras"]:
@@ -2427,5 +2453,67 @@ with tab_detail:
         )
 
         st.dataframe(styled_disp, use_container_width=True, height=520)
+
+        # ====== Gráficos das taxas por dimensão (com comparação) ======
+        st.markdown("### Comparar taxas por dimensão")
+        compare = st.checkbox("Comparar com outro período", value=True, key="det_compare_rates")
+
+        # Período A = o atual
+        dfA_rates = raw[group_cols + ["LPV/Cliques","Checkout/LPV","Compra/Checkout","Add Pagto/Checkout","Compra/Add Pagto"]].copy()
+        labelA = f"{since} → {until}"
+
+        dfB_rates = None
+        labelB = None
+        if compare:
+            from datetime import date
+            import pandas as pd as _pd  # só para usar Timedelta se precisar
+
+            # período B padrão: anterior de mesmo tamanho
+            since_dt = pd.to_datetime(str(since)).date()
+            until_dt = pd.to_datetime(str(until)).date()
+            delta = until_dt - since_dt
+
+            colp1, colp2 = st.columns(2)
+            with colp1:
+                perA = st.date_input("Período A", (since_dt, until_dt), key="perA_det_rates")
+            with colp2:
+                default_b_start = since_dt - (delta + pd.Timedelta(days=1)).to_pytimedelta()
+                default_b_end   = since_dt - pd.Timedelta(days=1).to_pytimedelta()
+                perB = st.date_input("Período B", (default_b_start, default_b_end), key="perB_det_rates")
+
+            since_A, until_A = perA
+            since_B, until_B = perB
+
+            # A
+            df_A = fetch_insights_breakdown(act_id, token, api_version, str(since_A), str(until_A), bks, level_bd, product_name=st.session_state.get("det_produto"))
+            raw_A, _ = _agg_and_format(df_A.rename(columns=rename_map), group_cols)
+            raw_A = _rates_from_raw(raw_A, group_cols)
+            dfA_rates = raw_A[group_cols + ["LPV/Cliques","Checkout/LPV","Compra/Checkout","Add Pagto/Checkout","Compra/Add Pagto"]].copy()
+            labelA = f"{since_A} → {until_A}"
+
+            # B
+            df_B = fetch_insights_breakdown(act_id, token, api_version, str(since_B), str(until_B), bks, level_bd, product_name=st.session_state.get("det_produto"))
+            raw_B, _ = _agg_and_format(df_B.rename(columns=rename_map), group_cols)
+            raw_B = _rates_from_raw(raw_B, group_cols)
+            dfB_rates = raw_B[group_cols + ["LPV/Cliques","Checkout/LPV","Compra/Checkout","Add Pagto/Checkout","Compra/Add Pagto"]].copy()
+            labelB = f"{since_B} → {until_B}"
+
+        rate_cols = ["LPV/Cliques","Checkout/LPV","Compra/Checkout","Add Pagto/Checkout","Compra/Add Pagto"]
+
+        # Se houver 2 dimensões, agrega a segunda para comparar pela primeira
+        if len(group_cols) > 1:
+            idx = group_cols[0]
+            def _collapse(df):
+                keep = [idx] + rate_cols
+                return df[keep].groupby(idx, as_index=False).mean(numeric_only=True)
+            dfA_rates = _collapse(dfA_rates)
+            if dfB_rates is not None:
+                dfB_rates = _collapse(dfB_rates)
+            dim_col = idx
+        else:
+            dim_col = group_cols[0]
+
+        for rc in rate_cols:
+            _compare_rate_chart(rc, dim_col, dfA_rates, dfB_rates, labelA, labelB)
 
         st.stop()
