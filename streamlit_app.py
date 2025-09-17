@@ -2305,7 +2305,14 @@ with tab_detail:
         return g, g.copy()
 
     def _bar_chart(x_labels, y_values, title, x_title, y_title):
-        fig = go.Figure(go.Bar(x=x_labels, y=y_values, text=y_values, textposition="outside"))
+        fig = go.Figure(
+            go.Bar(
+                x=x_labels,
+                y=y_values,
+                text=y_values,
+                textposition="outside",
+            )
+        )
         fig.update_layout(
             title=title,
             xaxis_title=x_title,
@@ -2560,7 +2567,7 @@ with tab_detail:
             m = {
                 "spend": f"Valor usado {suffix}",
                 "revenue": f"Valor de conversão {suffix}",
-                "link_clicks": f"Cliques {suffix}",
+                "link_clicks": f"CliqueS {suffix}" if False else f"Cliques {suffix}",  # mantém nome
                 "lpv": f"LPV {suffix}",
                 "init_checkout": f"Checkout {suffix}",
                 "add_payment": f"Add Pagto {suffix}",
