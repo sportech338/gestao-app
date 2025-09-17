@@ -2436,11 +2436,7 @@ with tab_detail:
                     x=pvt.columns.astype(str),
                     y=pvt.index.astype(str),
                     colorbar=dict(title="Compras"),
-                    hovertemplate=(
-                        f"{idx}: " + "%{y}<br>"
-                        + f"{col}: " + "%{x}<br>"
-                        + "Compras: %{z}<extra></extra>"
-                    ),
+                    hovertemplate=(f"{idx}: " + "%{y}<br>" + f"{col}: " + "%{x}<br>" + "Compras: %{z}<extra></extra>"),
                 )
             )
             fig.update_layout(
@@ -2618,8 +2614,8 @@ with tab_detail:
         RATE_COLS_A = ["LPV/Cliques A", "Checkout/LPV A", "Compra/Checkout A", "Add Pagto/Checkout A", "Compra/Add Pagto A"]
         RATE_COLS_B = ["LPV/Cliques B", "Checkout/LPV B", "Compra/Checkout B", "Add Pagto/Checkout B", "Compra/Add Pagto B"]
 
-        RED_TRANSP  = "rgba(239, 68, 68, 0.15)"   # A
-        YELLOW_TRANSP = "rgba(255, 255, 0, 0.3)"  # B
+        RED_TRANSP     = "rgba(239, 68, 68, 0.15)"  # A
+        YELLOW_TRANSP  = "rgba(255, 255, 0, 0.30)"  # B
 
         def _style_rate_columns(df: pd.DataFrame, rate_cols: list[str], rgba_bg: str):
             sty = df.style.apply(
@@ -2694,16 +2690,16 @@ with tab_detail:
 
             # ---- Formatação pt-BR para exibição (+x,x p.p.) ----
             def _fmt_pp(v):
-                if pd.isna(v):
-                    return ""
+                if pd.isna(v) or np.isinf(v):
+                    return "—"
                 sign = "+" if v >= 0 else ""
                 s = f"{sign}{v:.1f}".replace(".", ",")
                 return f"{s} p.p."
 
             styled = (
                 deltas_num.style
-                .applymap(_bg_sign, subset=pp_cols)                 # pinta pelo valor numérico
-                .format({c: _fmt_pp for c in pp_cols})              # formata como string BR
+                .applymap(_bg_sign, subset=pp_cols)     # pinta pelo valor numérico
+                .format({c: _fmt_pp for c in pp_cols})  # formatação BR
                 .set_properties(subset=pp_cols, **{
                     "padding": "6px 8px",
                     "text-align": "center",
@@ -2718,7 +2714,6 @@ with tab_detail:
             )
 
             st.markdown("#### Variação — Taxas (p.p.)")
-            # ✅ st.table respeita o CSS do Styler; garante as cores no tema escuro
             st.table(styled)
 
         st.caption(
