@@ -2383,6 +2383,7 @@ with tab_detail:
         # ----- tabela integrada com taxas -----
         raw["LPV/Cliques"]        = raw.apply(lambda r: _safe_div(r["lpv"], r["link_clicks"]), axis=1)
         raw["Checkout/LPV"]       = raw.apply(lambda r: _safe_div(r["init_checkout"], r["lpv"]), axis=1)
+        raw["Compra/Checkout"]    = raw.apply(lambda r: _safe_div(r["purchases"], r["init_checkout"]), axis=1)
         raw["Add Pagto/Checkout"] = raw.apply(lambda r: _safe_div(r["add_payment"], r["init_checkout"]), axis=1)
         raw["Compra/Add Pagto"]   = raw.apply(lambda r: _safe_div(r["purchases"], r["add_payment"]), axis=1)
 
@@ -2409,7 +2410,7 @@ with tab_detail:
             "Cliques","LPV","LPV/Cliques",
             "Checkout","Checkout/LPV",
             "Add Pagto","Add Pagto/Checkout",
-            "Compras","Compra/Add Pagto"
+            "Compras","Compra/Checkout","Compra/Add Pagto"
         ]
 
         # estilo cabeçalho amarelo transparente nas taxas
