@@ -2709,8 +2709,8 @@ with tab_detail:
                 deltas_pp[c] = deltas_pp[c].map(_fmt_delta_pp)
 
             # ---- Estilo de fundo (+ verde, - vermelho) ----
-            POS_BG = "rgba(22, 163, 74, 0.18)"   # positivo: verde translúcido
-            NEG_BG = "rgba(239, 68, 68, 0.18)"   # negativo: vermelho translúcido
+            POS_BG = "rgba(22, 163, 74, 0.18)"   # positivo
+            NEG_BG = "rgba(239, 68, 68, 0.18)"   # negativo
 
             def _style_delta_bg(val: str) -> str:
                 if isinstance(val, str) and val.endswith("p.p."):
@@ -2725,8 +2725,11 @@ with tab_detail:
                 return ""
 
             st.markdown("#### Variação — Taxas (p.p.)")
-            # IMPORTANTE: usar st.table para manter o estilo do Styler
-            st.table(deltas_pp.style.applymap(_style_delta_bg, subset=pp_cols))
+
+            # 👉 Render HTML do Styler para manter as cores
+            styled = deltas_pp.style.applymap(_style_delta_bg, subset=pp_cols)
+            html = styled.to_html()
+            st.markdown(html, unsafe_allow_html=True)
 
         st.caption(
             f"Período A: **{_fmt_range_br(since_A, until_A)}**  |  "
