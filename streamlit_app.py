@@ -2314,14 +2314,18 @@ with tab_detail:
         d2 = pd.to_datetime(str(d2)).date()
         return f"{d1.strftime('%d/%m/%Y')} → {d2.strftime('%d/%m/%Y')}"
 
-    # ========= Helpers p/ taxas =========
+    # ========= Helpers p/ taxas (vectorizado) =========
     def _rates_from_raw(df: pd.DataFrame, group_cols: list[str]) -> pd.DataFrame:
         df = df.copy()
-        df["LPV/Cliques"]        = df.apply(lambda r: _safe_div(r["lpv"], r["link_clicks"]), axis=1)
-        df["Checkout/LPV"]       = df.apply(lambda r: _safe_div(r["init_checkout"], r["lpv"]), axis=1)
-        df["Compra/Checkout"]    = df.apply(lambda r: _safe_div(r["purchases"], r["init_checkout"]), axis=1)
-        df["Add Pagto/Checkout"] = df.apply(lambda r: _safe_div(r["add_payment"], r["init_checkout"]), axis=1)
-        df["Compra/Add Pagto"]   = df.apply(lambda r: _safe_div(r["purchases"], r["add_payment"]), axis=1)
+        for c in ["lpv", "link_clicks", "init_checkout", "add_payment", "purchases"]:
+            if c not in df.columns:
+                df[c] = 0.0
+            df[c] = pd.to_numeric(df[c], errors="coerce")
+        df["LPV/Cliques"]        = _safe_div(df["lpv"], df["link_clicks"])
+        df["Checkout/LPV"]       = _safe_div(df["init_checkout"], df["lpv"])
+        df["Compra/Checkout"]    = _safe_div(df["purchases"], df["init_checkout"])
+        df["Add Pagto/Checkout"] = _safe_div(df["add_payment"], df["init_checkout"])
+        df["Compra/Add Pagto"]   = _safe_div(df["purchases"], df["add_payment"])
         return df
 
     # ========= POPULARES =========
@@ -2491,7 +2495,8 @@ with tab_detail:
             lambda _: highlight_headers(disp[final_cols].columns),
             axis=1,
         )
-        st.dataframe(styled_disp, use_container_width=True, height=520)
+        # Styler → usar st.table (dataframe ignora estilos)
+        st.table(styled_disp)
 
         # ====== Comparação por período ======
         st.markdown("### Comparar períodos")
@@ -2632,14 +2637,14 @@ with tab_detail:
 
         # ------- EXIBIÇÃO: duas tabelas separadas -------
         st.markdown("#### Período A")
-        st.dataframe(A_styled, use_container_width=True, height=360)
+        st.table(A_styled)
 
         st.markdown("#### Período B")
-        st.dataframe(B_styled, use_container_width=True, height=360)
+        st.table(B_styled)
 
-        # ------- (Opcional) Tabela de variação A vs B (APENAS TAXAS) -------
+        # ------- Tabela de variação A vs B (TAXAS + MÉTRICAS) -------
         show_deltas = st.checkbox(
-            "Mostrar variação entre A e B (apenas taxas em p.p.)",
+            "Mostrar variação entre A e B (taxas em p.p. + métricas absolutas)",
             value=False,
             key="det_show_deltas_tbl",
         )
@@ -2657,7 +2662,6 @@ with tab_detail:
                 ("Compra/Add Pagto",   "Compra/Add Pagto A",   "Compra/Add Pagto B"),
             ]
 
-            # DataFrame NUMÉRICO (sem strings) para aplicar cor por sinal
             deltas_num = comp_num[group_cols].copy()
             for label, colA, colB in rate_specs:
                 if colA in comp_num.columns and colB in comp_num.columns:
@@ -2666,19 +2670,42 @@ with tab_detail:
                         - comp_num[colB].fillna(0).astype(float)
                     ) * 100.0
 
-            # ordem das colunas: dimensões + deltas
-            ordered_cols = group_cols + [f"Δ {lbl} (p.p.)" for (lbl, _, _) in rate_specs]
-            deltas_num = deltas_num[[c for c in ordered_cols if c in deltas_num.columns]]
+            # ---- NOVO: variação das MÉTRICAS absolutas ----
+            # (label, colA, colB, tipo_fmt, polaridade)
+            metric_specs = [
+                ("Valor usado",        "Valor usado A",        "Valor usado B",        "money", "neg_good"),  # spend: bom ↓
+                ("Valor de conversão", "Valor de conversão A", "Valor de conversão B", "money", "pos_good"),
+                ("ROAS",               "ROAS A",               "ROAS B",               "ratio", "pos_good"),
+                ("Cliques",            "Cliques A",            "Cliques B",            "int",   "pos_good"),
+                ("LPV",                "LPV A",                "LPV B",                "int",   "pos_good"),
+                ("Checkout",           "Checkout A",           "Checkout B",           "int",   "pos_good"),
+                ("Add Pagto",          "Add Pagto A",          "Add Pagto B",          "int",   "pos_good"),
+                ("Compras",            "Compras A",            "Compras B",            "int",   "pos_good"),
+            ]
 
-            # >>> CABEÇALHO CORRIGIDO AQUI <<<
-            # deixa a 1ª célula de cabeçalho vazia e mantém a coluna de índice
+            for label, colA, colB, _fmtk, _pol in metric_specs:
+                if colA in comp_num.columns and colB in comp_num.columns:
+                    deltas_num[f"Δ {label}"] = (
+                        comp_num[colA].astype(float).fillna(0) - comp_num[colB].astype(float).fillna(0)
+                    )
+
+            metric_delta_cols = [f"Δ {lbl}" for (lbl, _a, _b, _fmtk, _pol) in metric_specs if f"Δ {lbl}" in deltas_num.columns]
+
+            # >>> Cabeçalho/índice
             deltas_num.index.name = ""
 
-            pp_cols = [c for c in deltas_num.columns if c.endswith("(p.p.)")]
+            # Colunas em ordem: dimensões + Δ taxas + Δ métricas
+            ordered_cols = group_cols \
+                + [f"Δ {lbl} (p.p.)" for (lbl, _, _) in rate_specs if f"Δ {lbl} (p.p.)" in deltas_num.columns] \
+                + metric_delta_cols
+            deltas_num = deltas_num[[c for c in ordered_cols if c in deltas_num.columns]]
 
-            # Estilo de fundo (+ verde, - vermelho)
+            # ===== Estilo e formatação =====
+            # cores padrão (mesmas das taxas)
             POS_BG = "rgba(22, 163, 74, 0.45)"
             NEG_BG = "rgba(239, 68, 68, 0.45)"
+
+            pp_cols = [c for c in deltas_num.columns if c.endswith("(p.p.)")]
 
             def _bg_sign(val):
                 try:
@@ -2691,7 +2718,6 @@ with tab_detail:
                     return f"background-color: {NEG_BG}; font-weight: 700;"
                 return ""
 
-            # Formatação pt-BR (+x,x p.p.)
             def _fmt_pp(v):
                 if pd.isna(v) or np.isinf(v):
                     return "—"
@@ -2699,13 +2725,55 @@ with tab_detail:
                 s = f"{sign}{v:.1f}".replace(".", ",")
                 return f"{s} p.p."
 
+            # Formatadores p/ métricas
+            def _fmt_money_diff(v):
+                if pd.isna(v) or np.isinf(v): return "—"
+                sign = "+" if v >= 0 else ""
+                abs_v = abs(float(v))
+                s = f"{abs_v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                return f"{sign}R$ {s}"
+
+            def _fmt_int_diff(v):
+                if pd.isna(v) or np.isinf(v): return "—"
+                sign = "+" if v >= 0 else ""
+                return f"{sign}{int(round(float(v)))}"
+
+            def _fmt_ratio_diff(v):
+                if pd.isna(v) or np.isinf(v): return "—"
+                sign = "+" if v >= 0 else ""
+                s = f"{abs(float(v)):.2f}".replace(".", ",")
+                return f"{sign}{s}x"
+
+            fmt_map_metrics = {}
+            METRIC_POLARITY = {}
+            for label, _a, _b, fmt_kind, pol in metric_specs:
+                col = f"Δ {label}"
+                if col in deltas_num.columns:
+                    METRIC_POLARITY[col] = pol
+                    if fmt_kind == "money": fmt_map_metrics[col] = _fmt_money_diff
+                    elif fmt_kind == "ratio": fmt_map_metrics[col] = _fmt_ratio_diff
+                    else: fmt_map_metrics[col] = _fmt_int_diff
+
+            def _bg_sign_metric(val, col_name):
+                pol = METRIC_POLARITY.get(col_name, "pos_good")
+                try:
+                    v = float(val)
+                except Exception:
+                    return ""
+                if pol == "pos_good":
+                    if v > 0:  return f"background-color: {POS_BG}; font-weight: 700;"
+                    if v < 0:  return f"background-color: {NEG_BG}; font-weight: 700;"
+                elif pol == "neg_good":
+                    if v < 0:  return f"background-color: {POS_BG}; font-weight: 700;"
+                    if v > 0:  return f"background-color: {NEG_BG}; font-weight: 700;"
+                return ""
+
+            # Constrói Styler unificado (taxas + métricas)
             styled = (
                 deltas_num.style
-                # NÃO esconda o índice (para não deslocar cabeçalho).
-                # Apenas esconda visualmente os números, mantendo a coluna:
                 .set_table_styles([
                     {"selector": "th.row_heading, td.row_heading", "props": [("visibility", "hidden")]},
-                    {"selector": "th.blank", "props": [("background-color", "transparent")]},  # mantém a 'stub' vazia
+                    {"selector": "th.blank", "props": [("background-color", "transparent")]},
                     {"selector": "th.col_heading", "props": [("text-align", "center"), ("white-space", "nowrap")]},
                     {"selector": "td", "props": [("vertical-align", "middle")]},
                 ])
@@ -2714,7 +2782,12 @@ with tab_detail:
                 .set_properties(subset=pp_cols, **{"padding": "6px 8px", "text-align": "center"})
             )
 
-            st.markdown("#### Variação — Taxas (p.p.)")
+            for col in metric_delta_cols:
+                styled = styled.applymap(lambda v, _c=col: _bg_sign_metric(v, _c), subset=[col])
+                styled = styled.format({col: fmt_map_metrics[col]})
+                styled = styled.set_properties(subset=[col], **{"padding": "6px 8px", "text-align": "center"})
+
+            st.markdown("#### Variação — Taxas (p.p.) e Métricas (Δ)")
             st.table(styled)
 
         st.caption(
