@@ -2314,6 +2314,21 @@ with tab_detail:
         d2 = pd.to_datetime(str(d2)).date()
         return f"{d1.strftime('%d/%m/%Y')} → {d2.strftime('%d/%m/%Y')}"
 
+    # ========= Divisão segura (Series ou escalar) =========
+    def _safe_div(n, d):
+        n = pd.to_numeric(n, errors="coerce")
+        d = pd.to_numeric(d, errors="coerce")
+        if np.isscalar(n) and np.isscalar(d):
+            if d in (0, 0.0) or pd.isna(d):
+                return np.nan
+            return float(n) / float(d)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            out = n / d
+        if isinstance(out, pd.Series):
+            return out.replace([np.inf, -np.inf], np.nan)
+        out = np.where(np.isfinite(out), out, np.nan)
+        return out
+
     # ========= Helpers p/ taxas (vectorizado) =========
     def _rates_from_raw(df: pd.DataFrame, group_cols: list[str]) -> pd.DataFrame:
         df = df.copy()
@@ -2701,7 +2716,6 @@ with tab_detail:
             deltas_num = deltas_num[[c for c in ordered_cols if c in deltas_num.columns]]
 
             # ===== Estilo e formatação =====
-            # cores padrão (mesmas das taxas)
             POS_BG = "rgba(22, 163, 74, 0.45)"
             NEG_BG = "rgba(239, 68, 68, 0.45)"
 
