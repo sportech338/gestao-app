@@ -413,6 +413,7 @@ def fetch_insights_daily(act_id: str, token: str, api_version: str,
             "limit": 500,
             "action_report_time": "conversion",
             "action_attribution_windows": ",".join(ATTR_KEYS),
+            "action_breakdowns": "action_type,action_target_id",
         }
         # filtro por campanha (produto) direto na API, quando aplicável
         if level == "campaign" and product_name and product_name != "(Todos)":
@@ -534,6 +535,7 @@ def fetch_insights_hourly(act_id: str, token: str, api_version: str,
             "limit": 500,
             "action_report_time": action_rt,
             "breakdowns": HOUR_BREAKDOWN,
+            "action_breakdowns": "action_type,action_target_id",
         }
         if action_rt == "conversion":
             params["action_attribution_windows"] = ",".join(ATTR_KEYS)
@@ -659,6 +661,7 @@ def fetch_insights_breakdown(act_id: str, token: str, api_version: str,
             "action_report_time": "conversion",
             "action_attribution_windows": ",".join(ATTR_KEYS),
             "breakdowns": ",".join(breakdowns[:2])
+            "action_breakdowns": "action_type,action_target_id",
         }
         if level == "campaign" and product_name and product_name != "(Todos)":
             params["filtering"] = json.dumps([{
