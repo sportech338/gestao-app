@@ -198,7 +198,6 @@ def _pick_checkout_totals(rows, allowed_keys=None) -> float:
             grp[r["action_type"]] += _sum_item(r, allowed_keys)
     return float(max(grp.values()) if grp else 0.0)
 
-
 def _pick_add_payment_totals(rows, allowed_keys=None) -> float:
     """
     Soma Add Payment Info com suporte a omni/onsite/offsite.
@@ -231,6 +230,22 @@ def _pick_add_payment_totals(rows, allowed_keys=None) -> float:
             grp[r["action_type"]] += _sum_item(r, allowed_keys)
     return float(max(grp.values()) if grp else 0.0)
 
+# --- CUSTOM: Entrega (conversão personalizada por ID) -------------------------
+ENTREGA_CUSTOM_IDS = ["906044301180956"]
+
+def _pick_entrega(rows, allowed_keys=None) -> float:
+    """
+    Soma as ações cuja action_target_id pertence à lista ENTREGA_CUSTOM_IDS.
+    Usa a mesma lógica de janelas (allowed_keys = ATTR_KEYS) do resto do app.
+    """
+    if not rows:
+        return 0.0
+    ids = {str(x) for x in ENTREGA_CUSTOM_IDS if x}
+    tot = 0.0
+    for r in rows:
+        if str(r.get("action_target_id", "")) in ids:
+            tot += _sum_item(r, allowed_keys)
+    return float(tot)
 
 def enforce_monotonic(values):
     """Garante formato de funil: cada etapa <= etapa anterior (só para o desenho)."""
@@ -436,10 +451,11 @@ def fetch_insights_daily(act_id: str, token: str, api_version: str,
                         lpv = (_sum_actions_exact(actions, ["view_content"], allowed_keys=ATTR_KEYS)
                                or _sum_actions_contains(actions, ["landing_page"], allowed_keys=ATTR_KEYS))
 
-                ic  = _pick_checkout_totals(actions, allowed_keys=ATTR_KEYS)
-                api = _pick_add_payment_totals(actions, allowed_keys=ATTR_KEYS)
-                purchases_cnt = _pick_purchase_totals(actions, allowed_keys=ATTR_KEYS)
-                revenue_val   = _pick_purchase_totals(action_values, allowed_keys=ATTR_KEYS)
+                ic       = _pick_checkout_totals(actions, allowed_keys=ATTR_KEYS)
+                entrega  = _pick_entrega(actions, allowed_keys=ATTR_KEYS)          # <<< Entrega
+                api      = _pick_add_payment_totals(actions, allowed_keys=ATTR_KEYS)
+                pur_cnt  = _pick_purchase_totals(actions, allowed_keys=ATTR_KEYS)
+                revenue  = _pick_purchase_totals(action_values, allowed_keys=ATTR_KEYS)
 
                 rows_local.append({
                     "date":           pd.to_datetime(rec.get("date_start")),
@@ -452,9 +468,10 @@ def fetch_insights_daily(act_id: str, token: str, api_version: str,
                     "link_clicks":    _to_float(link_clicks),
                     "lpv":            _to_float(lpv),
                     "init_checkout":  _to_float(ic),
+                    "entrega":        _to_float(entrega),                            # <<< Entrega
                     "add_payment":    _to_float(api),
-                    "purchases":      _to_float(purchases_cnt),
-                    "revenue":        _to_float(revenue_val),
+                    "purchases":      _to_float(pur_cnt),
+                    "revenue":        _to_float(revenue),
                 })
 
             paging = (payload or {}).get("paging", {})
@@ -483,7 +500,7 @@ def fetch_insights_daily(act_id: str, token: str, api_version: str,
         return df
 
     num_cols = ["spend", "impressions", "clicks", "link_clicks",
-                "lpv", "init_checkout", "add_payment", "purchases", "revenue"]
+                "lpv", "init_checkout", "entrega", "add_payment", "purchases", "revenue"]  # <<< Entrega
     for c in num_cols:
         df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0.0)
 
@@ -549,10 +566,11 @@ def fetch_insights_hourly(act_id: str, token: str, api_version: str,
                            or _sum_actions_exact(actions, ["view_content"], allowed_keys=ATTR_KEYS)
                            or _sum_actions_contains(actions, ["landing_page"], allowed_keys=ATTR_KEYS))
 
-                ic   = _pick_checkout_totals(actions, allowed_keys=ATTR_KEYS)
-                api_ = _pick_add_payment_totals(actions, allowed_keys=ATTR_KEYS)
-                pur  = _pick_purchase_totals(actions, allowed_keys=ATTR_KEYS)
-                rev  = _pick_purchase_totals(action_values, allowed_keys=ATTR_KEYS)
+                ic       = _pick_checkout_totals(actions, allowed_keys=ATTR_KEYS)
+                entrega  = _pick_entrega(actions, allowed_keys=ATTR_KEYS)          # <<< Entrega
+                api_     = _pick_add_payment_totals(actions, allowed_keys=ATTR_KEYS)
+                pur      = _pick_purchase_totals(actions, allowed_keys=ATTR_KEYS)
+                rev      = _pick_purchase_totals(action_values, allowed_keys=ATTR_KEYS)
 
                 rows.append({
                     "date":          pd.to_datetime(rec.get("date_start")),
@@ -566,6 +584,7 @@ def fetch_insights_hourly(act_id: str, token: str, api_version: str,
                     "link_clicks":   _to_float(link_clicks),
                     "lpv":           _to_float(lpv),
                     "init_checkout": _to_float(ic),
+                    "entrega":       _to_float(entrega),                              # <<< Entrega
                     "add_payment":   _to_float(api_),
                     "purchases":     _to_float(pur),
                     "revenue":       _to_float(rev),
@@ -666,10 +685,11 @@ def fetch_insights_breakdown(act_id: str, token: str, api_version: str,
                 lpv = (_sum_actions_exact(actions, ["landing_page_view"], allowed_keys=ATTR_KEYS)
                        or _sum_actions_exact(actions, ["view_content"], allowed_keys=ATTR_KEYS)
                        or _sum_actions_contains(actions, ["landing_page"], allowed_keys=ATTR_KEYS))
-                ic   = _pick_checkout_totals(actions, allowed_keys=ATTR_KEYS)
-                api_ = _pick_add_payment_totals(actions, allowed_keys=ATTR_KEYS)
-                pur  = _pick_purchase_totals(actions, allowed_keys=ATTR_KEYS)
-                rev  = _pick_purchase_totals(action_values, allowed_keys=ATTR_KEYS)
+                ic       = _pick_checkout_totals(actions, allowed_keys=ATTR_KEYS)
+                entrega  = _pick_entrega(actions, allowed_keys=ATTR_KEYS)          # <<< Entrega
+                api_     = _pick_add_payment_totals(actions, allowed_keys=ATTR_KEYS)
+                pur      = _pick_purchase_totals(actions, allowed_keys=ATTR_KEYS)
+                rev      = _pick_purchase_totals(action_values, allowed_keys=ATTR_KEYS)
 
                 base = {
                     "currency":      rec.get("account_currency","BRL"),
@@ -681,6 +701,7 @@ def fetch_insights_breakdown(act_id: str, token: str, api_version: str,
                     "link_clicks":   _to_float(link_clicks),
                     "lpv":           _to_float(lpv),
                     "init_checkout": _to_float(ic),
+                    "entrega":       _to_float(entrega),                              # <<< Entrega
                     "add_payment":   _to_float(api_),
                     "purchases":     _to_float(pur),
                     "revenue":       _to_float(rev),
@@ -773,7 +794,7 @@ ready = bool(act_id and token)
 
 # =============== Tela ===============
 st.title("📊 Meta Ads — Paridade com Filtro + Funil")
-st.caption("KPIs + Funil: Cliques → LPV → Checkout → Add Pagamento → Compra. Tudo alinhado ao período selecionado.")
+st.caption("KPIs + Funil: Cliques → LPV → Checkout → Entrega → Add Pagamento → Compra. Tudo alinhado ao período selecionado.")
 
 if not ready:
     st.info("Informe **Ad Account ID** e **Access Token** para iniciar.")
@@ -866,16 +887,24 @@ with tab_daily:
     st.caption("Linhas diárias de Receita e Gasto. Vendas na tabela abaixo.")
 
     # ========= FUNIL (Período) — FUNIL VISUAL =========
-    st.subheader("Funil do período (Total) — Cliques → LPV → Checkout → Add Pagamento → Compra")
+    st.subheader("Funil do período (Total) — Cliques → LPV → Checkout → Entrega → Add Pagamento → Compra")
 
-    f_clicks = float(df_daily_view["link_clicks"].sum())
-    f_lpv    = float(df_daily_view["lpv"].sum())
-    f_ic     = float(df_daily_view["init_checkout"].sum())
-    f_api    = float(df_daily_view["add_payment"].sum())
-    f_pur    = float(df_daily_view["purchases"].sum())
+    f_clicks  = float(df_daily_view["link_clicks"].sum())
+    f_lpv     = float(df_daily_view["lpv"].sum())
+    f_ic      = float(df_daily_view["init_checkout"].sum())
+    f_entrega = float(df_daily_view["entrega"].sum()) if "entrega" in df_daily_view.columns else 0.0
+    f_api     = float(df_daily_view["add_payment"].sum())
+    f_pur     = float(df_daily_view["purchases"].sum())
 
-    labels_total = ["Cliques", "LPV", "Checkout", "Add Pagamento", "Compra"]
-    values_total = [int(round(f_clicks)), int(round(f_lpv)), int(round(f_ic)), int(round(f_api)), int(round(f_pur))]
+    labels_total = ["Cliques", "LPV", "Checkout", "Entrega", "Add Pagamento", "Compra"]
+    values_total = [
+        int(round(f_clicks)),
+        int(round(f_lpv)),
+        int(round(f_ic)),
+        int(round(f_entrega)),
+        int(round(f_api)),
+        int(round(f_pur))
+    ]
 
     force_shape = st.checkbox("Forçar formato de funil (sempre decrescente)", value=True)
     values_plot = enforce_monotonic(values_total) if force_shape else values_total
@@ -886,24 +915,27 @@ with tab_daily:
     )
 
     core_rows = [
-        ("LPV / Cliques",     _rate(values_total[1], values_total[0])),
-        ("Checkout / LPV",    _rate(values_total[2], values_total[1])),
-        ("Compra / Checkout", _rate(values_total[4], values_total[2])),
+        ("LPV / Cliques",        _rate(values_total[1], values_total[0])),
+        ("Checkout / LPV",       _rate(values_total[2], values_total[1])),
+        ("Compra / Checkout",    _rate(values_total[5], values_total[2])),
     ]
     extras_def = {
-        "Add Pagto / Checkout": _rate(values_total[3], values_total[2]),
-        "Compra / Add Pagto":   _rate(values_total[4], values_total[3]),
-        "Compra / LPV":         _rate(values_total[4], values_total[1]),
-        "Compra / Cliques":     _rate(values_total[4], values_total[0]),
-        "Checkout / Cliques":   _rate(values_total[2], values_total[0]),
-        "Add Pagto / LPV":      _rate(values_total[3], values_total[1]),
+        "Entrega / Checkout":    _rate(values_total[3], values_total[2]),
+        "Add Pagto / Entrega":   _rate(values_total[4], values_total[3]),
+        "Compra / Entrega":      _rate(values_total[5], values_total[3]),
+        "Add Pagto / Checkout":  _rate(values_total[4], values_total[2]),
+        "Compra / Add Pagto":    _rate(values_total[5], values_total[4]),
+        "Compra / LPV":          _rate(values_total[5], values_total[1]),
+        "Compra / Cliques":      _rate(values_total[5], values_total[0]),
+        "Checkout / Cliques":    _rate(values_total[2], values_total[0]),
+        "Add Pagto / LPV":       _rate(values_total[4], values_total[1]),
     }
 
     with st.expander("Comparar outras taxas (opcional)"):
         extras_selected = st.multiselect(
             "Escolha métricas adicionais para visualizar:",
             options=list(extras_def.keys()),
-            default=[],
+            default=[]
         )
     rows = core_rows + [(name, extras_def[name]) for name in extras_selected]
     sr = pd.DataFrame(rows, columns=["Taxa", "Valor"])
@@ -973,12 +1005,6 @@ with tab_daily:
             daily_prev["Checkout/LPV"]    = daily_prev.apply(lambda r: _safe_div(r["checkout"],  r["lpv"]),      axis=1)
             daily_prev["Compra/Checkout"] = daily_prev.apply(lambda r: _safe_div(r["purchases"], r["checkout"]), axis=1)
 
-
-        def _fmt_pct_series(s):  # 0–1 -> 0–100
-            return (s*100).round(2)
-
-        # helper geral do gráfico
-        # helper geral do gráfico
         def _line_pct_banded(df, col, lo_pct, hi_pct, title):
             import plotly.graph_objects as go
 
@@ -1067,7 +1093,6 @@ with tab_daily:
             fig.update_yaxes(hoverformat=".2f%", ticksuffix="%", showspikes=False)
 
             return fig
-
 
         # ======== RESUMO DAS TAXAS (dinâmico por período) ========
         def _trend_vs_previous_period(series_vals: pd.Series,
@@ -1203,12 +1228,12 @@ with tab_daily:
     # taxas do período (a partir do funil total já calculado)
     r1 = _safe_div(values_total[1], values_total[0])   # LPV/Cliques
     r2 = _safe_div(values_total[2], values_total[1])   # Checkout/LPV
-    r3 = _safe_div(values_total[4], values_total[2])   # Compra/Checkout
+    r3 = _safe_div(values_total[5], values_total[2])   # Compra/Checkout (ajustado p/ índice nova etapa)
 
     # quedas absolutas por etapa (onde as pessoas “somem”)
     drop1 = max(0, values_total[0] - values_total[1])  # Cliques -> LPV (Criativo/LP)
     drop2 = max(0, values_total[1] - values_total[2])  # LPV -> Checkout (Interesse/Oferta)
-    drop3 = max(0, values_total[2] - values_total[4])  # Checkout -> Compra (RMK/Pagamento)
+    drop3 = max(0, values_total[2] - values_total[5])  # Checkout -> Compra (agora considera etapas intermediárias)
 
     # helpers de status e forma de exibir “chips”
     def _band_status(val, lo, hi):
@@ -1269,7 +1294,7 @@ with tab_daily:
         # se >1 abaixo, escolhe onde há maior queda absoluta de pessoas
         foco, foco_dat = max(abaixos.items(), key=lambda kv: kv[1]["drop"])
     else:
-        total_purch = values_total[4]
+        total_purch = values_total[5]
         todas_ok = all(_band_status(v["rate"], v["lo"], v["hi"]) in ["dentro", "acima"] for v in stages.values())
         if todas_ok and total_purch >= min_purchases_to_scale:
             foco, foco_dat = "Escala", {
@@ -1305,7 +1330,7 @@ with tab_daily:
             st.success(
                 f"**✅ Recomendação: Escala**\n\n"
                 f"- Motivo: {foco_dat['explain']}\n"
-                f"- Compras no período: **{_fmt_int_br(values_total[4])}** "
+                f"- Compras no período: **{_fmt_int_br(values_total[5])}** "
                 f"(mín. para escalar: **{_fmt_int_br(min_purchases_to_scale)}**)\n"
                 f"- Ação: aumentar orçamento nas campanhas com melhor ROAS; manter horários e públicos vencedores."
             )
@@ -1373,6 +1398,7 @@ with tab_daily:
                         "clicks": d["link_clicks"].sum(),
                         "lpv": d["lpv"].sum(),
                         "checkout": d["init_checkout"].sum(),
+                        "entrega": d["entrega"].sum() if "entrega" in d.columns else 0.0,
                         "add_payment": d["add_payment"].sum(),
                     }
 
@@ -1413,8 +1439,16 @@ with tab_daily:
                                      _fmt_money_br(cpcB - cpcA) if pd.notnull(cpcA) and pd.notnull(cpcB) else ""),
                     ("CPA",         _fmt_money_br(cpaA) if pd.notnull(cpaA) else "",
                                      _fmt_money_br(cpaB) if pd.notnull(cpaB) else "",
-                                     _fmt_money_br(cpaB - cpaA) if pd.notnull(cpaA) and pd.notnull(cpaB) else ""),
+                                     _fmt_money_br(cpaB - cpaA) if pd.notnull(cpaA) and pd.notnull(cpb := cpaB) else ""),
                 ]
+                # (corrige nome da variável se precisar)
+                kpi_rows[-1] = (
+                    "CPA",
+                    _fmt_money_br(cpaA) if pd.notnull(cpaA) else "",
+                    _fmt_money_br(cpaB) if pd.notnull(cpaB) else "",
+                    _fmt_money_br(cpaB - cpaA) if pd.notnull(cpaA) and pd.notnull(cpaB) else ""
+                )
+
                 kpi_df_disp = pd.DataFrame(kpi_rows, columns=["Métrica", "Período A", "Período B", "Δ (B - A)"])
 
                 def _style_kpi(row):
@@ -1485,11 +1519,15 @@ with tab_daily:
                 st.dataframe(rates_disp.style.apply(_style_rate, axis=1), use_container_width=True, height=180)
 
                 # Funis lado a lado
-                labels_funnel = ["Cliques", "LPV", "Checkout", "Add Pagamento", "Compra"]
-                valsA = [int(round(A["clicks"])), int(round(A["lpv"])), int(round(A["checkout"])),
-                         int(round(A["add_payment"])), int(round(A["purchases"]))]
-                valsB = [int(round(B["clicks"])), int(round(B["lpv"])), int(round(B["checkout"])),
-                         int(round(B["add_payment"])), int(round(B["purchases"]))]
+                labels_funnel = ["Cliques", "LPV", "Checkout", "Entrega", "Add Pagamento", "Compra"]
+                valsA = [
+                    int(round(A["clicks"])), int(round(A["lpv"])), int(round(A["checkout"])),
+                    int(round(A["entrega"])), int(round(A["add_payment"])), int(round(A["purchases"]))
+                ]
+                valsB = [
+                    int(round(B["clicks"])), int(round(B["lpv"])), int(round(B["checkout"])),
+                    int(round(B["entrega"])), int(round(B["add_payment"])), int(round(B["purchases"]))
+                ]
                 valsA_plot = enforce_monotonic(valsA)
                 valsB_plot = enforce_monotonic(valsB)
 
@@ -1545,10 +1583,10 @@ with tab_daily:
     if level == "campaign":
         st.subheader("Campanhas — Funil e Taxas (somatório no período)")
 
-        agg_cols = ["spend", "link_clicks", "lpv", "init_checkout", "add_payment", "purchases", "revenue"]
+        agg_cols = ["spend", "link_clicks", "lpv", "init_checkout", "entrega", "add_payment", "purchases", "revenue"]
         camp = df_daily_view.groupby(["campaign_id", "campaign_name"], as_index=False)[agg_cols].sum()
 
-        # (resto do bloco de campanhas igual ao seu, já usando df_daily_view)
+        # (resto do bloco de campanhas pode seguir igual, já com 'entrega' disponível)
         # ...
     else:
         st.info("Troque o nível para 'campaign' para ver o detalhamento por campanha.")
