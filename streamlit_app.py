@@ -1651,7 +1651,7 @@ with tab_daypart:
         cube_hr = cube_hr[cube_hr["spend"] >= min_spend]
 
     top_hr = cube_hr.sort_values(["purchases","ROAS"], ascending=[False,False]).copy()
-    show_cols = ["hour","purchases","ROAS","spend","revenue","link_clicks","lpv","init_checkout","add_payment"]
+    show_cols = ["hour","ROAS","spend","revenue","link_clicks","lpv","init_checkout","add_payment", "purchases"]
     disp_top = top_hr[show_cols].rename(columns={
         "hour":"Hora","purchases":"Compras","spend":"Valor usado","revenue":"Valor de conversão"
     })
