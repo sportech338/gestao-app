@@ -978,7 +978,6 @@ with tab_daily:
             return (s*100).round(2)
 
         # helper geral do gráfico
-        # helper geral do gráfico
         def _line_pct_banded(df, col, lo_pct, hi_pct, title):
             import plotly.graph_objects as go
 
