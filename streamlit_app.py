@@ -2380,7 +2380,7 @@ with tab_detail:
         base = _ensure_cols_exist(base)
 
         # Converter datas e gerar coluna com nome do dia
-        base["date_start"] = pd.to_datetime(base["date_start"], errors="coerce")
+        base["date_start"] = pd.to_datetime(base.get("date", base.get("date_start")), errors="coerce")
         base["Dia da Semana"] = base["date_start"].dt.day_name(locale="pt_BR.utf8")
 
         # Ordenar na sequência correta
