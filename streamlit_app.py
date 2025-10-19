@@ -2424,36 +2424,36 @@ with tab_detail:
         g = g.set_index("Dia da Semana").reindex(ordem_dias, fill_value=0).reset_index()
 
         # ====== VISUAL ======
-        st.subheader("📊 Investimento × Vendas por Dia da Semana")
+        st.subheader("📊 Vendas × Investimento por Dia da Semana")
 
         fig = go.Figure()
 
-        # Barras = Investimento
+        # Barras = Compras
         fig.add_trace(go.Bar(
             x=g["Dia da Semana"],
-            y=g["spend"],
-            name="Investimento (R$)",
+            y=g["purchases"],
+            name="Compras",
             marker_color="#1f77b4",
             yaxis="y1",
         ))
 
-        # Linha = Compras
+        # Linha = Investimento
         fig.add_trace(go.Scatter(
             x=g["Dia da Semana"],
-            y=g["purchases"],
-            name="Compras",
+            y=g["spend"],
+            name="Investimento (R$)",
             mode="lines+markers+text",
-            text=g["purchases"],
+            text=g["spend"].apply(lambda v: f"R${v:,.0f}".replace(",", ".").replace(".", ",", 1)),
             textposition="top center",
             marker_color="#ff7f0e",
             yaxis="y2",
         ))
 
         fig.update_layout(
-            title="Relação entre Investimento e Compras por Dia da Semana",
+            title="Relação entre Compras e Investimento por Dia da Semana",
             xaxis=dict(title="Dia da Semana"),
-            yaxis=dict(title="Investimento (R$)", side="left", showgrid=False),
-            yaxis2=dict(title="Compras", overlaying="y", side="right"),
+            yaxis=dict(title="Compras", side="left", showgrid=False),
+            yaxis2=dict(title="Investimento (R$)", overlaying="y", side="right"),
             legend=dict(x=0.02, y=1.1, orientation="h"),
             height=460,
             template="plotly_white",
