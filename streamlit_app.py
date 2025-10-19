@@ -2404,14 +2404,18 @@ with tab_detail:
         base["Dia da Semana"] = base["Dia da Semana"].map(traducao_dias)
 
         # Ordenar dias na sequência natural
-        ordem_dias = ["segunda-feira", "terça-feira", "quarta-feira", "quinta-feira", "sexta-feira", "sábado", "domingo"]
+        ordem_dias = [
+            "segunda-feira", "terça-feira", "quarta-feira",
+            "quinta-feira", "sexta-feira", "sábado", "domingo"
+        ]
         base["Dia da Semana"] = base["Dia da Semana"].astype("category")
         base["Dia da Semana"] = base["Dia da Semana"].cat.set_categories(ordem_dias, ordered=True)
 
-        # Agregar
-        agg_cols = ["spend", "revenue", "purchases", "link_clicks", "lpv", "init_checkout", "add_payment"]
+        # Agregar dados principais
+        agg_cols = ["spend", "revenue", "purchases"]
         g = base.groupby("Dia da Semana", dropna=False, as_index=False)[agg_cols].sum()
         g["ROAS"] = np.where(g["spend"] > 0, g["revenue"] / g["spend"], np.nan)
+        g["Custo por Compra"] = np.where(g["purchases"] > 0, g["spend"] / g["purchases"], np.nan)
 
         if min_spend_det and float(min_spend_det) > 0:
             g = g[g["spend"] >= float(min_spend_det)]
@@ -2419,24 +2423,64 @@ with tab_detail:
         # Preenche dias faltantes com 0 (caso algum dia não tenha vendas)
         g = g.set_index("Dia da Semana").reindex(ordem_dias, fill_value=0).reset_index()
 
-        st.subheader("📅 Compras por Dia da Semana")
-        _bar_chart(g["Dia da Semana"], g["purchases"], "Compras por Dia da Semana", "Dia da Semana", "Compras")
+        # ====== VISUAL ======
+        st.subheader("📊 Investimento × Vendas por Dia da Semana")
 
-        # Exibir tabela detalhada
+        fig = go.Figure()
+
+        # Barras = Investimento
+        fig.add_trace(go.Bar(
+            x=g["Dia da Semana"],
+            y=g["spend"],
+            name="Investimento (R$)",
+            marker_color="#1f77b4",
+            yaxis="y1",
+        ))
+
+        # Linha = Compras
+        fig.add_trace(go.Scatter(
+            x=g["Dia da Semana"],
+            y=g["purchases"],
+            name="Compras",
+            mode="lines+markers+text",
+            text=g["purchases"],
+            textposition="top center",
+            marker_color="#ff7f0e",
+            yaxis="y2",
+        ))
+
+        fig.update_layout(
+            title="Relação entre Investimento e Compras por Dia da Semana",
+            xaxis=dict(title="Dia da Semana"),
+            yaxis=dict(title="Investimento (R$)", side="left", showgrid=False),
+            yaxis2=dict(title="Compras", overlaying="y", side="right"),
+            legend=dict(x=0.02, y=1.1, orientation="h"),
+            height=460,
+            template="plotly_white",
+            margin=dict(l=10, r=10, t=48, b=10),
+        )
+
+        st.plotly_chart(fig, use_container_width=True)
+
+        # ====== TABELA ======
         disp = g.copy()
-        disp["Valor usado"] = disp["spend"].apply(_fmt_money_br)
-        disp["Valor de conversão"] = disp["revenue"].apply(_fmt_money_br)
+        disp["Investimento"] = disp["spend"].apply(_fmt_money_br)
+        disp["Faturamento"] = disp["revenue"].apply(_fmt_money_br)
         disp["ROAS"] = disp["ROAS"].map(_fmt_ratio_br)
+        disp["Custo por Compra"] = disp["Custo por Compra"].apply(_fmt_money_br)
         disp["Compras"] = disp["purchases"].astype(int)
 
+        st.markdown("### 🧾 Detalhamento por Dia da Semana")
         st.dataframe(
-            disp[["Dia da Semana", "Compras", "Valor usado", "Valor de conversão", "ROAS"]],
+            disp[[
+                "Dia da Semana", "Compras", "Investimento",
+                "Faturamento", "ROAS", "Custo por Compra"
+            ]],
             use_container_width=True,
             height=380,
         )
 
         st.stop()
-
 
     # ========= DEMAIS DIMENSÕES =========
     dim_to_breakdowns = {
