@@ -2379,13 +2379,33 @@ with tab_detail:
         base = _apply_prod_filter(base)
         base = _ensure_cols_exist(base)
 
-        # Converter datas e gerar coluna com nome do dia
-        base["date_start"] = pd.to_datetime(base.get("date", base.get("date_start")), errors="coerce")
-        base["Dia da Semana"] = base["date_start"].dt.day_name(locale="pt_BR.utf8")
+        # Detecta coluna de data automaticamente
+        date_col = None
+        for c in base.columns:
+            if "date" in c.lower() or "data" in c.lower():
+                date_col = c
+                break
+        if not date_col:
+            st.error("Nenhuma coluna de data encontrada em df_daily.")
+            st.stop()
 
-        # Ordenar na sequência correta
+        # Converter datas e gerar nome do dia (sem depender de locale)
+        base["date_start"] = pd.to_datetime(base[date_col], errors="coerce")
+        base["Dia da Semana"] = base["date_start"].dt.day_name()
+        traducao_dias = {
+            "Monday": "segunda-feira",
+            "Tuesday": "terça-feira",
+            "Wednesday": "quarta-feira",
+            "Thursday": "quinta-feira",
+            "Friday": "sexta-feira",
+            "Saturday": "sábado",
+            "Sunday": "domingo",
+        }
+        base["Dia da Semana"] = base["Dia da Semana"].map(traducao_dias)
+
+        # Ordenar dias na sequência natural
         ordem_dias = ["segunda-feira", "terça-feira", "quarta-feira", "quinta-feira", "sexta-feira", "sábado", "domingo"]
-        base["Dia da Semana"] = base["Dia da Semana"].str.lower().astype("category")
+        base["Dia da Semana"] = base["Dia da Semana"].astype("category")
         base["Dia da Semana"] = base["Dia da Semana"].cat.set_categories(ordem_dias, ordered=True)
 
         # Agregar
@@ -2396,7 +2416,8 @@ with tab_detail:
         if min_spend_det and float(min_spend_det) > 0:
             g = g[g["spend"] >= float(min_spend_det)]
 
-        g = g.sort_values("purchases", ascending=False)
+        # Preenche dias faltantes com 0 (caso algum dia não tenha vendas)
+        g = g.set_index("Dia da Semana").reindex(ordem_dias, fill_value=0).reset_index()
 
         st.subheader("📅 Compras por Dia da Semana")
         _bar_chart(g["Dia da Semana"], g["purchases"], "Compras por Dia da Semana", "Dia da Semana", "Compras")
@@ -2415,6 +2436,7 @@ with tab_detail:
         )
 
         st.stop()
+
 
     # ========= DEMAIS DIMENSÕES =========
     dim_to_breakdowns = {
