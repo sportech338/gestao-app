@@ -1547,8 +1547,6 @@ with tab_daily:
         agg_cols = ["spend", "link_clicks", "lpv", "init_checkout", "add_payment", "purchases", "revenue"]
         camp = df_daily_view.groupby(["campaign_id", "campaign_name"], as_index=False)[agg_cols].sum()
 
-        # (resto do bloco de campanhas igual ao seu, já usando df_daily_view)
-        # ...
     else:
         st.info("Troque o nível para 'campaign' para ver o detalhamento por campanha.")
         
@@ -2254,7 +2252,7 @@ with tab_detail:
         "Dimensão",
         [
             "Populares", "Idade", "Gênero", "Idade + Gênero",
-            "Região", "País", "Plataforma", "Posicionamento",
+            "Região", "País", "Plataforma", "Posicionamento", "Dia da Semana",
         ],
         index=0,
         horizontal=True,
@@ -2373,6 +2371,49 @@ with tab_detail:
             st.dataframe(disp_comp, use_container_width=True, height=260)
         with c2:
             st.dataframe(disp_roas, use_container_width=True, height=260)
+        st.stop()
+
+    # ========= DIA DA SEMANA =========
+    if dimensao == "Dia da Semana":
+        base = df_daily.copy()
+        base = _apply_prod_filter(base)
+        base = _ensure_cols_exist(base)
+
+        # Converter datas e gerar coluna com nome do dia
+        base["date_start"] = pd.to_datetime(base["date_start"], errors="coerce")
+        base["Dia da Semana"] = base["date_start"].dt.day_name(locale="pt_BR.utf8")
+
+        # Ordenar na sequência correta
+        ordem_dias = ["segunda-feira", "terça-feira", "quarta-feira", "quinta-feira", "sexta-feira", "sábado", "domingo"]
+        base["Dia da Semana"] = base["Dia da Semana"].str.lower().astype("category")
+        base["Dia da Semana"] = base["Dia da Semana"].cat.set_categories(ordem_dias, ordered=True)
+
+        # Agregar
+        agg_cols = ["spend", "revenue", "purchases", "link_clicks", "lpv", "init_checkout", "add_payment"]
+        g = base.groupby("Dia da Semana", dropna=False, as_index=False)[agg_cols].sum()
+        g["ROAS"] = np.where(g["spend"] > 0, g["revenue"] / g["spend"], np.nan)
+
+        if min_spend_det and float(min_spend_det) > 0:
+            g = g[g["spend"] >= float(min_spend_det)]
+
+        g = g.sort_values("purchases", ascending=False)
+
+        st.subheader("📅 Compras por Dia da Semana")
+        _bar_chart(g["Dia da Semana"], g["purchases"], "Compras por Dia da Semana", "Dia da Semana", "Compras")
+
+        # Exibir tabela detalhada
+        disp = g.copy()
+        disp["Valor usado"] = disp["spend"].apply(_fmt_money_br)
+        disp["Valor de conversão"] = disp["revenue"].apply(_fmt_money_br)
+        disp["ROAS"] = disp["ROAS"].map(_fmt_ratio_br)
+        disp["Compras"] = disp["purchases"].astype(int)
+
+        st.dataframe(
+            disp[["Dia da Semana", "Compras", "Valor usado", "Valor de conversão", "ROAS"]],
+            use_container_width=True,
+            height=380,
+        )
+
         st.stop()
 
     # ========= DEMAIS DIMENSÕES =========
