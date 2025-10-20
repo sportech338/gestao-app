@@ -2424,7 +2424,7 @@ with tab_detail:
         g = g.set_index("Dia da Semana").reindex(ordem_dias, fill_value=0).reset_index()
 
         # ====== VISUAL ======
-        st.subheader("📊 Vendas × Investimento por Dia da Semana")
+        st.subheader("📊 Investimento × Vendas por Dia da Semana")
 
         fig = go.Figure()
 
@@ -2434,30 +2434,55 @@ with tab_detail:
             y=g["purchases"],
             name="Compras",
             marker_color="#1f77b4",
+            text=g["purchases"],
+            textposition="outside",
+            hovertemplate="Dia: %{x}<br>Compras: %{y}<extra></extra>",
             yaxis="y1",
         ))
 
-        # Linha = Investimento
+        # Linha = Investimento (R$)
         fig.add_trace(go.Scatter(
             x=g["Dia da Semana"],
             y=g["spend"],
             name="Investimento (R$)",
             mode="lines+markers+text",
-            text=g["spend"].apply(lambda v: f"R${v:,.0f}".replace(",", ".").replace(".", ",", 1)),
+            text=[f"R${v:,.0f}".replace(",", ".").replace(".", ",", 1) for v in g["spend"]],
             textposition="top center",
             marker_color="#ff7f0e",
+            line=dict(width=3),
+            hovertemplate="Dia: %{x}<br>Investimento: R$%{y:,.0f}<extra></extra>",
             yaxis="y2",
         ))
 
         fig.update_layout(
-            title="Relação entre Compras e Investimento por Dia da Semana",
+            title="Relação entre Investimento e Vendas por Dia da Semana",
             xaxis=dict(title="Dia da Semana"),
-            yaxis=dict(title="Compras", side="left", showgrid=False),
-            yaxis2=dict(title="Investimento (R$)", overlaying="y", side="right"),
-            legend=dict(x=0.02, y=1.1, orientation="h"),
-            height=460,
+            yaxis=dict(
+                title="Compras",
+                side="left",
+                showgrid=False,
+                zeroline=False
+            ),
+            yaxis2=dict(
+                title="Investimento (R$)",
+                overlaying="y",
+                side="right",
+                showgrid=False,
+                zeroline=False
+            ),
+            legend=dict(
+                x=0.02,
+                y=1.1,
+                orientation="h",
+                bgcolor="rgba(255,255,255,0.5)",
+                bordercolor="rgba(0,0,0,0.1)",
+                borderwidth=1
+            ),
+            height=480,
             template="plotly_white",
             margin=dict(l=10, r=10, t=48, b=10),
+            separators=".,",
+            hovermode="x unified"
         )
 
         st.plotly_chart(fig, use_container_width=True)
