@@ -2440,17 +2440,22 @@ with tab_detail:
             yaxis="y1",
         ))
 
+        # Função para formatar valores monetários corretamente (pt-BR)
+        def fmt_real(v):
+            return f"R${v:,.0f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
         # Linha = Investimento (R$)
         fig.add_trace(go.Scatter(
             x=g["Dia da Semana"],
             y=g["spend"],
             name="Investimento (R$)",
             mode="lines+markers+text",
-            text=[f"R${v:,.0f}".replace(",", ".").replace(".", ",", 1) for v in g["spend"]],
+            text=[fmt_real(v) for v in g["spend"]],
             textposition="top center",
             marker_color="#ff7f0e",
             line=dict(width=3),
-            hovertemplate="Dia: %{x}<br>Investimento: R$%{y:,.0f}<extra></extra>",
+            hovertemplate="Dia: %{x}<br>Investimento: %{customdata}<extra></extra>",
+            customdata=[fmt_real(v) for v in g["spend"]],
             yaxis="y2",
         ))
 
@@ -2482,8 +2487,8 @@ with tab_detail:
                 y=-0.2,
                 xanchor="center",
                 yanchor="top",
-                bgcolor="rgba(255,255,255,0.8)",   # fundo branco translúcido
-                font=dict(color="black", size=12),  # texto preto
+                bgcolor="rgba(255,255,255,0.8)",
+                font=dict(color="black", size=12),
                 bordercolor="rgba(0,0,0,0.15)",
                 borderwidth=1
             ),
