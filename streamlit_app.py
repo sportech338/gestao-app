@@ -2408,8 +2408,7 @@ with tab_detail:
             "segunda-feira", "terça-feira", "quarta-feira",
             "quinta-feira", "sexta-feira", "sábado", "domingo"
         ]
-        base["Dia da Semana"] = base["Dia da Semana"].astype("category")
-        base["Dia da Semana"] = base["Dia da Semana"].cat.set_categories(ordem_dias, ordered=True)
+        base["Dia da Semana"] = pd.Categorical(base["Dia da Semana"], categories=ordem_dias, ordered=True)
 
         # Agregar dados principais
         agg_cols = ["spend", "revenue", "purchases"]
@@ -2426,7 +2425,6 @@ with tab_detail:
         # ====== VISUAL ======
         st.subheader("📊 Investimento × Vendas por Dia da Semana")
 
-        # Função pt-BR para formatar valores monetários corretamente
         def fmt_real(v):
             return f"R${v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
@@ -2446,7 +2444,7 @@ with tab_detail:
             yaxis="y1",
         ))
 
-        # Linha = Investimento (com tooltip completo)
+        # Linha = Investimento
         custom_hover = []
         for _, row in g.iterrows():
             hover_text = (
@@ -2476,33 +2474,17 @@ with tab_detail:
                 text="Relação entre Investimento e Vendas por Dia da Semana",
                 x=0.5,
                 xanchor="center",
-                yanchor="top",
                 font=dict(size=16)
             ),
             xaxis=dict(title="Dia da Semana"),
-            yaxis=dict(
-                title="Compras",
-                side="left",
-                showgrid=False,
-                zeroline=False
-            ),
-            yaxis2=dict(
-                title="Investimento (R$)",
-                overlaying="y",
-                side="right",
-                showgrid=False,
-                zeroline=False
-            ),
+            yaxis=dict(title="Compras", side="left", showgrid=False, zeroline=False),
+            yaxis2=dict(title="Investimento (R$)", overlaying="y", side="right", showgrid=False, zeroline=False),
             legend=dict(
                 orientation="h",
-                x=0.5,
-                y=-0.2,
-                xanchor="center",
-                yanchor="top",
+                x=0.5, y=-0.2,
+                xanchor="center", yanchor="top",
                 bgcolor="rgba(255,255,255,0.8)",
-                font=dict(color="black", size=12),
-                bordercolor="rgba(0,0,0,0.15)",
-                borderwidth=1
+                font=dict(color="black", size=12)
             ),
             height=480,
             template="plotly_white",
@@ -2510,8 +2492,37 @@ with tab_detail:
             separators=".,",
             hovermode="x unified"
         )
-
         st.plotly_chart(fig, use_container_width=True)
+
+        # ====== ANÁLISE AUTOMÁTICA ======
+        if not g.empty and g["spend"].sum() > 0:
+            media_roas = g["ROAS"].mean()
+            media_cpp = g["Custo por Compra"].mean()
+            best_roas = g.loc[g["ROAS"].idxmax()]
+            best_cpp = g.loc[g["Custo por Compra"].idxmin()]
+            best_pur = g.loc[g["purchases"].idxmax()]
+
+            st.markdown("### 🧠 Insights Automáticos (Período Selecionado)")
+
+            st.markdown(f"""
+            **💰 Melhor eficiência (ROAS)**: **{best_roas['Dia da Semana'].capitalize()}**  
+            ROAS médio: **{best_roas['ROAS']:.2f}** _(↑ {((best_roas['ROAS']/media_roas - 1)*100):.1f}% acima da média)_  
+            Investimento: {fmt_real(best_roas['spend'])}  
+            Custo por compra: {fmt_real(best_roas['Custo por Compra'])}  
+            Compras: {int(best_roas['purchases'])}
+
+            **⚡ Maior volume de vendas**: **{best_pur['Dia da Semana'].capitalize()}**  
+            Compras: {int(best_pur['purchases'])}  
+            ROAS: {best_pur['ROAS']:.2f}  
+            Custo por compra: {fmt_real(best_pur['Custo por Compra'])}
+
+            **💸 Melhor rentabilidade (menor custo por compra)**: **{best_cpp['Dia da Semana'].capitalize()}**  
+            Custo por compra: {fmt_real(best_cpp['Custo por Compra'])} _(↓ {(1 - best_cpp['Custo por Compra']/media_cpp)*100:.1f}% abaixo da média)_  
+            ROAS: {best_cpp['ROAS']:.2f}  
+            Compras: {int(best_cpp['purchases'])}
+            """)
+
+            st.caption("Essas métricas consideram apenas o período e filtros aplicados.")
 
         # ====== TABELA ======
         disp = g.copy()
@@ -2523,10 +2534,7 @@ with tab_detail:
 
         st.markdown("### 🧾 Detalhamento por Dia da Semana")
         st.dataframe(
-            disp[[
-                "Dia da Semana", "Compras", "Investimento",
-                "Faturamento", "ROAS", "Custo por Compra"
-            ]],
+            disp[["Dia da Semana", "Compras", "Investimento", "Faturamento", "ROAS", "Custo por Compra"]],
             use_container_width=True,
             height=380,
         )
