@@ -2496,9 +2496,9 @@ with tab_detail:
 
         if not g.empty and g["spend"].sum() > 0:
             media_roas = g["ROAS"].mean()
-            media_cpp = g["Custo por Compra"].mean()
+            media_cpa = g["Custo por Compra"].mean()
             best_roas = g.loc[g["ROAS"].idxmax()]
-            best_cpp = g.loc[g["Custo por Compra"].idxmin()]
+            best_cpa = g.loc[g["Custo por Compra"].idxmin()]
             best_pur = g.loc[g["purchases"].idxmax()]
 
             st.markdown("### 🧠 Insights Automáticos (Período Selecionado)")
@@ -2532,12 +2532,12 @@ with tab_detail:
             with col3:
                 st.markdown(f"""
                 <div style="background-color:#E8F5E9;padding:18px;border-radius:12px;border:1px solid #7BC47F;color:#111;">
-                    <h5 style="margin-bottom:6px;color:#111;">💸 Melhor Rentabilidade (Menor CPP)</h5>
-                    <b style="color:#111;">{best_cpp['Dia da Semana'].capitalize()}</b><br>
-                    Custo por compra: <b>{fmt_real(best_cpp['Custo por Compra'])}</b><br>
-                    <span style="color:#007200;">↓ {(1 - best_cpp['Custo por Compra']/media_cpp)*100:.1f}% abaixo da média</span><br>
-                    ROAS: {best_cpp['ROAS']:.2f}<br>
-                    Compras: {int(best_cpp['purchases'])}
+                    <h5 style="margin-bottom:6px;color:#111;">💸 Melhor Rentabilidade (Menor CPA)</h5>
+                    <b style="color:#111;">{best_cpa['Dia da Semana'].capitalize()}</b><br>
+                    Custo por compra: <b>{fmt_real(best_cpa['Custo por Compra'])}</b><br>
+                    <span style="color:#007200;">↓ {(1 - best_cpa['Custo por Compra']/media_cpa)*100:.1f}% abaixo da média</span><br>
+                    ROAS: {best_cpa['ROAS']:.2f}<br>
+                    Compras: {int(best_cpa['purchases'])}
                 </div>
                 """, unsafe_allow_html=True)
 
