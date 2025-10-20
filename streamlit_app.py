@@ -2426,9 +2426,12 @@ with tab_detail:
         # ====== VISUAL ======
         st.subheader("📊 Investimento × Vendas por Dia da Semana")
 
-        fig = go.Figure()
+        # Função pt-BR para formatar valores monetários corretamente
+        def fmt_real(v):
+            return f"R${v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
         # Barras = Compras
+        fig = go.Figure()
         fig.add_trace(go.Bar(
             x=g["Dia da Semana"],
             y=g["purchases"],
@@ -2436,15 +2439,24 @@ with tab_detail:
             marker_color="#1f77b4",
             text=g["purchases"],
             textposition="outside",
-            hovertemplate="Dia: %{x}<br>Compras: %{y}<extra></extra>",
+            hovertemplate=(
+                "<b>%{x}</b><br>"
+                "Compras: %{y}<extra></extra>"
+            ),
             yaxis="y1",
         ))
 
-        # Função para formatar valores monetários corretamente (pt-BR)
-        def fmt_real(v):
-            return f"R${v:,.0f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        # Linha = Investimento (com tooltip completo)
+        custom_hover = []
+        for _, row in g.iterrows():
+            hover_text = (
+                f"<b>{row['Dia da Semana']}</b><br>"
+                f"Investimento: {fmt_real(row['spend'])}<br>"
+                f"ROAS: {row['ROAS']:.2f}<br>"
+                f"Custo por compra: {fmt_real(row['Custo por Compra'])}<extra></extra>"
+            )
+            custom_hover.append(hover_text)
 
-        # Linha = Investimento (R$)
         fig.add_trace(go.Scatter(
             x=g["Dia da Semana"],
             y=g["spend"],
@@ -2454,8 +2466,8 @@ with tab_detail:
             textposition="top center",
             marker_color="#ff7f0e",
             line=dict(width=3),
-            hovertemplate="Dia: %{x}<br>Investimento: %{customdata}<extra></extra>",
-            customdata=[fmt_real(v) for v in g["spend"]],
+            hovertext=custom_hover,
+            hoverinfo="text",
             yaxis="y2",
         ))
 
