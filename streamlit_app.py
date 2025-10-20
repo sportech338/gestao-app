@@ -2455,7 +2455,13 @@ with tab_detail:
         ))
 
         fig.update_layout(
-            title="Relação entre Investimento e Vendas por Dia da Semana",
+            title=dict(
+                text="Relação entre Investimento e Vendas por Dia da Semana",
+                x=0.5,  # centraliza
+                xanchor="center",
+                yanchor="top",
+                font=dict(size=16)
+            ),
             xaxis=dict(title="Dia da Semana"),
             yaxis=dict(
                 title="Compras",
@@ -2471,16 +2477,18 @@ with tab_detail:
                 zeroline=False
             ),
             legend=dict(
-                x=0.02,
-                y=1.1,
                 orientation="h",
-                bgcolor="rgba(255,255,255,0.5)",
-                bordercolor="rgba(0,0,0,0.1)",
+                x=0.5,
+                y=-0.2,             # 🔥 move a legenda para baixo do gráfico
+                xanchor="center",
+                yanchor="top",
+                bgcolor="rgba(255,255,255,0.6)",
+                bordercolor="rgba(0,0,0,0.2)",
                 borderwidth=1
             ),
             height=480,
             template="plotly_white",
-            margin=dict(l=10, r=10, t=48, b=10),
+            margin=dict(l=10, r=10, t=60, b=80),
             separators=".,",
             hovermode="x unified"
         )
