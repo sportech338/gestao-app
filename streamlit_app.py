@@ -2494,7 +2494,6 @@ with tab_detail:
         )
         st.plotly_chart(fig, use_container_width=True)
 
-        # ====== ANÁLISE AUTOMÁTICA (CARD VIEW) ======
         if not g.empty and g["spend"].sum() > 0:
             media_roas = g["ROAS"].mean()
             media_cpp = g["Custo por Compra"].mean()
@@ -2507,10 +2506,10 @@ with tab_detail:
             col1, col2, col3 = st.columns(3)
             with col1:
                 st.markdown(f"""
-                <div style="background-color:#FDF5E6;padding:18px;border-radius:12px;border:1px solid #f4c16c">
-                    <h5 style="margin-bottom:6px;">💰 Melhor Eficiência (ROAS)</h5>
-                    <b>{best_roas['Dia da Semana'].capitalize()}</b><br>
-                    ROAS: <b>{best_roas['ROAS']:.2f}</b>  
+                <div style="background-color:#FDF5E6;padding:18px;border-radius:12px;border:1px solid #f4c16c;color:#111;">
+                    <h5 style="margin-bottom:6px;color:#111;">💰 Melhor Eficiência (ROAS)</h5>
+                    <b style="color:#111;">{best_roas['Dia da Semana'].capitalize()}</b><br>
+                    ROAS: <b>{best_roas['ROAS']:.2f}</b><br>
                     <span style="color:#007200;">↑ {(best_roas['ROAS']/media_roas - 1)*100:.1f}% acima da média</span><br>
                     Investimento: {fmt_real(best_roas['spend'])}<br>
                     Custo por compra: {fmt_real(best_roas['Custo por Compra'])}<br>
@@ -2520,9 +2519,9 @@ with tab_detail:
 
             with col2:
                 st.markdown(f"""
-                <div style="background-color:#EEF6FF;padding:18px;border-radius:12px;border:1px solid #87BFFF">
-                    <h5 style="margin-bottom:6px;">⚡ Maior Volume de Vendas</h5>
-                    <b>{best_pur['Dia da Semana'].capitalize()}</b><br>
+                <div style="background-color:#EEF6FF;padding:18px;border-radius:12px;border:1px solid #87BFFF;color:#111;">
+                    <h5 style="margin-bottom:6px;color:#111;">⚡ Maior Volume de Vendas</h5>
+                    <b style="color:#111;">{best_pur['Dia da Semana'].capitalize()}</b><br>
                     Compras: <b>{int(best_pur['purchases'])}</b><br>
                     ROAS: {best_pur['ROAS']:.2f}<br>
                     Custo por compra: {fmt_real(best_pur['Custo por Compra'])}<br>
@@ -2532,10 +2531,10 @@ with tab_detail:
 
             with col3:
                 st.markdown(f"""
-                <div style="background-color:#E8F5E9;padding:18px;border-radius:12px;border:1px solid #7BC47F">
-                    <h5 style="margin-bottom:6px;">💸 Melhor Rentabilidade (Menor CPP)</h5>
-                    <b>{best_cpp['Dia da Semana'].capitalize()}</b><br>
-                    Custo por compra: <b>{fmt_real(best_cpp['Custo por Compra'])}</b>  
+                <div style="background-color:#E8F5E9;padding:18px;border-radius:12px;border:1px solid #7BC47F;color:#111;">
+                    <h5 style="margin-bottom:6px;color:#111;">💸 Melhor Rentabilidade (Menor CPP)</h5>
+                    <b style="color:#111;">{best_cpp['Dia da Semana'].capitalize()}</b><br>
+                    Custo por compra: <b>{fmt_real(best_cpp['Custo por Compra'])}</b><br>
                     <span style="color:#007200;">↓ {(1 - best_cpp['Custo por Compra']/media_cpp)*100:.1f}% abaixo da média</span><br>
                     ROAS: {best_cpp['ROAS']:.2f}<br>
                     Compras: {int(best_cpp['purchases'])}
@@ -2543,7 +2542,7 @@ with tab_detail:
                 """, unsafe_allow_html=True)
 
             st.caption("Essas métricas consideram apenas o período e filtros aplicados.")
-
+            
         # ====== TABELA ======
         disp = g.copy()
         disp["Investimento"] = disp["spend"].apply(_fmt_money_br)
