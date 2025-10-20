@@ -2457,7 +2457,7 @@ with tab_detail:
         fig.update_layout(
             title=dict(
                 text="Relação entre Investimento e Vendas por Dia da Semana",
-                x=0.5,  # centraliza
+                x=0.5,
                 xanchor="center",
                 yanchor="top",
                 font=dict(size=16)
@@ -2479,11 +2479,12 @@ with tab_detail:
             legend=dict(
                 orientation="h",
                 x=0.5,
-                y=-0.2,             # 🔥 move a legenda para baixo do gráfico
+                y=-0.2,
                 xanchor="center",
                 yanchor="top",
-                bgcolor="rgba(255,255,255,0.6)",
-                bordercolor="rgba(0,0,0,0.2)",
+                bgcolor="rgba(255,255,255,0.8)",   # fundo branco translúcido
+                font=dict(color="black", size=12),  # texto preto
+                bordercolor="rgba(0,0,0,0.15)",
                 borderwidth=1
             ),
             height=480,
