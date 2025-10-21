@@ -2594,6 +2594,66 @@ with tab_detail:
                 """, unsafe_allow_html=True)
 
             st.caption("Essas métricas consideram apenas o período e filtros aplicados.")
+
+            # ====== RANKING GERAL POR DESEMPENHO ======
+            st.markdown("### 🏆 Ranking Geral — Desempenho Consolidado")
+
+            # Normaliza as métricas em escala 0–1
+            df_rank = g.copy()
+            df_rank["score_vendas"] = (df_rank["purchases"] - df_rank["purchases"].min()) / (df_rank["purchases"].max() - df_rank["purchases"].min() + 1e-9)
+            df_rank["score_roas"] = (df_rank["ROAS"] - df_rank["ROAS"].min()) / (df_rank["ROAS"].max() - df_rank["ROAS"].min() + 1e-9)
+            df_rank["score_invest"] = (df_rank["spend"].max() - df_rank["spend"]) / (df_rank["spend"].max() - df_rank["spend"].min() + 1e-9)
+            # Obs: menor investimento = melhor pontuação → por isso é invertido
+
+            # Combina os escores com pesos
+            PESO_VENDAS = 0.5
+            PESO_ROAS = 0.35
+            PESO_INVEST = 0.15
+
+            df_rank["score_final"] = (
+                df_rank["score_vendas"] * PESO_VENDAS
+                + df_rank["score_roas"] * PESO_ROAS
+                + df_rank["score_invest"] * PESO_INVEST
+            )
+
+            # Ordena pelo score final (melhor → pior)
+            df_rank = df_rank.sort_values("score_final", ascending=False).reset_index(drop=True)
+            df_rank["Posição"] = df_rank.index + 1
+
+            # Formata para exibição
+            df_rank["Investimento"] = df_rank["spend"].apply(fmt_real)
+            df_rank["Faturamento"] = df_rank["revenue"].apply(fmt_real)
+            df_rank["Custo por Compra"] = df_rank["Custo por Compra"].apply(fmt_real)
+            df_rank["ROAS"] = df_rank["ROAS"].round(2)
+            df_rank["Compras"] = df_rank["purchases"].astype(int)
+            df_rank["Score (%)"] = (df_rank["score_final"] * 100).round(1)
+
+            disp_rank = df_rank[
+                ["Posição", "Dia da Semana", "Compras", "Investimento", "Faturamento", "ROAS", "Custo por Compra", "Score (%)"]
+            ]
+
+            # Destaque visual dos top 3 e piores
+            def _highlight_rank(row):
+                if row["Posição"] == 1:
+                    return ['background-color: #d1fae5; font-weight: bold; color: #065f46;'] * len(row)
+                elif row["Posição"] == 2:
+                    return ['background-color: #fef3c7; font-weight: bold; color: #92400e;'] * len(row)
+                elif row["Posição"] == 3:
+                    return ['background-color: #dbeafe; font-weight: bold; color: #1e3a8a;'] * len(row)
+                elif row["Posição"] == len(df_rank):
+                    return ['background-color: #fee2e2; color: #991b1b;'] * len(row)
+                else:
+                    return [''] * len(row)
+
+            st.dataframe(
+                disp_rank.style.apply(_highlight_rank, axis=1),
+                use_container_width=True,
+                height=380,
+            )
+
+            st.caption("Ranking consolidado pondera Compras (50%), ROAS (35%) e Investimento (15%) — gerando um desempenho geral equilibrado por dia da semana.")
+
+
             
         # ====== TABELA ======
         disp = g.copy()
