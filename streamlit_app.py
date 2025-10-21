@@ -2438,7 +2438,6 @@ with tab_detail:
             text=g["purchases"],
             textposition="outside",
             hovertemplate="<b>%{x}</b><br>Compras: %{y}"
-            ),
             yaxis="y1",
         ))
 
