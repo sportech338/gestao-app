@@ -2606,8 +2606,8 @@ with tab_detail:
             # Obs: menor investimento = melhor pontuação → por isso é invertido
 
             # Combina os escores com pesos
-            PESO_VENDAS = 0.5
-            PESO_ROAS = 0.35
+            PESO_VENDAS = 0.35
+            PESO_ROAS = 0.50
             PESO_INVEST = 0.15
 
             df_rank["score_final"] = (
