@@ -2437,7 +2437,7 @@ with tab_detail:
             marker_color="#1f77b4",
             text=g["purchases"],
             textposition="outside",
-            hovertemplate="<b>%{x}</b><br>Compras: %{y}"
+            hovertemplate="<b>%{x}</b><br>Compras: %{y}",
             yaxis="y1",
         ))
 
