@@ -2653,33 +2653,7 @@ with tab_detail:
 
             st.caption("Ranking consolidado pondera Compras (50%), ROAS (35%) e Investimento (15%) — gerando um desempenho geral equilibrado por dia da semana.")
 
-            # ====== Gráfico do Ranking Consolidado ======
-            fig_rank = go.Figure(go.Bar(
-                x=df_rank["score_final"] * 100,
-                y=df_rank["Dia da Semana"],
-                orientation="h",
-                marker_color="#36B37E",
-                text=[f"{v*100:.1f}%" for v in df_rank["score_final"]],
-                textposition="outside",
-            ))
 
-            fig_rank.update_layout(
-                title=dict(
-                    text="🏅 Score Consolidado por Dia da Semana",
-                    x=0.5, xanchor="center",
-                    font=dict(size=15)
-                ),
-                xaxis=dict(title="Score (%)", range=[0, 110]),
-                yaxis=dict(title=""),
-                height=420,
-                template="plotly_white",
-                margin=dict(l=10, r=10, t=50, b=10),
-                separators=".,",
-            )
-
-            st.plotly_chart(fig_rank, use_container_width=True)
-
-            
         # ====== TABELA ======
         disp = g.copy()
         disp["Investimento"] = disp["spend"].apply(_fmt_money_br)
