@@ -3021,7 +3021,9 @@ with tab_detail:
 
 # -------------------- ABA 4: 💸 CUSTOS & MARGENS --------------------
 with tab_costs:
-st.write("✅ Aba de Custos carregada")
+    st.write("✅ Aba de Custos carregada")
+
+    # ⚙️ Ajuste de estilo para fundo branco (melhor visibilidade no modo escuro)
     st.markdown(
         """
         <style>
@@ -3074,3 +3076,4 @@ st.write("✅ Aba de Custos carregada")
     )
 
     st.success("✅ Os custos e margens configurados aqui serão usados automaticamente no cálculo de lucro estimado nas demais abas.")
+
