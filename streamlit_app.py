@@ -3021,7 +3021,7 @@ with tab_detail:
 
 # -------------------- ABA 4: 💸 CUSTOS & MARGENS --------------------
 with tab_costs:
-    # ⚙️ Ajuste de estilo para fundo branco (melhor visibilidade no modo escuro)
+st.write("✅ Aba de Custos carregada")
     st.markdown(
         """
         <style>
