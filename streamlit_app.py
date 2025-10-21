@@ -3021,59 +3021,68 @@ with tab_detail:
 
 # -------------------- ABA 4: 💸 CUSTOS & MARGENS --------------------
 with tab_costs:
-    st.write("✅ Aba de Custos carregada")
+    st.header("💸 Custos & Margens — Configuração de Produtos")
 
-    # ⚙️ Ajuste de estilo para fundo branco (melhor visibilidade no modo escuro)
-    st.markdown(
-        """
-        <style>
-            [data-testid="stAppViewContainer"] .main .block-container {
-                background-color: #ffffff;
-                color: #111111;
-            }
-        </style>
-        """,
-        unsafe_allow_html=True
-    )
-
-    st.header("💸 Custos & Margens dos Produtos")
-
-    # Inicializa ou carrega custos do estado da sessão
+    # 🔧 Inicializa custos e taxas (se ainda não existir na sessão)
     if "df_custos" not in st.session_state:
         st.session_state["df_custos"] = pd.DataFrame({
             "Produto": ["FlexLive", "KneePro", "Óculos de Corrida"],
             "Preço de Venda (R$)": [99.0, 89.0, 199.0],
             "Custo Unitário (R$)": [39.0, 29.0, 85.0],
+            "Taxa Meta (%)": [12.0, 12.0, 12.0],
+            "Taxa Gateway (%)": [2.9, 2.9, 2.9],
+            "Impostos (%)": [5.0, 5.0, 5.0],
+            "Outros Custos (%)": [0.0, 0.0, 0.0],
         })
 
     df_custos = st.session_state["df_custos"]
 
-    st.markdown("### 🧾 Tabela de Custos Unitários")
+    st.markdown("### 🧾 Editar Custos e Taxas")
     edited = st.data_editor(
         df_custos,
         use_container_width=True,
         num_rows="dynamic",
         key="custos_editor",
-        height=300,
+        height=400,
+        hide_index=True,
     )
 
     st.session_state["df_custos"] = edited
 
-    st.markdown("### 📈 Margens Automáticas")
+    # ---- Cálculo de Margens ----
     df_margens = edited.copy()
-    df_margens["Margem (%)"] = (
-        (1 - (df_margens["Custo Unitário (R$)"] / df_margens["Preço de Venda (R$)"])) * 100
+
+    df_margens["Total de Taxas (%)"] = (
+        df_margens["Taxa Meta (%)"] +
+        df_margens["Taxa Gateway (%)"] +
+        df_margens["Impostos (%)"] +
+        df_margens["Outros Custos (%)"]
+    ).round(2)
+
+    df_margens["Lucro Bruto (R$)"] = (
+        df_margens["Preço de Venda (R$)"] - df_margens["Custo Unitário (R$)"]
+    ).round(2)
+
+    df_margens["Lucro Líquido (R$)"] = (
+        df_margens["Lucro Bruto (R$)"] * (1 - df_margens["Total de Taxas (%)"] / 100)
+    ).round(2)
+
+    df_margens["Margem Líquida (%)"] = (
+        (df_margens["Lucro Líquido (R$)"] / df_margens["Preço de Venda (R$)"]) * 100
     ).round(1)
 
+    st.markdown("### 📈 Margens Calculadas")
     st.dataframe(df_margens, use_container_width=True)
 
+    # ---- Exportação ----
     st.download_button(
-        "💾 Exportar custos em CSV",
+        "💾 Exportar custos e margens (CSV)",
         df_margens.to_csv(index=False).encode("utf-8"),
-        "custos_produtos.csv",
+        "custos_margens_produtos.csv",
         "text/csv",
         use_container_width=True
     )
 
-    st.success("✅ Os custos e margens configurados aqui serão usados automaticamente no cálculo de lucro estimado nas demais abas.")
+    # ---- Info visual ----
+    st.success("✅ Estes valores serão usados nas demais abas para calcular o lucro estimado de cada produto, campanha e dia da semana.")
 
