@@ -3017,8 +3017,6 @@ with tab_detail:
             f"Período B: **{_fmt_range_br(since_B, until_B)}**"
         )
 
-        st.stop()
-
 # -------------------- ABA 4: 💸 CUSTOS & MARGENS --------------------
 with tab_costs:
     st.header("💸 Custos & Margens — Configuração de Produtos")
