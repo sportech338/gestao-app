@@ -2437,9 +2437,7 @@ with tab_detail:
             marker_color="#1f77b4",
             text=g["purchases"],
             textposition="outside",
-            hovertemplate=(
-                "<b>%{x}</b><br>"
-                "Compras: %{y}<extra></extra>"
+            hovertemplate="<b>%{x}</b><br>Compras: %{y}"
             ),
             yaxis="y1",
         ))
@@ -2451,7 +2449,7 @@ with tab_detail:
                 f"<b>{row['Dia da Semana']}</b><br>"
                 f"Investimento: {fmt_real(row['spend'])}<br>"
                 f"ROAS: {row['ROAS']:.2f}<br>"
-                f"Custo por compra: {fmt_real(row['Custo por Compra'])}<extra></extra>"
+                f"Custo por compra: {fmt_real(row['Custo por Compra'])}"
             )
             custom_hover.append(hover_text)
 
