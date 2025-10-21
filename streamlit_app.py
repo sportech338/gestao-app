@@ -2500,6 +2500,21 @@ with tab_detail:
 
             st.markdown("### 🧠 Insights Automáticos (Período Selecionado)")
 
+            # ==== Melhores dias ====
+            best_roas = g.loc[g["ROAS"].idxmax()]
+            best_cpa = g.loc[g["Custo por Compra"].idxmin()]
+            best_pur = g.loc[g["purchases"].idxmax()]
+
+            # ==== Piores dias ====
+            worst_roas = g.loc[g["ROAS"].idxmin()]
+            worst_cpa = g.loc[g["Custo por Compra"].idxmax()]
+            worst_pur = g.loc[g["purchases"].idxmin()]
+
+            media_roas = g["ROAS"].mean()
+            media_cpa = g["Custo por Compra"].mean()
+
+            # === Blocos: MELHORES ===
+            st.markdown("#### 🟢 Melhores Desempenhos")
             col1, col2, col3 = st.columns(3)
             with col1:
                 st.markdown(f"""
@@ -2535,6 +2550,46 @@ with tab_detail:
                     <span style="color:#007200;">↓ {(1 - best_cpa['Custo por Compra']/media_cpa)*100:.1f}% abaixo da média</span><br>
                     ROAS: {best_cpa['ROAS']:.2f}<br>
                     Compras: {int(best_cpa['purchases'])}
+                </div>
+                """, unsafe_allow_html=True)
+
+            # === Blocos: PIORES ===
+            st.markdown("#### 🔴 Piores Desempenhos")
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.markdown(f"""
+                <div style="background-color:#FFF5F5;padding:18px;border-radius:12px;border:1px solid #FCA5A5;color:#111;">
+                    <h5 style="margin-bottom:6px;color:#111;">📉 Pior Eficiência (ROAS)</h5>
+                    <b style="color:#111;">{worst_roas['Dia da Semana'].capitalize()}</b><br>
+                    ROAS: <b>{worst_roas['ROAS']:.2f}</b><br>
+                    <span style="color:#C00000;">↓ {(1 - worst_roas['ROAS']/media_roas)*100:.1f}% abaixo da média</span><br>
+                    Investimento: {fmt_real(worst_roas['spend'])}<br>
+                    Custo por compra: {fmt_real(worst_roas['Custo por Compra'])}<br>
+                    Compras: {int(worst_roas['purchases'])}
+                </div>
+                """, unsafe_allow_html=True)
+
+            with col2:
+                st.markdown(f"""
+                <div style="background-color:#FFF8E1;padding:18px;border-radius:12px;border:1px solid #FACC15;color:#111;">
+                    <h5 style="margin-bottom:6px;color:#111;">🐢 Menor Volume de Vendas</h5>
+                    <b style="color:#111;">{worst_pur['Dia da Semana'].capitalize()}</b><br>
+                    Compras: <b>{int(worst_pur['purchases'])}</b><br>
+                    ROAS: {worst_pur['ROAS']:.2f}<br>
+                    Custo por compra: {fmt_real(worst_pur['Custo por Compra'])}<br>
+                    Investimento: {fmt_real(worst_pur['spend'])}
+                </div>
+                """, unsafe_allow_html=True)
+
+            with col3:
+                st.markdown(f"""
+                <div style="background-color:#FFF0F0;padding:18px;border-radius:12px;border:1px solid #F87171;color:#111;">
+                    <h5 style="margin-bottom:6px;color:#111;">🚨 Pior Rentabilidade (Maior CPA)</h5>
+                    <b style="color:#111;">{worst_cpa['Dia da Semana'].capitalize()}</b><br>
+                    Custo por compra: <b>{fmt_real(worst_cpa['Custo por Compra'])}</b><br>
+                    <span style="color:#C00000;">↑ {(worst_cpa['Custo por Compra']/media_cpa - 1)*100:.1f}% acima da média</span><br>
+                    ROAS: {worst_cpa['ROAS']:.2f}<br>
+                    Compras: {int(worst_cpa['purchases'])}
                 </div>
                 """, unsafe_allow_html=True)
 
