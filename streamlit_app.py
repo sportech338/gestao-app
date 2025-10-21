@@ -3021,6 +3021,19 @@ with tab_detail:
 
 # -------------------- ABA 4: 💸 CUSTOS & MARGENS --------------------
 with tab_costs:
+    # ⚙️ Ajuste de estilo para fundo branco (melhor visibilidade no modo escuro)
+    st.markdown(
+        """
+        <style>
+            [data-testid="stAppViewContainer"] .main .block-container {
+                background-color: #ffffff;
+                color: #111111;
+            }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+
     st.header("💸 Custos & Margens dos Produtos")
 
     # Inicializa ou carrega custos do estado da sessão
@@ -3061,4 +3074,3 @@ with tab_costs:
     )
 
     st.success("✅ Os custos e margens configurados aqui serão usados automaticamente no cálculo de lucro estimado nas demais abas.")
-
