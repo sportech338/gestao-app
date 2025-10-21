@@ -797,7 +797,7 @@ if df_daily.empty and (df_hourly is None or df_hourly.empty):
     st.warning("Sem dados para o período. Verifique permissões, conta e se há eventos de Purchase (value/currency).")
     st.stop()
 
-tab_daily, tab_daypart, tab_detail = st.tabs(["📅 Visão diária", "⏱️ Horários (principal)", "📊 Detalhamento"])
+tab_daily, tab_daypart, tab_detail, tab_costs = st.tabs(["📅 Visão diária", "⏱️ Horários (principal)", "📊 Detalhamento", "💸 Custos & Margens"])
 
 # -------------------- ABA 1: VISÃO DIÁRIA --------------------
 with tab_daily:
@@ -3018,3 +3018,47 @@ with tab_detail:
         )
 
         st.stop()
+
+# -------------------- ABA 4: 💸 CUSTOS & MARGENS --------------------
+with tab_costs:
+    st.header("💸 Custos & Margens dos Produtos")
+
+    # Inicializa ou carrega custos do estado da sessão
+    if "df_custos" not in st.session_state:
+        st.session_state["df_custos"] = pd.DataFrame({
+            "Produto": ["FlexLive", "KneePro", "Óculos de Corrida"],
+            "Preço de Venda (R$)": [99.0, 89.0, 199.0],
+            "Custo Unitário (R$)": [39.0, 29.0, 85.0],
+        })
+
+    df_custos = st.session_state["df_custos"]
+
+    st.markdown("### 🧾 Tabela de Custos Unitários")
+    edited = st.data_editor(
+        df_custos,
+        use_container_width=True,
+        num_rows="dynamic",
+        key="custos_editor",
+        height=300,
+    )
+
+    st.session_state["df_custos"] = edited
+
+    st.markdown("### 📈 Margens Automáticas")
+    df_margens = edited.copy()
+    df_margens["Margem (%)"] = (
+        (1 - (df_margens["Custo Unitário (R$)"] / df_margens["Preço de Venda (R$)"])) * 100
+    ).round(1)
+
+    st.dataframe(df_margens, use_container_width=True)
+
+    st.download_button(
+        "💾 Exportar custos em CSV",
+        df_margens.to_csv(index=False).encode("utf-8"),
+        "custos_produtos.csv",
+        "text/csv",
+        use_container_width=True
+    )
+
+    st.success("✅ Os custos e margens configurados aqui serão usados automaticamente no cálculo de lucro estimado nas demais abas.")
+
