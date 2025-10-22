@@ -853,7 +853,6 @@ if df_daily.empty and (df_hourly is None or df_hourly.empty):
 tab_daily, tab_daypart, tab_detail, tab_shopify = st.tabs(["📅 Visão diária", "⏱️ Horários (principal)", "📊 Detalhamento", "📦 Shopify – Variantes e Vendas"])
 
 # =============== Aba Shopify ===============
-
 with tab_shopify:
     st.title("📦 Shopify – Variantes e Vendas")
 
@@ -875,16 +874,24 @@ with tab_shopify:
         st.subheader("🛒 Vendas Recentes")
         st.dataframe(pedidos, use_container_width=True)
 
-        merged = pedidos.merge(produtos, on="variant_id", how="left")
-        resumo = (
-            merged.groupby(["variant_title", "sku"], as_index=False)
-            .agg(qtde_vendida=("quantity", "sum"), receita=("price", "sum"))
-            .sort_values("qtde_vendida", ascending=False)
-        )
+        if not pedidos.empty and not produtos.empty and "variant_id" in pedidos.columns:
+            merged = pedidos.merge(produtos, on="variant_id", how="left")
 
-        st.subheader("🔥 Variantes Mais Vendidas")
-        st.dataframe(resumo, use_container_width=True)
-        st.bar_chart(resumo.set_index("variant_title")["qtde_vendida"])
+            # ✅ Garante que as colunas existem antes de agrupar
+            if all(col in merged.columns for col in ["variant_title", "sku"]):
+                resumo = (
+                    merged.groupby(["variant_title", "sku"], as_index=False)
+                    .agg(qtde_vendida=("quantity", "sum"), receita=("price", "sum"))
+                    .sort_values("qtde_vendida", ascending=False)
+                )
+
+                st.subheader("🔥 Variantes Mais Vendidas")
+                st.dataframe(resumo, use_container_width=True)
+                st.bar_chart(resumo.set_index("variant_title")["qtde_vendida"])
+            else:
+                st.warning("⚠️ Colunas esperadas ('variant_title' e 'sku') não foram encontradas no merge.")
+        else:
+            st.info("ℹ️ Nenhum pedido ou produto disponível para gerar o resumo.")
 
 
 # -------------------- ABA 1: VISÃO DIÁRIA --------------------
