@@ -910,12 +910,7 @@ with tab_shopify:
     for col in ["variant_id", "sku", "product_title", "variant_title"]:
         if col not in produtos.columns:
             produtos[col] = None
-    for col in [
-        "variant_id", "order_name", "price", "quantity", "created_at",
-        "financial_status", "cancelled_at", "fulfillment_status",
-        "shipping_method", "shipping_address_city",
-        "shipping_address_province", "customer_name"
-    ]:
+    for col in ["variant_id", "order_name", "price", "quantity", "created_at", "financial_status"]:
         if col not in pedidos.columns:
             pedidos[col] = None
 
@@ -1055,9 +1050,9 @@ with tab_shopify:
     # 🧰 Debug opcional (mostrar dados crus)
     # ===============================================================
     with st.expander("🔍 Dados brutos (debug)", expanded=False):
-        st.write("📦 Produtos:", produtos.head(10))
-        st.write("🧾 Pedidos:", pedidos.head(10))
-        st.write("🔗 Base combinada:", base.head(10))
+        st.write("📦 Produtos:", produtos.head(5))
+        st.write("🧾 Pedidos:", pedidos.head(5))
+        st.write("🔗 Base combinada:", base.head(5))
 
     # ===============================================================
     # 💡 Exibir tabela final
