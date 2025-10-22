@@ -946,24 +946,29 @@ with tab_shopify:
         st.stop()
 
     # ---- Resumo ----
-    total_pedidos = df["order_id"].nunique() if "order_id" in df.columns else len(df)
+    total_pedidos = df["order_number"].nunique() if "order_number" in df.columns else len(df)
     total_unidades = df["quantity"].sum()
     total_receita = df["line_revenue"].sum()
+    ticket_medio = total_receita / total_pedidos if total_pedidos > 0 else 0
 
-    colA, colB, colC = st.columns(3)
+    colA, colB, colC, colD = st.columns(4)
     colA.metric("🧾 Pedidos", total_pedidos)
     colB.metric("📦 Unidades vendidas", int(total_unidades))
     colC.metric("💰 Receita total", f"R$ {total_receita:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+    colD.metric("💸 Ticket médio", f"R$ {ticket_medio:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
 
     # ---- Tabela final ----
     st.subheader("📋 Pedidos filtrados")
     tabela = df[
-        ["order_id", "created_at", "product_title", "variant_title", "sku", "quantity", "price", "line_revenue"]
+        ["order_number", "created_at", "financial_status", "fulfillment_status",
+         "product_title", "variant_title", "sku", "quantity", "price", "line_revenue"]
     ].sort_values("created_at", ascending=False)
 
     tabela.rename(columns={
-        "order_id": "Pedido",
+        "order_number": "Pedido",
         "created_at": "Data",
+        "financial_status": "Pagamento",
+        "fulfillment_status": "Entrega",
         "product_title": "Produto",
         "variant_title": "Variante",
         "sku": "SKU",
@@ -972,7 +977,21 @@ with tab_shopify:
         "line_revenue": "Total"
     }, inplace=True)
 
+    # ---- Formatação visual ----
+    tabela["Data"] = pd.to_datetime(tabela["Data"], errors="coerce").dt.strftime("%d/%m/%Y %H:%M")
+    tabela["Preço Unitário"] = tabela["Preço Unitário"].apply(lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+    tabela["Total"] = tabela["Total"].apply(lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+
     st.dataframe(tabela, use_container_width=True)
+
+    # ---- Exportar CSV ----
+    csv = tabela.to_csv(index=False).encode('utf-8-sig')
+    st.download_button(
+        label="📥 Exportar pedidos filtrados (CSV)",
+        data=csv,
+        file_name=f"pedidos_shopify_{periodo[0]}_{periodo[1]}.csv",
+        mime="text/csv",
+    )
 
 
 # -------------------- ABA 1: VISÃO DIÁRIA --------------------
