@@ -850,8 +850,6 @@ if df_daily.empty and (df_hourly is None or df_hourly.empty):
     st.warning("Sem dados para o período. Verifique permissões, conta e se há eventos de Purchase (value/currency).")
     st.stop()
 
-tab_daily, tab_daypart, tab_detail, tab_shopify = st.tabs(["📅 Visão diária", "⏱️ Horários (principal)", "📊 Detalhamento", "📦 Shopify – Variantes e Vendas"])
-
 # =============== Aba Shopify (Visão Geral de Produtos e Variantes) ===============
 with tab_shopify:
     st.title("📦 Shopify – Visão Geral")
@@ -872,35 +870,42 @@ with tab_shopify:
         st.stop()
 
     # ---- Normalizar nomes de colunas ----
-    produtos = produtos.rename(columns={
-        "title": "product_title",
-        "name": "product_title",
-        "variant_name": "variant_title",
-        "variant": "variant_title"
-    })
-    pedidos = pedidos.rename(columns={
-        "title": "product_title",
-        "name": "product_title",
-        "variant_name": "variant_title",
-        "variant": "variant_title"
-    })
+    def normalizar_colunas(df):
+        df = df.rename(columns={
+            "title": "product_title",
+            "name": "product_title",
+            "variant_name": "variant_title",
+            "variant": "variant_title",
+            "product_name": "product_title",
+            "variantid": "variant_id"
+        })
+        return df
 
-    # ---- Verificar quais colunas existem ----
+    produtos = normalizar_colunas(produtos)
+    pedidos = normalizar_colunas(pedidos)
+
+    # ---- Verificar colunas disponíveis ----
     colunas_produtos = [c for c in ["variant_id", "sku", "product_title", "variant_title"] if c in produtos.columns]
-    colunas_pedidos  = [c for c in ["variant_id", "product_title", "variant_title", "price", "quantity", "created_at", "order_id"] if c in pedidos.columns]
+    colunas_pedidos = [c for c in ["variant_id", "product_title", "variant_title", "price", "quantity", "created_at", "order_id"] if c in pedidos.columns]
 
     # ---- Juntar pedidos e produtos ----
+    if "variant_id" not in pedidos.columns or "variant_id" not in produtos.columns:
+        st.error("⚠️ Os dados não contêm a coluna 'variant_id'. Verifique a estrutura das tabelas da Shopify.")
+        st.stop()
+
     base = pedidos[colunas_pedidos].merge(produtos[colunas_produtos], on="variant_id", how="left")
 
     # ---- Ajustar tipos e métricas ----
-    base["created_at"] = pd.to_datetime(base["created_at"], errors="coerce")
-    base["price"] = base["price"].astype(float).fillna(0)
-    base["quantity"] = base["quantity"].astype(float).fillna(0)
+    base["created_at"] = pd.to_datetime(base.get("created_at"), errors="coerce")
+    base["price"] = pd.to_numeric(base.get("price"), errors="coerce").fillna(0)
+    base["quantity"] = pd.to_numeric(base.get("quantity"), errors="coerce").fillna(0)
     base["line_revenue"] = base["price"] * base["quantity"]
 
-    # Se a coluna variant_title não existir, usa SKU como fallback
+    # Fallbacks seguros
+    if "product_title" not in base.columns:
+        base["product_title"] = "(Produto desconhecido)"
     if "variant_title" not in base.columns:
-        base["variant_title"] = base.get("sku", "Variante Desconhecida")
+        base["variant_title"] = base.get("sku", "(Variante desconhecida)")
 
     # ---- Filtros ----
     st.subheader("🎛️ Filtros")
@@ -915,16 +920,21 @@ with tab_shopify:
         escolha_var = st.selectbox("Variante", variantes_lbl, index=0)
 
     with col3:
-        min_date = base["created_at"].min().date()
-        max_date = base["created_at"].max().date()
+        if not base["created_at"].isnull().all():
+            min_date = base["created_at"].min().date()
+            max_date = base["created_at"].max().date()
+        else:
+            today = pd.Timestamp.today().date()
+            min_date = max_date = today
         periodo = st.date_input("Período", (min_date, max_date))
 
     # ---- Aplicar filtros ----
     df = base.copy()
-    df = df[
-        (df["created_at"].dt.date >= periodo[0]) &
-        (df["created_at"].dt.date <= periodo[1])
-    ]
+    if "created_at" in df.columns:
+        df = df[
+            (df["created_at"].dt.date >= periodo[0]) &
+            (df["created_at"].dt.date <= periodo[1])
+        ]
 
     if escolha_prod != "(Todos os produtos)":
         df = df[df["product_title"] == escolha_prod]
