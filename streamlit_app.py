@@ -852,11 +852,11 @@ if df_daily.empty and (df_hourly is None or df_hourly.empty):
 
 tab_daily, tab_daypart, tab_detail, tab_shopify = st.tabs(["📅 Visão diária", "⏱️ Horários (principal)", "📊 Detalhamento", "📦 Shopify – Variantes e Vendas"])
 
-# =============== Aba Shopify (Visão Geral de Produtos e Variantes) ===============
+# =============== Aba Shopify (Pedidos Detalhados – Status, Pagamento, Frete, Cliente) ===============
 with tab_shopify:
-    st.title("📦 Shopify – Visão Geral")
+    st.title("📦 Shopify – Pedidos Detalhados")
 
-    # ---- Carregar dados da sessão ----
+    # ---- Carregar dados ----
     produtos = st.session_state.get("produtos")
     pedidos = st.session_state.get("pedidos")
 
@@ -880,14 +880,18 @@ with tab_shopify:
             "variant": "variant_title",
             "variant_name": "variant_title",
             "id": "variant_id",
-            "variantid": "variant_id"
+            "variantid": "variant_id",
+            "status_pagamento": "financial_status",
+            "status": "financial_status",
+            "cliente": "customer_name",
+            "customer": "customer_name"
         }
         return df.rename(columns=ren)
 
     produtos = normalizar(produtos)
     pedidos = normalizar(pedidos)
 
-    # ---- Juntar pedidos e produtos (com controle de nomes duplicados) ----
+    # ---- Juntar pedidos e produtos ----
     base = pedidos.merge(
         produtos[["variant_id", "sku", "product_title", "variant_title"]],
         on="variant_id",
@@ -896,18 +900,16 @@ with tab_shopify:
     )
 
     # ---- Ajustar nomes ----
-    base["product_title"] = base["product_title_pedido"].combine_first(base["product_title_produto"])
-    base["variant_title"] = base["variant_title_pedido"].combine_first(base["variant_title_produto"])
+    base["product_title"] = base.get("product_title_pedido").combine_first(base.get("product_title_produto"))
+    base["variant_title"] = base.get("variant_title_pedido").combine_first(base.get("variant_title_produto"))
+    base["product_title"].fillna("(Produto desconhecido)", inplace=True)
+    base["variant_title"].fillna("(Variante desconhecida)", inplace=True)
 
-    # ---- Tipos e métricas ----
+    # ---- Tipos ----
     base["created_at"] = pd.to_datetime(base.get("created_at"), errors="coerce")
     base["price"] = pd.to_numeric(base.get("price"), errors="coerce").fillna(0)
     base["quantity"] = pd.to_numeric(base.get("quantity"), errors="coerce").fillna(0)
     base["line_revenue"] = base["price"] * base["quantity"]
-
-    # ---- Fallbacks ----
-    base["product_title"].fillna("(Produto desconhecido)", inplace=True)
-    base["variant_title"].fillna("(Variante desconhecida)", inplace=True)
 
     # ---- Filtros ----
     st.subheader("🎛️ Filtros")
@@ -945,6 +947,13 @@ with tab_shopify:
         st.warning("Nenhum pedido encontrado com os filtros selecionados.")
         st.stop()
 
+    # ---- Filtro: apenas pedidos válidos (pago + não cancelado) ----
+    if "financial_status" in df.columns:
+        df = df[df["financial_status"].str.lower().isin(["paid", "pago"])]
+
+    if "cancelled_at" in df.columns:
+        df = df[df["cancelled_at"].isna()]
+
     # ---- Resumo ----
     total_pedidos = df["order_id"].nunique() if "order_id" in df.columns else len(df)
     total_unidades = df["quantity"].sum()
@@ -957,19 +966,29 @@ with tab_shopify:
 
     # ---- Tabela final ----
     st.subheader("📋 Pedidos filtrados")
-    tabela = df[
-        ["order_id", "created_at", "product_title", "variant_title", "sku", "quantity", "price", "line_revenue"]
-    ].sort_values("created_at", ascending=False)
+
+    display_cols = [col for col in [
+        "order_id", "created_at", "customer_name", "line_revenue", "quantity",
+        "financial_status", "shipping_method", "shipping_address_city",
+        "shipping_address_province", "fulfillment_status", "product_title", "variant_title", "sku"
+    ] if col in df.columns]
+
+    tabela = df[display_cols].sort_values("created_at", ascending=False).copy()
 
     tabela.rename(columns={
         "order_id": "Pedido",
         "created_at": "Data",
+        "customer_name": "Cliente",
+        "line_revenue": "Total",
+        "quantity": "Itens",
+        "financial_status": "Status do pagamento",
+        "shipping_method": "Forma de entrega",
+        "shipping_address_city": "Cidade",
+        "shipping_address_province": "UF",
+        "fulfillment_status": "Status de processamento",
         "product_title": "Produto",
         "variant_title": "Variante",
-        "sku": "SKU",
-        "quantity": "Qtd",
-        "price": "Preço Unitário",
-        "line_revenue": "Total"
+        "sku": "SKU"
     }, inplace=True)
 
     st.dataframe(tabela, use_container_width=True)
