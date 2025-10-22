@@ -852,46 +852,245 @@ if df_daily.empty and (df_hourly is None or df_hourly.empty):
 
 tab_daily, tab_daypart, tab_detail, tab_shopify = st.tabs(["📅 Visão diária", "⏱️ Horários (principal)", "📊 Detalhamento", "📦 Shopify – Variantes e Vendas"])
 
-# =============== Aba Shopify ===============
+# =============== Aba Shopify (FlexLive: comparação por variante) ===============
 with tab_shopify:
-    st.title("📦 Shopify – Variantes e Vendas")
+    st.title("📦 Shopify – FlexLive: Comparação por Variante (Antes vs. Depois)")
 
+    # ---- Carregar dados da sessão (previamente buscados pelo botão) ----
+    produtos = st.session_state.get("produtos")
+    pedidos  = st.session_state.get("pedidos")
+
+    # Botão de atualização (mantém)
     if st.button("🔄 Atualizar dados da Shopify"):
         produtos = get_products_with_variants()
-        pedidos = get_orders()
+        pedidos  = get_orders()
         st.session_state["produtos"] = produtos
-        st.session_state["pedidos"] = pedidos
+        st.session_state["pedidos"]  = pedidos
         st.success("✅ Dados atualizados com sucesso!")
 
-    produtos = st.session_state.get("produtos")
-    pedidos = st.session_state.get("pedidos")
+    if produtos is None or pedidos is None or produtos.empty or pedidos.empty:
+        st.info("Carregue os dados da Shopify para iniciar (botão acima).")
+        st.stop()
 
-    if produtos is not None:
-        st.subheader("🧩 Variantes Ativas")
-        st.dataframe(produtos, use_container_width=True)
+    # ---- Filtrar apenas FLEXLIVE (pelo título do produto) ----
+    # ajuste o filtro se o nome do seu produto tiver outra grafia
+    pedidos_fl = pedidos[pedidos["product_title"].str.contains("flexlive", case=False, na=False)].copy()
+    if pedidos_fl.empty:
+        st.warning("Não encontrei pedidos do produto 'FlexLive' nos dados carregados.")
+        st.stop()
 
-    if pedidos is not None:
-        st.subheader("🛒 Vendas Recentes")
-        st.dataframe(pedidos, use_container_width=True)
+    # juntar produtos para ter SKU, compare_at_price, etc
+    base = pedidos_fl.merge(
+        produtos[["variant_id", "sku", "compare_at_price"]],
+        on="variant_id", how="left"
+    )
+    # preço total da linha (aprox) = price * quantity
+    base["line_revenue"] = (base["price"].astype(float).fillna(0)) * (base["quantity"].astype(float).fillna(0))
+    base["created_at"]   = pd.to_datetime(base["created_at"], errors="coerce")
 
-        if not pedidos.empty and not produtos.empty and "variant_id" in pedidos.columns:
-            merged = pedidos.merge(produtos, on="variant_id", how="left")
+    # ---- Filtros: Período A x Período B + Variante + custos ----
+    st.subheader("🎛️ Filtros e Parâmetros")
 
-            # ✅ Garante que as colunas existem antes de agrupar
-            if all(col in merged.columns for col in ["variant_title", "sku"]):
-                resumo = (
-                    merged.groupby(["variant_title", "sku"], as_index=False)
-                    .agg(qtde_vendida=("quantity", "sum"), receita=("price", "sum"))
-                    .sort_values("qtde_vendida", ascending=False)
-                )
+    colA, colB = st.columns(2)
+    with colA:
+        st.markdown("**Período A (Antes)**")
+        min_date = base["created_at"].min().date()
+        max_date = base["created_at"].max().date()
+        a_inicio = st.date_input("Início A", value=max(min_date, max_date - pd.Timedelta(days=30)).date(), key="a_ini")
+        a_fim    = st.date_input("Fim A",    value=max_date, key="a_fim")
+    with colB:
+        st.markdown("**Período B (Depois)**")
+        b_inicio = st.date_input("Início B", value=max(min_date, max_date - pd.Timedelta(days=14)).date(), key="b_ini")
+        b_fim    = st.date_input("Fim B",    value=max_date, key="b_fim")
 
-                st.subheader("🔥 Variantes Mais Vendidas")
-                st.dataframe(resumo, use_container_width=True)
-                st.bar_chart(resumo.set_index("variant_title")["qtde_vendida"])
-            else:
-                st.warning("⚠️ Colunas esperadas ('variant_title' e 'sku') não foram encontradas no merge.")
+    # selecionar variante (ou todas)
+    variantes = (
+        base[["variant_id","variant_title"]]
+        .drop_duplicates()
+        .sort_values("variant_title")
+    )
+    variantes_lbl = ["(Todas as variantes)"] + variantes["variant_title"].tolist()
+    escolha_var   = st.selectbox("Variante", variantes_lbl, index=0)
+
+    # Custos
+    colc1, colc2 = st.columns(2)
+    with colc1:
+        custo_unit = st.number_input("💰 Custo unitário (R$ por unidade do kit)", min_value=0.0, value=0.0, step=0.01, format="%.2f")
+    with colc2:
+        cpa_medio = st.number_input("📣 CPA médio (R$ por pedido)", min_value=0.0, value=0.0, step=0.01, format="%.2f")
+
+    # ---- Aplicar filtros de data e variante ----
+    def _filtra(df, d0, d1, variant_label):
+        df2 = df[(df["created_at"] >= pd.to_datetime(d0)) & (df["created_at"] <= pd.to_datetime(d1) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1))]
+        if variant_label and variant_label != "(Todas as variantes)":
+            df2 = df2[df2["variant_title"] == variant_label]
+        return df2.copy()
+
+    dfA = _filtra(base, a_inicio, a_fim, escolha_var)
+    dfB = _filtra(base, b_inicio, b_fim, escolha_var)
+
+    if dfA.empty or dfB.empty:
+        st.warning("Um dos períodos não possui dados para a seleção atual. Ajuste as datas/variante.")
+        st.stop()
+
+    # ---- KPIs por período ----
+    def _agg_periodo(df):
+        # preço médio ponderado por quantidade
+        q = df["quantity"].astype(float).fillna(0)
+        p = df["price"].astype(float).fillna(0)
+        receita = (p * q).sum()
+        vol     = q.sum()
+        preco_medio = (receita / vol) if vol > 0 else 0.0
+
+        # pedidos distintos (para aplicar CPA por pedido)
+        ords = df["order_id"].nunique()
+
+        # lucro aproximado: (preço - custo) * qty - CPA * pedidos
+        lucro = (preco_medio - custo_unit) * vol - cpa_medio * ords
+        margem = (lucro / receita) if receita > 0 else None
+
+        # média de unidades por pedido (para estimar variação de pedidos)
+        upo = (vol / ords) if ords > 0 else None
+
+        return {
+            "preco_medio": preco_medio,
+            "volume": vol,
+            "receita": receita,
+            "pedidos": ords,
+            "lucro": lucro,
+            "margem": margem,
+            "upo": upo
+        }
+
+    A = _agg_periodo(dfA)
+    B = _agg_periodo(dfB)
+
+    # ---- Variações e Elasticidade ----
+    def _pct(a, b):
+        a = float(a or 0); b = float(b or 0)
+        return (b - a) / a if a > 0 else None
+
+    d_preco   = _pct(A["preco_medio"], B["preco_medio"])
+    d_volume  = _pct(A["volume"],     B["volume"])
+    d_receita = _pct(A["receita"],    B["receita"])
+    d_lucro   = _pct(A["lucro"],      B["lucro"]) if A["lucro"] not in [None, 0] else None
+
+    # Elasticidade preço-vendas: %ΔVendas / %ΔPreço (se preço diminui, ΔPreço é negativo)
+    elasticidade = (d_volume / d_preco) if (d_preco not in [None, 0]) else None
+
+    # ---- Uplift mínimo de volume (break-even) considerando custo e CPA ----
+    # Supondo que pedidos escalam com volume mantendo UPO ~ constante do período A
+    # Resolver f tal que: (p2 - c)*f*q1 - CPA*f*o1 >= (p1 - c)*q1 - CPA*o1
+    # => f >= ((p1 - c)*q1 - CPA*o1) / ((p2 - c)*q1 - CPA*o1)
+    def _uplift_minimo(A, B):
+        p1, q1, o1 = A["preco_medio"], A["volume"], A["pedidos"]
+        p2 = B["preco_medio"]
+        if q1 <= 0 or o1 < 0:
+            return None
+        num = (p1 - custo_unit) * q1 - cpa_medio * o1
+        den = (p2 - custo_unit) * q1 - cpa_medio * o1
+        if den <= 0:
+            return None
+        f = num / den
+        return f - 1  # uplift percentual vs. q1
+
+    uplift_min = _uplift_minimo(A, B)  # ex.: 0.18 = precisa vender +18% para empatar o lucro
+
+    # ---- Cards executivos ----
+    def _fmt_money(v):
+        return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+    def _fmt_pct(v):
+        return (f"{v*100:,.1f}%".replace(",", "X").replace(".", ",").replace("X", ".")) if v is not None else "—"
+
+    k1, k2, k3, k4 = st.columns(4)
+    with k1:
+        st.metric("Preço médio A → B", _fmt_money(B["preco_medio"]), delta=_fmt_pct(d_preco))
+    with k2:
+        st.metric("Volume A → B (unid.)", f"{int(B['volume'])}", delta=_fmt_pct(d_volume))
+    with k3:
+        st.metric("Receita A → B", _fmt_money(B["receita"]), delta=_fmt_pct(d_receita))
+    with k4:
+        st.metric("Lucro A → B", _fmt_money(B["lucro"]), delta=_fmt_pct(d_lucro))
+
+    # Texto de conclusão
+    if d_receita is not None and d_lucro is not None:
+        if d_lucro >= 0:
+            st.success(f"**Resultado:** vantajoso ✅ — lucro ↑ {_fmt_pct(d_lucro)} (receita {_fmt_pct(d_receita)}).")
         else:
-            st.info("ℹ️ Nenhum pedido ou produto disponível para gerar o resumo.")
+            st.error(f"**Resultado:** desfavorável ❌ — lucro ↓ {_fmt_pct(d_lucro)} (receita {_fmt_pct(d_receita)}).")
+    elif d_receita is not None:
+        st.info(f"**Receita** variou {_fmt_pct(d_receita)}. Informe custo/CPA para avaliar **lucro**.")
+
+    if uplift_min is not None and d_preco is not None and d_preco < 0:
+        st.caption(f"Para a redução de preço valer a pena **em lucro**, o volume precisaria subir **{_fmt_pct(uplift_min)}** (aprox.).")
+
+    # ---- Gráfico: série diária comparando A vs B ----
+    st.subheader("📈 Vendas diárias — Antes vs. Depois")
+    def _serie(df, label):
+        dd = df.groupby(df["created_at"].dt.date, as_index=False)["quantity"].sum()
+        dd.columns = ["date", label]
+        return dd
+
+    serieA = _serie(dfA, "A (Antes)")
+    serieB = _serie(dfB, "B (Depois)")
+    daily  = pd.merge(serieA, serieB, on="date", how="outer").fillna(0).sort_values("date")
+
+    fig = make_subplots(specs=[[{"secondary_y": False}]])
+    fig.add_trace(go.Bar(x=daily["date"], y=daily["A (Antes)"], name="A (Antes)"))
+    fig.add_trace(go.Bar(x=daily["date"], y=daily["B (Depois)"], name="B (Depois)"))
+    fig.update_layout(template="plotly_white", barmode="group", margin=dict(l=10, r=10, t=10, b=10), height=360)
+    st.plotly_chart(fig, use_container_width=True)
+
+    # ---- Tabela detalhada por variante (ranking no período B) ----
+    st.subheader("🧾 Comparativo por Variante (A vs. B) — FlexLive")
+
+    def _agg_by_variant(df):
+        g = df.groupby(["variant_id","variant_title","sku"], as_index=False).agg(
+            volume=("quantity","sum"),
+            receita=("line_revenue","sum"),
+            preco_medio=("price","mean"),
+            pedidos=("order_id","nunique")
+        )
+        return g
+
+    agA = _agg_by_variant(dfA)
+    agB = _agg_by_variant(dfB)
+    comp = agA.merge(agB, on=["variant_id","variant_title","sku"], how="outer", suffixes=("_A","_B")).fillna(0)
+
+    for col in ["preco_medio_A","preco_medio_B","receita_A","receita_B"]:
+        comp[col] = comp[col].astype(float)
+
+    comp["d_preco_%"]   = comp.apply(lambda r: (r["preco_medio_B"] - r["preco_medio_A"]) / r["preco_medio_A"] if r["preco_medio_A"]>0 else None, axis=1)
+    comp["d_volume_%"]  = comp.apply(lambda r: (r["volume_B"]      - r["volume_A"])      / r["volume_A"]      if r["volume_A"]>0      else None, axis=1)
+    comp["d_receita_%"] = comp.apply(lambda r: (r["receita_B"]     - r["receita_A"])     / r["receita_A"]     if r["receita_A"]>0     else None, axis=1)
+
+    # lucro aproximado por variante/período
+    # pedidos estimados por variante são os pedidos distintos que contêm a variante
+    comp["lucro_A"] = (comp["preco_medio_A"] - custo_unit) * comp["volume_A"] - cpa_medio * comp["pedidos_A"]
+    comp["lucro_B"] = (comp["preco_medio_B"] - custo_unit) * comp["volume_B"] - cpa_medio * comp["pedidos_B"]
+    comp["d_lucro_%"] = comp.apply(lambda r: (r["lucro_B"] - r["lucro_A"]) / r["lucro_A"] if r["lucro_A"] not in [0, None] else None, axis=1)
+
+    # ordenar por receita no período B
+    order_cols = ["variant_title","sku","preco_medio_A","preco_medio_B","volume_A","volume_B","receita_A","receita_B","d_preco_%","d_volume_%","d_receita_%","lucro_A","lucro_B","d_lucro_%"]
+    comp = comp[order_cols].sort_values("receita_B", ascending=False)
+
+    def _fmt_pct_series(s): 
+        return s.apply(lambda v: _fmt_pct(v) if pd.notnull(v) else "—")
+    def _fmt_money_series(s):
+        return s.apply(lambda v: _fmt_money(v))
+
+    view = comp.copy()
+    for c in ["preco_medio_A","preco_medio_B","receita_A","receita_B","lucro_A","lucro_B"]:
+        view[c] = _fmt_money_series(view[c])
+    for c in ["d_preco_%","d_volume_%","d_receita_%","d_lucro_%"]:
+        view[c] = _fmt_pct_series(view[c])
+
+    st.dataframe(view, use_container_width=True)
+
+    # Dica de leitura
+    st.caption("**Leitura:** ΔPreço negativo com ΔVendas suficientemente positivo → bom sinal. Verifique ΔLucro e cobertura de estoque antes de consolidar a mudança.")
+
 
 
 # -------------------- ABA 1: VISÃO DIÁRIA --------------------
