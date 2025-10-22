@@ -8,3 +8,5 @@ openpyxl
 XlsxWriter==3.2.0
 facebook-business==19.0.0
 requests>=2.31.0
+gspread
+google-auth
