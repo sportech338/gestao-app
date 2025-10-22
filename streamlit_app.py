@@ -853,7 +853,6 @@ if df_daily.empty and (df_hourly is None or df_hourly.empty):
 tab_daily, tab_daypart, tab_detail, tab_shopify = st.tabs(["📅 Visão diária", "⏱️ Horários (principal)", "📊 Detalhamento", "📦 Shopify – Variantes e Vendas"])
 
 # =============== Aba Shopify ===============
-tab_shopify = st.tabs(["📦 Shopify – Variantes e Vendas"])[0]
 
 with tab_shopify:
     st.title("📦 Shopify – Variantes e Vendas")
