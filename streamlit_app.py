@@ -884,7 +884,9 @@ with tab_shopify:
             "status_pagamento": "financial_status",
             "status": "financial_status",
             "cliente": "customer_name",
-            "customer": "customer_name"
+            "customer": "customer_name",
+            "name": "order_name",
+            "order_name": "order_name"
         }
         return df.rename(columns=ren)
 
@@ -899,7 +901,7 @@ with tab_shopify:
         suffixes=("_pedido", "_produto")
     )
 
-    # ---- Ajustar nomes ----
+    # ---- Corrigir nomes ----
     base["product_title"] = base.get("product_title_pedido").combine_first(base.get("product_title_produto"))
     base["variant_title"] = base.get("variant_title_pedido").combine_first(base.get("variant_title_produto"))
     base["product_title"].fillna("(Produto desconhecido)", inplace=True)
@@ -910,6 +912,16 @@ with tab_shopify:
     base["price"] = pd.to_numeric(base.get("price"), errors="coerce").fillna(0)
     base["quantity"] = pd.to_numeric(base.get("quantity"), errors="coerce").fillna(0)
     base["line_revenue"] = base["price"] * base["quantity"]
+
+    # ---- Corrigir número do pedido (#xxxxx) ----
+    if "order_name" in base.columns:
+        base["pedido_formatado"] = base["order_name"]
+    elif "name" in base.columns:
+        base["pedido_formatado"] = base["name"]
+    elif "order_id" in base.columns:
+        base["pedido_formatado"] = "#" + base["order_id"].astype(str).str[-5:]
+    else:
+        base["pedido_formatado"] = "(Sem código)"
 
     # ---- Filtros ----
     st.subheader("🎛️ Filtros")
@@ -947,15 +959,14 @@ with tab_shopify:
         st.warning("Nenhum pedido encontrado com os filtros selecionados.")
         st.stop()
 
-    # ---- Filtro: apenas pedidos válidos (pago + não cancelado) ----
+    # ---- Filtrar apenas pedidos pagos e não cancelados ----
     if "financial_status" in df.columns:
         df = df[df["financial_status"].str.lower().isin(["paid", "pago"])]
-
     if "cancelled_at" in df.columns:
         df = df[df["cancelled_at"].isna()]
 
-    # ---- Resumo ----
-    total_pedidos = df["order_id"].nunique() if "order_id" in df.columns else len(df)
+    # ---- KPIs ----
+    total_pedidos = df["pedido_formatado"].nunique()
     total_unidades = df["quantity"].sum()
     total_receita = df["line_revenue"].sum()
 
@@ -964,19 +975,17 @@ with tab_shopify:
     colB.metric("📦 Unidades vendidas", int(total_unidades))
     colC.metric("💰 Receita total", f"R$ {total_receita:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
 
-    # ---- Tabela final ----
+    # ---- Tabela ----
     st.subheader("📋 Pedidos filtrados")
-
     display_cols = [col for col in [
-        "order_id", "created_at", "customer_name", "line_revenue", "quantity",
+        "pedido_formatado", "created_at", "customer_name", "line_revenue", "quantity",
         "financial_status", "shipping_method", "shipping_address_city",
         "shipping_address_province", "fulfillment_status", "product_title", "variant_title", "sku"
     ] if col in df.columns]
 
     tabela = df[display_cols].sort_values("created_at", ascending=False).copy()
-
     tabela.rename(columns={
-        "order_id": "Pedido",
+        "pedido_formatado": "Pedido",
         "created_at": "Data",
         "customer_name": "Cliente",
         "line_revenue": "Total",
