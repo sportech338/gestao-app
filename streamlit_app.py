@@ -871,12 +871,25 @@ with tab_shopify:
         st.info("Carregue os dados da Shopify para iniciar (botão acima).")
         st.stop()
 
+    # ---- Garantir colunas de produtos ----
+    # Corrige nomes caso a API traga outro formato
+    produtos = produtos.rename(columns={
+        "title": "product_title",
+        "name": "product_title",
+        "variant_name": "variant_title",
+        "variant": "variant_title"
+    })
+
+    pedidos = pedidos.rename(columns={
+        "title": "product_title",
+        "name": "product_title",
+        "variant_name": "variant_title",
+        "variant": "variant_title"
+    })
+
     # ---- Juntar pedidos e produtos ----
-    base = pedidos.merge(
-        produtos[["variant_id", "sku", "product_title", "variant_title"]],
-        on="variant_id",
-        how="left"
-    )
+    merge_cols = [col for col in ["variant_id", "sku", "product_title", "variant_title"] if col in produtos.columns]
+    base = pedidos.merge(produtos[merge_cols], on="variant_id", how="left")
 
     base["created_at"] = pd.to_datetime(base["created_at"], errors="coerce")
     base["line_revenue"] = base["price"].astype(float).fillna(0) * base["quantity"].astype(float).fillna(0)
@@ -890,7 +903,9 @@ with tab_shopify:
         escolha_prod = st.selectbox("Produto", produtos_lbl, index=0)
 
     with col2:
-        variantes_lbl = ["(Todas as variantes)"] + sorted(base["variant_title"].dropna().unique().tolist())
+        # Verifica se existe a coluna variant_title; se não, usa sku como fallback
+        col_var = "variant_title" if "variant_title" in base.columns else "sku"
+        variantes_lbl = ["(Todas as variantes)"] + sorted(base[col_var].dropna().unique().tolist())
         escolha_var = st.selectbox("Variante", variantes_lbl, index=0)
 
     with col3:
@@ -909,7 +924,7 @@ with tab_shopify:
         df = df[df["product_title"] == escolha_prod]
 
     if escolha_var != "(Todas as variantes)":
-        df = df[df["variant_title"] == escolha_var]
+        df = df[df[col_var] == escolha_var]
 
     if df.empty:
         st.warning("Nenhum pedido encontrado com os filtros selecionados.")
@@ -930,22 +945,19 @@ with tab_shopify:
 
     # ---- Exibir tabela (com variante antes do preço) ----
     st.subheader("📋 Pedidos filtrados")
-    tabela = df[[
-        "order_id",
-        "created_at",
-        "product_title",
-        "variant_title",
-        "sku",
-        "quantity",
-        "price",
-        "line_revenue"
-    ]].sort_values("created_at", ascending=False)
 
+    display_cols = [
+        col for col in [
+            "order_id", "created_at", "product_title", col_var, "sku", "quantity", "price", "line_revenue"
+        ] if col in df.columns
+    ]
+
+    tabela = df[display_cols].sort_values("created_at", ascending=False).copy()
     tabela.rename(columns={
         "order_id": "Pedido",
         "created_at": "Data",
         "product_title": "Produto",
-        "variant_title": "Variante",
+        col_var: "Variante",
         "sku": "SKU",
         "quantity": "Qtd",
         "price": "Preço Unitário",
@@ -953,7 +965,6 @@ with tab_shopify:
     }, inplace=True)
 
     st.dataframe(tabela, use_container_width=True)
-
 
 # -------------------- ABA 1: VISÃO DIÁRIA --------------------
 with tab_daily:
