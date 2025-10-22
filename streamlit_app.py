@@ -852,7 +852,7 @@ if df_daily.empty and (df_hourly is None or df_hourly.empty):
 
 tab_daily, tab_daypart, tab_detail, tab_shopify = st.tabs(["📅 Visão diária", "⏱️ Horários (principal)", "📊 Detalhamento", "📦 Shopify – Variantes e Vendas"])
 
-# =============== Aba Shopify (Visão Geral de Produtos) ===============
+# =============== Aba Shopify (Visão Geral de Produtos e Variantes) ===============
 with tab_shopify:
     st.title("📦 Shopify – Visão Geral por Produto e Variante")
 
@@ -871,9 +871,9 @@ with tab_shopify:
         st.info("Carregue os dados da Shopify para iniciar (botão acima).")
         st.stop()
 
-    # ---- Juntar pedidos com produtos ----
+    # ---- Juntar pedidos e produtos ----
     base = pedidos.merge(
-        produtos[["variant_id", "sku", "product_title"]],
+        produtos[["variant_id", "sku", "product_title", "variant_title"]],
         on="variant_id",
         how="left"
     )
@@ -915,7 +915,7 @@ with tab_shopify:
         st.warning("Nenhum pedido encontrado com os filtros selecionados.")
         st.stop()
 
-    # ---- Resumo básico ----
+    # ---- Resumo ----
     total_pedidos = df["order_id"].nunique()
     total_unidades = df["quantity"].astype(float).sum()
     total_receita = df["line_revenue"].sum()
@@ -928,12 +928,32 @@ with tab_shopify:
         f"R$ {total_receita:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
     )
 
-    # ---- Exibir tabela ----
+    # ---- Exibir tabela (com variante antes do preço) ----
     st.subheader("📋 Pedidos filtrados")
-    st.dataframe(
-        df[["order_id", "created_at", "product_title", "variant_title", "sku", "quantity", "price", "line_revenue"]],
-        use_container_width=True
-    )
+    tabela = df[[
+        "order_id",
+        "created_at",
+        "product_title",
+        "variant_title",
+        "sku",
+        "quantity",
+        "price",
+        "line_revenue"
+    ]].sort_values("created_at", ascending=False)
+
+    tabela.rename(columns={
+        "order_id": "Pedido",
+        "created_at": "Data",
+        "product_title": "Produto",
+        "variant_title": "Variante",
+        "sku": "SKU",
+        "quantity": "Qtd",
+        "price": "Preço Unitário",
+        "line_revenue": "Total"
+    }, inplace=True)
+
+    st.dataframe(tabela, use_container_width=True)
+
 
 # -------------------- ABA 1: VISÃO DIÁRIA --------------------
 with tab_daily:
