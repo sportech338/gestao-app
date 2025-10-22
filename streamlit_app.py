@@ -901,7 +901,7 @@ with tab_shopify:
         st.markdown("**Período A (Antes)**")
         min_date = base["created_at"].min().date()
         max_date = base["created_at"].max().date()
-        a_inicio = st.date_input("Início A", value=max(min_date, max_date - pd.Timedelta(days=30)).date(), key="a_ini")
+        a_inicio = st.date_input("Início A", value=max(min_date, (max_date - pd.Timedelta(days=30)).date()), key="a_ini")
         a_fim    = st.date_input("Fim A",    value=max_date, key="a_fim")
     with colB:
         st.markdown("**Período B (Depois)**")
