@@ -940,17 +940,19 @@ with tab_shopify:
 
     # ---- Aplicar filtros ----
     def _filtra(df, d0, d1, variant_label):
-        df2 = df[(df["created_at"] >= pd.to_datetime(d0)) & (df["created_at"] <= pd.to_datetime(d1) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1))]
+        # 🔧 Converte as datas (date) do Streamlit em Timestamp (datetime completo)
+        d0 = pd.Timestamp(d0)
+        d1 = pd.Timestamp(d1) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
+
+        # 🔎 Filtra pelas datas
+        df2 = df[(df["created_at"] >= d0) & (df["created_at"] <= d1)]
+
+        # 🔸 Se houver uma variante selecionada, filtra também por ela
         if variant_label and variant_label != "(Todas as variantes)":
             df2 = df2[df2["variant_title"] == variant_label]
+
         return df2.copy()
 
-    dfA = _filtra(base, a_inicio, a_fim, escolha_var)
-    dfB = _filtra(base, b_inicio, b_fim, escolha_var)
-
-    if dfA.empty or dfB.empty:
-        st.warning("Um dos períodos não possui dados para a seleção atual. Ajuste as datas/variante.")
-        st.stop()
 
     # ---- KPIs por período ----
     def _agg_periodo(df):
