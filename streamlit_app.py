@@ -953,6 +953,14 @@ with tab_shopify:
 
         return df2.copy()
 
+    # ---- Cria DataFrames A e B ----
+    dfA = _filtra(base, a_inicio, a_fim, escolha_var)
+    dfB = _filtra(base, b_inicio, b_fim, escolha_var)
+
+    if dfA.empty or dfB.empty:
+        st.warning("Um dos períodos não possui dados para a seleção atual. Ajuste as datas/variante.")
+        st.stop()
+
 
     # ---- KPIs por período ----
     def _agg_periodo(df):
