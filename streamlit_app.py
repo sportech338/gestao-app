@@ -884,6 +884,7 @@ with tab_shopify:
             "status_pagamento": "financial_status",
             "status": "financial_status",
             "cliente": "customer_name",
+            "customer_first_name": "customer_name",
             "customer": "customer_name",
             "name": "order_name",
             "order_name": "order_name"
@@ -892,6 +893,14 @@ with tab_shopify:
 
     produtos = normalizar(produtos)
     pedidos = normalizar(pedidos)
+
+    # ---- Garantir colunas essenciais ----
+    for col in ["variant_id", "sku", "product_title", "variant_title"]:
+        if col not in produtos.columns:
+            produtos[col] = None
+    for col in ["variant_id", "order_name", "price", "quantity", "created_at", "financial_status"]:
+        if col not in pedidos.columns:
+            pedidos[col] = None
 
     # ---- Juntar pedidos e produtos ----
     base = pedidos.merge(
@@ -902,8 +911,8 @@ with tab_shopify:
     )
 
     # ---- Corrigir nomes ----
-    base["product_title"] = base.get("product_title_pedido").combine_first(base.get("product_title_produto"))
-    base["variant_title"] = base.get("variant_title_pedido").combine_first(base.get("variant_title_produto"))
+    base["product_title"] = base["product_title_pedido"].combine_first(base["product_title_produto"])
+    base["variant_title"] = base["variant_title_pedido"].combine_first(base["variant_title_produto"])
     base["product_title"].fillna("(Produto desconhecido)", inplace=True)
     base["variant_title"].fillna("(Variante desconhecida)", inplace=True)
 
@@ -914,12 +923,12 @@ with tab_shopify:
     base["line_revenue"] = base["price"] * base["quantity"]
 
     # ---- Corrigir número do pedido (#xxxxx) ----
-    if "order_name" in base.columns:
+    if "order_name" in base.columns and base["order_name"].notna().any():
         base["pedido_formatado"] = base["order_name"]
-    elif "name" in base.columns:
+    elif "name" in base.columns and base["name"].notna().any():
         base["pedido_formatado"] = base["name"]
-    elif "order_id" in base.columns:
-        base["pedido_formatado"] = "#" + base["order_id"].astype(str).str[-5:]
+    elif "id" in base.columns:
+        base["pedido_formatado"] = "#" + base["id"].astype(str).str[-5:]
     else:
         base["pedido_formatado"] = "(Sem código)"
 
@@ -961,7 +970,7 @@ with tab_shopify:
 
     # ---- Filtrar apenas pedidos pagos e não cancelados ----
     if "financial_status" in df.columns:
-        df = df[df["financial_status"].str.lower().isin(["paid", "pago"])]
+        df = df[df["financial_status"].astype(str).str.lower().isin(["paid", "pago"])]
     if "cancelled_at" in df.columns:
         df = df[df["cancelled_at"].isna()]
 
@@ -977,6 +986,7 @@ with tab_shopify:
 
     # ---- Tabela ----
     st.subheader("📋 Pedidos filtrados")
+
     display_cols = [col for col in [
         "pedido_formatado", "created_at", "customer_name", "line_revenue", "quantity",
         "financial_status", "shipping_method", "shipping_address_city",
@@ -999,6 +1009,10 @@ with tab_shopify:
         "variant_title": "Variante",
         "sku": "SKU"
     }, inplace=True)
+
+    # ---- Formatando valores ----
+    if "Total" in tabela.columns:
+        tabela["Total"] = tabela["Total"].apply(lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
 
     st.dataframe(tabela, use_container_width=True)
 
