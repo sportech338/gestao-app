@@ -18,8 +18,59 @@ def _get_session():
         _session = s
     return _session
 
-# =============== Integração Shopify (configuração) ===============
-from services.shopify_service import get_products_with_variants, get_orders
+# =============== Integração com Shopify ===============
+import requests
+import pandas as pd
+import streamlit as st
+
+SHOP_NAME = st.secrets["shopify"]["shop_name"]
+ACCESS_TOKEN = st.secrets["shopify"]["access_token"]
+API_VERSION = "2024-10"
+
+BASE_URL = f"https://{SHOP_NAME}/admin/api/{API_VERSION}"
+HEADERS = {"X-Shopify-Access-Token": ACCESS_TOKEN, "Content-Type": "application/json"}
+
+@st.cache_data(ttl=600)
+def get_products_with_variants(limit=250):
+    url = f"{BASE_URL}/products.json?limit={limit}"
+    r = requests.get(url, headers=HEADERS, timeout=60)
+    r.raise_for_status()
+    data = r.json().get("products", [])
+    rows = []
+    for p in data:
+        for v in p.get("variants", []):
+            rows.append({
+                "product_id": p["id"],
+                "product_title": p["title"],
+                "variant_id": v["id"],
+                "variant_title": v["title"],
+                "sku": v.get("sku"),
+                "price": float(v.get("price") or 0),
+                "compare_at_price": float(v.get("compare_at_price") or 0),
+                "inventory": v.get("inventory_quantity"),
+            })
+    return pd.DataFrame(rows)
+
+@st.cache_data(ttl=600)
+def get_orders(limit=100):
+    url = f"{BASE_URL}/orders.json?limit={limit}&status=any"
+    r = requests.get(url, headers=HEADERS, timeout=60)
+    r.raise_for_status()
+    data = r.json().get("orders", [])
+    rows = []
+    for o in data:
+        for it in o.get("line_items", []):
+            rows.append({
+                "order_id": o["id"],
+                "created_at": o["created_at"],
+                "variant_id": it.get("variant_id"),
+                "title": it.get("title"),
+                "variant_title": it.get("variant_title"),
+                "quantity": it.get("quantity", 0),
+                "price": float(it.get("price") or 0),
+            })
+    return pd.DataFrame(rows)
+
 
 # =============== Config & Estilos ===============
 st.set_page_config(page_title="Meta Ads — Paridade + Funil", page_icon="📊", layout="wide")
@@ -800,6 +851,42 @@ if df_daily.empty and (df_hourly is None or df_hourly.empty):
     st.stop()
 
 tab_daily, tab_daypart, tab_detail = st.tabs(["📅 Visão diária", "⏱️ Horários (principal)", "📊 Detalhamento"])
+
+# =============== Aba Shopify ===============
+tab_shopify = st.tabs(["📦 Shopify – Variantes e Vendas"])[0]
+
+with tab_shopify:
+    st.title("📦 Shopify – Variantes e Vendas")
+
+    if st.button("🔄 Atualizar dados da Shopify"):
+        produtos = get_products_with_variants()
+        pedidos = get_orders()
+        st.session_state["produtos"] = produtos
+        st.session_state["pedidos"] = pedidos
+        st.success("✅ Dados atualizados com sucesso!")
+
+    produtos = st.session_state.get("produtos")
+    pedidos = st.session_state.get("pedidos")
+
+    if produtos is not None:
+        st.subheader("🧩 Variantes Ativas")
+        st.dataframe(produtos, use_container_width=True)
+
+    if pedidos is not None:
+        st.subheader("🛒 Vendas Recentes")
+        st.dataframe(pedidos, use_container_width=True)
+
+        merged = pedidos.merge(produtos, on="variant_id", how="left")
+        resumo = (
+            merged.groupby(["variant_title", "sku"], as_index=False)
+            .agg(qtde_vendida=("quantity", "sum"), receita=("price", "sum"))
+            .sort_values("qtde_vendida", ascending=False)
+        )
+
+        st.subheader("🔥 Variantes Mais Vendidas")
+        st.dataframe(resumo, use_container_width=True)
+        st.bar_chart(resumo.set_index("variant_title")["qtde_vendida"])
+
 
 # -------------------- ABA 1: VISÃO DIÁRIA --------------------
 with tab_daily:
@@ -3020,38 +3107,3 @@ with tab_detail:
         )
 
         st.stop()
-
-# =============== Aba Shopify ===============
-tab_shopify = st.tabs(["📦 Shopify – Variantes e Vendas"])[0]
-
-with tab_shopify:
-    st.title("📦 Shopify – Variantes e Vendas")
-
-    if st.button("🔄 Atualizar dados da Shopify"):
-        produtos = get_products_with_variants()
-        pedidos = get_orders()
-        st.session_state["produtos"] = produtos
-        st.session_state["pedidos"] = pedidos
-        st.success("✅ Dados atualizados com sucesso!")
-
-    produtos = st.session_state.get("produtos")
-    pedidos = st.session_state.get("pedidos")
-
-    if produtos is not None:
-        st.subheader("🧩 Variantes Ativas")
-        st.dataframe(produtos, use_container_width=True)
-
-    if pedidos is not None:
-        st.subheader("🛒 Vendas Recentes")
-        st.dataframe(pedidos, use_container_width=True)
-
-        merged = pedidos.merge(produtos, on="variant_id", how="left")
-        resumo = (
-            merged.groupby(["variant_title", "sku"], as_index=False)
-            .agg(qtde_vendida=("quantity", "sum"), receita=("price", "sum"))
-            .sort_values("qtde_vendida", ascending=False)
-        )
-
-        st.subheader("🔥 Variantes Mais Vendidas")
-        st.dataframe(resumo, use_container_width=True)
-        st.bar_chart(resumo.set_index("variant_title")["qtde_vendida"])
