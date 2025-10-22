@@ -887,7 +887,12 @@ with tab_shopify:
     produtos = normalizar(produtos)
     pedidos = normalizar(pedidos)
 
-    # ---- Juntar pedidos e produtos (com controle de nomes duplicados) ----
+    # ---- Garantir colunas obrigatórias (para evitar KeyError) ----
+    for col in ["order_id", "order_number", "financial_status", "fulfillment_status"]:
+        if col not in pedidos.columns:
+            pedidos[col] = None
+
+    # ---- Juntar pedidos e produtos ----
     base = pedidos.merge(
         produtos[["variant_id", "sku", "product_title", "variant_title"]],
         on="variant_id",
@@ -946,7 +951,9 @@ with tab_shopify:
         st.stop()
 
     # ---- Resumo ----
-    total_pedidos = df["order_number"].nunique() if "order_number" in df.columns else len(df)
+    # Usa order_number se existir, senão order_id
+    order_col = "order_number" if "order_number" in df.columns and df["order_number"].notna().any() else "order_id"
+    total_pedidos = df[order_col].nunique()
     total_unidades = df["quantity"].sum()
     total_receita = df["line_revenue"].sum()
     ticket_medio = total_receita / total_pedidos if total_pedidos > 0 else 0
@@ -959,13 +966,16 @@ with tab_shopify:
 
     # ---- Tabela final ----
     st.subheader("📋 Pedidos filtrados")
-    tabela = df[
-        ["order_number", "created_at", "financial_status", "fulfillment_status",
-         "product_title", "variant_title", "sku", "quantity", "price", "line_revenue"]
-    ].sort_values("created_at", ascending=False)
+
+    colunas_existentes = [c for c in [
+        order_col, "created_at", "financial_status", "fulfillment_status",
+        "product_title", "variant_title", "sku", "quantity", "price", "line_revenue"
+    ] if c in df.columns]
+
+    tabela = df[colunas_existentes].sort_values("created_at", ascending=False)
 
     tabela.rename(columns={
-        "order_number": "Pedido",
+        order_col: "Pedido",
         "created_at": "Data",
         "financial_status": "Pagamento",
         "fulfillment_status": "Entrega",
@@ -978,9 +988,12 @@ with tab_shopify:
     }, inplace=True)
 
     # ---- Formatação visual ----
-    tabela["Data"] = pd.to_datetime(tabela["Data"], errors="coerce").dt.strftime("%d/%m/%Y %H:%M")
-    tabela["Preço Unitário"] = tabela["Preço Unitário"].apply(lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
-    tabela["Total"] = tabela["Total"].apply(lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+    if "Data" in tabela.columns:
+        tabela["Data"] = pd.to_datetime(tabela["Data"], errors="coerce").dt.strftime("%d/%m/%Y %H:%M")
+
+    for col in ["Preço Unitário", "Total"]:
+        if col in tabela.columns:
+            tabela[col] = tabela[col].apply(lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
 
     st.dataframe(tabela, use_container_width=True)
 
@@ -992,7 +1005,6 @@ with tab_shopify:
         file_name=f"pedidos_shopify_{periodo[0]}_{periodo[1]}.csv",
         mime="text/csv",
     )
-
 
 # -------------------- ABA 1: VISÃO DIÁRIA --------------------
 with tab_daily:
