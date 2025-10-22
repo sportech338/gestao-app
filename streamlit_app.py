@@ -850,7 +850,7 @@ if df_daily.empty and (df_hourly is None or df_hourly.empty):
     st.warning("Sem dados para o período. Verifique permissões, conta e se há eventos de Purchase (value/currency).")
     st.stop()
 
-tab_daily, tab_daypart, tab_detail = st.tabs(["📅 Visão diária", "⏱️ Horários (principal)", "📊 Detalhamento"])
+tab_daily, tab_daypart, tab_detail = st.tabs(["📅 Visão diária", "⏱️ Horários (principal)", "📊 Detalhamento", "📦 Shopify – Variantes e Vendas"])
 
 # =============== Aba Shopify ===============
 tab_shopify = st.tabs(["📦 Shopify – Variantes e Vendas"])[0]
