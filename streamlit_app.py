@@ -856,22 +856,32 @@ tab_daily, tab_daypart, tab_detail, tab_shopify = st.tabs(["📅 Visão diária"
 with tab_shopify:
     st.title("📦 Shopify – Pedidos Detalhados")
 
-    # ---- Carregar dados ----
+    # ===============================================================
+    # 🧠 Carregar dados de sessão
+    # ===============================================================
     produtos = st.session_state.get("produtos")
     pedidos = st.session_state.get("pedidos")
 
+    # ---- Botão para atualizar ----
     if st.button("🔄 Atualizar dados da Shopify"):
-        produtos = get_products_with_variants()
-        pedidos = get_orders()
-        st.session_state["produtos"] = produtos
-        st.session_state["pedidos"] = pedidos
-        st.success("✅ Dados atualizados com sucesso!")
+        try:
+            produtos = get_products_with_variants()
+            pedidos = get_orders()
+            st.session_state["produtos"] = produtos
+            st.session_state["pedidos"] = pedidos
+            st.success("✅ Dados atualizados com sucesso!")
+        except Exception as e:
+            st.error(f"❌ Erro ao atualizar dados: {e}")
+            st.stop()
 
+    # ---- Checagem inicial ----
     if produtos is None or pedidos is None or produtos.empty or pedidos.empty:
         st.info("Carregue os dados da Shopify para iniciar (botão acima).")
         st.stop()
 
-    # ---- Normalizar nomes ----
+    # ===============================================================
+    # 🧩 Normalização de colunas
+    # ===============================================================
     def normalizar(df):
         df.columns = [c.strip().lower() for c in df.columns]
         ren = {
@@ -894,7 +904,9 @@ with tab_shopify:
     produtos = normalizar(produtos)
     pedidos = normalizar(pedidos)
 
-    # ---- Garantir colunas essenciais ----
+    # ===============================================================
+    # 🔒 Garantir colunas essenciais (fallbacks)
+    # ===============================================================
     for col in ["variant_id", "sku", "product_title", "variant_title"]:
         if col not in produtos.columns:
             produtos[col] = None
@@ -902,7 +914,9 @@ with tab_shopify:
         if col not in pedidos.columns:
             pedidos[col] = None
 
-    # ---- Juntar pedidos e produtos ----
+    # ===============================================================
+    # 🔗 Merge Produtos + Pedidos
+    # ===============================================================
     base = pedidos.merge(
         produtos[["variant_id", "sku", "product_title", "variant_title"]],
         on="variant_id",
@@ -910,29 +924,39 @@ with tab_shopify:
         suffixes=("_pedido", "_produto")
     )
 
-    # ---- Corrigir nomes ----
+    # Combinar dados de produtos e variantes
     base["product_title"] = base["product_title_pedido"].combine_first(base["product_title_produto"])
     base["variant_title"] = base["variant_title_pedido"].combine_first(base["variant_title_produto"])
+
+    # Fallbacks
     base["product_title"].fillna("(Produto desconhecido)", inplace=True)
     base["variant_title"].fillna("(Variante desconhecida)", inplace=True)
 
-    # ---- Tipos ----
+    # ===============================================================
+    # 🧾 Tipos e Cálculos
+    # ===============================================================
     base["created_at"] = pd.to_datetime(base.get("created_at"), errors="coerce")
     base["price"] = pd.to_numeric(base.get("price"), errors="coerce").fillna(0)
     base["quantity"] = pd.to_numeric(base.get("quantity"), errors="coerce").fillna(0)
     base["line_revenue"] = base["price"] * base["quantity"]
 
-    # ---- Corrigir número do pedido (#xxxxx) ----
+    # ===============================================================
+    # 🔢 Corrigir número do pedido (#xxxxx)
+    # ===============================================================
     if "order_name" in base.columns and base["order_name"].notna().any():
-        base["pedido_formatado"] = base["order_name"]
+        base["pedido_formatado"] = base["order_name"].astype(str)
     elif "name" in base.columns and base["name"].notna().any():
-        base["pedido_formatado"] = base["name"]
+        base["pedido_formatado"] = base["name"].astype(str)
+    elif "order_id" in base.columns:
+        base["pedido_formatado"] = "#" + base["order_id"].astype(str).str[-5:]
     elif "id" in base.columns:
         base["pedido_formatado"] = "#" + base["id"].astype(str).str[-5:]
     else:
         base["pedido_formatado"] = "(Sem código)"
 
-    # ---- Filtros ----
+    # ===============================================================
+    # 🎛️ Filtros Visuais
+    # ===============================================================
     st.subheader("🎛️ Filtros")
     col1, col2, col3 = st.columns(3)
 
@@ -953,7 +977,9 @@ with tab_shopify:
             min_date = max_date = today
         periodo = st.date_input("Período", (min_date, max_date))
 
-    # ---- Aplicar filtros ----
+    # ===============================================================
+    # 🧮 Aplicar Filtros
+    # ===============================================================
     df = base[
         (base["created_at"].dt.date >= periodo[0]) &
         (base["created_at"].dt.date <= periodo[1])
@@ -968,13 +994,17 @@ with tab_shopify:
         st.warning("Nenhum pedido encontrado com os filtros selecionados.")
         st.stop()
 
-    # ---- Filtrar apenas pedidos pagos e não cancelados ----
+    # ===============================================================
+    # 💳 Filtrar apenas pedidos pagos e não cancelados
+    # ===============================================================
     if "financial_status" in df.columns:
         df = df[df["financial_status"].astype(str).str.lower().isin(["paid", "pago"])]
     if "cancelled_at" in df.columns:
         df = df[df["cancelled_at"].isna()]
 
-    # ---- KPIs ----
+    # ===============================================================
+    # 📊 KPIs
+    # ===============================================================
     total_pedidos = df["pedido_formatado"].nunique()
     total_unidades = df["quantity"].sum()
     total_receita = df["line_revenue"].sum()
@@ -984,7 +1014,9 @@ with tab_shopify:
     colB.metric("📦 Unidades vendidas", int(total_unidades))
     colC.metric("💰 Receita total", f"R$ {total_receita:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
 
-    # ---- Tabela ----
+    # ===============================================================
+    # 📋 Tabela final
+    # ===============================================================
     st.subheader("📋 Pedidos filtrados")
 
     display_cols = [col for col in [
@@ -1010,12 +1042,22 @@ with tab_shopify:
         "sku": "SKU"
     }, inplace=True)
 
-    # ---- Formatando valores ----
+    # ---- Formatar valores em R$ ----
     if "Total" in tabela.columns:
         tabela["Total"] = tabela["Total"].apply(lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
 
-    st.dataframe(tabela, use_container_width=True)
+    # ===============================================================
+    # 🧰 Debug opcional (mostrar dados crus)
+    # ===============================================================
+    with st.expander("🔍 Dados brutos (debug)", expanded=False):
+        st.write("📦 Produtos:", produtos.head(5))
+        st.write("🧾 Pedidos:", pedidos.head(5))
+        st.write("🔗 Base combinada:", base.head(5))
 
+    # ===============================================================
+    # 💡 Exibir tabela final
+    # ===============================================================
+    st.dataframe(tabela, use_container_width=True)
 
 # -------------------- ABA 1: VISÃO DIÁRIA --------------------
 with tab_daily:
