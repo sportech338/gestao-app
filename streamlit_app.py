@@ -940,18 +940,25 @@ with tab_shopify:
 
     # ---- Aplicar filtros ----
     def _filtra(df, d0, d1, variant_label):
-        # 🔧 Converte as datas (date) do Streamlit em Timestamp (datetime completo)
+        # 🔧 Converte as datas (date) do Streamlit em Timestamp
         d0 = pd.Timestamp(d0)
         d1 = pd.Timestamp(d1) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
 
-        # 🔎 Filtra pelas datas
-        df2 = df[(df["created_at"] >= d0) & (df["created_at"] <= d1)]
+        # 🧹 Garante que created_at é datetime e remove nulos
+        df = df.copy()
+        df["created_at"] = pd.to_datetime(df["created_at"], errors="coerce")
+        df = df.dropna(subset=["created_at"])
 
-        # 🔸 Se houver uma variante selecionada, filtra também por ela
+        # 🔎 Filtra pelas datas
+        mask = (df["created_at"] >= d0) & (df["created_at"] <= d1)
+        df2 = df[mask].copy()
+
+        # 🔸 Se houver variante selecionada, aplica filtro adicional
         if variant_label and variant_label != "(Todas as variantes)":
             df2 = df2[df2["variant_title"] == variant_label]
 
-        return df2.copy()
+        return df2
+
 
     # ---- Cria DataFrames A e B ----
     dfA = _filtra(base, a_inicio, a_fim, escolha_var)
