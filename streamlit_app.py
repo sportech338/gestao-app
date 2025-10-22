@@ -874,7 +874,12 @@ with tab_shopify:
 
     # ---- Filtrar apenas FLEXLIVE (pelo título do produto) ----
     # ajuste o filtro se o nome do seu produto tiver outra grafia
-    pedidos_fl = pedidos[pedidos["product_title"].str.contains("flexlive", case=False, na=False)].copy()
+    if "product_title" in pedidos.columns:
+        pedidos_fl = pedidos[pedidos["product_title"].str.contains("flexlive", case=False, na=False)].copy()
+    else:
+        pedidos_fl = pedidos[pedidos["title"].str.contains("flexlive", case=False, na=False)].copy()
+
+    
     if pedidos_fl.empty:
         st.warning("Não encontrei pedidos do produto 'FlexLive' nos dados carregados.")
         st.stop()
