@@ -962,42 +962,6 @@ with aba_principal[0]:
             level=level,
             product_name=None
         )
-        
-        # 🧩 DEPURAR LPV POR CAMPANHA (para achar diferenças)
-        _dbg = df_daily.copy()
-        _dbg["lpv"] = _dbg["lpv"].astype(float)
-        _dbg["lpv_dec"] = np.abs(_dbg["lpv"] - _dbg["lpv"].round())
-
-        st.markdown("### 🧩 DEPURAR LPV — Análise detalhada por campanha")
-        st.caption(f"Período: {since} → {until}")
-
-        # 1️⃣ Totais por campanha (ordenado)
-        by_campaign = (
-            _dbg.groupby(["campaign_id", "campaign_name"], as_index=False)["lpv"]
-            .sum()
-            .sort_values("lpv", ascending=False)
-        )
-        by_campaign["lpv_int"] = by_campaign["lpv"].astype(int)
-        st.dataframe(by_campaign, use_container_width=True, height=420)
-
-        # 2️⃣ Mostra diferença entre LPV bruto e arredondado
-        total_raw = _dbg["lpv"].sum()
-        total_sum_rounded = _dbg["lpv"].round().sum()
-        st.markdown(f"- **Total bruto (somando direto):** {total_raw:,.2f}".replace(",", "."))
-        st.markdown(f"- **Total somando LPV arredondados:** {total_sum_rounded:,.0f}".replace(",", "."))
-        st.markdown(f"- **Diferença (possível origem do +1):** {round(total_sum_rounded - total_raw, 3)}")
-
-        # 3️⃣ Lista campanhas com LPV não inteiro (possíveis causadoras)
-        non_int = by_campaign[np.abs(by_campaign["lpv"] - by_campaign["lpv"].round()) > 1e-9]
-        if not non_int.empty:
-            st.markdown("#### ⚠️ Campanhas com LPV fracionado (pode causar diferença)")
-            st.dataframe(non_int, use_container_width=True)
-        else:
-            st.success("Nenhuma campanha com LPV fracionado detectada ✅")
-
-        # 4️⃣ Mostra datas de range efetivo
-        st.caption(f"Datas detectadas: {_dbg['date'].min()} → {_dbg['date'].max()}")
-
 
         st.session_state["df_daily"] = df_daily
 
