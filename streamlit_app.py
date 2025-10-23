@@ -878,9 +878,6 @@ if "df_daily" not in st.session_state or st.session_state["df_daily"].empty:
     token_default = st.session_state.get("token", "")
     api_version_default = st.session_state.get("api_version", "v23.0")
     preset_default = st.session_state.get("preset", "Hoje")
-
-    # 🔁 Define datas padrão para inicialização
-    preset_default = "Últimos 7 dias"  # ou o período padrão que quiser
     since_default, until_default = _range_from_preset(preset_default)
 
     if act_id_default and token_default:
