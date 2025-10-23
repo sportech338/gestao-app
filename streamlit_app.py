@@ -825,29 +825,34 @@ def fetch_insights_breakdown(act_id: str, token: str, api_version: str,
     df["ROAS"] = np.where(df["spend"]>0, df["revenue"]/df["spend"], np.nan)
     return df
                                  
-# === Helper: traduz período rápido em datas ===
+# === Helper: traduz período rápido em datas (igual ao Meta Ads) ===
 def _range_from_preset(preset):
     today = date.today()
+    yesterday = today - timedelta(days=1)
+
     if preset == "Hoje":
         return today, today
     elif preset == "Ontem":
-        return today - timedelta(days=1), today - timedelta(days=1)
+        return yesterday, yesterday
     elif preset == "Últimos 7 dias":
-        return today - timedelta(days=6), today
+        # 7 dias completos ANTES de hoje (exclui o dia atual)
+        return today - timedelta(days=7), yesterday
     elif preset == "Últimos 14 dias":
-        return today - timedelta(days=13), today
+        return today - timedelta(days=14), yesterday
     elif preset == "Últimos 30 dias":
-        return today - timedelta(days=29), today
+        return today - timedelta(days=30), yesterday
     elif preset == "Últimos 90 dias":
-        return today - timedelta(days=89), today
+        return today - timedelta(days=90), yesterday
     elif preset == "Esta semana":
         start = today - timedelta(days=today.weekday())
-        return start, today
+        return start, yesterday
     elif preset == "Este mês":
         start = today.replace(day=1)
-        return start, today
+        return start, yesterday
     else:
-        return today - timedelta(days=29), today
+        # fallback genérico — 30 dias completos até ontem
+        return today - timedelta(days=30), yesterday
+
 
 
 # =============== Dashboards Principais ===============
