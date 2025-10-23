@@ -3209,163 +3209,164 @@ with aba_principal[1]:
         produtos = st.session_state["produtos"]
         pedidos = st.session_state["pedidos"]
 
+        # ---- Verificação inicial ----
         if produtos is None or pedidos is None or produtos.empty or pedidos.empty:
-            st.info("Carregue os dados da Shopify para iniciar (botão acima).")
-
-        # ---- Normalizar nomes ----
-        def normalizar(df):
-            df.columns = [c.strip().lower() for c in df.columns]
-            ren = {
-                "title": "product_title",
-                "product_name": "product_title",
-                "variant": "variant_title",
-                "variant_name": "variant_title",
-                "id": "variant_id",
-                "variantid": "variant_id"
-            }
-            return df.rename(columns=ren)
-
-        produtos = normalizar(produtos)
-        pedidos = normalizar(pedidos)
-
-        # ---- Garantir colunas obrigatórias ----
-        for col in ["order_id", "order_number", "financial_status", "fulfillment_status"]:
-            if col not in pedidos.columns:
-                pedidos[col] = None
-
-        # ---- Juntar pedidos e produtos ----
-        merge_cols = ["variant_id", "sku", "product_title", "variant_title"]
-        merge_cols = [c for c in merge_cols if c in produtos.columns]
-
-        base = pedidos.merge(
-            produtos[merge_cols],
-            on="variant_id",
-            how="left",
-            suffixes=("", "_produto")
-        )
-
-        # ---- Ajustar nomes ----
-        if "product_title_produto" in base.columns and "product_title" not in base.columns:
-            base["product_title"] = base["product_title_produto"]
-
-        if "variant_title_produto" in base.columns and "variant_title" not in base.columns:
-            base["variant_title"] = base["variant_title_produto"]
-
-        base["product_title"].fillna("(Produto desconhecido)", inplace=True)
-        base["variant_title"].fillna("(Variante desconhecida)", inplace=True)
-
-        # ---- Tipos e métricas ----
-        base["created_at"] = pd.to_datetime(base.get("created_at"), errors="coerce")
-        base["price"] = pd.to_numeric(base.get("price"), errors="coerce").fillna(0)
-        base["quantity"] = pd.to_numeric(base.get("quantity"), errors="coerce").fillna(0)
-        base["line_revenue"] = base["price"] * base["quantity"]
-
-        # ---- Filtros ----
-        st.subheader("🎛️ Filtros")
-        col1, col2, col3 = st.columns(3)
-
-        with col1:
-            produtos_lbl = ["(Todos os produtos)"] + sorted(base["product_title"].dropna().unique().tolist())
-            escolha_prod = st.selectbox("Produto", produtos_lbl, index=0)
-
-        with col2:
-            variantes_lbl = ["(Todas as variantes)"] + sorted(base["variant_title"].dropna().unique().tolist())
-            escolha_var = st.selectbox("Variante", variantes_lbl, index=0)
-
-        with col3:
-            if not base["created_at"].isnull().all():
-                min_date = base["created_at"].min().date()
-                max_date = base["created_at"].max().date()
-            else:
-                today = pd.Timestamp.today().date()
-                min_date = max_date = today
-            periodo = st.date_input("Período", (min_date, max_date))
-
-        # ---- Aplicar filtros ----
-        df = base[
-            (base["created_at"].dt.date >= periodo[0]) &
-            (base["created_at"].dt.date <= periodo[1])
-        ].copy()
-
-        if escolha_prod != "(Todos os produtos)":
-            df = df[df["product_title"] == escolha_prod]
-        if escolha_var != "(Todas as variantes)":
-            df = df[df["variant_title"] == escolha_var]
-
-        if df.empty:
-            st.warning("Nenhum pedido encontrado com os filtros selecionados.")
-            st.stop()
-
-        # ---- Resumo ----
-        order_col = "order_number" if "order_number" in df.columns and df["order_number"].notna().any() else "order_id"
-        total_pedidos = df[order_col].nunique()
-        total_unidades = df["quantity"].sum()
-        total_receita = df["line_revenue"].sum()
-        ticket_medio = total_receita / total_pedidos if total_pedidos > 0 else 0
-
-        colA, colB, colC, colD = st.columns(4)
-        colA.metric("🧾 Pedidos", total_pedidos)
-        colB.metric("📦 Unidades vendidas", int(total_unidades))
-        colC.metric("💰 Receita total", f"R$ {total_receita:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
-        colD.metric("💸 Ticket médio", f"R$ {ticket_medio:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
-
-        # ---- Tabela final ----
-        st.subheader("📋 Pedidos filtrados")
-
-        colunas_existentes = [c for c in [
-            order_col, "created_at", "customer_name", "quantity",
-            "variant_title", "price", "forma_entrega", "estado", "cidade", "fulfillment_status"
-        ] if c in df.columns]
-
-        tabela = df[colunas_existentes].sort_values("created_at", ascending=False).copy()
-
-        tabela.rename(columns={
-            order_col: "Pedido",
-            "created_at": "Data do pedido",
-            "customer_name": "Nome do cliente",
-            "quantity": "Quantidade",
-            "variant_title": "Variante",
-            "price": "Preço unitário",
-            "forma_entrega": "Tipo de entrega (PAC, SEDEX, etc)",
-            "estado": "Estado de destino",
-            "cidade": "Cidade de destino",
-            "fulfillment_status": "Status de processamento do pedido"
-        }, inplace=True)
-
-        # ---- Adicionar coluna de Status de Processamento ----
-        if "fulfillment_status" in df.columns:
-            tabela["Status de processamento do pedido"] = df["fulfillment_status"].apply(
-                lambda x: (
-                    "✅ Processado" if str(x).lower() in ["fulfilled", "shipped", "complete"]
-                    else "🟡 Não processado"
-                )
-            )
+            st.warning("⚠️ Nenhum dado da Shopify encontrado ainda.")
+            st.caption("Clique no botão acima para carregar pela primeira vez.")
         else:
-            tabela["Status de processamento do pedido"] = "🟡 Não processado"
+            # ---- Normalizar nomes ----
+            def normalizar(df):
+                df.columns = [c.strip().lower() for c in df.columns]
+                ren = {
+                    "title": "product_title",
+                    "product_name": "product_title",
+                    "variant": "variant_title",
+                    "variant_name": "variant_title",
+                    "id": "variant_id",
+                    "variantid": "variant_id"
+                }
+                return df.rename(columns=ren)
 
-        # ---- Formatação visual ----
-        if "Pedido" in tabela.columns:
-            tabela["Pedido"] = tabela["Pedido"].apply(
-                lambda x: f"#{int(float(x))}" if pd.notnull(x) else "-"
+            produtos = normalizar(produtos)
+            pedidos = normalizar(pedidos)
+
+            # ---- Garantir colunas obrigatórias ----
+            for col in ["order_id", "order_number", "financial_status", "fulfillment_status"]:
+                if col not in pedidos.columns:
+                    pedidos[col] = None
+
+            # ---- Juntar pedidos e produtos ----
+            merge_cols = ["variant_id", "sku", "product_title", "variant_title"]
+            merge_cols = [c for c in merge_cols if c in produtos.columns]
+
+            base = pedidos.merge(
+                produtos[merge_cols],
+                on="variant_id",
+                how="left",
+                suffixes=("", "_produto")
             )
 
-        if "Data do pedido" in tabela.columns:
-            tabela["Data do pedido"] = pd.to_datetime(
-                tabela["Data do pedido"], errors="coerce"
-            ).dt.strftime("%d/%m/%Y %H:%M")
+            # ---- Ajustar nomes ----
+            if "product_title_produto" in base.columns and "product_title" not in base.columns:
+                base["product_title"] = base["product_title_produto"]
 
-        if "Preço unitário" in tabela.columns:
-            tabela["Preço unitário"] = tabela["Preço unitário"].apply(
-                lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-            )
+            if "variant_title_produto" in base.columns and "variant_title" not in base.columns:
+                base["variant_title"] = base["variant_title_produto"]
 
-        st.dataframe(tabela, use_container_width=True)
+            base["product_title"].fillna("(Produto desconhecido)", inplace=True)
+            base["variant_title"].fillna("(Variante desconhecida)", inplace=True)
 
-        # ---- Exportar CSV ----
-        csv = tabela.to_csv(index=False).encode('utf-8-sig')
-        st.download_button(
-            label="📥 Exportar pedidos filtrados (CSV)",
-            data=csv,
-            file_name=f"pedidos_shopify_{periodo[0]}_{periodo[1]}.csv",
-            mime="text/csv",
-        )
+            # ---- Tipos e métricas ----
+            base["created_at"] = pd.to_datetime(base.get("created_at"), errors="coerce")
+            base["price"] = pd.to_numeric(base.get("price"), errors="coerce").fillna(0)
+            base["quantity"] = pd.to_numeric(base.get("quantity"), errors="coerce").fillna(0)
+            base["line_revenue"] = base["price"] * base["quantity"]
+
+            # ---- Filtros ----
+            st.subheader("🎛️ Filtros")
+            col1, col2, col3 = st.columns(3)
+
+            with col1:
+                produtos_lbl = ["(Todos os produtos)"] + sorted(base["product_title"].dropna().unique().tolist())
+                escolha_prod = st.selectbox("Produto", produtos_lbl, index=0)
+
+            with col2:
+                variantes_lbl = ["(Todas as variantes)"] + sorted(base["variant_title"].dropna().unique().tolist())
+                escolha_var = st.selectbox("Variante", variantes_lbl, index=0)
+
+            with col3:
+                if not base["created_at"].isnull().all():
+                    min_date = base["created_at"].min().date()
+                    max_date = base["created_at"].max().date()
+                else:
+                    today = pd.Timestamp.today().date()
+                    min_date = max_date = today
+                periodo = st.date_input("Período", (min_date, max_date))
+
+            # ---- Aplicar filtros ----
+            df = base[
+                (base["created_at"].dt.date >= periodo[0]) &
+                (base["created_at"].dt.date <= periodo[1])
+            ].copy()
+
+            if escolha_prod != "(Todos os produtos)":
+                df = df[df["product_title"] == escolha_prod]
+            if escolha_var != "(Todas as variantes)":
+                df = df[df["variant_title"] == escolha_var]
+
+            if df.empty:
+                st.warning("Nenhum pedido encontrado com os filtros selecionados.")
+            else:
+                # ---- Resumo ----
+                order_col = "order_number" if "order_number" in df.columns and df["order_number"].notna().any() else "order_id"
+                total_pedidos = df[order_col].nunique()
+                total_unidades = df["quantity"].sum()
+                total_receita = df["line_revenue"].sum()
+                ticket_medio = total_receita / total_pedidos if total_pedidos > 0 else 0
+
+                colA, colB, colC, colD = st.columns(4)
+                colA.metric("🧾 Pedidos", total_pedidos)
+                colB.metric("📦 Unidades vendidas", int(total_unidades))
+                colC.metric("💰 Receita total", f"R$ {total_receita:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+                colD.metric("💸 Ticket médio", f"R$ {ticket_medio:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+
+                # ---- Tabela final ----
+                st.subheader("📋 Pedidos filtrados")
+
+                colunas_existentes = [c for c in [
+                    order_col, "created_at", "customer_name", "quantity",
+                    "variant_title", "price", "forma_entrega", "estado", "cidade", "fulfillment_status"
+                ] if c in df.columns]
+
+                tabela = df[colunas_existentes].sort_values("created_at", ascending=False).copy()
+
+                tabela.rename(columns={
+                    order_col: "Pedido",
+                    "created_at": "Data do pedido",
+                    "customer_name": "Nome do cliente",
+                    "quantity": "Quantidade",
+                    "variant_title": "Variante",
+                    "price": "Preço unitário",
+                    "forma_entrega": "Tipo de entrega (PAC, SEDEX, etc)",
+                    "estado": "Estado de destino",
+                    "cidade": "Cidade de destino",
+                    "fulfillment_status": "Status de processamento do pedido"
+                }, inplace=True)
+
+                # ---- Adicionar coluna de Status de Processamento ----
+                if "fulfillment_status" in df.columns:
+                    tabela["Status de processamento do pedido"] = df["fulfillment_status"].apply(
+                        lambda x: (
+                            "✅ Processado" if str(x).lower() in ["fulfilled", "shipped", "complete"]
+                            else "🟡 Não processado"
+                        )
+                    )
+                else:
+                    tabela["Status de processamento do pedido"] = "🟡 Não processado"
+
+                # ---- Formatação visual ----
+                if "Pedido" in tabela.columns:
+                    tabela["Pedido"] = tabela["Pedido"].apply(
+                        lambda x: f"#{int(float(x))}" if pd.notnull(x) else "-"
+                    )
+
+                if "Data do pedido" in tabela.columns:
+                    tabela["Data do pedido"] = pd.to_datetime(
+                        tabela["Data do pedido"], errors="coerce"
+                    ).dt.strftime("%d/%m/%Y %H:%M")
+
+                if "Preço unitário" in tabela.columns:
+                    tabela["Preço unitário"] = tabela["Preço unitário"].apply(
+                        lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                    )
+
+                st.dataframe(tabela, use_container_width=True)
+
+                # ---- Exportar CSV ----
+                csv = tabela.to_csv(index=False).encode('utf-8-sig')
+                st.download_button(
+                    label="📥 Exportar pedidos filtrados (CSV)",
+                    data=csv,
+                    file_name=f"pedidos_shopify_{periodo[0]}_{periodo[1]}.csv",
+                    mime="text/csv",
+                )
