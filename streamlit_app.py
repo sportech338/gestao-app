@@ -2769,7 +2769,10 @@ with tab_detail:
             df_rank["Custo por Compra"] = df_rank["Custo por Compra"].apply(fmt_real)
             df_rank["ROAS"] = df_rank["ROAS"].round(2)
             df_rank["Compras"] = df_rank["purchases"].astype(int)
-            df_rank["Score (%)"] = (df_rank["score_final"] * 100).round(1)
+            df_rank["score_final"] = pd.to_numeric(df_rank["score_final"], errors="coerce").fillna(0)
+            df_rank["Score (%)"] = (
+                pd.to_numeric(df_rank["score_final"], errors="coerce") * 100
+            ).round(1)
 
             disp_rank = df_rank[
                 ["Posição", "Dia da Semana", "Compras", "Investimento", "Faturamento", "ROAS", "Custo por Compra", "Score (%)"]
