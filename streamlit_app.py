@@ -998,6 +998,10 @@ with tab_daily:
 
     df_daily_view = _filter_by_product(df_daily, produto_sel_daily)
 
+    # 🔹 FILTRO CORRETO DE PERÍODO (importante!)
+    mask_period = (df_daily_view["date"] >= pd.Timestamp(since)) & (df_daily_view["date"] <= pd.Timestamp(until))
+    df_daily_view = df_daily_view.loc[mask_period].copy()
+    
     if df_daily_view.empty:
         st.info("Sem dados para o produto selecionado nesse período.")
         st.stop()
