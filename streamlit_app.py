@@ -1068,11 +1068,11 @@ with tab_shopify:
     
     # ---- Atualizar status com base no código de rastreio ----
     if "Código de rastreio" in tabela.columns:
-        tabela["Status de processamento do pedido"] = tabela["Código de rastreio"].apply(
+        tabela["Status de processamento"] = tabela["Código de rastreio"].apply(
             lambda x: "✅ Processado" if isinstance(x, str) and x.strip() else "🟡 Não processado"
         )
     else:
-        tabela["Status de processamento do pedido"] = "🟡 Não processado"
+        tabela["Status de processamento"] = "🟡 Não processado"
 
 
     # ---- Formatação visual ----
@@ -1100,7 +1100,7 @@ with tab_shopify:
         num_rows="dynamic",
         disabled=["Pedido", "Data do pedido", "Nome do cliente", "Quantidade", "Variante",
                   "Preço unitário", "Tipo de entrega (PAC, SEDEX, etc)",
-                  "Estado de destino", "Cidade de destino", "Status de processamento do pedido"]
+                  "Estado de destino", "Cidade de destino", "Status de processamento"]
     )
 
     # ---- Processar pedidos automaticamente ----
@@ -1132,7 +1132,7 @@ with tab_shopify:
             # Atualiza status da tabela local (sem precisar recarregar manualmente)
             for i, row in tabela_editavel.iterrows():
                 if str(row["Código de rastreio"]).strip():
-                    tabela_editavel.at[i, "Status de processamento do pedido"] = "✅ Processado"
+                    tabela_editavel.at[i, "Status de processamento"] = "✅ Processado"
 
             # Re-renderiza automaticamente
             st.session_state["pedidos"] = pedidos
