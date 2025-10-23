@@ -975,23 +975,25 @@ with aba_principal[0]:
         # -------------------- ABA 1: VISÃO DIÁRIA --------------------
         # =====================================================
         with tab_daily:
-            # --- Detecta moeda e formatação ---
-            currency_detected = (
-                df_daily["currency"].dropna().iloc[0]
-                if "currency" in df_daily.columns and not df_daily["currency"].dropna().empty
-                else "BRL"
-            )
+            # === Moeda detectada e override opcional ===
+            currency_detected = (df_daily["currency"].dropna().iloc[0]
+                                 if "currency" in df_daily.columns and not df_daily["currency"].dropna().empty else "BRL")
             col_curA, col_curB = st.columns([1, 2])
             with col_curA:
                 use_brl_display = st.checkbox("Fixar exibição em BRL (símbolo R$)", value=True)
             currency_label = "BRL" if use_brl_display else currency_detected
             with col_curB:
                 if use_brl_display and currency_detected != "BRL":
-                    st.caption("⚠️ Exibindo com símbolo **R$** apenas para formatação visual. Os valores permanecem na moeda da conta.")
-            st.caption(f"Moeda detectada: **{currency_detected}** — Exibindo como: **{currency_label}**")
+                    st.caption("⚠️ Exibindo com símbolo **R$** apenas para **formatação visual**. "
+                               "Os valores permanecem na moeda da conta.")
+            st.caption(f"Moeda da conta detectada: **{currency_detected}** — Exibindo como: **{currency_label}**")
 
-            # --- Filtro de produto ---
-            produto_sel_daily = st.selectbox("Filtrar por produto (opcional)", ["(Todos)"] + PRODUTOS, key="daily_produto")
+            # ---- Filtro por produto ----
+            produto_sel_daily = st.selectbox(
+                "Filtrar por produto (opcional)",
+                ["(Todos)"] + PRODUTOS,
+                key="daily_produto"
+            )
             df_daily_view = _filter_by_product(df_daily, produto_sel_daily)
             if df_daily_view.empty:
                 st.info("Sem dados para o produto selecionado nesse período.")
@@ -999,11 +1001,11 @@ with aba_principal[0]:
             if produto_sel_daily != "(Todos)":
                 st.caption(f"🔎 Filtrando por produto: **{produto_sel_daily}**")
 
-            # --- KPIs principais ---
+            # ========= KPIs do período =========
             tot_spend = float(df_daily_view["spend"].sum())
             tot_purch = float(df_daily_view["purchases"].sum())
-            tot_rev = float(df_daily_view["revenue"].sum())
-            roas_g = (tot_rev / tot_spend) if tot_spend > 0 else np.nan
+            tot_rev   = float(df_daily_view["revenue"].sum())
+            roas_g    = (tot_rev / tot_spend) if tot_spend > 0 else np.nan
 
             c1, c2, c3, c4 = st.columns(4)
             with c1:
@@ -1011,7 +1013,8 @@ with aba_principal[0]:
                             f'<div class="big-number">{_fmt_money_br(tot_spend)}</div></div>', unsafe_allow_html=True)
             with c2:
                 st.markdown('<div class="kpi-card"><div class="small-muted">Vendas</div>'
-                            f'<div class="big-number">{int(round(tot_purch)):,}</div></div>'.replace(",", "."), unsafe_allow_html=True)
+                            f'<div class="big-number">{int(round(tot_purch)):,}</div></div>'.replace(",", "."),
+                            unsafe_allow_html=True)
             with c3:
                 st.markdown('<div class="kpi-card"><div class="small-muted">Valor de conversão</div>'
                             f'<div class="big-number">{_fmt_money_br(tot_rev)}</div></div>', unsafe_allow_html=True)
@@ -1019,22 +1022,23 @@ with aba_principal[0]:
                 roas_txt = _fmt_ratio_br(roas_g) if pd.notnull(roas_g) else "—"
                 st.markdown('<div class="kpi-card"><div class="small-muted">ROAS</div>'
                             f'<div class="big-number">{roas_txt}</div></div>', unsafe_allow_html=True)
+
             st.divider()
 
-            # --- Gráfico diário ---
+            # ========= Série diária =========
             st.subheader("Série diária — Investimento e Conversão")
             daily = df_daily_view.groupby("date", as_index=False)[["spend", "revenue", "purchases"]].sum()
             daily_pt = daily.rename(columns={"spend": "Gasto", "revenue": "Faturamento"})
             st.line_chart(daily_pt.set_index("date")[["Faturamento", "Gasto"]])
             st.caption("Linhas diárias de Receita e Gasto. Vendas na tabela abaixo.")
 
-            # --- Funil total ---
-            st.subheader("Funil do período (Cliques → LPV → Checkout → Add Pagamento → Compra)")
+            # ========= FUNIL (Período) =========
+            st.subheader("Funil do período — Cliques → LPV → Checkout → Add Pagamento → Compra")
             f_clicks = float(df_daily_view["link_clicks"].sum())
-            f_lpv = float(df_daily_view["lpv"].sum())
-            f_ic = float(df_daily_view["init_checkout"].sum())
-            f_api = float(df_daily_view["add_payment"].sum())
-            f_pur = float(df_daily_view["purchases"].sum())
+            f_lpv    = float(df_daily_view["lpv"].sum())
+            f_ic     = float(df_daily_view["init_checkout"].sum())
+            f_api    = float(df_daily_view["add_payment"].sum())
+            f_pur    = float(df_daily_view["purchases"].sum())
 
             labels_total = ["Cliques", "LPV", "Checkout", "Add Pagamento", "Compra"]
             values_total = [int(round(f_clicks)), int(round(f_lpv)), int(round(f_ic)), int(round(f_api)), int(round(f_pur))]
@@ -1043,14 +1047,401 @@ with aba_principal[0]:
 
             st.plotly_chart(funnel_fig(labels_total, values_plot, title="Funil do período"), use_container_width=True)
 
-            # --- Taxas principais ---
             core_rows = [
                 ("LPV / Cliques", _rate(values_total[1], values_total[0])),
                 ("Checkout / LPV", _rate(values_total[2], values_total[1])),
                 ("Compra / Checkout", _rate(values_total[4], values_total[2])),
             ]
-            st.dataframe(pd.DataFrame(core_rows, columns=["Taxa", "Valor"]), use_container_width=True)
+            extras_def = {
+                "Add Pagto / Checkout": _rate(values_total[3], values_total[2]),
+                "Compra / Add Pagto": _rate(values_total[4], values_total[3]),
+                "Compra / LPV": _rate(values_total[4], values_total[1]),
+                "Compra / Cliques": _rate(values_total[4], values_total[0]),
+                "Checkout / Cliques": _rate(values_total[2], values_total[0]),
+                "Add Pagto / LPV": _rate(values_total[3], values_total[1]),
+            }
 
+            with st.expander("Comparar outras taxas (opcional)"):
+                extras_selected = st.multiselect(
+                    "Escolha métricas adicionais para visualizar:",
+                    options=list(extras_def.keys()), default=[],
+                )
+            rows = core_rows + [(name, extras_def[name]) for name in extras_selected]
+            sr = pd.DataFrame(rows, columns=["Taxa", "Valor"])
+            sr["Valor"] = sr["Valor"].map(lambda x: f"{x*100:,.2f}%".replace(",", "X").replace(".", ",").replace("X", ".")
+                                          if pd.notnull(x) else "")
+            st.dataframe(sr, use_container_width=True, height=200 + 36 * len(extras_selected))
+
+            # ========= TAXAS POR DIA — EVOLUÇÃO E LEITURA GUIADA =========
+            st.markdown("### Taxas por dia — evolução e leitura guiada")
+
+            with st.expander("Ajustes de exibição", expanded=True):
+                col_cfg1, col_cfg2 = st.columns([2, 1])
+                with col_cfg1:
+                    min_clicks_day = st.slider("Ignorar dias com menos de X cliques", 0, 500, 30, 10)
+                    mark_weekends = st.checkbox("Marcar fins de semana no fundo", value=True)
+                    show_band = st.checkbox("Mostrar banda saudável (faixa alvo)", value=True)
+                with col_cfg2:
+                    st.caption("Faixas saudáveis (%)")
+                    lpv_cli_low, lpv_cli_high = st.slider("LPV / Cliques", 0, 100, (70, 85), 1, key="tx_lpv_cli_band")
+                    co_lpv_low,  co_lpv_high  = st.slider("Checkout / LPV", 0, 100, (10, 20), 1, key="tx_co_lpv_band")
+                    buy_co_low,  buy_co_high  = st.slider("Compra / Checkout", 0, 100, (25, 40), 1, key="tx_buy_co_band")
+
+            # agrega por dia
+            daily_conv = (
+                df_daily_view.groupby("date", as_index=False)[
+                    ["link_clicks", "lpv", "init_checkout", "add_payment", "purchases"]
+                ].sum()
+                .rename(columns={"link_clicks": "clicks", "init_checkout": "checkout", "add_payment": "addpay"})
+            )
+
+            # evita ruído (dias com poucos eventos)
+            daily_conv = daily_conv[daily_conv["clicks"] >= min_clicks_day].copy()
+            if daily_conv.empty:
+                st.info("Sem dias suficientes após o filtro de cliques mínimos.")
+            else:
+                daily_conv["LPV/Cliques"]     = daily_conv.apply(lambda r: _safe_div(r["lpv"], r["clicks"]), axis=1)
+                daily_conv["Checkout/LPV"]    = daily_conv.apply(lambda r: _safe_div(r["checkout"], r["lpv"]), axis=1)
+                daily_conv["Compra/Checkout"] = daily_conv.apply(lambda r: _safe_div(r["purchases"], r["checkout"]), axis=1)
+
+                def _fmt_pct_series(s):  # 0–1 -> 0–100
+                    return (s * 100).round(2)
+
+                import plotly.graph_objects as go
+
+                def _line_pct_banded(df, col, lo_pct, hi_pct, title):
+                    x = df["date"]
+                    y = (df[col] * 100).round(2)
+
+                    def _status(v):
+                        if not pd.notnull(v): return "sem"
+                        v_pct = float(v) * 100.0
+                        if v_pct < lo_pct: return "abaixo"
+                        if v_pct > hi_pct: return "acima"
+                        return "dentro"
+
+                    status = df[col].map(_status).tolist()
+                    colors = [{"abaixo": "#dc2626", "dentro": "#16a34a", "acima": "#0ea5e9", "sem": "#9ca3af"}[s] for s in status]
+
+                    fig = go.Figure()
+
+                    # banda saudável
+                    if show_band:
+                        fig.add_shape(
+                            type="rect", xref="x", yref="y",
+                            x0=x.min(), x1=x.max(), y0=lo_pct, y1=hi_pct,
+                            fillcolor="rgba(34,197,94,0.08)", line=dict(width=0),
+                            layer="below"
+                        )
+
+                    # fins de semana
+                    if mark_weekends:
+                        for d in x:
+                            if d.weekday() >= 5:
+                                fig.add_shape(
+                                    type="rect", xref="x", yref="paper",
+                                    x0=d, x1=d + pd.Timedelta(days=1),
+                                    y0=0, y1=1,
+                                    line=dict(width=0),
+                                    fillcolor="rgba(2,132,199,0.06)"
+                                )
+
+                    # série
+                    fig.add_trace(go.Scatter(
+                        x=x, y=y, mode="lines+markers",
+                        name="Diário",
+                        marker=dict(size=7, color=colors),
+                        line=dict(width=1.5, color="#1f77b4"),
+                        hovertemplate="%{x|%Y-%m-%d}<br>Taxa: %{y:.2f}%<extra></extra>",
+                    ))
+
+                    fig.update_layout(
+                        title=title,
+                        yaxis_title="%",
+                        xaxis_title="Data",
+                        height=340,
+                        template="plotly_white",
+                        margin=dict(l=10, r=10, t=48, b=10),
+                        separators=",.",
+                        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0)
+                    )
+
+                    y_min = max(0, min(y.min(), lo_pct) - 5)
+                    y_max = min(100, max(y.max(), hi_pct) + 5)
+                    fig.update_yaxes(range=[y_min, y_max])
+
+                    return fig
+
+                # === Resumo de taxas médias do período ===
+                st.markdown("**Resumo das taxas (período filtrado)**")
+                def _resume_box(df_rates, col, lo_pct, hi_pct, label):
+                    vals = df_rates[col].dropna()
+                    if vals.empty:
+                        mcol1, mcol2, mcol3 = st.columns(3)
+                        mcol1.metric(label, "—")
+                        mcol2.metric("% dias dentro", "—")
+                        mcol3.metric("Tendência (período)", "—")
+                        return
+                    mean_pct = float(vals.mean() * 100.0)
+                    inside = float(((vals * 100.0 >= lo_pct) & (vals * 100.0 <= hi_pct)).mean() * 100.0)
+                    mcol1, mcol2, mcol3 = st.columns(3)
+                    mcol1.metric(label, f"{mean_pct:,.2f}%".replace(",", "X").replace(".", ",").replace("X", "."))
+                    mcol2.metric("% dias dentro", f"{inside:,.0f}%".replace(",", "X").replace(".", ",").replace("X", "."))
+                    mcol3.metric("Tendência (período)", "—")
+
+                _resume_box(daily_conv, "LPV/Cliques", lpv_cli_low, lpv_cli_high, "LPV/Cliques (média)")
+                _resume_box(daily_conv, "Checkout/LPV", co_lpv_low, co_lpv_high, "Checkout/LPV (média)")
+                _resume_box(daily_conv, "Compra/Checkout", buy_co_low, buy_co_high, "Compra/Checkout (média)")
+
+                st.markdown("---")
+
+                # === Gráficos lado a lado ===
+                left, mid, right = st.columns(3)
+                with left:
+                    st.plotly_chart(
+                        _line_pct_banded(daily_conv, "LPV/Cliques", lpv_cli_low, lpv_cli_high, "LPV/Cliques"),
+                        use_container_width=True
+                    )
+                with mid:
+                    st.plotly_chart(
+                        _line_pct_banded(daily_conv, "Checkout/LPV", co_lpv_low, co_lpv_high, "Checkout/LPV"),
+                        use_container_width=True
+                    )
+                with right:
+                    st.plotly_chart(
+                        _line_pct_banded(daily_conv, "Compra/Checkout", buy_co_low, buy_co_high, "Compra/Checkout"),
+                        use_container_width=True
+                    )
+
+                st.caption(
+                    "Leitura: pontos **verdes** = dentro da banda saudável, **vermelhos** = abaixo, **azuis** = acima. "
+                    "Área verde = faixa alvo; fins de semana = fundo azul claro."
+                )
+
+            # === NOTIFICAÇÃO DIDÁTICA DE ALOCAÇÃO DE VERBA =================================
+            st.subheader("🔔 Para onde vai a verba? (recomendação automática)")
+
+            min_purchases_to_scale = st.number_input(
+                "Compras mínimas para sugerir Escala (volume)",
+                min_value=0, value=50, step=1
+            )
+
+            r1 = _safe_div(values_total[1], values_total[0])   # LPV/Cliques
+            r2 = _safe_div(values_total[2], values_total[1])   # Checkout/LPV
+            r3 = _safe_div(values_total[4], values_total[2])   # Compra/Checkout
+
+            drop1 = max(0, values_total[0] - values_total[1])
+            drop2 = max(0, values_total[1] - values_total[2])
+            drop3 = max(0, values_total[2] - values_total[4])
+
+            def _band_status(val, lo, hi):
+                if not pd.notnull(val): return "sem_dado"
+                v = val * 100
+                if v < lo: return "abaixo"
+                if v > hi: return "acima"
+                return "dentro"
+
+            def _chip(label, val, lo, hi):
+                status = _band_status(val, lo, hi)
+                if status == "abaixo":
+                    return f"❌ **{label}** — {_fmt_pct_br(val)} (alvo {lo}–{hi}%)"
+                if status == "dentro":
+                    return f"✅ **{label}** — {_fmt_pct_br(val)} (dentro de {lo}–{hi}%)"
+                if status == "acima":
+                    return f"🟢 **{label}** — {_fmt_pct_br(val)} (acima de {hi}%)"
+                return f"⛔ **{label}** — sem dados suficientes"
+
+            stages = {
+                "Teste de criativo": {
+                    "rate": r1, "lo": lpv_cli_low, "hi": lpv_cli_high, "drop": drop1,
+                    "explain": "Perda entre Cliques → LPV (qualidade do clique, criativo e LP).",
+                    "todo": [
+                        "Testar novas variações de criativo (ângulo, thumb, CTA).",
+                        "Melhorar tempo de carregamento da landing page.",
+                        "Revisar promessa e headline da página."
+                    ]
+                },
+                "Teste de interesse": {
+                    "rate": r2, "lo": co_lpv_low, "hi": co_lpv_high, "drop": drop2,
+                    "explain": "Perda entre LPV → Checkout (público/segmentação e proposta de valor).",
+                    "todo": [
+                        "Ajustar públicos e excluir desinteressados.",
+                        "Adicionar provas sociais e benefícios acima do CTA.",
+                        "Refinar oferta e bundle para o público certo."
+                    ]
+                },
+                "Remarketing": {
+                    "rate": r3, "lo": buy_co_low, "hi": buy_co_high, "drop": drop3,
+                    "explain": "Perda entre Checkout → Compra (confiança e meios de pagamento).",
+                    "todo": [
+                        "Refinar remarketing dinâmico com objeções e frete.",
+                        "Oferecer opções de pagamento variadas (pix, boleto, cartão).",
+                        "Automatizar recuperação de carrinhos."
+                    ]
+                }
+            }
+
+            abaixos = {k: v for k, v in stages.items() if _band_status(v["rate"], v["lo"], v["hi"]) == "abaixo"}
+
+            if abaixos:
+                foco, foco_dat = max(abaixos.items(), key=lambda kv: kv[1]["drop"])
+            else:
+                total_purch = values_total[4]
+                todas_ok = all(_band_status(v["rate"], v["lo"], v["hi"]) in ["dentro", "acima"] for v in stages.values())
+                if todas_ok and total_purch >= min_purchases_to_scale:
+                    foco, foco_dat = "Escala", {
+                        "rate": None, "lo": None, "hi": None, "drop": 0,
+                        "explain": "Taxas saudáveis e volume suficiente. Hora de escalar campanhas vencedoras."
+                    }
+                else:
+                    foco, foco_dat = max(stages.items(), key=lambda kv: kv[1]["drop"])
+
+            total_drop = max(1, drop1 + drop2 + drop3)
+            share = foco_dat["drop"] / total_drop
+            if share > 0.60:
+                intensidade = "Alta"; faixa_verba = "↑ realocar **20–30%** do orçamento"
+            elif share >= 0.30:
+                intensidade = "Média"; faixa_verba = "↑ realocar **10–15%** do orçamento"
+            else:
+                intensidade = "Baixa"; faixa_verba = "↑ realocar **5–10%** do orçamento"
+
+            st.markdown("---")
+            colA, colB = st.columns([1, 2])
+
+            with colA:
+                st.markdown("**Taxas do período**")
+                st.markdown(_chip("LPV/Cliques", r1, lpv_cli_low, lpv_cli_high))
+                st.markdown(_chip("Checkout/LPV", r2, co_lpv_low, co_lpv_high))
+                st.markdown(_chip("Compra/Checkout", r3, buy_co_low, buy_co_high))
+
+            with colB:
+                if foco == "Escala":
+                    st.success(
+                        f"**✅ Recomendação: Escala**\n\n"
+                        f"- Motivo: {foco_dat['explain']}\n"
+                        f"- Compras no período: **{_fmt_int_br(values_total[4])}** "
+                        f"(mín. para escalar: **{_fmt_int_br(min_purchases_to_scale)}**)\n"
+                        f"- Ação: aumentar orçamento nas campanhas com melhor ROAS."
+                    )
+                else:
+                    st.warning(
+                        f"**⚠️ Recomendação: {foco}**\n\n"
+                        f"- Motivo: {foco_dat['explain']}\n"
+                        f"- Queda concentrada nessa etapa: **{_fmt_int_br(foco_dat['drop'])}** pessoas "
+                        f"(intensidade **{intensidade}** → {faixa_verba})."
+                    )
+                    st.markdown("**O que fazer agora**")
+                    for tip in foco_dat["todo"]:
+                        st.markdown(f"- {tip}")
+
+            with st.expander("ℹ️ Como interpretar"):
+                st.markdown(
+                    """
+                    - **LPV/Cliques** baixo → Criativo/LP (atrai mas não engaja).
+                    - **Checkout/LPV** baixo → Interesse/Oferta (vê mas não avança).
+                    - **Compra/Checkout** baixo → Remarketing/Pagamento.
+                    - Tudo saudável e volume alto → Escala.
+                    """
+                )
+
+            # ========= COMPARATIVOS (Período A vs Período B) =========
+            with st.expander("Comparativos — Período A vs Período B", expanded=False):
+                st.subheader("📊 Comparativo de desempenho entre períodos")
+
+                period_len = (until - since).days + 1
+                default_sinceA = since - timedelta(days=period_len)
+                default_untilA = since - timedelta(days=1)
+
+                colA, colB = st.columns(2)
+                with colA:
+                    st.markdown("**Período A (anterior)**")
+                    sinceA = st.date_input("Desde (A)", value=default_sinceA, key="sinceA")
+                    untilA = st.date_input("Até (A)", value=default_untilA, key="untilA")
+                with colB:
+                    st.markdown("**Período B (atual)**")
+                    sinceB = st.date_input("Desde (B)", value=since, key="sinceB")
+                    untilB = st.date_input("Até (B)", value=until, key="untilB")
+
+                if sinceA > untilA or sinceB > untilB:
+                    st.warning("Confira as datas: 'Desde' não pode ser maior que 'Até'.")
+                else:
+                    with st.spinner("Comparando períodos..."):
+                        dfA = fetch_insights_daily(act_id, token, api_version, str(sinceA), str(untilA), level, produto_sel_daily)
+                        dfB = fetch_insights_daily(act_id, token, api_version, str(sinceB), str(untilB), level, produto_sel_daily)
+
+                    if dfA.empty or dfB.empty:
+                        st.info("Sem dados em um dos períodos selecionados.")
+                    else:
+                        def _agg(d):
+                            return {
+                                "spend": d["spend"].sum(),
+                                "revenue": d["revenue"].sum(),
+                                "purchases": d["purchases"].sum(),
+                                "clicks": d["link_clicks"].sum(),
+                                "lpv": d["lpv"].sum(),
+                                "checkout": d["init_checkout"].sum(),
+                                "add_payment": d["add_payment"].sum(),
+                            }
+                        A = _agg(dfA); B = _agg(dfB)
+                        roasA = _safe_div(A["revenue"], A["spend"])
+                        roasB = _safe_div(B["revenue"], B["spend"])
+
+                        kpi_rows = [
+                            ("Valor usado", _fmt_money_br(A["spend"]), _fmt_money_br(B["spend"])),
+                            ("Faturamento", _fmt_money_br(A["revenue"]), _fmt_money_br(B["revenue"])),
+                            ("Vendas", _fmt_int_br(A["purchases"]), _fmt_int_br(B["purchases"])),
+                            ("ROAS", _fmt_ratio_br(roasA), _fmt_ratio_br(roasB)),
+                        ]
+                        st.dataframe(pd.DataFrame(kpi_rows, columns=["Métrica", "Período A", "Período B"]),
+                                     use_container_width=True)
+
+                        st.markdown("---")
+                        labels_funnel = ["Cliques", "LPV", "Checkout", "Add Pagamento", "Compra"]
+                        valsA = [int(A["clicks"]), int(A["lpv"]), int(A["checkout"]), int(A["add_payment"]), int(A["purchases"])]
+                        valsB = [int(B["clicks"]), int(B["lpv"]), int(B["checkout"]), int(B["add_payment"]), int(B["purchases"])]
+
+                        cA, cB = st.columns(2)
+                        with cA:
+                            st.plotly_chart(funnel_fig(labels_funnel, enforce_monotonic(valsA),
+                                                       title=f"Funil — Período A ({sinceA} a {untilA})"),
+                                            use_container_width=True)
+                        with cB:
+                            st.plotly_chart(funnel_fig(labels_funnel, enforce_monotonic(valsB),
+                                                       title=f"Funil — Período B ({sinceB} a {untilB})"),
+                                            use_container_width=True)
+
+            # ========= FUNIL por CAMPANHA =========
+            if level == "campaign":
+                st.subheader("📦 Funil por campanha (somatório do período)")
+                agg_cols = ["spend", "link_clicks", "lpv", "init_checkout", "add_payment", "purchases", "revenue"]
+                camp = df_daily_view.groupby(["campaign_id", "campaign_name"], as_index=False)[agg_cols].sum()
+
+                camp["ROAS"] = _safe_div(camp["revenue"], camp["spend"])
+                camp["CPA"] = _safe_div(camp["spend"], camp["purchases"])
+                camp["LPV/Cliques"] = _safe_div(camp["lpv"], camp["link_clicks"])
+                camp["Checkout/LPV"] = _safe_div(camp["init_checkout"], camp["lpv"])
+                camp["Compra/Checkout"] = _safe_div(camp["purchases"], camp["init_checkout"])
+
+                disp = camp[["campaign_name", "spend", "revenue", "purchases", "ROAS", "CPA",
+                             "LPV/Cliques", "Checkout/LPV", "Compra/Checkout"]]
+                disp.rename(columns={
+                    "campaign_name": "Campanha", "spend": "Gasto", "revenue": "Faturamento", "purchases": "Vendas"
+                }, inplace=True)
+
+                disp["Gasto"] = disp["Gasto"].map(_fmt_money_br)
+                disp["Faturamento"] = disp["Faturamento"].map(_fmt_money_br)
+                disp["Vendas"] = disp["Vendas"].map(_fmt_int_br)
+                disp["ROAS"] = disp["ROAS"].map(_fmt_ratio_br)
+                disp["CPA"] = disp["CPA"].map(_fmt_money_br)
+                disp["LPV/Cliques"] = disp["LPV/Cliques"].map(_fmt_pct_br)
+                disp["Checkout/LPV"] = disp["Checkout/LPV"].map(_fmt_pct_br)
+                disp["Compra/Checkout"] = disp["Compra/Checkout"].map(_fmt_pct_br)
+
+                st.dataframe(disp, use_container_width=True, height=420)
+            else:
+                st.info("Troque o nível para 'campaign' para visualizar o detalhamento por campanha.")        
+        
+        
         # =====================================================
         # -------------------- ABA 2: HORÁRIOS --------------------
         # =====================================================
