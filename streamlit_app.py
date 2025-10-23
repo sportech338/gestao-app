@@ -965,6 +965,9 @@ with aba_principal[0]:
 
         st.session_state["df_daily"] = df_daily
 
+        # 🔧 Corrige tipos para evitar erro React (#185)
+        df_daily = df_daily.astype(object).where(pd.notnull(df_daily), None)
+
 
         # 🔁 Garante que as outras bases existam, mesmo se vazias
         if "df_hourly" not in st.session_state or st.session_state["df_hourly"].empty:
