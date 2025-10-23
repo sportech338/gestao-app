@@ -962,7 +962,20 @@ with aba_principal[0]:
             level=level,
             product_name=None
         )
+        
+        # 🧩 DEPURAÇÃO — identificar diferença de LPV
+        import math
+        _debug = df_daily.copy()
+        _debug["lpv_int"] = _debug["lpv"].astype(float).round(2)
+        st.write("🧩 DEPURAR LPV — últimas linhas brutas:")
+        st.dataframe(_debug.tail(10))
+
+        st.write("🔹 Total LPV bruto:", _debug["lpv"].sum())
+        st.write("🔹 Total LPV único (por data+campanha):", _debug.groupby(["date", "campaign_id"])["lpv"].sum().sum())
+        st.write("🔹 Datas no filtro:", _debug["date"].min(), "→", _debug["date"].max())
+
         st.session_state["df_daily"] = df_daily
+
 
         # 🔁 Garante que as outras bases existam, mesmo se vazias
         if "df_hourly" not in st.session_state or st.session_state["df_hourly"].empty:
