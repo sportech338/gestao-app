@@ -1722,8 +1722,8 @@ with tab_daily:
     else:
         st.info("Troque o nível para 'campaign' para ver o detalhamento por campanha.")
         
-with tab_daypart:
-    st.caption("Explore desempenho por hora: Heatmap no topo, depois comparação de dias e apanhado geral.")
+        with tab_daypart:
+            st.caption("Explore desempenho por hora: Heatmap no topo, depois comparação de dias e apanhado geral.")
 
     level_hourly = "campaign"
 
