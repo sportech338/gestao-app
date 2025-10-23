@@ -1052,15 +1052,9 @@ with tab_shopify:
     # ---- Tabela final ----
     st.subheader("📋 Pedidos filtrados")
 
-    # ---- Adiciona coluna de Pedido interno (ID real da Shopify) ----
-    if "order_id" in df.columns:
-        df["Pedido interno"] = df["order_id"].astype(str)
-    else:
-        df["Pedido interno"] = ""
-    
     colunas_existentes = [c for c in [
         order_col, "created_at", "customer_name", "quantity",
-        "variant_title", "price", "forma_entrega", "estado", "cidade", "tracking_number", "fulfillment_status", "Pedido interno"
+        "variant_title", "price", "forma_entrega", "estado", "cidade", "tracking_number", "fulfillment_status"
     ] if c in df.columns]
 
     tabela = df[colunas_existentes].sort_values("created_at", ascending=False).copy()
