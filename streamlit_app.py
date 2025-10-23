@@ -1412,23 +1412,38 @@ with aba_principal[0]:
 
             # ========= FUNIL por CAMPANHA =========
             if level == "campaign":
-                st.subheader("📦 Funil por campanha (somatório do período)")
-                agg_cols = ["spend", "link_clicks", "lpv", "init_checkout", "add_payment", "purchases", "revenue"]
-                camp = df_daily_view.groupby(["campaign_id", "campaign_name"], as_index=False)[agg_cols].sum()
+                st.subheader("📦 Funil por campanha (somatório do período filtrado)")
 
-                # ===== CORREÇÃO: Divisões seguras linha a linha =====
+                # 🔹 Filtra o período atual explicitamente
+                mask_period = (df_daily_view["date"] >= pd.Timestamp(since)) & (df_daily_view["date"] <= pd.Timestamp(until))
+                df_filtered = df_daily_view.loc[mask_period].copy()
+
+                if df_filtered.empty:
+                    st.info("Sem dados de campanha no período selecionado.")
+                    st.stop()
+
+                # 🔹 Agrega apenas o período filtrado
+                agg_cols = ["spend", "link_clicks", "lpv", "init_checkout", "add_payment", "purchases", "revenue"]
+                camp = df_filtered.groupby(["campaign_id", "campaign_name"], as_index=False)[agg_cols].sum()
+
+                # ===== Divisões seguras linha a linha =====
                 camp["ROAS"] = np.where(camp["spend"] > 0, camp["revenue"] / camp["spend"], np.nan)
                 camp["CPA"] = np.where(camp["purchases"] > 0, camp["spend"] / camp["purchases"], np.nan)
                 camp["LPV/Cliques"] = np.where(camp["link_clicks"] > 0, camp["lpv"] / camp["link_clicks"], np.nan)
                 camp["Checkout/LPV"] = np.where(camp["lpv"] > 0, camp["init_checkout"] / camp["lpv"], np.nan)
                 camp["Compra/Checkout"] = np.where(camp["init_checkout"] > 0, camp["purchases"] / camp["init_checkout"], np.nan)
 
+                # 🔹 Monta dataframe de exibição formatado
                 disp = camp[["campaign_name", "spend", "revenue", "purchases", "ROAS", "CPA",
                              "LPV/Cliques", "Checkout/LPV", "Compra/Checkout"]]
                 disp.rename(columns={
-                    "campaign_name": "Campanha", "spend": "Gasto", "revenue": "Faturamento", "purchases": "Vendas"
+                    "campaign_name": "Campanha",
+                    "spend": "Gasto",
+                    "revenue": "Faturamento",
+                    "purchases": "Vendas"
                 }, inplace=True)
 
+                # 🔹 Formatação visual (pt-BR)
                 disp["Gasto"] = disp["Gasto"].map(_fmt_money_br)
                 disp["Faturamento"] = disp["Faturamento"].map(_fmt_money_br)
                 disp["Vendas"] = disp["Vendas"].map(_fmt_int_br)
@@ -1438,6 +1453,7 @@ with aba_principal[0]:
                 disp["Checkout/LPV"] = disp["Checkout/LPV"].map(_fmt_pct_br)
                 disp["Compra/Checkout"] = disp["Compra/Checkout"].map(_fmt_pct_br)
 
+                # 🔹 Exibe o dataframe final
                 st.dataframe(disp, use_container_width=True, height=420)
             else:
                 st.info("Troque o nível para 'campaign' para visualizar o detalhamento por campanha.")
