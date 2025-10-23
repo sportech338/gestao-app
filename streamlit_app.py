@@ -3211,7 +3211,6 @@ with aba_principal[1]:
 
         if produtos is None or pedidos is None or produtos.empty or pedidos.empty:
             st.info("Carregue os dados da Shopify para iniciar (botão acima).")
-            st.stop()
 
         # ---- Normalizar nomes ----
         def normalizar(df):
