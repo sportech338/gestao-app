@@ -1412,9 +1412,9 @@ with aba_principal[0]:
 
             # ========= FUNIL por CAMPANHA =========
             if level == "campaign":
-                st.subheader("📦 Funil por campanha (somatório do período filtrado)")
+                st.subheader("📦 Funil por campanha (somatório — apenas campanhas ativas no período filtrado)")
 
-                # 🔹 Filtra o período atual explicitamente
+                # 🔹 Filtra o período selecionado
                 mask_period = (df_daily_view["date"] >= pd.Timestamp(since)) & (df_daily_view["date"] <= pd.Timestamp(until))
                 df_filtered = df_daily_view.loc[mask_period].copy()
 
@@ -1422,9 +1422,25 @@ with aba_principal[0]:
                     st.info("Sem dados de campanha no período selecionado.")
                     st.stop()
 
-                # 🔹 Agrega apenas o período filtrado
+                # 🔹 Detecta campanhas ativas (teve gasto > 0 no período)
+                active_campaigns = (
+                    df_filtered.groupby("campaign_id")["spend"]
+                    .sum()
+                    .loc[lambda s: s > 0]
+                    .index
+                    .tolist()
+                )
+
+                # 🔹 Mantém apenas campanhas ativas
+                df_active = df_filtered[df_filtered["campaign_id"].isin(active_campaigns)].copy()
+
+                if df_active.empty:
+                    st.info("Nenhuma campanha ativa no período selecionado.")
+                    st.stop()
+
+                # 🔹 Agrega apenas as campanhas ativas
                 agg_cols = ["spend", "link_clicks", "lpv", "init_checkout", "add_payment", "purchases", "revenue"]
-                camp = df_filtered.groupby(["campaign_id", "campaign_name"], as_index=False)[agg_cols].sum()
+                camp = df_active.groupby(["campaign_id", "campaign_name"], as_index=False)[agg_cols].sum()
 
                 # ===== Divisões seguras linha a linha =====
                 camp["ROAS"] = np.where(camp["spend"] > 0, camp["revenue"] / camp["spend"], np.nan)
@@ -1453,11 +1469,15 @@ with aba_principal[0]:
                 disp["Checkout/LPV"] = disp["Checkout/LPV"].map(_fmt_pct_br)
                 disp["Compra/Checkout"] = disp["Compra/Checkout"].map(_fmt_pct_br)
 
-                # 🔹 Exibe o dataframe final
+                # 🔹 Ordena por Faturamento (default)
+                disp = disp.sort_values(by="Faturamento", ascending=False)
+
+                # 🔹 Exibe a tabela
                 st.dataframe(disp, use_container_width=True, height=420)
+
             else:
                 st.info("Troque o nível para 'campaign' para visualizar o detalhamento por campanha.")
-        
+
         
         # =====================================================
         # -------------------- ABA 2: HORÁRIOS --------------------
