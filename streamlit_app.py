@@ -1028,7 +1028,7 @@ with tab_shopify:
         order_col: "Pedido",
         "created_at": "Data do pedido",
         "customer_name": "Nome do cliente",
-        "quantity": "Quantidade",
+        "quantity": "Qtd",
         "variant_title": "Variante",
         "price": "Preço unitário",
         "forma_entrega": "Tipo de entrega (PAC, SEDEX, etc)",
@@ -1037,11 +1037,6 @@ with tab_shopify:
     }, inplace=True)
 
     # ---- Formatação visual ----
-    if "Pedido" in tabela.columns:
-        tabela["Pedido"] = tabela["Pedido"].apply(
-            lambda x: f"#{int(float(x))}" if pd.notnull(x) else "-"
-        )
-
     if "Data do pedido" in tabela.columns:
         tabela["Data do pedido"] = pd.to_datetime(
             tabela["Data do pedido"], errors="coerce"
@@ -1051,7 +1046,6 @@ with tab_shopify:
         tabela["Preço unitário"] = tabela["Preço unitário"].apply(
             lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
         )
-
 
     st.dataframe(tabela, use_container_width=True)
 
