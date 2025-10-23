@@ -1518,11 +1518,11 @@ with tab_daily:
         with colA:
             st.markdown("**Período A**")
             sinceA = st.date_input("Desde (A)", value=default_sinceA, key="sinceA")
-            untilA = st.date_input("Até (A)",   value=default_untilA, key="untilA")
+            untilA = st.date_input("Até (A)", value=default_untilA, key="untilA")
         with colB:
             st.markdown("**Período B**")
             sinceB = st.date_input("Desde (B)", value=since, key="sinceB")
-            untilB = st.date_input("Até (B)",   value=until, key="untilB")
+            untilB = st.date_input("Até (B)", value=until, key="untilB")
 
         if sinceA > untilA or sinceB > untilB:
             st.warning("Confira as datas: 'Desde' não pode ser maior que 'Até'.")
@@ -1551,51 +1551,47 @@ with tab_daily:
                         "add_payment": d["add_payment"].sum(),
                     }
 
-                A = _agg(dfA); B = _agg(dfB)
+                A = _agg(dfA)
+                B = _agg(dfB)
 
                 roasA = _safe_div(A["revenue"], A["spend"])
                 roasB = _safe_div(B["revenue"], B["spend"])
-                cpaA  = _safe_div(A["spend"], A["purchases"])
-                cpaB  = _safe_div(B["spend"], B["purchases"])
-                cpcA  = _safe_div(A["spend"], A["clicks"])
-                cpcB  = _safe_div(B["spend"], B["clicks"])
+                cpaA = _safe_div(A["spend"], A["purchases"])
+                cpaB = _safe_div(B["spend"], B["purchases"])
+                cpcA = _safe_div(A["spend"], A["clicks"])
+                cpcB = _safe_div(B["spend"], B["clicks"])
 
                 dir_map = {
                     "Valor usado": "neutral",
                     "Faturamento": "higher",
-                    "Vendas":      "higher",
-                    "ROAS":        "higher",
-                    "CPC":         "lower",
-                    "CPA":         "lower",
+                    "Vendas": "higher",
+                    "ROAS": "higher",
+                    "CPC": "lower",
+                    "CPA": "lower",
                 }
                 delta_map = {
-                    "Valor usado":  B["spend"] - A["spend"],
-                    "Faturamento":  B["revenue"] - A["revenue"],
-                    "Vendas":       B["purchases"] - A["purchases"],
-                    "ROAS":         (roasB - roasA) if pd.notnull(roasA) and pd.notnull(roasB) else np.nan,
-                    "CPC":          (cpcB - cpcA)   if pd.notnull(cpcA) and pd.notnull(cpcB) else np.nan,
-                    "CPA":          (cpaB - cpaA)   if pd.notnull(cpaA) and pd.notnull(cpaB) else np.nan,
+                    "Valor usado": B["spend"] - A["spend"],
+                    "Faturamento": B["revenue"] - A["revenue"],
+                    "Vendas": B["purchases"] - A["purchases"],
+                    "ROAS": (roasB - roasA) if pd.notnull(roasA) and pd.notnull(roasB) else np.nan,
+                    "CPC": (cpcB - cpcA) if pd.notnull(cpcA) and pd.notnull(cpcB) else np.nan,
+                    "CPA": (cpaB - cpaA) if pd.notnull(cpaA) and pd.notnull(cpaB) else np.nan,
                 }
 
                 kpi_rows = [
-                    ("Valor usado", _fmt_money_br(A["spend"]),   _fmt_money_br(B["spend"]),   _fmt_money_br(B["spend"] - A["spend"])),
+                    ("Valor usado", _fmt_money_br(A["spend"]), _fmt_money_br(B["spend"]), _fmt_money_br(B["spend"] - A["spend"])),
                     ("Faturamento", _fmt_money_br(A["revenue"]), _fmt_money_br(B["revenue"]), _fmt_money_br(B["revenue"] - A["revenue"])),
-                    ("Vendas",      _fmt_int_br(A["purchases"]), _fmt_int_br(B["purchases"]), _fmt_int_br(B["purchases"] - A["purchases"])),
-                    ("ROAS",        _fmt_ratio_br(roasA),        _fmt_ratio_br(roasB),
-                                     (_fmt_ratio_br(roasB - roasA) if pd.notnull(roasA) and pd.notnull(roasB) else "")),
-                    ("CPC",         _fmt_money_br(cpcA) if pd.notnull(cpcA) else "",
-                                     _fmt_money_br(cpcB) if pd.notnull(cpcB) else "",
-                                     _fmt_money_br(cpcB - cpcA) if pd.notnull(cpcA) and pd.notnull(cpcB) else ""),
-                    ("CPA",         _fmt_money_br(cpaA) if pd.notnull(cpaA) else "",
-                                     _fmt_money_br(cpaB) if pd.notnull(cpaB) else "",
-                                     _fmt_money_br(cpaB - cpaA) if pd.notnull(cpaA) and pd.notnull(cpaB) else ""),
+                    ("Vendas", _fmt_int_br(A["purchases"]), _fmt_int_br(B["purchases"]), _fmt_int_br(B["purchases"] - A["purchases"])),
+                    ("ROAS", _fmt_ratio_br(roasA), _fmt_ratio_br(roasB), (_fmt_ratio_br(roasB - roasA) if pd.notnull(roasA) and pd.notnull(roasB) else "")),
+                    ("CPC", _fmt_money_br(cpcA) if pd.notnull(cpcA) else "", _fmt_money_br(cpcB) if pd.notnull(cpcB) else "", _fmt_money_br(cpcB - cpcA) if pd.notnull(cpcA) and pd.notnull(cpcB) else ""),
+                    ("CPA", _fmt_money_br(cpaA) if pd.notnull(cpaA) else "", _fmt_money_br(cpaB) if pd.notnull(cpaB) else "", _fmt_money_br(cpaB - cpaA) if pd.notnull(cpaA) and pd.notnull(cpaB) else ""),
                 ]
                 kpi_df_disp = pd.DataFrame(kpi_rows, columns=["Métrica", "Período A", "Período B", "Δ (B - A)"])
 
                 def _style_kpi(row):
                     metric = row["Métrica"]
-                    d      = delta_map.get(metric, np.nan)
-                    rule   = dir_map.get(metric, "neutral")
+                    d = delta_map.get(metric, np.nan)
+                    rule = dir_map.get(metric, "neutral")
                     styles = [""] * len(row)
                     try:
                         idxB = list(row.index).index("Período B")
@@ -1605,7 +1601,7 @@ with tab_daily:
                     if pd.isna(d) or rule == "neutral" or d == 0:
                         return styles
                     better = (d > 0) if rule == "higher" else (d < 0)
-                    color  = "#16a34a" if better else "#dc2626"
+                    color = "#16a34a" if better else "#dc2626"
                     weight = "700"
                     styles[idxB] = f"color:{color}; font-weight:{weight};"
                     styles[idxD] = f"color:{color}; font-weight:{weight};"
@@ -1636,191 +1632,110 @@ with tab_daily:
                 for col in ["Período A", "Período B", "Δ"]:
                     rates_disp[col] = rates_disp[col].map(_fmt_pct_br)
 
-                delta_by_taxa = dict(zip(rates_num["Taxa"], rates_num["Δ"]))
-
-                def _style_rate(row):
-                    taxa = row["Taxa"]
-                    d    = delta_by_taxa.get(taxa, np.nan)
-                    styles = [""] * len(row)
-                    try:
-                        idxB = list(row.index).index("Período B")
-                        idxD = list(row.index).index("Δ")
-                    except Exception:
-                        return styles
-                    if pd.isna(d) or d == 0:
-                        return styles
-                    better = d > 0
-                    color  = "#16a34a" if better else "#dc2626"
-                    weight = "700"
-                    styles[idxB] = f"color:{color}; font-weight:{weight};"
-                    styles[idxD] = f"color:{color}; font-weight:{weight};"
-                    return styles
-
                 st.markdown("**Taxas do funil (A vs B)**")
-                st.dataframe(rates_disp.style.apply(_style_rate, axis=1), use_container_width=True, height=180)
-
-                # Funis lado a lado
-                labels_funnel = ["Cliques", "LPV", "Checkout", "Add Pagamento", "Compra"]
-                valsA = [int(round(A["clicks"])), int(round(A["lpv"])), int(round(A["checkout"])),
-                         int(round(A["add_payment"])), int(round(A["purchases"]))]
-                valsB = [int(round(B["clicks"])), int(round(B["lpv"])), int(round(B["checkout"])),
-                         int(round(B["add_payment"])), int(round(B["purchases"]))]
-                valsA_plot = enforce_monotonic(valsA)
-                valsB_plot = enforce_monotonic(valsB)
-
-                cA, cB = st.columns(2)
-                with cA:
-                    st.plotly_chart(
-                        funnel_fig(labels_funnel, valsA_plot, title=f"Funil — Período A ({sinceA} a {untilA})"),
-                        use_container_width=True
-                    )
-                with cB:
-                    st.plotly_chart(
-                        funnel_fig(labels_funnel, valsB_plot, title=f"Funil — Período B ({sinceB} a {untilB})"),
-                        use_container_width=True
-                    )
-
-                # Δ por etapa
-                delta_counts = [b - a for a, b in zip(valsA, valsB)]
-                delta_df = pd.DataFrame({
-                    "Etapa": labels_funnel,
-                    "Período A": valsA,
-                    "Período B": valsB,
-                    "Δ (B - A)": delta_counts,
-                })
-                delta_disp = delta_df.copy()
-                delta_disp["Período A"]  = delta_disp["Período A"].map(_fmt_int_br)
-                delta_disp["Período B"]  = delta_disp["Período B"].map(_fmt_int_br)
-                delta_disp["Δ (B - A)"]  = delta_disp["Δ (B - A)"].map(_fmt_int_signed_br)
-
-                delta_by_stage = dict(zip(delta_df["Etapa"], delta_df["Δ (B - A)"]))
-
-                def _style_delta_counts(row):
-                    d = delta_by_stage.get(row["Etapa"], np.nan)
-                    styles = [""] * len(row)
-                    try:
-                        idxB = list(row.index).index("Período B")
-                        idxD = list(row.index).index("Δ (B - A)")
-                    except Exception:
-                        return styles
-                    if pd.isna(d) or d == 0:
-                        return styles
-                    color  = "#16a34a" if d > 0 else "#dc2626"
-                    weight = "700"
-                    styles[idxB] = f"color:{color}; font-weight:{weight};"
-                    styles[idxD] = f"color:{color}; font-weight:{weight};"
-                    return styles
-
-                st.markdown("**Pessoas a mais/menos em cada etapa (B − A)**")
-                st.dataframe(delta_disp.style.apply(_style_delta_counts, axis=1), use_container_width=True, height=240)
+                st.dataframe(rates_disp, use_container_width=True, height=180)
 
                 st.markdown("---")
 
-            # ========= FUNIL por CAMPANHA =========
-            if level == "campaign":
-                st.subheader("📦 Funil por campanha (somatório — inclui acompanhamento em tempo real se o filtro abranger hoje)")
+    # ========= 📦 FUNIL POR CAMPANHA =========
+    st.divider()
+    st.header("📦 Funil por campanha (somatório — inclui acompanhamento em tempo real se o filtro abranger hoje)")
 
-                # 🔹 Filtra o período selecionado (inclui hoje se estiver dentro do range)
-                today = pd.Timestamp.today().normalize()
-                since_ts = pd.Timestamp(since)
-                until_ts = pd.Timestamp(until)
+    if level == "campaign":
+        # 🔹 Filtra o período selecionado (inclui hoje se estiver dentro do range)
+        today = pd.Timestamp.today().normalize()
+        since_ts = pd.Timestamp(since)
+        until_ts = pd.Timestamp(until)
 
-                if until_ts >= today:
-                    mask_period = (df_daily_view["date"] >= since_ts) & (df_daily_view["date"] <= today)
-                    realtime_mode = True
-                else:
-                    mask_period = (df_daily_view["date"] >= since_ts) & (df_daily_view["date"] <= until_ts)
-                    realtime_mode = False
+        if until_ts >= today:
+            mask_period = (df_daily_view["date"] >= since_ts) & (df_daily_view["date"] <= today)
+            realtime_mode = True
+        else:
+            mask_period = (df_daily_view["date"] >= since_ts) & (df_daily_view["date"] <= until_ts)
+            realtime_mode = False
 
-                df_filtered = df_daily_view.loc[mask_period].copy()
+        df_filtered = df_daily_view.loc[mask_period].copy()
 
-                # 🔹 Se o dia de hoje estiver incluso, atualiza dados em tempo real diretamente da API
-                if realtime_mode:
-                    with st.spinner("⏱️ Atualizando dados de hoje em tempo real (Meta Ads)..."):
-                        try:
-                            df_today_live = fetch_insights_daily(
-                                act_id=act_id,
-                                token=token,
-                                api_version=api_version,
-                                since_str=str(today),
-                                until_str=str(today),
-                                level=level,
-                                product_name=None
-                            )
-                            if df_today_live is not None and not df_today_live.empty:
-                                # Atualiza com dados do dia atual
-                                df_filtered = pd.concat([df_filtered, df_today_live], ignore_index=True)
-                                df_filtered.drop_duplicates(subset=["date", "campaign_id"], inplace=True)
-                                st.success("✅ Dados de hoje atualizados com sucesso!")
-                            else:
-                                st.info("Nenhum dado adicional encontrado para hoje (Meta ainda sincronizando).")
-                        except Exception as e:
-                            st.warning(f"⚠️ Falha ao atualizar dados de hoje: {e}")
+        # 🔹 Atualiza dados de hoje se o período inclui a data atual
+        if realtime_mode:
+            with st.spinner("⏱️ Atualizando dados de hoje em tempo real (Meta Ads)..."):
+                try:
+                    df_today_live = fetch_insights_daily(
+                        act_id=act_id,
+                        token=token,
+                        api_version=api_version,
+                        since_str=str(today),
+                        until_str=str(today),
+                        level=level,
+                        product_name=None
+                    )
+                    if df_today_live is not None and not df_today_live.empty:
+                        df_filtered = pd.concat([df_filtered, df_today_live], ignore_index=True)
+                        df_filtered.drop_duplicates(subset=["date", "campaign_id"], inplace=True)
+                        st.success("✅ Dados de hoje atualizados com sucesso!")
+                    else:
+                        st.info("Nenhum dado adicional encontrado para hoje (Meta ainda sincronizando).")
+                except Exception as e:
+                    st.warning(f"⚠️ Falha ao atualizar dados de hoje: {e}")
 
-                if df_filtered.empty:
-                    st.info("Sem dados de campanha no período selecionado.")
-                    st.stop()
+        if df_filtered.empty:
+            st.info("Sem dados de campanha no período selecionado.")
+            st.stop()
 
-                # 🔹 Detecta campanhas ativas (teve gasto > 0 no período)
-                active_campaigns = (
-                    df_filtered.groupby("campaign_id")["spend"]
-                    .sum()
-                    .loc[lambda s: s > 0]
-                    .index
-                    .tolist()
-                )
+        # 🔹 Detecta campanhas ativas (teve gasto > 0 no período)
+        active_campaigns = (
+            df_filtered.groupby("campaign_id")["spend"]
+            .sum()
+            .loc[lambda s: s > 0]
+            .index
+            .tolist()
+        )
 
-                # 🔹 Mantém apenas campanhas ativas
-                df_active = df_filtered[df_filtered["campaign_id"].isin(active_campaigns)].copy()
+        df_active = df_filtered[df_filtered["campaign_id"].isin(active_campaigns)].copy()
 
-                if df_active.empty:
-                    st.info("Nenhuma campanha ativa no período selecionado.")
-                    st.stop()
+        if df_active.empty:
+            st.info("Nenhuma campanha ativa no período selecionado.")
+            st.stop()
 
-                # 🔹 Agrega apenas as campanhas ativas
-                agg_cols = ["spend", "link_clicks", "lpv", "init_checkout", "add_payment", "purchases", "revenue"]
-                camp = df_active.groupby(["campaign_id", "campaign_name"], as_index=False)[agg_cols].sum()
+        # 🔹 Agrega e calcula KPIs
+        agg_cols = ["spend", "link_clicks", "lpv", "init_checkout", "add_payment", "purchases", "revenue"]
+        camp = df_active.groupby(["campaign_id", "campaign_name"], as_index=False)[agg_cols].sum()
 
-                # ===== Divisões seguras linha a linha =====
-                camp["ROAS"] = np.where(camp["spend"] > 0, camp["revenue"] / camp["spend"], np.nan)
-                camp["CPA"] = np.where(camp["purchases"] > 0, camp["spend"] / camp["purchases"], np.nan)
-                camp["LPV/Cliques"] = np.where(camp["link_clicks"] > 0, camp["lpv"] / camp["link_clicks"], np.nan)
-                camp["Checkout/LPV"] = np.where(camp["lpv"] > 0, camp["init_checkout"] / camp["lpv"], np.nan)
-                camp["Compra/Checkout"] = np.where(camp["init_checkout"] > 0, camp["purchases"] / camp["init_checkout"], np.nan)
+        camp["ROAS"] = np.where(camp["spend"] > 0, camp["revenue"] / camp["spend"], np.nan)
+        camp["CPA"] = np.where(camp["purchases"] > 0, camp["spend"] / camp["purchases"], np.nan)
+        camp["LPV/Cliques"] = np.where(camp["link_clicks"] > 0, camp["lpv"] / camp["link_clicks"], np.nan)
+        camp["Checkout/LPV"] = np.where(camp["lpv"] > 0, camp["init_checkout"] / camp["lpv"], np.nan)
+        camp["Compra/Checkout"] = np.where(camp["init_checkout"] > 0, camp["purchases"] / camp["init_checkout"], np.nan)
 
-                # 🔹 Monta dataframe de exibição formatado
-                disp = camp[["campaign_name", "spend", "revenue", "purchases", "ROAS", "CPA",
-                             "LPV/Cliques", "Checkout/LPV", "Compra/Checkout"]]
-                disp.rename(columns={
-                    "campaign_name": "Campanha",
-                    "spend": "Gasto",
-                    "revenue": "Faturamento",
-                    "purchases": "Vendas"
-                }, inplace=True)
+        disp = camp[[
+            "campaign_name", "spend", "revenue", "purchases", "ROAS", "CPA",
+            "LPV/Cliques", "Checkout/LPV", "Compra/Checkout"
+        ]].rename(columns={
+            "campaign_name": "Campanha",
+            "spend": "Gasto",
+            "revenue": "Faturamento",
+            "purchases": "Vendas"
+        })
 
-                # 🔹 Formatação visual (pt-BR)
-                disp["Gasto"] = disp["Gasto"].map(_fmt_money_br)
-                disp["Faturamento"] = disp["Faturamento"].map(_fmt_money_br)
-                disp["Vendas"] = disp["Vendas"].map(_fmt_int_br)
-                disp["ROAS"] = disp["ROAS"].map(_fmt_ratio_br)
-                disp["CPA"] = disp["CPA"].map(_fmt_money_br)
-                disp["LPV/Cliques"] = disp["LPV/Cliques"].map(_fmt_pct_br)
-                disp["Checkout/LPV"] = disp["Checkout/LPV"].map(_fmt_pct_br)
-                disp["Compra/Checkout"] = disp["Compra/Checkout"].map(_fmt_pct_br)
+        # 🔹 Formatação visual
+        disp["Gasto"] = disp["Gasto"].map(_fmt_money_br)
+        disp["Faturamento"] = disp["Faturamento"].map(_fmt_money_br)
+        disp["Vendas"] = disp["Vendas"].map(_fmt_int_br)
+        disp["ROAS"] = disp["ROAS"].map(_fmt_ratio_br)
+        disp["CPA"] = disp["CPA"].map(_fmt_money_br)
+        disp["LPV/Cliques"] = disp["LPV/Cliques"].map(_fmt_pct_br)
+        disp["Checkout/LPV"] = disp["Checkout/LPV"].map(_fmt_pct_br)
+        disp["Compra/Checkout"] = disp["Compra/Checkout"].map(_fmt_pct_br)
 
-                # 🔹 Ordena por Faturamento (default)
-                disp = disp.sort_values(by="Faturamento", ascending=False)
+        disp = disp.sort_values(by="Faturamento", ascending=False)
 
-                # 🔹 Exibe status de tempo real se ativo
-                if realtime_mode:
-                    st.caption("⏱️ Modo tempo real ativado — exibindo dados parciais do dia atual.")
+        if realtime_mode:
+            st.caption("⏱️ Modo tempo real ativado — exibindo dados parciais do dia atual.")
 
-                # 🔹 Exibe a tabela
-                st.dataframe(disp, use_container_width=True, height=420)
+        st.dataframe(disp, use_container_width=True, height=420)
 
-            else:
-                st.info("Troque o nível para 'campaign' para visualizar o detalhamento por campanha.")
-
+    else:
+        st.info("Troque o nível para 'campaign' para visualizar o detalhamento por campanha.")
 
 # =====================================================
 # 📦 DASHBOARD – LOGÍSTICA
