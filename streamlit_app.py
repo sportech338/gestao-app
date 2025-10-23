@@ -20,9 +20,6 @@ def _get_session():
     return _session
 
 # =============== Integração com Shopify ===============
-import requests
-import pandas as pd
-import streamlit as st
 
 SHOP_NAME = st.secrets["shopify"]["shop_name"]
 ACCESS_TOKEN = st.secrets["shopify"]["access_token"]
