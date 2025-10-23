@@ -1019,7 +1019,7 @@ with tab_shopify:
 
     colunas_existentes = [c for c in [
         order_col, "created_at", "customer_name", "quantity",
-        "variant_title", "price", "forma_entrega", "estado", "cidade", "fulfillment_status"
+        "variant_title", "price", "forma_entrega", "estado", "cidade"
     ] if c in df.columns]
 
     tabela = df[colunas_existentes].sort_values("created_at", ascending=False).copy()
@@ -1033,21 +1033,8 @@ with tab_shopify:
         "price": "Preço unitário",
         "forma_entrega": "Tipo de entrega (PAC, SEDEX, etc)",
         "estado": "Estado de destino",
-        "cidade": "Cidade de destino",
-        "fulfillment_status": "Status de processamento do pedido"
+        "cidade": "Cidade de destino"
     }, inplace=True)
-
-        # ---- Adicionar coluna de Status de Processamento ----
-    if "fulfillment_status" in df.columns:
-        tabela["Status de processamento do pedido"] = df["fulfillment_status"].apply(
-            lambda x: (
-                "✅ Processado" if str(x).lower() in ["fulfilled", "shipped", "complete"]
-                else "🟡 Não processado"
-            )
-        )
-    else:
-        tabela["Status de processamento do pedido"] = "🟡 Não processado"
-
 
     # ---- Formatação visual ----
     if "Pedido" in tabela.columns:
