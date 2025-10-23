@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -54,10 +55,10 @@ def get_products_with_variants(limit=250):
 @st.cache_data(ttl=600)
 def get_orders(limit=250, only_paid=True):
     """
-    Baixa pedidos da Shopify com dados completos (cliente, entrega, produto, rastreio e status).
+    Baixa pedidos da Shopify com dados completos (cliente, entrega, produto e localização).
     Filtra apenas pedidos pagos por padrão.
     """
-    url = f"{BASE_URL}/orders.json?limit={limit}&status=any&fields=id,order_number,created_at,financial_status,fulfillment_status,customer,shipping_address,shipping_lines,line_items,fulfillments"
+    url = f"{BASE_URL}/orders.json?limit={limit}&status=any"
     all_rows = []
 
     while url:
@@ -67,7 +68,7 @@ def get_orders(limit=250, only_paid=True):
         orders = data.get("orders", [])
 
         for o in orders:
-            # Filtra apenas pagos
+            # 🔹 Filtra apenas pedidos pagos (opcional)
             if only_paid and o.get("financial_status") not in ["paid", "partially_paid"]:
                 continue
 
@@ -79,15 +80,6 @@ def get_orders(limit=250, only_paid=True):
                 f"{customer.get('first_name', '')} {customer.get('last_name', '')}".strip()
                 or "(Cliente não informado)"
             )
-
-            # ✅ Busca fulfillment se existir
-            fulfillments = o.get("fulfillments", [])
-            tracking_number = ""
-            if fulfillments:
-                # Pega o último fulfillment válido
-                f = fulfillments[-1]
-                tracking_info = f.get("tracking_info") or {}
-                tracking_number = tracking_info.get("number", "") or f.get("tracking_number", "")
 
             for it in o.get("line_items", []):
                 preco = float(it.get("price") or 0)
@@ -111,54 +103,13 @@ def get_orders(limit=250, only_paid=True):
                     "forma_entrega": shipping_lines[0].get("title", "N/A"),
                     "estado": shipping.get("province", "N/A"),
                     "cidade": shipping.get("city", "N/A"),
-                    "tracking_number": tracking_number,  # ✅ novo campo real da Shopify
                 })
 
-        # Paginação
+        # 🔁 Paginação segura (Shopify REST)
         next_link = r.links.get("next", {}).get("url")
         url = next_link if next_link else None
 
     return pd.DataFrame(all_rows)
-
-def create_fulfillment(order_id, tracking_number, tracking_company="Correios"):
-    """
-    Cria o fulfillment (processamento) do pedido na Shopify e adiciona o código de rastreio.
-    Corrigida para incluir line_items e tracking_info (evita erro 406).
-    """
-    url = f"{BASE_URL}/orders/{order_id}/fulfillments.json"
-
-    # 🔹 Busca itens do pedido (necessário para fulfillment)
-    try:
-        r_order = requests.get(f"{BASE_URL}/orders/{order_id}.json", headers=HEADERS, timeout=60)
-        r_order.raise_for_status()
-        order_data = r_order.json().get("order", {})
-        line_items = [{"id": item["id"], "quantity": item["quantity"]} for item in order_data.get("line_items", [])]
-        if not line_items:
-            return False, f"❌ Pedido {order_id} não contém itens (não pode ser processado)."
-    except Exception as e:
-        return False, f"❌ Erro ao buscar itens do pedido: {e}"
-
-    payload = {
-        "fulfillment": {
-            "line_items": line_items,
-            "tracking_info": {
-                "number": tracking_number,
-                "company": tracking_company,
-                "url": f"https://rastreamento.correios.com.br/app/index.php?objeto={tracking_number}"
-            },
-            "notify_customer": True
-        }
-    }
-
-    try:
-        r = requests.post(url, headers=HEADERS, json=payload, timeout=60)
-        if r.status_code in [200, 201]:
-            return True, "✅ Pedido processado com sucesso na Shopify!"
-        else:
-            # Log detalhado do erro
-            return False, f"❌ Erro ao processar pedido ({r.status_code}): {r.text}"
-    except Exception as e:
-        return False, f"❌ Erro de conexão: {e}"
 
 
 
@@ -946,35 +897,19 @@ tab_daily, tab_daypart, tab_detail, tab_shopify = st.tabs(["📅 Visão diária"
 with tab_shopify:
     st.title("📦 Shopify – Visão Geral")
 
-    # ---- Carregar dados sob demanda (evita lentidão no app) ----
-    if "produtos" not in st.session_state or "pedidos" not in st.session_state:
-        st.info("Os dados da Shopify ainda não foram carregados.")
-        if st.button("🔄 Carregar dados da Shopify"):
-            with st.spinner("Conectando à Shopify..."):
-                produtos = get_products_with_variants()
-                pedidos = get_orders()
-                st.session_state["produtos"] = produtos
-                st.session_state["pedidos"] = pedidos
-            st.success("✅ Dados carregados com sucesso!")
-            st.experimental_rerun()
-        st.stop()
+    # ---- Carregar dados da sessão ----
+    produtos = st.session_state.get("produtos")
+    pedidos = st.session_state.get("pedidos")
 
-    # ---- Dados da sessão ----
-    produtos = st.session_state["produtos"]
-    pedidos = st.session_state["pedidos"]
-
-    # ---- Atualização manual ----
-    if st.button("🔁 Atualizar dados da Shopify"):
-        with st.spinner("Atualizando dados..."):
-            produtos = get_products_with_variants()
-            pedidos = get_orders()
-            st.session_state["produtos"] = produtos
-            st.session_state["pedidos"] = pedidos
-        st.success("✅ Dados atualizados!")
-        st.experimental_rerun()
+    if st.button("🔄 Atualizar dados da Shopify"):
+        produtos = get_products_with_variants()
+        pedidos = get_orders()
+        st.session_state["produtos"] = produtos
+        st.session_state["pedidos"] = pedidos
+        st.success("✅ Dados atualizados com sucesso!")
 
     if produtos is None or pedidos is None or produtos.empty or pedidos.empty:
-        st.warning("Nenhum dado encontrado. Clique em 'Atualizar dados da Shopify' para tentar novamente.")
+        st.info("Carregue os dados da Shopify para iniciar (botão acima).")
         st.stop()
 
     # ---- Normalizar nomes ----
@@ -993,12 +928,12 @@ with tab_shopify:
     produtos = normalizar(produtos)
     pedidos = normalizar(pedidos)
 
-    # ---- Garantir colunas obrigatórias ----
+    # ---- Garantir colunas obrigatórias (para evitar KeyError) ----
     for col in ["order_id", "order_number", "financial_status", "fulfillment_status"]:
         if col not in pedidos.columns:
             pedidos[col] = None
 
-    # ---- Juntar pedidos e produtos ----
+    # ---- Juntar pedidos e produtos (corrigido) ----
     merge_cols = ["variant_id", "sku", "product_title", "variant_title"]
     merge_cols = [c for c in merge_cols if c in produtos.columns]
 
@@ -1009,6 +944,7 @@ with tab_shopify:
         suffixes=("", "_produto")
     )
 
+    # ---- Ajustar nomes ----
     if "product_title_produto" in base.columns and "product_title" not in base.columns:
         base["product_title"] = base["product_title_produto"]
 
@@ -1018,11 +954,16 @@ with tab_shopify:
     base["product_title"].fillna("(Produto desconhecido)", inplace=True)
     base["variant_title"].fillna("(Variante desconhecida)", inplace=True)
 
+
     # ---- Tipos e métricas ----
     base["created_at"] = pd.to_datetime(base.get("created_at"), errors="coerce")
     base["price"] = pd.to_numeric(base.get("price"), errors="coerce").fillna(0)
     base["quantity"] = pd.to_numeric(base.get("quantity"), errors="coerce").fillna(0)
     base["line_revenue"] = base["price"] * base["quantity"]
+
+    # ---- Fallbacks ----
+    base["product_title"].fillna("(Produto desconhecido)", inplace=True)
+    base["variant_title"].fillna("(Variante desconhecida)", inplace=True)
 
     # ---- Filtros ----
     st.subheader("🎛️ Filtros")
@@ -1061,6 +1002,7 @@ with tab_shopify:
         st.stop()
 
     # ---- Resumo ----
+    # Usa order_number se existir, senão order_id
     order_col = "order_number" if "order_number" in df.columns and df["order_number"].notna().any() else "order_id"
     total_pedidos = df[order_col].nunique()
     total_unidades = df["quantity"].sum()
@@ -1076,15 +1018,9 @@ with tab_shopify:
     # ---- Tabela final ----
     st.subheader("📋 Pedidos filtrados")
 
-    if "order_id" in df.columns:
-        df["Pedido interno"] = df["order_id"].astype(str)
-    else:
-        df["Pedido interno"] = ""
-    
     colunas_existentes = [c for c in [
         order_col, "created_at", "customer_name", "quantity",
-        "variant_title", "price", "forma_entrega", "estado", "cidade", 
-        "tracking_number", "fulfillment_status", "Pedido interno"
+        "variant_title", "price", "forma_entrega", "estado", "cidade", "fulfillment_status"
     ] if c in df.columns]
 
     tabela = df[colunas_existentes].sort_values("created_at", ascending=False).copy()
@@ -1099,22 +1035,22 @@ with tab_shopify:
         "forma_entrega": "Tipo de entrega (PAC, SEDEX, etc)",
         "estado": "Estado de destino",
         "cidade": "Cidade de destino",
-        "tracking_number": "Código de rastreio",
-        "fulfillment_status": "Status de processamento"
+        "fulfillment_status": "Status de processamento do pedido"
     }, inplace=True)
 
-    if "Código de rastreio" in df.columns:
-        tabela["Código de rastreio"] = df["tracking_number"].fillna("")
-    else:
-        tabela["Código de rastreio"] = ""
-
-    if "Código de rastreio" in tabela.columns:
-        tabela["Status de processamento"] = tabela["Código de rastreio"].apply(
-            lambda x: "✅ Processado" if isinstance(x, str) and x.strip() else "🟡 Não processado"
+        # ---- Adicionar coluna de Status de Processamento ----
+    if "fulfillment_status" in df.columns:
+        tabela["Status de processamento do pedido"] = df["fulfillment_status"].apply(
+            lambda x: (
+                "✅ Processado" if str(x).lower() in ["fulfilled", "shipped", "complete"]
+                else "🟡 Não processado"
+            )
         )
     else:
-        tabela["Status de processamento"] = "🟡 Não processado"
+        tabela["Status de processamento do pedido"] = "🟡 Não processado"
 
+
+    # ---- Formatação visual ----
     if "Pedido" in tabela.columns:
         tabela["Pedido"] = tabela["Pedido"].apply(
             lambda x: f"#{int(float(x))}" if pd.notnull(x) else "-"
@@ -1130,49 +1066,10 @@ with tab_shopify:
             lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
         )
 
-    st.write("✏️ Edite a coluna **Código de rastreio** abaixo para processar pedidos:")
 
-    tabela_editavel = st.data_editor(
-        tabela,
-        use_container_width=True,
-        num_rows="dynamic",
-        disabled=["Pedido", "Data do pedido", "Nome do cliente", "Quantidade", "Variante",
-                  "Preço unitário", "Tipo de entrega (PAC, SEDEX, etc)",
-                  "Estado de destino", "Cidade de destino", 
-                  "Status de processamento", "Pedido interno"]
-    )
+    st.dataframe(tabela, use_container_width=True)
 
-    if st.button("🚚 Confirmar atualizações na Shopify"):
-        pedidos_para_processar = tabela_editavel[
-            tabela_editavel["Código de rastreio"].astype(str).str.strip() != ""
-        ]
-
-        if pedidos_para_processar.empty:
-            st.warning("Nenhum código de rastreio preenchido.")
-        else:
-            st.info(f"Enviando {len(pedidos_para_processar)} pedidos para processamento...")
-            resultados = []
-
-            for _, row in pedidos_para_processar.iterrows():
-                order_id = str(row.get("Pedido interno", "")).strip()
-                tracking_number = str(row["Código de rastreio"]).strip()
-                ok, msg = create_fulfillment(order_id, tracking_number)
-                resultados.append((order_id, ok, msg))
-
-            for order_id, ok, msg in resultados:
-                if ok:
-                    st.success(f"✅ Pedido #{order_id} processado com sucesso!")
-                else:
-                    st.error(f"❌ Pedido #{order_id}: {msg}")
-
-            for i, row in tabela_editavel.iterrows():
-                if str(row["Código de rastreio"]).strip():
-                    tabela_editavel.at[i, "Status de processamento"] = "✅ Processado"
-
-            st.session_state["pedidos"] = pedidos
-            st.success("🔄 Tabela atualizada com sucesso! Atualize a página para ver os dados sincronizados.")
-            st.stop()
-
+    # ---- Exportar CSV ----
     csv = tabela.to_csv(index=False).encode('utf-8-sig')
     st.download_button(
         label="📥 Exportar pedidos filtrados (CSV)",
@@ -1180,6 +1077,7 @@ with tab_shopify:
         file_name=f"pedidos_shopify_{periodo[0]}_{periodo[1]}.csv",
         mime="text/csv",
     )
+
 
 # -------------------- ABA 1: VISÃO DIÁRIA --------------------
 with tab_daily:
