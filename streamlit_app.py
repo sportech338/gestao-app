@@ -1113,7 +1113,7 @@ with tab_shopify:
         num_rows="dynamic",
         disabled=["Pedido", "Data do pedido", "Nome do cliente", "Quantidade", "Variante",
                   "Preço unitário", "Tipo de entrega (PAC, SEDEX, etc)",
-                  "Estado de destino", "Cidade de destino", "Status de processamento"]
+                  "Estado de destino", "Cidade de destino", "Status de processamento","Pedido interno"]
     )
 
     # ---- Processar pedidos automaticamente ----
@@ -1130,7 +1130,7 @@ with tab_shopify:
 
             # Processa um por um
             for _, row in pedidos_para_processar.iterrows():
-                order_id = str(row["Pedido"]).replace("#", "").strip()
+                order_id = str(row.get("Pedido interno", "")).strip()
                 tracking_number = str(row["Código de rastreio"]).strip()
                 ok, msg = create_fulfillment(order_id, tracking_number)
                 resultados.append((order_id, ok, msg))
