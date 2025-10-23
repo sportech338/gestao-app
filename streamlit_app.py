@@ -505,7 +505,7 @@ def fetch_insights_daily(act_id: str, token: str, api_version: str,
             "time_increment": 1,
             "fields": ",".join(fields),
             "limit": 500,
-            "action_report_time": "conversion",
+            "action_report_time": "impression",
             "action_attribution_windows": ",".join(ATTR_KEYS),
             # 🔹 Inclui campanhas ativas, pausadas e arquivadas (igual ao Ads Manager)
             "filtering": json.dumps([
