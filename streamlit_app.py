@@ -52,7 +52,11 @@ def get_products_with_variants(limit=250):
     return pd.DataFrame(rows)
 
 @st.cache_data(ttl=600)
-def get_orders(limit=250):
+def get_orders(limit=250, only_paid=True):
+    """
+    Baixa pedidos da Shopify com dados completos (cliente, entrega, produto e localização).
+    Filtra apenas pedidos pagos por padrão.
+    """
     url = f"{BASE_URL}/orders.json?limit={limit}&status=any"
     all_rows = []
 
@@ -63,13 +67,23 @@ def get_orders(limit=250):
         orders = data.get("orders", [])
 
         for o in orders:
+            # 🔹 Filtra apenas pedidos pagos, se desejado
+            if only_paid and o.get("financial_status") not in ["paid", "partially_paid"]:
+                continue
+
             customer = o.get("customer") or {}
             shipping = o.get("shipping_address") or {}
             shipping_lines = o.get("shipping_lines") or [{}]
 
-            nome_cliente = f"{customer.get('first_name', '')} {customer.get('last_name', '')}".strip() or "(Cliente não informado)"
+            nome_cliente = (
+                f"{customer.get('first_name', '')} {customer.get('last_name', '')}".strip()
+                or "(Cliente não informado)"
+            )
 
             for it in o.get("line_items", []):
+                preco = float(it.get("price") or 0)
+                qtd = int(it.get("quantity", 0))
+
                 all_rows.append({
                     "order_id": o.get("id"),
                     "order_number": o.get("order_number"),
@@ -79,20 +93,21 @@ def get_orders(limit=250):
                     "customer_name": nome_cliente,
                     "customer_email": customer.get("email", ""),
                     "produto": it.get("title"),
-                    "variante": it.get("variant_title"),
+                    "variant_title": it.get("variant_title"),
                     "sku": it.get("sku"),
-                    "quantidade": it.get("quantity", 0),
-                    "preco": float(it.get("price") or 0),
+                    "quantity": qtd,
+                    "price": preco,
+                    "line_revenue": preco * qtd,
                     "forma_entrega": shipping_lines[0].get("title", "N/A"),
                     "estado": shipping.get("province", "N/A"),
                     "cidade": shipping.get("city", "N/A"),
                 })
 
+        # 🔁 Paginação segura (Shopify REST)
         next_link = r.links.get("next", {}).get("url")
         url = next_link if next_link else None
 
     return pd.DataFrame(all_rows)
-
 
 
 # =============== Config & Estilos ===============
