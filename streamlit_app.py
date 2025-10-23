@@ -53,7 +53,6 @@ def get_products_with_variants(limit=250):
 
 @st.cache_data(ttl=600)
 def get_orders(limit=250):
-    """Baixa pedidos da Shopify com dados do cliente e produtos (corrigido)."""
     url = f"{BASE_URL}/orders.json?limit={limit}&status=any"
     all_rows = []
 
@@ -64,16 +63,12 @@ def get_orders(limit=250):
         orders = data.get("orders", [])
 
         for o in orders:
-            # ----- Cliente -----
-            customer = o.get("customer")
-            if customer:
-                nome_cliente = f"{customer.get('first_name', '')} {customer.get('last_name', '')}".strip()
-                email_cliente = customer.get("email", "")
-            else:
-                nome_cliente = "(Cliente não informado)"
-                email_cliente = ""
+            customer = o.get("customer") or {}
+            shipping = o.get("shipping_address") or {}
+            shipping_lines = o.get("shipping_lines") or [{}]
 
-            # ----- Itens do pedido -----
+            nome_cliente = f"{customer.get('first_name', '')} {customer.get('last_name', '')}".strip() or "(Cliente não informado)"
+
             for it in o.get("line_items", []):
                 all_rows.append({
                     "order_id": o.get("id"),
@@ -82,19 +77,22 @@ def get_orders(limit=250):
                     "financial_status": o.get("financial_status"),
                     "fulfillment_status": o.get("fulfillment_status"),
                     "customer_name": nome_cliente,
-                    "customer_email": email_cliente,
-                    "variant_id": it.get("variant_id"),
-                    "title": it.get("title"),
-                    "variant_title": it.get("variant_title"),
-                    "quantity": it.get("quantity", 0),
-                    "price": float(it.get("price") or 0),
+                    "customer_email": customer.get("email", ""),
+                    "produto": it.get("title"),
+                    "variante": it.get("variant_title"),
+                    "sku": it.get("sku"),
+                    "quantidade": it.get("quantity", 0),
+                    "preco": float(it.get("price") or 0),
+                    "forma_entrega": shipping_lines[0].get("title", "N/A"),
+                    "estado": shipping.get("province", "N/A"),
+                    "cidade": shipping.get("city", "N/A"),
                 })
 
-        # ---- Paginação correta ----
         next_link = r.links.get("next", {}).get("url")
         url = next_link if next_link else None
 
     return pd.DataFrame(all_rows)
+
 
 
 # =============== Config & Estilos ===============
