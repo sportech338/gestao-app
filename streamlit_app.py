@@ -3163,7 +3163,6 @@ with tab_detail:
             f"Período B: **{_fmt_range_br(since_B, until_B)}**"
         )
 
-
 # =====================================================
 # 📦 DASHBOARD – LOGÍSTICA
 # =====================================================
@@ -3197,12 +3196,16 @@ with aba_principal[1]:
             st.info("🔁 Atualização iniciada! Você pode continuar usando as outras abas enquanto carrega.")
             threading.Thread(target=atualizar_dados_shopify, daemon=True).start()
 
-        # ---- Carregamento automático com cache ----
-        if "produtos" not in st.session_state or st.session_state["produtos"] is None:
-            st.session_state["produtos"] = get_products_with_variants()
-
-        if "pedidos" not in st.session_state or st.session_state["pedidos"] is None:
-            st.session_state["pedidos"] = get_orders()
+        # ---- Carregamento automático com cache e tratamento de erro ----
+        with st.spinner("Carregando dados iniciais da Shopify..."):
+            try:
+                if "produtos" not in st.session_state or st.session_state["produtos"] is None:
+                    st.session_state["produtos"] = get_products_with_variants()
+                if "pedidos" not in st.session_state or st.session_state["pedidos"] is None:
+                    st.session_state["pedidos"] = get_orders()
+            except Exception as e:
+                st.error(f"Erro ao carregar dados iniciais: {e}")
+                st.stop()
 
         if "ultima_atualizacao" in st.session_state:
             st.caption(f"🕒 Última atualização: {st.session_state['ultima_atualizacao']}")
@@ -3311,6 +3314,37 @@ with aba_principal[1]:
         colC.metric("💰 Receita total", f"R$ {total_receita:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
         colD.metric("💸 Ticket médio", f"R$ {ticket_medio:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
 
+        # ---- Gráfico de status logístico ----
+        st.markdown("---")
+        st.subheader("🚚 Status de Entregas")
+
+        if "fulfillment_status" in df.columns:
+            status_counts = (
+                df["fulfillment_status"]
+                .fillna("não informado")
+                .str.lower()
+                .value_counts()
+                .rename_axis("Status")
+                .reset_index(name="Quantidade")
+            )
+
+            fig_status = go.Figure(go.Bar(
+                x=status_counts["Status"].str.capitalize(),
+                y=status_counts["Quantidade"],
+                marker_color="#02BFE4",
+                text=status_counts["Quantidade"],
+                textposition="outside"
+            ))
+            fig_status.update_layout(
+                template="plotly_white",
+                height=420,
+                margin=dict(l=10, r=10, t=40, b=10),
+                xaxis_title="Status de envio",
+                yaxis_title="Pedidos",
+                separators=".,"
+            )
+            st.plotly_chart(fig_status, use_container_width=True)
+
         # ---- Tabela final ----
         st.subheader("📋 Pedidos filtrados")
 
@@ -3371,5 +3405,3 @@ with aba_principal[1]:
             file_name=f"pedidos_shopify_{periodo[0]}_{periodo[1]}.csv",
             mime="text/csv",
         )
-
-        st.stop()
