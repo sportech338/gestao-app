@@ -54,10 +54,10 @@ def get_products_with_variants(limit=250):
 @st.cache_data(ttl=600)
 def get_orders(limit=250, only_paid=True):
     """
-    Baixa pedidos da Shopify com dados completos (cliente, entrega, produto e localização).
+    Baixa pedidos da Shopify com dados completos (cliente, entrega, produto, rastreio e status).
     Filtra apenas pedidos pagos por padrão.
     """
-    url = f"{BASE_URL}/orders.json?limit={limit}&status=any"
+    url = f"{BASE_URL}/orders.json?limit={limit}&status=any&fields=id,order_number,created_at,financial_status,fulfillment_status,customer,shipping_address,shipping_lines,line_items,fulfillments"
     all_rows = []
 
     while url:
@@ -67,7 +67,7 @@ def get_orders(limit=250, only_paid=True):
         orders = data.get("orders", [])
 
         for o in orders:
-            # 🔹 Filtra apenas pedidos pagos (opcional)
+            # Filtra apenas pagos
             if only_paid and o.get("financial_status") not in ["paid", "partially_paid"]:
                 continue
 
@@ -79,6 +79,15 @@ def get_orders(limit=250, only_paid=True):
                 f"{customer.get('first_name', '')} {customer.get('last_name', '')}".strip()
                 or "(Cliente não informado)"
             )
+
+            # ✅ Busca fulfillment se existir
+            fulfillments = o.get("fulfillments", [])
+            tracking_number = ""
+            if fulfillments:
+                # Pega o último fulfillment válido
+                f = fulfillments[-1]
+                tracking_info = f.get("tracking_info") or {}
+                tracking_number = tracking_info.get("number", "") or f.get("tracking_number", "")
 
             for it in o.get("line_items", []):
                 preco = float(it.get("price") or 0)
@@ -102,9 +111,10 @@ def get_orders(limit=250, only_paid=True):
                     "forma_entrega": shipping_lines[0].get("title", "N/A"),
                     "estado": shipping.get("province", "N/A"),
                     "cidade": shipping.get("city", "N/A"),
+                    "tracking_number": tracking_number,  # ✅ novo campo real da Shopify
                 })
 
-        # 🔁 Paginação segura (Shopify REST)
+        # Paginação
         next_link = r.links.get("next", {}).get("url")
         url = next_link if next_link else None
 
@@ -113,12 +123,29 @@ def get_orders(limit=250, only_paid=True):
 def create_fulfillment(order_id, tracking_number, tracking_company="Correios"):
     """
     Cria o fulfillment (processamento) do pedido na Shopify e adiciona o código de rastreio.
+    Corrigida para incluir line_items e tracking_info (evita erro 406).
     """
     url = f"{BASE_URL}/orders/{order_id}/fulfillments.json"
+
+    # 🔹 Busca itens do pedido (necessário para fulfillment)
+    try:
+        r_order = requests.get(f"{BASE_URL}/orders/{order_id}.json", headers=HEADERS, timeout=60)
+        r_order.raise_for_status()
+        order_data = r_order.json().get("order", {})
+        line_items = [{"id": item["id"], "quantity": item["quantity"]} for item in order_data.get("line_items", [])]
+        if not line_items:
+            return False, f"❌ Pedido {order_id} não contém itens (não pode ser processado)."
+    except Exception as e:
+        return False, f"❌ Erro ao buscar itens do pedido: {e}"
+
     payload = {
         "fulfillment": {
-            "tracking_number": tracking_number,
-            "tracking_company": tracking_company,
+            "line_items": line_items,
+            "tracking_info": {
+                "number": tracking_number,
+                "company": tracking_company,
+                "url": f"https://rastreamento.correios.com.br/app/index.php?objeto={tracking_number}"
+            },
             "notify_customer": True
         }
     }
@@ -128,9 +155,11 @@ def create_fulfillment(order_id, tracking_number, tracking_company="Correios"):
         if r.status_code in [200, 201]:
             return True, "✅ Pedido processado com sucesso na Shopify!"
         else:
+            # Log detalhado do erro
             return False, f"❌ Erro ao processar pedido ({r.status_code}): {r.text}"
     except Exception as e:
         return False, f"❌ Erro de conexão: {e}"
+
 
 
 # =============== Config & Estilos ===============
@@ -1038,9 +1067,15 @@ with tab_shopify:
     # ---- Tabela final ----
     st.subheader("📋 Pedidos filtrados")
 
+    # ---- Adiciona coluna de Pedido interno (ID real da Shopify) ----
+    if "order_id" in df.columns:
+        df["Pedido interno"] = df["order_id"].astype(str)
+    else:
+        df["Pedido interno"] = ""
+    
     colunas_existentes = [c for c in [
         order_col, "created_at", "customer_name", "quantity",
-        "variant_title", "price", "forma_entrega", "estado", "cidade", "tracking_number", "fulfillment_status"
+        "variant_title", "price", "forma_entrega", "estado", "cidade", "tracking_number", "fulfillment_status", "Pedido interno"
     ] if c in df.columns]
 
     tabela = df[colunas_existentes].sort_values("created_at", ascending=False).copy()
@@ -1068,11 +1103,11 @@ with tab_shopify:
     
     # ---- Atualizar status com base no código de rastreio ----
     if "Código de rastreio" in tabela.columns:
-        tabela["Status de processamento do pedido"] = tabela["Código de rastreio"].apply(
+        tabela["Status de processamento"] = tabela["Código de rastreio"].apply(
             lambda x: "✅ Processado" if isinstance(x, str) and x.strip() else "🟡 Não processado"
         )
     else:
-        tabela["Status de processamento do pedido"] = "🟡 Não processado"
+        tabela["Status de processamento"] = "🟡 Não processado"
 
 
     # ---- Formatação visual ----
@@ -1100,7 +1135,7 @@ with tab_shopify:
         num_rows="dynamic",
         disabled=["Pedido", "Data do pedido", "Nome do cliente", "Quantidade", "Variante",
                   "Preço unitário", "Tipo de entrega (PAC, SEDEX, etc)",
-                  "Estado de destino", "Cidade de destino", "Status de processamento do pedido"]
+                  "Estado de destino", "Cidade de destino", "Status de processamento","Pedido interno"]
     )
 
     # ---- Processar pedidos automaticamente ----
@@ -1117,7 +1152,7 @@ with tab_shopify:
 
             # Processa um por um
             for _, row in pedidos_para_processar.iterrows():
-                order_id = str(row["Pedido"]).replace("#", "").strip()
+                order_id = str(row.get("Pedido interno", "")).strip()
                 tracking_number = str(row["Código de rastreio"]).strip()
                 ok, msg = create_fulfillment(order_id, tracking_number)
                 resultados.append((order_id, ok, msg))
@@ -1132,13 +1167,12 @@ with tab_shopify:
             # Atualiza status da tabela local (sem precisar recarregar manualmente)
             for i, row in tabela_editavel.iterrows():
                 if str(row["Código de rastreio"]).strip():
-                    tabela_editavel.at[i, "Status de processamento do pedido"] = "✅ Processado"
+                    tabela_editavel.at[i, "Status de processamento"] = "✅ Processado"
 
             # Re-renderiza automaticamente
             st.session_state["pedidos"] = pedidos
-            time.sleep(1.2)
-            st.success("🔄 Tabela atualizada com sucesso!")
-            st.experimental_rerun()
+            st.success("🔄 Tabela atualizada com sucesso! Atualize a página para ver os dados sincronizados.")
+            st.stop()
 
 
     # ---- Exportar CSV ----
