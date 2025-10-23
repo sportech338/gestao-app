@@ -52,24 +52,64 @@ def get_products_with_variants(limit=250):
     return pd.DataFrame(rows)
 
 @st.cache_data(ttl=600)
-def get_orders(limit=100):
+def get_orders(limit=250, only_paid=True):
+    """
+    Baixa pedidos da Shopify com dados completos (cliente, entrega, produto e localização).
+    Filtra apenas pedidos pagos por padrão.
+    """
     url = f"{BASE_URL}/orders.json?limit={limit}&status=any"
-    r = requests.get(url, headers=HEADERS, timeout=60)
-    r.raise_for_status()
-    data = r.json().get("orders", [])
-    rows = []
-    for o in data:
-        for it in o.get("line_items", []):
-            rows.append({
-                "order_id": o["id"],
-                "created_at": o["created_at"],
-                "variant_id": it.get("variant_id"),
-                "title": it.get("title"),
-                "variant_title": it.get("variant_title"),
-                "quantity": it.get("quantity", 0),
-                "price": float(it.get("price") or 0),
-            })
-    return pd.DataFrame(rows)
+    all_rows = []
+
+    while url:
+        r = requests.get(url, headers=HEADERS, timeout=60)
+        r.raise_for_status()
+        data = r.json()
+        orders = data.get("orders", [])
+
+        for o in orders:
+            # 🔹 Filtra apenas pedidos pagos (opcional)
+            if only_paid and o.get("financial_status") not in ["paid", "partially_paid"]:
+                continue
+
+            customer = o.get("customer") or {}
+            shipping = o.get("shipping_address") or {}
+            shipping_lines = o.get("shipping_lines") or [{}]
+
+            nome_cliente = (
+                f"{customer.get('first_name', '')} {customer.get('last_name', '')}".strip()
+                or "(Cliente não informado)"
+            )
+
+            for it in o.get("line_items", []):
+                preco = float(it.get("price") or 0)
+                qtd = int(it.get("quantity", 0))
+
+                all_rows.append({
+                    "order_id": o.get("id"),
+                    "order_number": o.get("order_number"),
+                    "created_at": o.get("created_at"),
+                    "financial_status": o.get("financial_status"),
+                    "fulfillment_status": o.get("fulfillment_status"),
+                    "customer_name": nome_cliente,
+                    "customer_email": customer.get("email", ""),
+                    "produto": it.get("title"),
+                    "variant_title": it.get("variant_title"),
+                    "variant_id": it.get("variant_id"),
+                    "sku": it.get("sku"),
+                    "quantity": qtd,
+                    "price": preco,
+                    "line_revenue": preco * qtd,
+                    "forma_entrega": shipping_lines[0].get("title", "N/A"),
+                    "estado": shipping.get("province", "N/A"),
+                    "cidade": shipping.get("city", "N/A"),
+                })
+
+        # 🔁 Paginação segura (Shopify REST)
+        next_link = r.links.get("next", {}).get("url")
+        url = next_link if next_link else None
+
+    return pd.DataFrame(all_rows)
+
 
 
 # =============== Config & Estilos ===============
