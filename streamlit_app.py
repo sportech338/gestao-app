@@ -115,21 +115,6 @@ def get_orders(limit=250, only_paid=True):
 
 # =============== Config & Estilos ===============
 st.set_page_config(page_title="Meta Ads — Paridade + Funil", page_icon="📊", layout="wide")
-
-# =====================================================
-# 🧠 Proteção global — cria variáveis de sessão padrão
-# =====================================================
-for var in ["df_daily", "df_hourly", "df_breakdown", "produtos", "pedidos"]:
-    if var not in st.session_state:
-        st.session_state[var] = pd.DataFrame()
-
-# 🔒 Garante que as variáveis locais existam (evita NameError)
-df_daily = st.session_state.get("df_daily", pd.DataFrame())
-df_hourly = st.session_state.get("df_hourly", pd.DataFrame())
-df_breakdown = st.session_state.get("df_breakdown", pd.DataFrame())
-produtos = st.session_state.get("produtos", pd.DataFrame())
-pedidos = st.session_state.get("pedidos", pd.DataFrame())
-        
 st.markdown("""
 <style>
 .small-muted { color:#6b7280; font-size:12px; }
@@ -824,972 +809,300 @@ def fetch_insights_breakdown(act_id: str, token: str, api_version: str,
         return df
     df["ROAS"] = np.where(df["spend"]>0, df["revenue"]/df["spend"], np.nan)
     return df
-                                 
-# === Helper: traduz período rápido em datas ===
-def _range_from_preset(preset):
-    today = date.today()
-    if preset == "Hoje":
-        return today, today
-    elif preset == "Ontem":
-        return today - timedelta(days=1), today - timedelta(days=1)
-    elif preset == "Últimos 7 dias":
-        return today - timedelta(days=6), today
-    elif preset == "Últimos 14 dias":
-        return today - timedelta(days=13), today
-    elif preset == "Últimos 30 dias":
-        return today - timedelta(days=29), today
-    elif preset == "Últimos 90 dias":
-        return today - timedelta(days=89), today
-    elif preset == "Esta semana":
-        start = today - timedelta(days=today.weekday())
-        return start, today
-    elif preset == "Este mês":
-        start = today.replace(day=1)
-        return start, today
-    else:
-        return today - timedelta(days=29), today
 
+# =============== Sidebar (filtros) ===============
+st.sidebar.header("Configuração")
+act_id = st.sidebar.text_input("Ad Account ID", placeholder="ex.: act_1234567890")
+token = st.sidebar.text_input("Access Token", type="password")
+api_version = st.sidebar.text_input("API Version", value="v23.0")
+level = st.sidebar.selectbox("Nível (recomendado: campaign)", ["campaign"],  index=0)
 
-# =============== Dashboards Principais ===============
-st.title("📈 SporTech Analytics – Painel Completo")
-st.markdown(
-    "<h5 style='text-align:center;color:gray;'>Monitoramento completo de performance (Meta Ads + Shopify)</h5>",
-    unsafe_allow_html=True
+preset = st.sidebar.radio(
+    "Período rápido",
+    [
+        "Hoje", "Ontem",
+        "Últimos 7 dias", "Últimos 14 dias", "Últimos 30 dias", "Últimos 90 dias",
+        "Esta semana", "Este mês", "Máximo",
+        "Personalizado"
+    ],
+    index=2,
 )
 
-# =====================================================
-# 🧩 Carregamento global — executa 1x e persiste em sessão
-# =====================================================
-if "df_daily" not in st.session_state or st.session_state["df_daily"].empty:
-    # ⚙️ Parâmetros padrão ou último input salvo
-    act_id_default = st.session_state.get("act_id", "")
-    token_default = st.session_state.get("token", "")
-    api_version_default = st.session_state.get("api_version", "v23.0")
-    preset_default = st.session_state.get("preset", "Hoje")
+def _range_from_preset(p):
+    local_today = datetime.now(APP_TZ).date()
+    base_end = local_today - timedelta(days=1)
+    if p == "Hoje":
+        return local_today, local_today
+    if p == "Ontem":
+        return local_today - timedelta(days=1), local_today - timedelta(days=1)
+    if p == "Últimos 7 dias":
+        return base_end - timedelta(days=6), base_end
+    if p == "Últimos 14 dias":
+        return base_end - timedelta(days=13), base_end
+    if p == "Últimos 30 dias":
+        return base_end - timedelta(days=29), base_end
+    if p == "Últimos 90 dias":
+        return base_end - timedelta(days=89), base_end
+    if p == "Esta semana":
+        start_week = local_today - timedelta(days=local_today.weekday())
+        return start_week, local_today
+    if p == "Este mês":
+        start_month = local_today.replace(day=1)
+        return start_month, local_today
+    if p == "Máximo":
+        return date(2017, 1, 1), base_end
+    return base_end - timedelta(days=6), base_end
 
-    # 🔁 Define datas padrão para inicialização
-    since_default, until_default = _range_from_preset(preset_default)
+_since_auto, _until_auto = _range_from_preset(preset)
 
-    if act_id_default and token_default:
-        with st.spinner("Carregando dados iniciais (Meta Ads)..."):
-            df = fetch_insights_daily(
-                act_id=act_id_default,
-                token=token_default,
-                api_version=api_version_default,
-                since_str=str(since_default),
-                until_str=str(until_default),
-                level="campaign",
-                product_name=None,
-            )
-            st.session_state["df_daily"] = df
+if preset == "Personalizado":
+    since = st.sidebar.date_input("Desde", value=_since_auto, key="since_custom", format="DD/MM/YYYY")
+    until = st.sidebar.date_input("Até",   value=_until_auto, key="until_custom", format="DD/MM/YYYY")
+else:
+    # ✅ NÃO usar date_input aqui (evita estado preso)
+    since, until = _since_auto, _until_auto
+    st.sidebar.caption(f"**Desde:** {since}  \n**Até:** {until}")
 
-# ---- Cria as abas principais ----
-aba_principal = st.tabs(["📊 Dashboard - Tráfego Pago", "📦 Dashboard - Logística"])
+ready = bool(act_id and token)
 
-# =====================================================
-# 📊 DASHBOARD – TRÁFEGO PAGO
-# =====================================================
-with aba_principal[0]:
-    st.header("📊 Dashboard — Tráfego Pago")
+# =============== Tela ===============
+st.title("📊 Meta Ads — Paridade com Filtro + Funil")
+st.caption("KPIs + Funil: Cliques → LPV → Checkout → Add Pagamento → Compra. Tudo alinhado ao período selecionado.")
 
-    # 🧩 Configurações (antes na sidebar)
-    with st.expander("⚙️ Configurações e Filtros", expanded=True):
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            act_id = st.text_input("Ad Account ID", placeholder="ex.: act_1234567890")
-            level = st.selectbox("Nível (recomendado: campaign)", ["campaign"], index=0)
-        with col2:
-            token = st.text_input("Access Token", type="password")
-            api_version = st.text_input("API Version", value="v23.0")
-        with col3:
-            preset = st.selectbox(
-                "Período rápido",
-                [
-                    "Hoje", "Ontem",
-                    "Últimos 7 dias", "Últimos 14 dias", "Últimos 30 dias", "Últimos 90 dias",
-                    "Esta semana", "Este mês", "Máximo", "Personalizado"
-                ],
-                index=2,
-            )
+if not ready:
+    st.info("Informe **Ad Account ID** e **Access Token** para iniciar.")
+    st.stop()
 
-    # 💾 Armazena os valores preenchidos na sessão
-    st.session_state["act_id"] = act_id
-    st.session_state["token"] = token
-    st.session_state["api_version"] = api_version
-    st.session_state["preset"] = preset
+# ===================== Coleta =====================
+with st.spinner("Buscando dados da Meta…"):
+    df_daily = fetch_insights_daily(
+        act_id=act_id,
+        token=token,
+        api_version=api_version,
+        since_str=str(since),
+        until_str=str(until),
+        level=level,
+        product_name=st.session_state.get("daily_produto")  # pode ser None na primeira carga
+    )
 
-    # Cálculo de datas
-    _since_auto, _until_auto = _range_from_preset(preset)
-    if preset == "Personalizado":
-        since = st.date_input("Desde", value=_since_auto, format="DD/MM/YYYY")
-        until = st.date_input("Até", value=_until_auto, format="DD/MM/YYYY")
-    else:
-        since, until = _since_auto, _until_auto
-        st.caption(f"**Desde:** {since}  \n**Até:** {until}")
+df_hourly = None  # será carregado apenas quando o usuário abrir a aba de horário
+
+if df_daily.empty and (df_hourly is None or df_hourly.empty):
+    st.warning("Sem dados para o período. Verifique permissões, conta e se há eventos de Purchase (value/currency).")
+    st.stop()
+
+tab_daily, tab_daypart, tab_detail, tab_shopify = st.tabs(["📅 Visão diária", "⏱️ Horários (principal)", "📊 Detalhamento", "📦 Shopify – Variantes e Vendas"])
+
+# =============== Aba Shopify (Visão Geral de Produtos e Variantes) ===============
+with tab_shopify:
+    st.title("📦 Shopify – Visão Geral")
+
+    # ---- Carregar dados da sessão ----
+    produtos = st.session_state.get("produtos")
+    pedidos = st.session_state.get("pedidos")
+
+    # ---- Atualização de dados da Shopify (em segundo plano) ----
+    import threading
+
+    def atualizar_dados_shopify():
+        try:
+            produtos_novos = get_products_with_variants()
+            pedidos_novos = get_orders()
+            st.session_state["produtos"] = produtos_novos
+            st.session_state["pedidos"] = pedidos_novos
+            st.session_state["ultima_atualizacao"] = datetime.now().strftime("%d/%m/%Y %H:%M")
+            st.toast("✅ Dados da Shopify atualizados com sucesso!", icon="🎉")
+        except Exception as e:
+            st.error(f"Erro ao atualizar dados da Shopify: {e}")
+
+    if st.button("🔄 Atualizar dados da Shopify"):
+        st.info("🔁 Atualização iniciada! Você pode continuar usando as outras abas enquanto carrega.")
+        threading.Thread(target=atualizar_dados_shopify, daemon=True).start()
+
+    # ---- Carregamento automático com cache ----
+    if "produtos" not in st.session_state or st.session_state["produtos"] is None:
+        st.session_state["produtos"] = get_products_with_variants()
+
+    if "pedidos" not in st.session_state or st.session_state["pedidos"] is None:
+        st.session_state["pedidos"] = get_orders()
+
+    if "ultima_atualizacao" in st.session_state:
+        st.caption(f"🕒 Última atualização: {st.session_state['ultima_atualizacao']}")
+    
+    produtos = st.session_state["produtos"]
+    pedidos = st.session_state["pedidos"]
 
 
-    # 🔑 Verifica se credenciais estão preenchidas
-    ready = bool(act_id and token)
-    if not ready:
-        st.info("Informe **Ad Account ID** e **Access Token** para iniciar.")
+    if produtos is None or pedidos is None or produtos.empty or pedidos.empty:
+        st.info("Carregue os dados da Shopify para iniciar (botão acima).")
         st.stop()
 
-    # =====================================================
-    # 🔄 Carregar dados da Meta Ads
-    # =====================================================
-    with st.spinner("Carregando dados da Meta Ads..."):
-        # --- usa cache se já existir ---
-        if "df_daily" in st.session_state and not st.session_state["df_daily"].empty:
-            df_daily = st.session_state["df_daily"]
+    # ---- Normalizar nomes ----
+    def normalizar(df):
+        df.columns = [c.strip().lower() for c in df.columns]
+        ren = {
+            "title": "product_title",
+            "product_name": "product_title",
+            "variant": "variant_title",
+            "variant_name": "variant_title",
+            "id": "variant_id",
+            "variantid": "variant_id"
+        }
+        return df.rename(columns=ren)
+
+    produtos = normalizar(produtos)
+    pedidos = normalizar(pedidos)
+
+    # ---- Garantir colunas obrigatórias (para evitar KeyError) ----
+    for col in ["order_id", "order_number", "financial_status", "fulfillment_status"]:
+        if col not in pedidos.columns:
+            pedidos[col] = None
+
+    # ---- Juntar pedidos e produtos (corrigido) ----
+    merge_cols = ["variant_id", "sku", "product_title", "variant_title"]
+    merge_cols = [c for c in merge_cols if c in produtos.columns]
+
+    base = pedidos.merge(
+        produtos[merge_cols],
+        on="variant_id",
+        how="left",
+        suffixes=("", "_produto")
+    )
+
+    # ---- Ajustar nomes ----
+    if "product_title_produto" in base.columns and "product_title" not in base.columns:
+        base["product_title"] = base["product_title_produto"]
+
+    if "variant_title_produto" in base.columns and "variant_title" not in base.columns:
+        base["variant_title"] = base["variant_title_produto"]
+
+    base["product_title"].fillna("(Produto desconhecido)", inplace=True)
+    base["variant_title"].fillna("(Variante desconhecida)", inplace=True)
+
+
+    # ---- Tipos e métricas ----
+    base["created_at"] = pd.to_datetime(base.get("created_at"), errors="coerce")
+    base["price"] = pd.to_numeric(base.get("price"), errors="coerce").fillna(0)
+    base["quantity"] = pd.to_numeric(base.get("quantity"), errors="coerce").fillna(0)
+    base["line_revenue"] = base["price"] * base["quantity"]
+
+    # ---- Fallbacks ----
+    base["product_title"].fillna("(Produto desconhecido)", inplace=True)
+    base["variant_title"].fillna("(Variante desconhecida)", inplace=True)
+
+    # ---- Filtros ----
+    st.subheader("🎛️ Filtros")
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        produtos_lbl = ["(Todos os produtos)"] + sorted(base["product_title"].dropna().unique().tolist())
+        escolha_prod = st.selectbox("Produto", produtos_lbl, index=0)
+
+    with col2:
+        variantes_lbl = ["(Todas as variantes)"] + sorted(base["variant_title"].dropna().unique().tolist())
+        escolha_var = st.selectbox("Variante", variantes_lbl, index=0)
+
+    with col3:
+        if not base["created_at"].isnull().all():
+            min_date = base["created_at"].min().date()
+            max_date = base["created_at"].max().date()
         else:
-            df_daily = fetch_insights_daily(
-                act_id=act_id,
-                token=token,
-                api_version=api_version,
-                since_str=str(since),
-                until_str=str(until),
-                level=level,
-                product_name=None
-            )
-            st.session_state["df_daily"] = df_daily
-
-        # --- mesma ideia para horário e detalhamento (opcional) ---
-        if "df_hourly" not in st.session_state or st.session_state["df_hourly"].empty:
-            st.session_state["df_hourly"] = pd.DataFrame()
-        if "df_breakdown" not in st.session_state or st.session_state["df_breakdown"].empty:
-            st.session_state["df_breakdown"] = pd.DataFrame()
-
-    # =====================================================
-    # 🧭 Sub-abas internas (Tráfego Pago)
-    # =====================================================
-    if df_daily.empty:
-        st.warning("Nenhum dado encontrado no período selecionado.")
-    else:
-        tab_daily, tab_daypart, tab_detail = st.tabs([
-            "📅 Visão diária",
-            "⏱️ Horários (principal)",
-            "📊 Detalhamento"
-        ])
-
-        # =====================================================
-        # -------------------- ABA 1: VISÃO DIÁRIA --------------------
-        # =====================================================
-        with tab_daily:
-            # === Moeda detectada e override opcional ===
-            currency_detected = (df_daily["currency"].dropna().iloc[0]
-                                 if "currency" in df_daily.columns and not df_daily["currency"].dropna().empty else "BRL")
-            col_curA, col_curB = st.columns([1, 2])
-            with col_curA:
-                use_brl_display = st.checkbox("Fixar exibição em BRL (símbolo R$)", value=True)
-            currency_label = "BRL" if use_brl_display else currency_detected
-            with col_curB:
-                if use_brl_display and currency_detected != "BRL":
-                    st.caption("⚠️ Exibindo com símbolo **R$** apenas para **formatação visual**. "
-                               "Os valores permanecem na moeda da conta.")
-            st.caption(f"Moeda da conta detectada: **{currency_detected}** — Exibindo como: **{currency_label}**")
-
-            # ---- Filtro por produto ----
-            produto_sel_daily = st.selectbox(
-                "Filtrar por produto (opcional)",
-                ["(Todos)"] + PRODUTOS,
-                key="daily_produto"
-            )
-            df_daily_view = _filter_by_product(df_daily, produto_sel_daily)
-            if df_daily_view.empty:
-                st.info("Sem dados para o produto selecionado nesse período.")
-                st.stop()
-            if produto_sel_daily != "(Todos)":
-                st.caption(f"🔎 Filtrando por produto: **{produto_sel_daily}**")
-
-            # ========= KPIs do período =========
-            tot_spend = float(df_daily_view["spend"].sum())
-            tot_purch = float(df_daily_view["purchases"].sum())
-            tot_rev   = float(df_daily_view["revenue"].sum())
-            roas_g    = (tot_rev / tot_spend) if tot_spend > 0 else np.nan
-
-            c1, c2, c3, c4 = st.columns(4)
-            with c1:
-                st.markdown('<div class="kpi-card"><div class="small-muted">Valor usado</div>'
-                            f'<div class="big-number">{_fmt_money_br(tot_spend)}</div></div>', unsafe_allow_html=True)
-            with c2:
-                st.markdown('<div class="kpi-card"><div class="small-muted">Vendas</div>'
-                            f'<div class="big-number">{int(round(tot_purch)):,}</div></div>'.replace(",", "."),
-                            unsafe_allow_html=True)
-            with c3:
-                st.markdown('<div class="kpi-card"><div class="small-muted">Valor de conversão</div>'
-                            f'<div class="big-number">{_fmt_money_br(tot_rev)}</div></div>', unsafe_allow_html=True)
-            with c4:
-                roas_txt = _fmt_ratio_br(roas_g) if pd.notnull(roas_g) else "—"
-                st.markdown('<div class="kpi-card"><div class="small-muted">ROAS</div>'
-                            f'<div class="big-number">{roas_txt}</div></div>', unsafe_allow_html=True)
-
-            st.divider()
-
-            # ========= Série diária =========
-            st.subheader("Série diária — Investimento e Conversão")
-            daily = df_daily_view.groupby("date", as_index=False)[["spend", "revenue", "purchases"]].sum()
-            daily_pt = daily.rename(columns={"spend": "Gasto", "revenue": "Faturamento"})
-            st.line_chart(daily_pt.set_index("date")[["Faturamento", "Gasto"]])
-            st.caption("Linhas diárias de Receita e Gasto. Vendas na tabela abaixo.")
-
-            # ========= FUNIL (Período) =========
-            st.subheader("Funil do período — Cliques → LPV → Checkout → Add Pagamento → Compra")
-            f_clicks = float(df_daily_view["link_clicks"].sum())
-            f_lpv    = float(df_daily_view["lpv"].sum())
-            f_ic     = float(df_daily_view["init_checkout"].sum())
-            f_api    = float(df_daily_view["add_payment"].sum())
-            f_pur    = float(df_daily_view["purchases"].sum())
-
-            labels_total = ["Cliques", "LPV", "Checkout", "Add Pagamento", "Compra"]
-            values_total = [int(round(f_clicks)), int(round(f_lpv)), int(round(f_ic)), int(round(f_api)), int(round(f_pur))]
-            force_shape = st.checkbox("Forçar formato de funil (decrescente)", value=True)
-            values_plot = enforce_monotonic(values_total) if force_shape else values_total
-
-            st.plotly_chart(funnel_fig(labels_total, values_plot, title="Funil do período"), use_container_width=True)
-
-            core_rows = [
-                ("LPV / Cliques", _rate(values_total[1], values_total[0])),
-                ("Checkout / LPV", _rate(values_total[2], values_total[1])),
-                ("Compra / Checkout", _rate(values_total[4], values_total[2])),
-            ]
-            extras_def = {
-                "Add Pagto / Checkout": _rate(values_total[3], values_total[2]),
-                "Compra / Add Pagto": _rate(values_total[4], values_total[3]),
-                "Compra / LPV": _rate(values_total[4], values_total[1]),
-                "Compra / Cliques": _rate(values_total[4], values_total[0]),
-                "Checkout / Cliques": _rate(values_total[2], values_total[0]),
-                "Add Pagto / LPV": _rate(values_total[3], values_total[1]),
-            }
-
-            with st.expander("Comparar outras taxas (opcional)"):
-                extras_selected = st.multiselect(
-                    "Escolha métricas adicionais para visualizar:",
-                    options=list(extras_def.keys()), default=[],
-                )
-            rows = core_rows + [(name, extras_def[name]) for name in extras_selected]
-            sr = pd.DataFrame(rows, columns=["Taxa", "Valor"])
-            sr["Valor"] = sr["Valor"].map(lambda x: f"{x*100:,.2f}%".replace(",", "X").replace(".", ",").replace("X", ".")
-                                          if pd.notnull(x) else "")
-            st.dataframe(sr, use_container_width=True, height=200 + 36 * len(extras_selected))
-
-            # ========= TAXAS POR DIA — EVOLUÇÃO E LEITURA GUIADA =========
-            st.markdown("### Taxas por dia — evolução e leitura guiada")
-
-            with st.expander("Ajustes de exibição", expanded=True):
-                col_cfg1, col_cfg2 = st.columns([2, 1])
-                with col_cfg1:
-                    min_clicks_day = st.slider("Ignorar dias com menos de X cliques", 0, 500, 30, 10)
-                    mark_weekends = st.checkbox("Marcar fins de semana no fundo", value=True)
-                    show_band = st.checkbox("Mostrar banda saudável (faixa alvo)", value=True)
-                with col_cfg2:
-                    st.caption("Faixas saudáveis (%)")
-                    lpv_cli_low, lpv_cli_high = st.slider("LPV / Cliques", 0, 100, (70, 85), 1, key="tx_lpv_cli_band")
-                    co_lpv_low,  co_lpv_high  = st.slider("Checkout / LPV", 0, 100, (10, 20), 1, key="tx_co_lpv_band")
-                    buy_co_low,  buy_co_high  = st.slider("Compra / Checkout", 0, 100, (25, 40), 1, key="tx_buy_co_band")
-
-            # agrega por dia
-            daily_conv = (
-                df_daily_view.groupby("date", as_index=False)[
-                    ["link_clicks", "lpv", "init_checkout", "add_payment", "purchases"]
-                ].sum()
-                .rename(columns={"link_clicks": "clicks", "init_checkout": "checkout", "add_payment": "addpay"})
-            )
-
-            # evita ruído (dias com poucos eventos)
-            daily_conv = daily_conv[daily_conv["clicks"] >= min_clicks_day].copy()
-            if daily_conv.empty:
-                st.info("Sem dias suficientes após o filtro de cliques mínimos.")
-            else:
-                daily_conv["LPV/Cliques"]     = daily_conv.apply(lambda r: _safe_div(r["lpv"], r["clicks"]), axis=1)
-                daily_conv["Checkout/LPV"]    = daily_conv.apply(lambda r: _safe_div(r["checkout"], r["lpv"]), axis=1)
-                daily_conv["Compra/Checkout"] = daily_conv.apply(lambda r: _safe_div(r["purchases"], r["checkout"]), axis=1)
-
-                def _fmt_pct_series(s):  # 0–1 -> 0–100
-                    return (s * 100).round(2)
-
-                import plotly.graph_objects as go
-
-                def _line_pct_banded(df, col, lo_pct, hi_pct, title):
-                    x = df["date"]
-                    y = (df[col] * 100).round(2)
-
-                    def _status(v):
-                        if not pd.notnull(v): return "sem"
-                        v_pct = float(v) * 100.0
-                        if v_pct < lo_pct: return "abaixo"
-                        if v_pct > hi_pct: return "acima"
-                        return "dentro"
-
-                    status = df[col].map(_status).tolist()
-                    colors = [{"abaixo": "#dc2626", "dentro": "#16a34a", "acima": "#0ea5e9", "sem": "#9ca3af"}[s] for s in status]
-
-                    fig = go.Figure()
-
-                    # banda saudável
-                    if show_band:
-                        fig.add_shape(
-                            type="rect", xref="x", yref="y",
-                            x0=x.min(), x1=x.max(), y0=lo_pct, y1=hi_pct,
-                            fillcolor="rgba(34,197,94,0.08)", line=dict(width=0),
-                            layer="below"
-                        )
-
-                    # fins de semana
-                    if mark_weekends:
-                        for d in x:
-                            if d.weekday() >= 5:
-                                fig.add_shape(
-                                    type="rect", xref="x", yref="paper",
-                                    x0=d, x1=d + pd.Timedelta(days=1),
-                                    y0=0, y1=1,
-                                    line=dict(width=0),
-                                    fillcolor="rgba(2,132,199,0.06)"
-                                )
-
-                    # série
-                    fig.add_trace(go.Scatter(
-                        x=x, y=y, mode="lines+markers",
-                        name="Diário",
-                        marker=dict(size=7, color=colors),
-                        line=dict(width=1.5, color="#1f77b4"),
-                        hovertemplate="%{x|%Y-%m-%d}<br>Taxa: %{y:.2f}%<extra></extra>",
-                    ))
-
-                    fig.update_layout(
-                        title=title,
-                        yaxis_title="%",
-                        xaxis_title="Data",
-                        height=340,
-                        template="plotly_white",
-                        margin=dict(l=10, r=10, t=48, b=10),
-                        separators=",.",
-                        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0)
-                    )
-
-                    y_min = max(0, min(y.min(), lo_pct) - 5)
-                    y_max = min(100, max(y.max(), hi_pct) + 5)
-                    fig.update_yaxes(range=[y_min, y_max])
-
-                    return fig
-
-                # === Resumo de taxas médias do período ===
-                st.markdown("**Resumo das taxas (período filtrado)**")
-                def _resume_box(df_rates, col, lo_pct, hi_pct, label):
-                    vals = df_rates[col].dropna()
-                    if vals.empty:
-                        mcol1, mcol2, mcol3 = st.columns(3)
-                        mcol1.metric(label, "—")
-                        mcol2.metric("% dias dentro", "—")
-                        mcol3.metric("Tendência (período)", "—")
-                        return
-                    mean_pct = float(vals.mean() * 100.0)
-                    inside = float(((vals * 100.0 >= lo_pct) & (vals * 100.0 <= hi_pct)).mean() * 100.0)
-                    mcol1, mcol2, mcol3 = st.columns(3)
-                    mcol1.metric(label, f"{mean_pct:,.2f}%".replace(",", "X").replace(".", ",").replace("X", "."))
-                    mcol2.metric("% dias dentro", f"{inside:,.0f}%".replace(",", "X").replace(".", ",").replace("X", "."))
-                    mcol3.metric("Tendência (período)", "—")
-
-                _resume_box(daily_conv, "LPV/Cliques", lpv_cli_low, lpv_cli_high, "LPV/Cliques (média)")
-                _resume_box(daily_conv, "Checkout/LPV", co_lpv_low, co_lpv_high, "Checkout/LPV (média)")
-                _resume_box(daily_conv, "Compra/Checkout", buy_co_low, buy_co_high, "Compra/Checkout (média)")
-
-                st.markdown("---")
-
-                # === Gráficos lado a lado ===
-                left, mid, right = st.columns(3)
-                with left:
-                    st.plotly_chart(
-                        _line_pct_banded(daily_conv, "LPV/Cliques", lpv_cli_low, lpv_cli_high, "LPV/Cliques"),
-                        use_container_width=True
-                    )
-                with mid:
-                    st.plotly_chart(
-                        _line_pct_banded(daily_conv, "Checkout/LPV", co_lpv_low, co_lpv_high, "Checkout/LPV"),
-                        use_container_width=True
-                    )
-                with right:
-                    st.plotly_chart(
-                        _line_pct_banded(daily_conv, "Compra/Checkout", buy_co_low, buy_co_high, "Compra/Checkout"),
-                        use_container_width=True
-                    )
-
-                st.caption(
-                    "Leitura: pontos **verdes** = dentro da banda saudável, **vermelhos** = abaixo, **azuis** = acima. "
-                    "Área verde = faixa alvo; fins de semana = fundo azul claro."
-                )
-
-            # === NOTIFICAÇÃO DIDÁTICA DE ALOCAÇÃO DE VERBA =================================
-            st.subheader("🔔 Para onde vai a verba? (recomendação automática)")
-
-            min_purchases_to_scale = st.number_input(
-                "Compras mínimas para sugerir Escala (volume)",
-                min_value=0, value=50, step=1
-            )
-
-            r1 = _safe_div(values_total[1], values_total[0])   # LPV/Cliques
-            r2 = _safe_div(values_total[2], values_total[1])   # Checkout/LPV
-            r3 = _safe_div(values_total[4], values_total[2])   # Compra/Checkout
-
-            drop1 = max(0, values_total[0] - values_total[1])
-            drop2 = max(0, values_total[1] - values_total[2])
-            drop3 = max(0, values_total[2] - values_total[4])
-
-            def _band_status(val, lo, hi):
-                if not pd.notnull(val): return "sem_dado"
-                v = val * 100
-                if v < lo: return "abaixo"
-                if v > hi: return "acima"
-                return "dentro"
-
-            def _chip(label, val, lo, hi):
-                status = _band_status(val, lo, hi)
-                if status == "abaixo":
-                    return f"❌ **{label}** — {_fmt_pct_br(val)} (alvo {lo}–{hi}%)"
-                if status == "dentro":
-                    return f"✅ **{label}** — {_fmt_pct_br(val)} (dentro de {lo}–{hi}%)"
-                if status == "acima":
-                    return f"🟢 **{label}** — {_fmt_pct_br(val)} (acima de {hi}%)"
-                return f"⛔ **{label}** — sem dados suficientes"
-
-            stages = {
-                "Teste de criativo": {
-                    "rate": r1, "lo": lpv_cli_low, "hi": lpv_cli_high, "drop": drop1,
-                    "explain": "Perda entre Cliques → LPV (qualidade do clique, criativo e LP).",
-                    "todo": [
-                        "Testar novas variações de criativo (ângulo, thumb, CTA).",
-                        "Melhorar tempo de carregamento da landing page.",
-                        "Revisar promessa e headline da página."
-                    ]
-                },
-                "Teste de interesse": {
-                    "rate": r2, "lo": co_lpv_low, "hi": co_lpv_high, "drop": drop2,
-                    "explain": "Perda entre LPV → Checkout (público/segmentação e proposta de valor).",
-                    "todo": [
-                        "Ajustar públicos e excluir desinteressados.",
-                        "Adicionar provas sociais e benefícios acima do CTA.",
-                        "Refinar oferta e bundle para o público certo."
-                    ]
-                },
-                "Remarketing": {
-                    "rate": r3, "lo": buy_co_low, "hi": buy_co_high, "drop": drop3,
-                    "explain": "Perda entre Checkout → Compra (confiança e meios de pagamento).",
-                    "todo": [
-                        "Refinar remarketing dinâmico com objeções e frete.",
-                        "Oferecer opções de pagamento variadas (pix, boleto, cartão).",
-                        "Automatizar recuperação de carrinhos."
-                    ]
-                }
-            }
-
-            abaixos = {k: v for k, v in stages.items() if _band_status(v["rate"], v["lo"], v["hi"]) == "abaixo"}
-
-            if abaixos:
-                foco, foco_dat = max(abaixos.items(), key=lambda kv: kv[1]["drop"])
-            else:
-                total_purch = values_total[4]
-                todas_ok = all(_band_status(v["rate"], v["lo"], v["hi"]) in ["dentro", "acima"] for v in stages.values())
-                if todas_ok and total_purch >= min_purchases_to_scale:
-                    foco, foco_dat = "Escala", {
-                        "rate": None, "lo": None, "hi": None, "drop": 0,
-                        "explain": "Taxas saudáveis e volume suficiente. Hora de escalar campanhas vencedoras."
-                    }
-                else:
-                    foco, foco_dat = max(stages.items(), key=lambda kv: kv[1]["drop"])
-
-            total_drop = max(1, drop1 + drop2 + drop3)
-            share = foco_dat["drop"] / total_drop
-            if share > 0.60:
-                intensidade = "Alta"; faixa_verba = "↑ realocar **20–30%** do orçamento"
-            elif share >= 0.30:
-                intensidade = "Média"; faixa_verba = "↑ realocar **10–15%** do orçamento"
-            else:
-                intensidade = "Baixa"; faixa_verba = "↑ realocar **5–10%** do orçamento"
-
-            st.markdown("---")
-            colA, colB = st.columns([1, 2])
-
-            with colA:
-                st.markdown("**Taxas do período**")
-                st.markdown(_chip("LPV/Cliques", r1, lpv_cli_low, lpv_cli_high))
-                st.markdown(_chip("Checkout/LPV", r2, co_lpv_low, co_lpv_high))
-                st.markdown(_chip("Compra/Checkout", r3, buy_co_low, buy_co_high))
-
-            with colB:
-                if foco == "Escala":
-                    st.success(
-                        f"**✅ Recomendação: Escala**\n\n"
-                        f"- Motivo: {foco_dat['explain']}\n"
-                        f"- Compras no período: **{_fmt_int_br(values_total[4])}** "
-                        f"(mín. para escalar: **{_fmt_int_br(min_purchases_to_scale)}**)\n"
-                        f"- Ação: aumentar orçamento nas campanhas com melhor ROAS."
-                    )
-                else:
-                    st.warning(
-                        f"**⚠️ Recomendação: {foco}**\n\n"
-                        f"- Motivo: {foco_dat['explain']}\n"
-                        f"- Queda concentrada nessa etapa: **{_fmt_int_br(foco_dat['drop'])}** pessoas "
-                        f"(intensidade **{intensidade}** → {faixa_verba})."
-                    )
-                    st.markdown("**O que fazer agora**")
-                    for tip in foco_dat["todo"]:
-                        st.markdown(f"- {tip}")
-
-            with st.expander("ℹ️ Como interpretar"):
-                st.markdown(
-                    """
-                    - **LPV/Cliques** baixo → Criativo/LP (atrai mas não engaja).
-                    - **Checkout/LPV** baixo → Interesse/Oferta (vê mas não avança).
-                    - **Compra/Checkout** baixo → Remarketing/Pagamento.
-                    - Tudo saudável e volume alto → Escala.
-                    """
-                )
-
-            # ========= COMPARATIVOS (Período A vs Período B) =========
-            with st.expander("Comparativos — Período A vs Período B", expanded=False):
-                st.subheader("📊 Comparativo de desempenho entre períodos")
-
-                period_len = (until - since).days + 1
-                default_sinceA = since - timedelta(days=period_len)
-                default_untilA = since - timedelta(days=1)
-
-                colA, colB = st.columns(2)
-                with colA:
-                    st.markdown("**Período A (anterior)**")
-                    sinceA = st.date_input("Desde (A)", value=default_sinceA, key="sinceA")
-                    untilA = st.date_input("Até (A)", value=default_untilA, key="untilA")
-                with colB:
-                    st.markdown("**Período B (atual)**")
-                    sinceB = st.date_input("Desde (B)", value=since, key="sinceB")
-                    untilB = st.date_input("Até (B)", value=until, key="untilB")
-
-                if sinceA > untilA or sinceB > untilB:
-                    st.warning("Confira as datas: 'Desde' não pode ser maior que 'Até'.")
-                else:
-                    with st.spinner("Comparando períodos..."):
-                        dfA = fetch_insights_daily(act_id, token, api_version, str(sinceA), str(untilA), level, produto_sel_daily)
-                        dfB = fetch_insights_daily(act_id, token, api_version, str(sinceB), str(untilB), level, produto_sel_daily)
-
-                    if dfA.empty or dfB.empty:
-                        st.info("Sem dados em um dos períodos selecionados.")
-                    else:
-                        def _agg(d):
-                            return {
-                                "spend": d["spend"].sum(),
-                                "revenue": d["revenue"].sum(),
-                                "purchases": d["purchases"].sum(),
-                                "clicks": d["link_clicks"].sum(),
-                                "lpv": d["lpv"].sum(),
-                                "checkout": d["init_checkout"].sum(),
-                                "add_payment": d["add_payment"].sum(),
-                            }
-                        A = _agg(dfA); B = _agg(dfB)
-                        roasA = _safe_div(A["revenue"], A["spend"])
-                        roasB = _safe_div(B["revenue"], B["spend"])
-
-                        kpi_rows = [
-                            ("Valor usado", _fmt_money_br(A["spend"]), _fmt_money_br(B["spend"])),
-                            ("Faturamento", _fmt_money_br(A["revenue"]), _fmt_money_br(B["revenue"])),
-                            ("Vendas", _fmt_int_br(A["purchases"]), _fmt_int_br(B["purchases"])),
-                            ("ROAS", _fmt_ratio_br(roasA), _fmt_ratio_br(roasB)),
-                        ]
-                        st.dataframe(pd.DataFrame(kpi_rows, columns=["Métrica", "Período A", "Período B"]),
-                                     use_container_width=True)
-
-                        st.markdown("---")
-                        labels_funnel = ["Cliques", "LPV", "Checkout", "Add Pagamento", "Compra"]
-                        valsA = [int(A["clicks"]), int(A["lpv"]), int(A["checkout"]), int(A["add_payment"]), int(A["purchases"])]
-                        valsB = [int(B["clicks"]), int(B["lpv"]), int(B["checkout"]), int(B["add_payment"]), int(B["purchases"])]
-
-                        cA, cB = st.columns(2)
-                        with cA:
-                            st.plotly_chart(funnel_fig(labels_funnel, enforce_monotonic(valsA),
-                                                       title=f"Funil — Período A ({sinceA} a {untilA})"),
-                                            use_container_width=True)
-                        with cB:
-                            st.plotly_chart(funnel_fig(labels_funnel, enforce_monotonic(valsB),
-                                                       title=f"Funil — Período B ({sinceB} a {untilB})"),
-                                            use_container_width=True)
-
-            # ========= FUNIL por CAMPANHA =========
-            if level == "campaign":
-                st.subheader("📦 Funil por campanha (somatório — inclui acompanhamento em tempo real se o filtro abranger hoje)")
-
-                # 🔹 Filtra o período selecionado (inclui hoje se estiver dentro do range)
-                today = pd.Timestamp.today().normalize()
-                since_ts = pd.Timestamp(since)
-                until_ts = pd.Timestamp(until)
-
-                if until_ts >= today:
-                    mask_period = (df_daily_view["date"] >= since_ts) & (df_daily_view["date"] <= today)
-                    realtime_mode = True
-                else:
-                    mask_period = (df_daily_view["date"] >= since_ts) & (df_daily_view["date"] <= until_ts)
-                    realtime_mode = False
-
-                df_filtered = df_daily_view.loc[mask_period].copy()
-
-                # 🔹 Se o dia de hoje estiver incluso, atualiza dados em tempo real diretamente da API
-                if realtime_mode:
-                    with st.spinner("⏱️ Atualizando dados de hoje em tempo real (Meta Ads)..."):
-                        try:
-                            df_today_live = fetch_insights_daily(
-                                act_id=act_id,
-                                token=token,
-                                api_version=api_version,
-                                since_str=str(today),
-                                until_str=str(today),
-                                level=level,
-                                product_name=None
-                            )
-                            if df_today_live is not None and not df_today_live.empty:
-                                # Atualiza com dados do dia atual
-                                df_filtered = pd.concat([df_filtered, df_today_live], ignore_index=True)
-                                df_filtered.drop_duplicates(subset=["date", "campaign_id"], inplace=True)
-                                st.success("✅ Dados de hoje atualizados com sucesso!")
-                            else:
-                                st.info("Nenhum dado adicional encontrado para hoje (Meta ainda sincronizando).")
-                        except Exception as e:
-                            st.warning(f"⚠️ Falha ao atualizar dados de hoje: {e}")
-
-                if df_filtered.empty:
-                    st.info("Sem dados de campanha no período selecionado.")
-                    st.stop()
-
-                # 🔹 Detecta campanhas ativas (teve gasto > 0 no período)
-                active_campaigns = (
-                    df_filtered.groupby("campaign_id")["spend"]
-                    .sum()
-                    .loc[lambda s: s > 0]
-                    .index
-                    .tolist()
-                )
-
-                # 🔹 Mantém apenas campanhas ativas
-                df_active = df_filtered[df_filtered["campaign_id"].isin(active_campaigns)].copy()
-
-                if df_active.empty:
-                    st.info("Nenhuma campanha ativa no período selecionado.")
-                    st.stop()
-
-                # 🔹 Agrega apenas as campanhas ativas
-                agg_cols = ["spend", "link_clicks", "lpv", "init_checkout", "add_payment", "purchases", "revenue"]
-                camp = df_active.groupby(["campaign_id", "campaign_name"], as_index=False)[agg_cols].sum()
-
-                # ===== Divisões seguras linha a linha =====
-                camp["ROAS"] = np.where(camp["spend"] > 0, camp["revenue"] / camp["spend"], np.nan)
-                camp["CPA"] = np.where(camp["purchases"] > 0, camp["spend"] / camp["purchases"], np.nan)
-                camp["LPV/Cliques"] = np.where(camp["link_clicks"] > 0, camp["lpv"] / camp["link_clicks"], np.nan)
-                camp["Checkout/LPV"] = np.where(camp["lpv"] > 0, camp["init_checkout"] / camp["lpv"], np.nan)
-                camp["Compra/Checkout"] = np.where(camp["init_checkout"] > 0, camp["purchases"] / camp["init_checkout"], np.nan)
-
-                # 🔹 Monta dataframe de exibição formatado
-                disp = camp[["campaign_name", "spend", "revenue", "purchases", "ROAS", "CPA",
-                             "LPV/Cliques", "Checkout/LPV", "Compra/Checkout"]]
-                disp.rename(columns={
-                    "campaign_name": "Campanha",
-                    "spend": "Gasto",
-                    "revenue": "Faturamento",
-                    "purchases": "Vendas"
-                }, inplace=True)
-
-                # 🔹 Formatação visual (pt-BR)
-                disp["Gasto"] = disp["Gasto"].map(_fmt_money_br)
-                disp["Faturamento"] = disp["Faturamento"].map(_fmt_money_br)
-                disp["Vendas"] = disp["Vendas"].map(_fmt_int_br)
-                disp["ROAS"] = disp["ROAS"].map(_fmt_ratio_br)
-                disp["CPA"] = disp["CPA"].map(_fmt_money_br)
-                disp["LPV/Cliques"] = disp["LPV/Cliques"].map(_fmt_pct_br)
-                disp["Checkout/LPV"] = disp["Checkout/LPV"].map(_fmt_pct_br)
-                disp["Compra/Checkout"] = disp["Compra/Checkout"].map(_fmt_pct_br)
-
-                # 🔹 Ordena por Faturamento (default)
-                disp = disp.sort_values(by="Faturamento", ascending=False)
-
-                # 🔹 Exibe status de tempo real se ativo
-                if realtime_mode:
-                    st.caption("⏱️ Modo tempo real ativado — exibindo dados parciais do dia atual.")
-
-                # 🔹 Exibe a tabela
-                st.dataframe(disp, use_container_width=True, height=420)
-
-            else:
-                st.info("Troque o nível para 'campaign' para visualizar o detalhamento por campanha.")
-
-        
-        # =====================================================
-        # -------------------- ABA 2: HORÁRIOS --------------------
-        # =====================================================
-        with tab_daypart:
-            st.subheader("⏱️ Desempenho por horário (Heatmap + comparativos)")
-            level_hourly = "campaign"
-
-            # Cache
-            cache = st.session_state.setdefault("hourly_cache", {})
-            hourly_key = (act_id, api_version, level_hourly, str(since), str(until))
-            if "df_hourly" not in st.session_state or st.session_state["df_hourly"].empty:
-                st.session_state["df_hourly"] = pd.DataFrame()
-
-            # Lazy-load
-            if st.session_state["df_hourly"].empty or hourly_key not in cache:
-                with st.spinner("Carregando breakdown por hora…"):
-                    cache[hourly_key] = fetch_insights_hourly(
-                        act_id=act_id,
-                        token=token,
-                        api_version=api_version,
-                        since_str=str(since),
-                        until_str=str(until),
-                        level=level_hourly
-                    )
-            df_hourly = cache[hourly_key]
-
-            # Filtro de produto
-            produto_sel_hr = st.selectbox("Filtrar por produto (opcional)", ["(Todos)"] + PRODUTOS, key="daypart_produto")
-
-            # Guard vazio
-            if df_hourly is None or df_hourly.empty:
-                st.info("A conta/período não retornou breakdown por hora. Use a visão diária.")
-                st.stop()
-
-            d = df_hourly.copy()
-            if produto_sel_hr != "(Todos)":
-                mask_hr = d["campaign_name"].str.contains(produto_sel_hr, case=False, na=False)
-                d = d[mask_hr].copy()
-
-            # Limpeza e ajustes
-            d = d.dropna(subset=["hour"])
-            d["hour"] = d["hour"].astype(int).clip(0, 23)
-            d["date_only"] = d["date"].dt.date
-
-            # Slider de gasto mínimo
-            min_spend = st.slider("Gasto mínimo para considerar o horário (R$)", 0.0, 1000.0, 0.0, 10.0)
-            d = d[d["spend"] >= min_spend]
-
-            # Heatmap simples
-            st.markdown("### 🔥 Heatmap de performance por hora")
-            heat = (
-                d.groupby("hour")[["spend", "revenue", "purchases"]]
-                .sum()
-                .reset_index()
-                .rename(columns={"hour": "Hora"})
-            )
-            st.bar_chart(heat.set_index("Hora")[["spend", "revenue"]])
-
-
-        with tab_daypart:
-            st.subheader("⏱️ Horários (principal)")
-            st.info("Gráficos e análises de horários serão carregados aqui.")
-
-        with tab_detail:
-            st.subheader("📊 Detalhamento")
-            st.info("Detalhamento por campanha, público, etc.")
-
-# =====================================================
-# 📦 DASHBOARD – LOGÍSTICA
-# =====================================================
-with aba_principal[1]:
-    st.header("📦 Dashboard — Logística")
-
-    tab_shopify = st.tabs(["📦 Shopify – Variantes e Vendas"])[0]
-    with tab_shopify:
-        st.title("📦 Shopify – Visão Geral")
-
-        # ---- Carregar dados da sessão ----
-        produtos = st.session_state.get("produtos")
-        pedidos = st.session_state.get("pedidos")
-
-        # ---- Atualização de dados da Shopify (em segundo plano) ----
-        lock = threading.Lock()
-
-        def atualizar_dados_shopify():
-            with lock:
-                try:
-                    produtos_novos = get_products_with_variants()
-                    pedidos_novos = get_orders()
-                    st.session_state["produtos"] = produtos_novos
-                    st.session_state["pedidos"] = pedidos_novos
-                    st.session_state["ultima_atualizacao"] = datetime.now().strftime("%d/%m/%Y %H:%M")
-                    st.toast("✅ Dados da Shopify atualizados com sucesso!", icon="🎉")
-                except Exception as e:
-                    st.error(f"Erro ao atualizar dados da Shopify: {e}")
-
-        if st.button("🔄 Atualizar dados da Shopify"):
-            st.info("🔁 Atualização iniciada! Você pode continuar usando as outras abas enquanto carrega.")
-            threading.Thread(target=atualizar_dados_shopify, daemon=True).start()
-
-        # ---- Carregamento automático com cache ----
-        if "produtos" not in st.session_state or st.session_state["produtos"] is None:
-            st.session_state["produtos"] = get_products_with_variants()
-
-        if "pedidos" not in st.session_state or st.session_state["pedidos"] is None:
-            st.session_state["pedidos"] = get_orders()
-
-        if "ultima_atualizacao" in st.session_state:
-            st.caption(f"🕒 Última atualização: {st.session_state['ultima_atualizacao']}")
-
-        produtos = st.session_state["produtos"]
-        pedidos = st.session_state["pedidos"]
-
-        if produtos is None or pedidos is None or produtos.empty or pedidos.empty:
-            st.info("Carregue os dados da Shopify para iniciar (botão acima).")
-            st.stop()
-
-        # ---- Normalizar nomes ----
-        def normalizar(df):
-            df.columns = [c.strip().lower() for c in df.columns]
-            ren = {
-                "title": "product_title",
-                "product_name": "product_title",
-                "variant": "variant_title",
-                "variant_name": "variant_title",
-                "id": "variant_id",
-                "variantid": "variant_id"
-            }
-            return df.rename(columns=ren)
-
-        produtos = normalizar(produtos)
-        pedidos = normalizar(pedidos)
-
-        # ---- Garantir colunas obrigatórias ----
-        for col in ["order_id", "order_number", "financial_status", "fulfillment_status"]:
-            if col not in pedidos.columns:
-                pedidos[col] = None
-
-        # ---- Juntar pedidos e produtos ----
-        merge_cols = ["variant_id", "sku", "product_title", "variant_title"]
-        merge_cols = [c for c in merge_cols if c in produtos.columns]
-
-        base = pedidos.merge(
-            produtos[merge_cols],
-            on="variant_id",
-            how="left",
-            suffixes=("", "_produto")
-        )
-
-        # ---- Ajustar nomes ----
-        if "product_title_produto" in base.columns and "product_title" not in base.columns:
-            base["product_title"] = base["product_title_produto"]
-
-        if "variant_title_produto" in base.columns and "variant_title" not in base.columns:
-            base["variant_title"] = base["variant_title_produto"]
-
-        base["product_title"].fillna("(Produto desconhecido)", inplace=True)
-        base["variant_title"].fillna("(Variante desconhecida)", inplace=True)
-
-        # ---- Tipos e métricas ----
-        base["created_at"] = pd.to_datetime(base.get("created_at"), errors="coerce")
-        base["price"] = pd.to_numeric(base.get("price"), errors="coerce").fillna(0)
-        base["quantity"] = pd.to_numeric(base.get("quantity"), errors="coerce").fillna(0)
-        base["line_revenue"] = base["price"] * base["quantity"]
-
-        # ---- Filtros ----
-        st.subheader("🎛️ Filtros")
-        col1, col2, col3 = st.columns(3)
-
-        with col1:
-            produtos_lbl = ["(Todos os produtos)"] + sorted(base["product_title"].dropna().unique().tolist())
-            escolha_prod = st.selectbox("Produto", produtos_lbl, index=0)
-
-        with col2:
-            variantes_lbl = ["(Todas as variantes)"] + sorted(base["variant_title"].dropna().unique().tolist())
-            escolha_var = st.selectbox("Variante", variantes_lbl, index=0)
-
-        with col3:
-            if not base["created_at"].isnull().all():
-                min_date = base["created_at"].min().date()
-                max_date = base["created_at"].max().date()
-            else:
-                today = pd.Timestamp.today().date()
-                min_date = max_date = today
-            periodo = st.date_input("Período", (min_date, max_date))
-
-        # ---- Aplicar filtros ----
-        df = base[
-            (base["created_at"].dt.date >= periodo[0]) &
-            (base["created_at"].dt.date <= periodo[1])
-        ].copy()
-
-        if escolha_prod != "(Todos os produtos)":
-            df = df[df["product_title"] == escolha_prod]
-        if escolha_var != "(Todas as variantes)":
-            df = df[df["variant_title"] == escolha_var]
-
-        if df.empty:
-            st.warning("Nenhum pedido encontrado com os filtros selecionados.")
-            st.stop()
-
-        # ---- Resumo ----
-        order_col = "order_number" if "order_number" in df.columns and df["order_number"].notna().any() else "order_id"
-        total_pedidos = df[order_col].nunique()
-        total_unidades = df["quantity"].sum()
-        total_receita = df["line_revenue"].sum()
-        ticket_medio = total_receita / total_pedidos if total_pedidos > 0 else 0
-
-        colA, colB, colC, colD = st.columns(4)
-        colA.metric("🧾 Pedidos", total_pedidos)
-        colB.metric("📦 Unidades vendidas", int(total_unidades))
-        colC.metric("💰 Receita total", f"R$ {total_receita:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
-        colD.metric("💸 Ticket médio", f"R$ {ticket_medio:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
-
-        # ---- Tabela final ----
-        st.subheader("📋 Pedidos filtrados")
-
-        colunas_existentes = [c for c in [
-            order_col, "created_at", "customer_name", "quantity",
-            "variant_title", "price", "forma_entrega", "estado", "cidade", "fulfillment_status"
-        ] if c in df.columns]
-
-        tabela = df[colunas_existentes].sort_values("created_at", ascending=False).copy()
-
-        tabela.rename(columns={
-            order_col: "Pedido",
-            "created_at": "Data do pedido",
-            "customer_name": "Nome do cliente",
-            "quantity": "Quantidade",
-            "variant_title": "Variante",
-            "price": "Preço unitário",
-            "forma_entrega": "Tipo de entrega (PAC, SEDEX, etc)",
-            "estado": "Estado de destino",
-            "cidade": "Cidade de destino",
-            "fulfillment_status": "Status de processamento do pedido"
-        }, inplace=True)
+            today = pd.Timestamp.today().date()
+            min_date = max_date = today
+        periodo = st.date_input("Período", (min_date, max_date))
+
+    # ---- Aplicar filtros ----
+    df = base[
+        (base["created_at"].dt.date >= periodo[0]) &
+        (base["created_at"].dt.date <= periodo[1])
+    ].copy()
+
+    if escolha_prod != "(Todos os produtos)":
+        df = df[df["product_title"] == escolha_prod]
+    if escolha_var != "(Todas as variantes)":
+        df = df[df["variant_title"] == escolha_var]
+
+    if df.empty:
+        st.warning("Nenhum pedido encontrado com os filtros selecionados.")
+        st.stop()
+
+    # ---- Resumo ----
+    # Usa order_number se existir, senão order_id
+    order_col = "order_number" if "order_number" in df.columns and df["order_number"].notna().any() else "order_id"
+    total_pedidos = df[order_col].nunique()
+    total_unidades = df["quantity"].sum()
+    total_receita = df["line_revenue"].sum()
+    ticket_medio = total_receita / total_pedidos if total_pedidos > 0 else 0
+
+    colA, colB, colC, colD = st.columns(4)
+    colA.metric("🧾 Pedidos", total_pedidos)
+    colB.metric("📦 Unidades vendidas", int(total_unidades))
+    colC.metric("💰 Receita total", f"R$ {total_receita:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+    colD.metric("💸 Ticket médio", f"R$ {ticket_medio:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+
+    # ---- Tabela final ----
+    st.subheader("📋 Pedidos filtrados")
+
+    colunas_existentes = [c for c in [
+        order_col, "created_at", "customer_name", "quantity",
+        "variant_title", "price", "forma_entrega", "estado", "cidade", "fulfillment_status"
+    ] if c in df.columns]
+
+    tabela = df[colunas_existentes].sort_values("created_at", ascending=False).copy()
+
+    tabela.rename(columns={
+        order_col: "Pedido",
+        "created_at": "Data do pedido",
+        "customer_name": "Nome do cliente",
+        "quantity": "Quantidade",
+        "variant_title": "Variante",
+        "price": "Preço unitário",
+        "forma_entrega": "Tipo de entrega (PAC, SEDEX, etc)",
+        "estado": "Estado de destino",
+        "cidade": "Cidade de destino",
+        "fulfillment_status": "Status de processamento do pedido"
+    }, inplace=True)
 
         # ---- Adicionar coluna de Status de Processamento ----
-        if "fulfillment_status" in df.columns:
-            tabela["Status de processamento do pedido"] = df["fulfillment_status"].apply(
-                lambda x: (
-                    "✅ Processado" if str(x).lower() in ["fulfilled", "shipped", "complete"]
-                    else "🟡 Não processado"
-                )
+    if "fulfillment_status" in df.columns:
+        tabela["Status de processamento do pedido"] = df["fulfillment_status"].apply(
+            lambda x: (
+                "✅ Processado" if str(x).lower() in ["fulfilled", "shipped", "complete"]
+                else "🟡 Não processado"
             )
-        else:
-            tabela["Status de processamento do pedido"] = "🟡 Não processado"
-
-        # ---- Formatação visual ----
-        if "Pedido" in tabela.columns:
-            tabela["Pedido"] = tabela["Pedido"].apply(
-                lambda x: f"#{int(float(x))}" if pd.notnull(x) else "-"
-            )
-
-        if "Data do pedido" in tabela.columns:
-            tabela["Data do pedido"] = pd.to_datetime(
-                tabela["Data do pedido"], errors="coerce"
-            ).dt.strftime("%d/%m/%Y %H:%M")
-
-        if "Preço unitário" in tabela.columns:
-            tabela["Preço unitário"] = tabela["Preço unitário"].apply(
-                lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-            )
-
-        st.dataframe(tabela, use_container_width=True)
-
-        # ---- Exportar CSV ----
-        csv = tabela.to_csv(index=False).encode('utf-8-sig')
-        st.download_button(
-            label="📥 Exportar pedidos filtrados (CSV)",
-            data=csv,
-            file_name=f"pedidos_shopify_{periodo[0]}_{periodo[1]}.csv",
-            mime="text/csv",
         )
+    else:
+        tabela["Status de processamento do pedido"] = "🟡 Não processado"
+
+
+    # ---- Formatação visual ----
+    if "Pedido" in tabela.columns:
+        tabela["Pedido"] = tabela["Pedido"].apply(
+            lambda x: f"#{int(float(x))}" if pd.notnull(x) else "-"
+        )
+
+    if "Data do pedido" in tabela.columns:
+        tabela["Data do pedido"] = pd.to_datetime(
+            tabela["Data do pedido"], errors="coerce"
+        ).dt.strftime("%d/%m/%Y %H:%M")
+
+    if "Preço unitário" in tabela.columns:
+        tabela["Preço unitário"] = tabela["Preço unitário"].apply(
+            lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        )
+
+
+    st.dataframe(tabela, use_container_width=True)
+
+    # ---- Exportar CSV ----
+    csv = tabela.to_csv(index=False).encode('utf-8-sig')
+    st.download_button(
+        label="📥 Exportar pedidos filtrados (CSV)",
+        data=csv,
+        file_name=f"pedidos_shopify_{periodo[0]}_{periodo[1]}.csv",
+        mime="text/csv",
+    )
+
 
 # -------------------- ABA 1: VISÃO DIÁRIA --------------------
 with tab_daily:
