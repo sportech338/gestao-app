@@ -1717,11 +1717,18 @@ with tab_daily:
         agg_cols = ["spend", "link_clicks", "lpv", "init_checkout", "add_payment", "purchases", "revenue"]
         camp = df_active.groupby(["campaign_id", "campaign_name"], as_index=False)[agg_cols].sum()
 
-        camp["ROAS"] = np.where(camp["spend"] > 0, camp["revenue"] / camp["spend"], np.nan)
-        camp["CPA"] = np.where(camp["purchases"] > 0, camp["spend"] / camp["purchases"], np.nan)
-        camp["LPV/Cliques"] = np.where(camp["link_clicks"] > 0, camp["lpv"] / camp["link_clicks"], np.nan)
-        camp["Checkout/LPV"] = np.where(camp["lpv"] > 0, camp["init_checkout"] / camp["lpv"], np.nan)
-        camp["Compra/Checkout"] = np.where(camp["init_checkout"] > 0, camp["purchases"] / camp["init_checkout"], np.nan)
+        # ===== Divisões seguras linha a linha =====
+        def safe_div(num, den):
+            try:
+                return num / den if (pd.notnull(den) and den != 0) else np.nan
+            except Exception:
+                return np.nan
+
+        camp["ROAS"] = camp.apply(lambda r: safe_div(r["revenue"], r["spend"]), axis=1)
+        camp["CPA"] = camp.apply(lambda r: safe_div(r["spend"], r["purchases"]), axis=1)
+        camp["LPV/Cliques"] = camp.apply(lambda r: safe_div(r["lpv"], r["link_clicks"]), axis=1)
+        camp["Checkout/LPV"] = camp.apply(lambda r: safe_div(r["init_checkout"], r["lpv"]), axis=1)
+        camp["Compra/Checkout"] = camp.apply(lambda r: safe_div(r["purchases"], r["init_checkout"]), axis=1)
 
         disp = camp[[
             "campaign_name", "spend", "revenue", "purchases", "ROAS", "CPA",
