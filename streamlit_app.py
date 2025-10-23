@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -114,24 +113,12 @@ def get_orders(limit=250, only_paid=True):
 def create_fulfillment(order_id, tracking_number, tracking_company="Correios"):
     """
     Cria o fulfillment (processamento) do pedido na Shopify e adiciona o código de rastreio.
-    Corrigido para incluir line_items.
     """
     url = f"{BASE_URL}/orders/{order_id}/fulfillments.json"
-
-    # Busca itens do pedido (necessário para fulfillment)
-    try:
-        r_order = requests.get(f"{BASE_URL}/orders/{order_id}.json", headers=HEADERS, timeout=60)
-        r_order.raise_for_status()
-        order_data = r_order.json().get("order", {})
-        line_items = [{"id": item["id"], "quantity": item["quantity"]} for item in order_data.get("line_items", [])]
-    except Exception as e:
-        return False, f"❌ Erro ao buscar itens do pedido: {e}"
-
     payload = {
         "fulfillment": {
             "tracking_number": tracking_number,
             "tracking_company": tracking_company,
-            "line_items": line_items,
             "notify_customer": True
         }
     }
@@ -144,7 +131,6 @@ def create_fulfillment(order_id, tracking_number, tracking_company="Correios"):
             return False, f"❌ Erro ao processar pedido ({r.status_code}): {r.text}"
     except Exception as e:
         return False, f"❌ Erro de conexão: {e}"
-
 
 
 # =============== Config & Estilos ===============
@@ -1082,11 +1068,11 @@ with tab_shopify:
     
     # ---- Atualizar status com base no código de rastreio ----
     if "Código de rastreio" in tabela.columns:
-        tabela["Status de processamento"] = tabela["Código de rastreio"].apply(
+        tabela["Status de processamento do pedido"] = tabela["Código de rastreio"].apply(
             lambda x: "✅ Processado" if isinstance(x, str) and x.strip() else "🟡 Não processado"
         )
     else:
-        tabela["Status de processamento"] = "🟡 Não processado"
+        tabela["Status de processamento do pedido"] = "🟡 Não processado"
 
 
     # ---- Formatação visual ----
@@ -1114,7 +1100,7 @@ with tab_shopify:
         num_rows="dynamic",
         disabled=["Pedido", "Data do pedido", "Nome do cliente", "Quantidade", "Variante",
                   "Preço unitário", "Tipo de entrega (PAC, SEDEX, etc)",
-                  "Estado de destino", "Cidade de destino", "Status de processamento"]
+                  "Estado de destino", "Cidade de destino", "Status de processamento do pedido"]
     )
 
     # ---- Processar pedidos automaticamente ----
@@ -1146,12 +1132,13 @@ with tab_shopify:
             # Atualiza status da tabela local (sem precisar recarregar manualmente)
             for i, row in tabela_editavel.iterrows():
                 if str(row["Código de rastreio"]).strip():
-                    tabela_editavel.at[i, "Status de processamento"] = "✅ Processado"
+                    tabela_editavel.at[i, "Status de processamento do pedido"] = "✅ Processado"
 
             # Re-renderiza automaticamente
             st.session_state["pedidos"] = pedidos
-            st.success("🔄 Tabela atualizada com sucesso! Atualize a página para ver os dados sincronizados.")
-            st.stop()
+            time.sleep(1.2)
+            st.success("🔄 Tabela atualizada com sucesso!")
+            st.experimental_rerun()
 
 
     # ---- Exportar CSV ----
