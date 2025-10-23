@@ -2554,7 +2554,10 @@ with tab_detail:
             g["revenue"].astype(float),
             g["spend"].replace(0, np.nan).astype(float)
         )
-        g["Custo por Compra"] = np.where(g["purchases"] > 0, g["spend"] / g["purchases"], np.nan)
+        g["Custo por Compra"] = np.divide(
+            g["spend"].astype(float),
+            g["purchases"].replace(0, np.nan).astype(float)
+        )
 
         if min_spend_det and float(min_spend_det) > 0:
             g = g[g["spend"] >= float(min_spend_det)]
