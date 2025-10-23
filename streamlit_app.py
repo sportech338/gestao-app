@@ -837,7 +837,10 @@ def _range_from_preset(preset):
 
 # =============== Dashboards Principais ===============
 st.title("📈 SporTech Analytics – Painel Completo")
-st.markdown("<h5 style='text-align:center;color:gray;'>Monitoramento completo de performance (Meta Ads + Shopify)</h5>", unsafe_allow_html=True)
+st.markdown(
+    "<h5 style='text-align:center;color:gray;'>Monitoramento completo de performance (Meta Ads + Shopify)</h5>",
+    unsafe_allow_html=True
+)
 
 # ---- Cria as abas principais ----
 aba_principal = st.tabs(["📊 Dashboard - Tráfego Pago", "📦 Dashboard - Logística"])
@@ -848,6 +851,7 @@ aba_principal = st.tabs(["📊 Dashboard - Tráfego Pago", "📦 Dashboard - Log
 with aba_principal[0]:
     st.header("📊 Dashboard — Tráfego Pago")
     df_daily = pd.DataFrame()
+
     # 🧩 Configurações (antes na sidebar)
     with st.expander("⚙️ Configurações e Filtros", expanded=True):
         col1, col2, col3 = st.columns(3)
@@ -863,8 +867,7 @@ with aba_principal[0]:
                 [
                     "Hoje", "Ontem",
                     "Últimos 7 dias", "Últimos 14 dias", "Últimos 30 dias", "Últimos 90 dias",
-                    "Esta semana", "Este mês", "Máximo",
-                    "Personalizado"
+                    "Esta semana", "Este mês", "Máximo", "Personalizado"
                 ],
                 index=2,
             )
@@ -878,19 +881,61 @@ with aba_principal[0]:
             since, until = _since_auto, _until_auto
             st.caption(f"**Desde:** {since}  \n**Até:** {until}")
 
+    # 🔑 Verifica se credenciais estão preenchidas
     ready = bool(act_id and token)
     if not ready:
         st.info("Informe **Ad Account ID** e **Access Token** para iniciar.")
         st.stop()
 
     # =====================================================
+    # 🔄 Carregar dados da Meta Ads
+    # =====================================================
+    with st.spinner("Carregando dados da Meta Ads..."):
+        # --- usa cache se já existir ---
+        if "df_daily" in st.session_state and not st.session_state["df_daily"].empty:
+            df_daily = st.session_state["df_daily"]
+        else:
+            df_daily = fetch_insights_daily(
+                act_id=act_id,
+                token=token,
+                api_version=api_version,
+                since_str=str(since),
+                until_str=str(until),
+                level=level,
+                product_name=None
+            )
+            st.session_state["df_daily"] = df_daily
+
+        # --- mesma ideia para horário e detalhamento (opcional) ---
+        if "df_hourly" not in st.session_state or st.session_state["df_hourly"].empty:
+            st.session_state["df_hourly"] = pd.DataFrame()
+        if "df_breakdown" not in st.session_state or st.session_state["df_breakdown"].empty:
+            st.session_state["df_breakdown"] = pd.DataFrame()
+
+    # =====================================================
     # 🧭 Sub-abas internas (Tráfego Pago)
     # =====================================================
-    tab_daily, tab_daypart, tab_detail = st.tabs([
-        "📅 Visão diária",
-        "⏱️ Horários (principal)",
-        "📊 Detalhamento"
-    ])
+    if df_daily.empty:
+        st.warning("Nenhum dado encontrado no período selecionado.")
+    else:
+        tab_daily, tab_daypart, tab_detail = st.tabs([
+            "📅 Visão diária",
+            "⏱️ Horários (principal)",
+            "📊 Detalhamento"
+        ])
+
+        with tab_daily:
+            st.subheader("📅 Visão diária")
+            st.write(df_daily.head())  # Exemplo: apenas preview dos dados
+            # Aqui depois você adiciona seus KPIs, gráficos e funil
+
+        with tab_daypart:
+            st.subheader("⏱️ Horários (principal)")
+            st.info("Gráficos e análises de horários serão carregados aqui.")
+
+        with tab_detail:
+            st.subheader("📊 Detalhamento")
+            st.info("Detalhamento por campanha, público, etc.")
 
 # =====================================================
 # 📦 DASHBOARD – LOGÍSTICA
@@ -899,7 +944,6 @@ with aba_principal[1]:
     st.header("📦 Dashboard — Logística")
 
     tab_shopify = st.tabs(["📦 Shopify – Variantes e Vendas"])[0]
-    
     with tab_shopify:
         st.title("📦 Shopify – Visão Geral")
 
@@ -935,7 +979,7 @@ with aba_principal[1]:
 
         if "ultima_atualizacao" in st.session_state:
             st.caption(f"🕒 Última atualização: {st.session_state['ultima_atualizacao']}")
-        
+
         produtos = st.session_state["produtos"]
         pedidos = st.session_state["pedidos"]
 
@@ -1100,7 +1144,6 @@ with aba_principal[1]:
             file_name=f"pedidos_shopify_{periodo[0]}_{periodo[1]}.csv",
             mime="text/csv",
         )
-
 
 # -------------------- ABA 1: VISÃO DIÁRIA --------------------
 with tab_daily:
