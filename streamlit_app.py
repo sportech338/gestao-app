@@ -54,10 +54,10 @@ def get_products_with_variants(limit=250):
 @st.cache_data(ttl=600)
 def get_orders(limit=250, only_paid=True):
     """
-    Baixa pedidos da Shopify com dados completos (cliente, entrega, produto e localização).
+    Baixa pedidos da Shopify com dados completos (cliente, entrega, produto, rastreio e status).
     Filtra apenas pedidos pagos por padrão.
     """
-    url = f"{BASE_URL}/orders.json?limit={limit}&status=any"
+    url = f"{BASE_URL}/orders.json?limit={limit}&status=any&fields=id,order_number,created_at,financial_status,fulfillment_status,customer,shipping_address,shipping_lines,line_items,fulfillments"
     all_rows = []
 
     while url:
@@ -67,7 +67,7 @@ def get_orders(limit=250, only_paid=True):
         orders = data.get("orders", [])
 
         for o in orders:
-            # 🔹 Filtra apenas pedidos pagos (opcional)
+            # Filtra apenas pagos
             if only_paid and o.get("financial_status") not in ["paid", "partially_paid"]:
                 continue
 
@@ -79,6 +79,15 @@ def get_orders(limit=250, only_paid=True):
                 f"{customer.get('first_name', '')} {customer.get('last_name', '')}".strip()
                 or "(Cliente não informado)"
             )
+
+            # ✅ Busca fulfillment se existir
+            fulfillments = o.get("fulfillments", [])
+            tracking_number = ""
+            if fulfillments:
+                # Pega o último fulfillment válido
+                f = fulfillments[-1]
+                tracking_info = f.get("tracking_info") or {}
+                tracking_number = tracking_info.get("number", "") or f.get("tracking_number", "")
 
             for it in o.get("line_items", []):
                 preco = float(it.get("price") or 0)
@@ -102,9 +111,10 @@ def get_orders(limit=250, only_paid=True):
                     "forma_entrega": shipping_lines[0].get("title", "N/A"),
                     "estado": shipping.get("province", "N/A"),
                     "cidade": shipping.get("city", "N/A"),
+                    "tracking_number": tracking_number,  # ✅ novo campo real da Shopify
                 })
 
-        # 🔁 Paginação segura (Shopify REST)
+        # Paginação
         next_link = r.links.get("next", {}).get("url")
         url = next_link if next_link else None
 
