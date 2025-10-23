@@ -1412,11 +1412,44 @@ with aba_principal[0]:
 
             # ========= FUNIL por CAMPANHA =========
             if level == "campaign":
-                st.subheader("📦 Funil por campanha (somatório — apenas campanhas ativas no período filtrado)")
+                st.subheader("📦 Funil por campanha (somatório — inclui acompanhamento em tempo real se o filtro abranger hoje)")
 
-                # 🔹 Filtra o período selecionado
-                mask_period = (df_daily_view["date"] >= pd.Timestamp(since)) & (df_daily_view["date"] <= pd.Timestamp(until))
+                # 🔹 Filtra o período selecionado (inclui hoje se estiver dentro do range)
+                today = pd.Timestamp.today().normalize()
+                since_ts = pd.Timestamp(since)
+                until_ts = pd.Timestamp(until)
+
+                if until_ts >= today:
+                    mask_period = (df_daily_view["date"] >= since_ts) & (df_daily_view["date"] <= today)
+                    realtime_mode = True
+                else:
+                    mask_period = (df_daily_view["date"] >= since_ts) & (df_daily_view["date"] <= until_ts)
+                    realtime_mode = False
+
                 df_filtered = df_daily_view.loc[mask_period].copy()
+
+                # 🔹 Se o dia de hoje estiver incluso, atualiza dados em tempo real diretamente da API
+                if realtime_mode:
+                    with st.spinner("⏱️ Atualizando dados de hoje em tempo real (Meta Ads)..."):
+                        try:
+                            df_today_live = fetch_insights_daily(
+                                act_id=act_id,
+                                token=token,
+                                api_version=api_version,
+                                since_str=str(today),
+                                until_str=str(today),
+                                level=level,
+                                product_name=None
+                            )
+                            if df_today_live is not None and not df_today_live.empty:
+                                # Atualiza com dados do dia atual
+                                df_filtered = pd.concat([df_filtered, df_today_live], ignore_index=True)
+                                df_filtered.drop_duplicates(subset=["date", "campaign_id"], inplace=True)
+                                st.success("✅ Dados de hoje atualizados com sucesso!")
+                            else:
+                                st.info("Nenhum dado adicional encontrado para hoje (Meta ainda sincronizando).")
+                        except Exception as e:
+                            st.warning(f"⚠️ Falha ao atualizar dados de hoje: {e}")
 
                 if df_filtered.empty:
                     st.info("Sem dados de campanha no período selecionado.")
@@ -1471,6 +1504,10 @@ with aba_principal[0]:
 
                 # 🔹 Ordena por Faturamento (default)
                 disp = disp.sort_values(by="Faturamento", ascending=False)
+
+                # 🔹 Exibe status de tempo real se ativo
+                if realtime_mode:
+                    st.caption("⏱️ Modo tempo real ativado — exibindo dados parciais do dia atual.")
 
                 # 🔹 Exibe a tabela
                 st.dataframe(disp, use_container_width=True, height=420)
