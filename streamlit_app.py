@@ -835,29 +835,32 @@ def fetch_insights_breakdown(act_id: str, token: str, api_version: str,
                                  
 # === Helper: traduz período rápido em datas (igual ao Meta Ads) ===
 def _range_from_preset(p):
-    local_today = datetime.now(APP_TZ).date()
-    base_end = local_today - timedelta(days=1)
-    if p == "Hoje":
-        return local_today, local_today
-    if p == "Ontem":
-        return local_today - timedelta(days=1), local_today - timedelta(days=1)
-    if p == "Últimos 7 dias":
-        return base_end - timedelta(days=7), base_end
-    if p == "Últimos 14 dias":
-        return base_end - timedelta(days=13), base_end
-    if p == "Últimos 30 dias":
-        return base_end - timedelta(days=29), base_end
-    if p == "Últimos 90 dias":
-        return base_end - timedelta(days=89), base_end
-    if p == "Esta semana":
-        start_week = local_today - timedelta(days=local_today.weekday())
-        return start_week, local_today
-    if p == "Este mês":
-        start_month = local_today.replace(day=1)
-        return start_month, local_today
-    if p == "Máximo":
-        return date(2017, 1, 1), base_end
-    return base_end - timedelta(days=6), base_end
+    today = date.today()
+    yesterday = today - timedelta(days=1)
+
+    if preset == "Hoje":
+        return today, today
+    elif preset == "Ontem":
+        return yesterday, yesterday
+    elif preset == "Últimos 7 dias":
+        # 7 dias completos ANTES de hoje (exclui o dia atual)
+        return today - timedelta(days=7), yesterday
+    elif preset == "Últimos 14 dias":
+        return today - timedelta(days=14), yesterday
+    elif preset == "Últimos 30 dias":
+        return today - timedelta(days=30), yesterday
+    elif preset == "Últimos 90 dias":
+        return today - timedelta(days=90), yesterday
+    elif preset == "Esta semana":
+        start = today - timedelta(days=today.weekday())
+        return start, yesterday
+    elif preset == "Este mês":
+        start = today.replace(day=1)
+        return start, yesterday
+    else:
+        # fallback genérico — 30 dias completos até ontem
+        return today - timedelta(days=30), yesterday
+
 
 # =============== Dashboards Principais ===============
 st.title("📈 SporTech Analytics – Painel Completo")
