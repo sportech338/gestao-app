@@ -2412,7 +2412,10 @@ with tab_detail:
 
         agg_cols = ["spend", "revenue", "purchases", "link_clicks", "lpv", "init_checkout", "add_payment"]
         g = df2.groupby(group_cols, dropna=False, as_index=False)[agg_cols].sum()
-        g["ROAS"] = np.where(g["spend"] > 0, g["revenue"] / g["spend"], np.nan)
+        g["ROAS"] = np.divide(
+            g["revenue"].astype(float),
+            g["spend"].replace(0, np.nan).astype(float)
+        )
 
         if min_spend_det and float(min_spend_det) > 0:
             g = g[g["spend"] >= float(min_spend_det)]
@@ -2463,7 +2466,10 @@ with tab_detail:
                 ["spend", "revenue", "purchases", "link_clicks", "lpv", "init_checkout", "add_payment"]
             ].sum()
         )
-        g["ROAS"] = np.where(g["spend"] > 0, g["revenue"] / g["spend"], np.nan)
+        g["ROAS"] = np.divide(
+            g["revenue"].astype(float),
+            g["spend"].replace(0, np.nan).astype(float)
+        )
 
         if min_spend_det and float(min_spend_det) > 0:
             g = g[g["spend"] >= float(min_spend_det)]
@@ -2544,7 +2550,10 @@ with tab_detail:
         # Agregar dados principais
         agg_cols = ["spend", "revenue", "purchases"]
         g = base.groupby("Dia da Semana", dropna=False, as_index=False)[agg_cols].sum()
-        g["ROAS"] = np.where(g["spend"] > 0, g["revenue"] / g["spend"], np.nan)
+        g["ROAS"] = np.divide(
+            g["revenue"].astype(float),
+            g["spend"].replace(0, np.nan).astype(float)
+        )
         g["Custo por Compra"] = np.where(g["purchases"] > 0, g["spend"] / g["purchases"], np.nan)
 
         if min_spend_det and float(min_spend_det) > 0:
