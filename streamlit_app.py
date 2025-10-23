@@ -847,7 +847,7 @@ aba_principal = st.tabs(["📊 Dashboard - Tráfego Pago", "📦 Dashboard - Log
 # =====================================================
 with aba_principal[0]:
     st.header("📊 Dashboard — Tráfego Pago")
-
+    df_daily = pd.DataFrame()
     # 🧩 Configurações (antes na sidebar)
     with st.expander("⚙️ Configurações e Filtros", expanded=True):
         col1, col2, col3 = st.columns(3)
