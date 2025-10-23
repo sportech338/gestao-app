@@ -1764,18 +1764,33 @@ with tab_daily:
 # -------------------- ABA 2: HORÁRIOS (PRINCIPAL) --------------------
 with tab_daypart:
 
-    # ===== Função de divisão segura =====
-    def safe_div(num, den):
-        try:
-            return num / den if (pd.notnull(den) and den != 0) else np.nan
-        except Exception:
-            return np.nan
+    # =====================================================
+    # 🧮 Base de dados horária (d = df_hourly filtrado)
+    # =====================================================
+    if "df_hourly" in st.session_state and not st.session_state["df_hourly"].empty:
+        d = st.session_state["df_hourly"].copy()
+    else:
+        with st.spinner("Carregando dados horários..."):
+            d = fetch_insights_hourly(
+                act_id=act_id,
+                token=token,
+                api_version=api_version,
+                since_str=str(since),
+                until_str=str(until),
+                level=level,
+            )
+            st.session_state["df_hourly"] = d
+
+    if d is None or d.empty:
+        st.warning("Sem dados horários disponíveis para o período selecionado.")
+        st.stop()
 
     # ============== 1) HEATMAP HORA × DIA (TOPO) ==============
     st.subheader("📆 Heatmap — Hora × Dia")
     cube_hm = d.groupby(["dow_label","hour"], as_index=False)[
         ["spend","revenue","purchases","link_clicks","lpv","init_checkout","add_payment"]
     ].sum()
+
     cube_hm["roas"] = cube_hm.apply(lambda r: safe_div(r["revenue"], r["spend"]), axis=1)
 
     if min_spend > 0:
