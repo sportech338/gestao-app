@@ -971,10 +971,144 @@ with aba_principal[0]:
             "📊 Detalhamento"
         ])
 
+        # =====================================================
+        # -------------------- ABA 1: VISÃO DIÁRIA --------------------
+        # =====================================================
         with tab_daily:
-            st.subheader("📅 Visão diária")
-            st.write(df_daily.head())  # Exemplo: apenas preview dos dados
-            # Aqui depois você adiciona seus KPIs, gráficos e funil
+            # --- Detecta moeda e formatação ---
+            currency_detected = (
+                df_daily["currency"].dropna().iloc[0]
+                if "currency" in df_daily.columns and not df_daily["currency"].dropna().empty
+                else "BRL"
+            )
+            col_curA, col_curB = st.columns([1, 2])
+            with col_curA:
+                use_brl_display = st.checkbox("Fixar exibição em BRL (símbolo R$)", value=True)
+            currency_label = "BRL" if use_brl_display else currency_detected
+            with col_curB:
+                if use_brl_display and currency_detected != "BRL":
+                    st.caption("⚠️ Exibindo com símbolo **R$** apenas para formatação visual. Os valores permanecem na moeda da conta.")
+            st.caption(f"Moeda detectada: **{currency_detected}** — Exibindo como: **{currency_label}**")
+
+            # --- Filtro de produto ---
+            produto_sel_daily = st.selectbox("Filtrar por produto (opcional)", ["(Todos)"] + PRODUTOS, key="daily_produto")
+            df_daily_view = _filter_by_product(df_daily, produto_sel_daily)
+            if df_daily_view.empty:
+                st.info("Sem dados para o produto selecionado nesse período.")
+                st.stop()
+            if produto_sel_daily != "(Todos)":
+                st.caption(f"🔎 Filtrando por produto: **{produto_sel_daily}**")
+
+            # --- KPIs principais ---
+            tot_spend = float(df_daily_view["spend"].sum())
+            tot_purch = float(df_daily_view["purchases"].sum())
+            tot_rev = float(df_daily_view["revenue"].sum())
+            roas_g = (tot_rev / tot_spend) if tot_spend > 0 else np.nan
+
+            c1, c2, c3, c4 = st.columns(4)
+            with c1:
+                st.markdown('<div class="kpi-card"><div class="small-muted">Valor usado</div>'
+                            f'<div class="big-number">{_fmt_money_br(tot_spend)}</div></div>', unsafe_allow_html=True)
+            with c2:
+                st.markdown('<div class="kpi-card"><div class="small-muted">Vendas</div>'
+                            f'<div class="big-number">{int(round(tot_purch)):,}</div></div>'.replace(",", "."), unsafe_allow_html=True)
+            with c3:
+                st.markdown('<div class="kpi-card"><div class="small-muted">Valor de conversão</div>'
+                            f'<div class="big-number">{_fmt_money_br(tot_rev)}</div></div>', unsafe_allow_html=True)
+            with c4:
+                roas_txt = _fmt_ratio_br(roas_g) if pd.notnull(roas_g) else "—"
+                st.markdown('<div class="kpi-card"><div class="small-muted">ROAS</div>'
+                            f'<div class="big-number">{roas_txt}</div></div>', unsafe_allow_html=True)
+            st.divider()
+
+            # --- Gráfico diário ---
+            st.subheader("Série diária — Investimento e Conversão")
+            daily = df_daily_view.groupby("date", as_index=False)[["spend", "revenue", "purchases"]].sum()
+            daily_pt = daily.rename(columns={"spend": "Gasto", "revenue": "Faturamento"})
+            st.line_chart(daily_pt.set_index("date")[["Faturamento", "Gasto"]])
+            st.caption("Linhas diárias de Receita e Gasto. Vendas na tabela abaixo.")
+
+            # --- Funil total ---
+            st.subheader("Funil do período (Cliques → LPV → Checkout → Add Pagamento → Compra)")
+            f_clicks = float(df_daily_view["link_clicks"].sum())
+            f_lpv = float(df_daily_view["lpv"].sum())
+            f_ic = float(df_daily_view["init_checkout"].sum())
+            f_api = float(df_daily_view["add_payment"].sum())
+            f_pur = float(df_daily_view["purchases"].sum())
+
+            labels_total = ["Cliques", "LPV", "Checkout", "Add Pagamento", "Compra"]
+            values_total = [int(round(f_clicks)), int(round(f_lpv)), int(round(f_ic)), int(round(f_api)), int(round(f_pur))]
+            force_shape = st.checkbox("Forçar formato de funil (decrescente)", value=True)
+            values_plot = enforce_monotonic(values_total) if force_shape else values_total
+
+            st.plotly_chart(funnel_fig(labels_total, values_plot, title="Funil do período"), use_container_width=True)
+
+            # --- Taxas principais ---
+            core_rows = [
+                ("LPV / Cliques", _rate(values_total[1], values_total[0])),
+                ("Checkout / LPV", _rate(values_total[2], values_total[1])),
+                ("Compra / Checkout", _rate(values_total[4], values_total[2])),
+            ]
+            st.dataframe(pd.DataFrame(core_rows, columns=["Taxa", "Valor"]), use_container_width=True)
+
+        # =====================================================
+        # -------------------- ABA 2: HORÁRIOS --------------------
+        # =====================================================
+        with tab_daypart:
+            st.subheader("⏱️ Desempenho por horário (Heatmap + comparativos)")
+            level_hourly = "campaign"
+
+            # Cache
+            cache = st.session_state.setdefault("hourly_cache", {})
+            hourly_key = (act_id, api_version, level_hourly, str(since), str(until))
+            if "df_hourly" not in st.session_state or st.session_state["df_hourly"].empty:
+                st.session_state["df_hourly"] = pd.DataFrame()
+
+            # Lazy-load
+            if st.session_state["df_hourly"].empty or hourly_key not in cache:
+                with st.spinner("Carregando breakdown por hora…"):
+                    cache[hourly_key] = fetch_insights_hourly(
+                        act_id=act_id,
+                        token=token,
+                        api_version=api_version,
+                        since_str=str(since),
+                        until_str=str(until),
+                        level=level_hourly
+                    )
+            df_hourly = cache[hourly_key]
+
+            # Filtro de produto
+            produto_sel_hr = st.selectbox("Filtrar por produto (opcional)", ["(Todos)"] + PRODUTOS, key="daypart_produto")
+
+            # Guard vazio
+            if df_hourly is None or df_hourly.empty:
+                st.info("A conta/período não retornou breakdown por hora. Use a visão diária.")
+                st.stop()
+
+            d = df_hourly.copy()
+            if produto_sel_hr != "(Todos)":
+                mask_hr = d["campaign_name"].str.contains(produto_sel_hr, case=False, na=False)
+                d = d[mask_hr].copy()
+
+            # Limpeza e ajustes
+            d = d.dropna(subset=["hour"])
+            d["hour"] = d["hour"].astype(int).clip(0, 23)
+            d["date_only"] = d["date"].dt.date
+
+            # Slider de gasto mínimo
+            min_spend = st.slider("Gasto mínimo para considerar o horário (R$)", 0.0, 1000.0, 0.0, 10.0)
+            d = d[d["spend"] >= min_spend]
+
+            # Heatmap simples
+            st.markdown("### 🔥 Heatmap de performance por hora")
+            heat = (
+                d.groupby("hour")[["spend", "revenue", "purchases"]]
+                .sum()
+                .reset_index()
+                .rename(columns={"hour": "Hora"})
+            )
+            st.bar_chart(heat.set_index("Hora")[["spend", "revenue"]])
+
 
         with tab_daypart:
             st.subheader("⏱️ Horários (principal)")
