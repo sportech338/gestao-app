@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -1019,7 +1020,7 @@ with tab_shopify:
 
     colunas_existentes = [c for c in [
         order_col, "created_at", "customer_name", "quantity",
-        "variant_title", "price", "forma_entrega", "estado", "cidade"
+        "variant_title", "price", "forma_entrega", "estado", "cidade", "fulfillment_status"
     ] if c in df.columns]
 
     tabela = df[colunas_existentes].sort_values("created_at", ascending=False).copy()
@@ -1028,15 +1029,33 @@ with tab_shopify:
         order_col: "Pedido",
         "created_at": "Data do pedido",
         "customer_name": "Nome do cliente",
-        "quantity": "Qtd",
+        "quantity": "Quantidade",
         "variant_title": "Variante",
         "price": "Preço unitário",
         "forma_entrega": "Tipo de entrega (PAC, SEDEX, etc)",
         "estado": "Estado de destino",
-        "cidade": "Cidade de destino"
+        "cidade": "Cidade de destino",
+        "fulfillment_status": "Status de processamento do pedido"
     }, inplace=True)
 
+        # ---- Adicionar coluna de Status de Processamento ----
+    if "fulfillment_status" in df.columns:
+        tabela["Status de processamento do pedido"] = df["fulfillment_status"].apply(
+            lambda x: (
+                "✅ Processado" if str(x).lower() in ["fulfilled", "shipped", "complete"]
+                else "🟡 Não processado"
+            )
+        )
+    else:
+        tabela["Status de processamento do pedido"] = "🟡 Não processado"
+
+
     # ---- Formatação visual ----
+    if "Pedido" in tabela.columns:
+        tabela["Pedido"] = tabela["Pedido"].apply(
+            lambda x: f"#{int(float(x))}" if pd.notnull(x) else "-"
+        )
+
     if "Data do pedido" in tabela.columns:
         tabela["Data do pedido"] = pd.to_datetime(
             tabela["Data do pedido"], errors="coerce"
@@ -1046,6 +1065,7 @@ with tab_shopify:
         tabela["Preço unitário"] = tabela["Preço unitário"].apply(
             lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
         )
+
 
     st.dataframe(tabela, use_container_width=True)
 
