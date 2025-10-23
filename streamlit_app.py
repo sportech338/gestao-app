@@ -1768,64 +1768,6 @@ with tab_daily:
     d["hour"] = d["hour"].astype(int).clip(0, 23)
     d["date_only"] = d["date"].dt.date
         
-        # =====================================================
-        # -------------------- ABA 2: HORÁRIOS --------------------
-        # =====================================================
-        with tab_daypart:
-            st.subheader("⏱️ Desempenho por horário (Heatmap + comparativos)")
-            level_hourly = "campaign"
-
-            # Cache
-            cache = st.session_state.setdefault("hourly_cache", {})
-            hourly_key = (act_id, api_version, level_hourly, str(since), str(until))
-            if "df_hourly" not in st.session_state or st.session_state["df_hourly"].empty:
-                st.session_state["df_hourly"] = pd.DataFrame()
-
-            # Lazy-load
-            if st.session_state["df_hourly"].empty or hourly_key not in cache:
-                with st.spinner("Carregando breakdown por hora…"):
-                    cache[hourly_key] = fetch_insights_hourly(
-                        act_id=act_id,
-                        token=token,
-                        api_version=api_version,
-                        since_str=str(since),
-                        until_str=str(until),
-                        level=level_hourly
-                    )
-            df_hourly = cache[hourly_key]
-
-            # Filtro de produto
-            produto_sel_hr = st.selectbox("Filtrar por produto (opcional)", ["(Todos)"] + PRODUTOS, key="daypart_produto")
-
-            # Guard vazio
-            if df_hourly is None or df_hourly.empty:
-                st.info("A conta/período não retornou breakdown por hora. Use a visão diária.")
-                st.stop()
-
-            d = df_hourly.copy()
-            if produto_sel_hr != "(Todos)":
-                mask_hr = d["campaign_name"].str.contains(produto_sel_hr, case=False, na=False)
-                d = d[mask_hr].copy()
-
-            # Limpeza e ajustes
-            d = d.dropna(subset=["hour"])
-            d["hour"] = d["hour"].astype(int).clip(0, 23)
-            d["date_only"] = d["date"].dt.date
-
-            # Slider de gasto mínimo
-            min_spend = st.slider("Gasto mínimo para considerar o horário (R$)", 0.0, 1000.0, 0.0, 10.0)
-            d = d[d["spend"] >= min_spend]
-
-            # Heatmap simples
-            st.markdown("### 🔥 Heatmap de performance por hora")
-            heat = (
-                d.groupby("hour")[["spend", "revenue", "purchases"]]
-                .sum()
-                .reset_index()
-                .rename(columns={"hour": "Hora"})
-            )
-            st.bar_chart(heat.set_index("Hora")[["spend", "revenue"]])
-
 
         with tab_daypart:
             st.subheader("⏱️ Horários (principal)")
