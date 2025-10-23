@@ -1416,11 +1416,12 @@ with aba_principal[0]:
                 agg_cols = ["spend", "link_clicks", "lpv", "init_checkout", "add_payment", "purchases", "revenue"]
                 camp = df_daily_view.groupby(["campaign_id", "campaign_name"], as_index=False)[agg_cols].sum()
 
-                camp["ROAS"] = _safe_div(camp["revenue"], camp["spend"])
-                camp["CPA"] = _safe_div(camp["spend"], camp["purchases"])
-                camp["LPV/Cliques"] = _safe_div(camp["lpv"], camp["link_clicks"])
-                camp["Checkout/LPV"] = _safe_div(camp["init_checkout"], camp["lpv"])
-                camp["Compra/Checkout"] = _safe_div(camp["purchases"], camp["init_checkout"])
+                # ===== CORREÇÃO: Divisões seguras linha a linha =====
+                camp["ROAS"] = np.where(camp["spend"] > 0, camp["revenue"] / camp["spend"], np.nan)
+                camp["CPA"] = np.where(camp["purchases"] > 0, camp["spend"] / camp["purchases"], np.nan)
+                camp["LPV/Cliques"] = np.where(camp["link_clicks"] > 0, camp["lpv"] / camp["link_clicks"], np.nan)
+                camp["Checkout/LPV"] = np.where(camp["lpv"] > 0, camp["init_checkout"] / camp["lpv"], np.nan)
+                camp["Compra/Checkout"] = np.where(camp["init_checkout"] > 0, camp["purchases"] / camp["init_checkout"], np.nan)
 
                 disp = camp[["campaign_name", "spend", "revenue", "purchases", "ROAS", "CPA",
                              "LPV/Cliques", "Checkout/LPV", "Compra/Checkout"]]
@@ -1439,7 +1440,7 @@ with aba_principal[0]:
 
                 st.dataframe(disp, use_container_width=True, height=420)
             else:
-                st.info("Troque o nível para 'campaign' para visualizar o detalhamento por campanha.")        
+                st.info("Troque o nível para 'campaign' para visualizar o detalhamento por campanha.")
         
         
         # =====================================================
