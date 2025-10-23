@@ -834,7 +834,7 @@ def fetch_insights_breakdown(act_id: str, token: str, api_version: str,
     return df
                                  
 # === Helper: traduz período rápido em datas (igual ao Meta Ads) ===
-def _range_from_preset(p):
+def _range_from_preset(preset: str):
     today = date.today()
     yesterday = today - timedelta(days=1)
 
@@ -857,6 +857,12 @@ def _range_from_preset(p):
     elif preset == "Este mês":
         start = today.replace(day=1)
         return start, yesterday
+    elif preset == "Máximo":
+        # defina aqui como preferir; deixei 90 por padrão
+        return today - timedelta(days=90), yesterday
+    elif preset == "Personalizado":
+        # a UI vai abrir os date_inputs; aqui só devolvemos um fallback
+        return today - timedelta(days=30), yesterday
     else:
         # fallback genérico — 30 dias completos até ontem
         return today - timedelta(days=30), yesterday
