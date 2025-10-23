@@ -115,6 +115,21 @@ def get_orders(limit=250, only_paid=True):
 
 # =============== Config & Estilos ===============
 st.set_page_config(page_title="Meta Ads — Paridade + Funil", page_icon="📊", layout="wide")
+
+# =====================================================
+# 🧠 Proteção global — cria variáveis de sessão padrão
+# =====================================================
+for var in ["df_daily", "df_hourly", "df_breakdown", "produtos", "pedidos"]:
+    if var not in st.session_state:
+        st.session_state[var] = pd.DataFrame()
+
+# 🔒 Garante que as variáveis locais existam (evita NameError)
+df_daily = st.session_state.get("df_daily", pd.DataFrame())
+df_hourly = st.session_state.get("df_hourly", pd.DataFrame())
+df_breakdown = st.session_state.get("df_breakdown", pd.DataFrame())
+produtos = st.session_state.get("produtos", pd.DataFrame())
+pedidos = st.session_state.get("pedidos", pd.DataFrame())
+        
 st.markdown("""
 <style>
 .small-muted { color:#6b7280; font-size:12px; }
