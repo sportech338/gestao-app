@@ -52,62 +52,24 @@ def get_products_with_variants(limit=250):
     return pd.DataFrame(rows)
 
 @st.cache_data(ttl=600)
-def get_orders(limit=250, only_paid=True):
-    """
-    Baixa pedidos da Shopify com dados completos (cliente, entrega, produto e localização).
-    Filtra apenas pedidos pagos por padrão.
-    """
+def get_orders(limit=100):
     url = f"{BASE_URL}/orders.json?limit={limit}&status=any"
-    all_rows = []
-
-    while url:
-        r = requests.get(url, headers=HEADERS, timeout=60)
-        r.raise_for_status()
-        data = r.json()
-        orders = data.get("orders", [])
-
-        for o in orders:
-            # 🔹 Filtra apenas pedidos pagos, se desejado
-            if only_paid and o.get("financial_status") not in ["paid", "partially_paid"]:
-                continue
-
-            customer = o.get("customer") or {}
-            shipping = o.get("shipping_address") or {}
-            shipping_lines = o.get("shipping_lines") or [{}]
-
-            nome_cliente = (
-                f"{customer.get('first_name', '')} {customer.get('last_name', '')}".strip()
-                or "(Cliente não informado)"
-            )
-
-            for it in o.get("line_items", []):
-                preco = float(it.get("price") or 0)
-                qtd = int(it.get("quantity", 0))
-
-                all_rows.append({
-                    "order_id": o.get("id"),
-                    "order_number": o.get("order_number"),
-                    "created_at": o.get("created_at"),
-                    "financial_status": o.get("financial_status"),
-                    "fulfillment_status": o.get("fulfillment_status"),
-                    "customer_name": nome_cliente,
-                    "customer_email": customer.get("email", ""),
-                    "produto": it.get("title"),
-                    "variant_title": it.get("variant_title"),
-                    "sku": it.get("sku"),
-                    "quantity": qtd,
-                    "price": preco,
-                    "line_revenue": preco * qtd,
-                    "forma_entrega": shipping_lines[0].get("title", "N/A"),
-                    "estado": shipping.get("province", "N/A"),
-                    "cidade": shipping.get("city", "N/A"),
-                })
-
-        # 🔁 Paginação segura (Shopify REST)
-        next_link = r.links.get("next", {}).get("url")
-        url = next_link if next_link else None
-
-    return pd.DataFrame(all_rows)
+    r = requests.get(url, headers=HEADERS, timeout=60)
+    r.raise_for_status()
+    data = r.json().get("orders", [])
+    rows = []
+    for o in data:
+        for it in o.get("line_items", []):
+            rows.append({
+                "order_id": o["id"],
+                "created_at": o["created_at"],
+                "variant_id": it.get("variant_id"),
+                "title": it.get("title"),
+                "variant_title": it.get("variant_title"),
+                "quantity": it.get("quantity", 0),
+                "price": float(it.get("price") or 0),
+            })
+    return pd.DataFrame(rows)
 
 
 # =============== Config & Estilos ===============
@@ -918,17 +880,15 @@ with tab_shopify:
             "variant": "variant_title",
             "variant_name": "variant_title",
             "id": "variant_id",
-            "variantid": "variant_id",
-            "customer": "customer_name",
-            "cliente": "customer_name"
+            "variantid": "variant_id"
         }
         return df.rename(columns=ren)
 
     produtos = normalizar(produtos)
     pedidos = normalizar(pedidos)
 
-    # ---- Garantir colunas obrigatórias ----
-    for col in ["order_id", "order_number", "financial_status", "fulfillment_status", "customer_name"]:
+    # ---- Garantir colunas obrigatórias (para evitar KeyError) ----
+    for col in ["order_id", "order_number", "financial_status", "fulfillment_status"]:
         if col not in pedidos.columns:
             pedidos[col] = None
 
@@ -943,7 +903,6 @@ with tab_shopify:
     # ---- Ajustar nomes ----
     base["product_title"] = base["product_title_pedido"].combine_first(base["product_title_produto"])
     base["variant_title"] = base["variant_title_pedido"].combine_first(base["variant_title_produto"])
-    base["customer_name"].fillna("(Cliente não informado)", inplace=True)
 
     # ---- Tipos e métricas ----
     base["created_at"] = pd.to_datetime(base.get("created_at"), errors="coerce")
@@ -957,7 +916,7 @@ with tab_shopify:
 
     # ---- Filtros ----
     st.subheader("🎛️ Filtros")
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3 = st.columns(3)
 
     with col1:
         produtos_lbl = ["(Todos os produtos)"] + sorted(base["product_title"].dropna().unique().tolist())
@@ -968,10 +927,6 @@ with tab_shopify:
         escolha_var = st.selectbox("Variante", variantes_lbl, index=0)
 
     with col3:
-        clientes_lbl = ["(Todos os clientes)"] + sorted(base["customer_name"].dropna().unique().tolist())
-        escolha_cliente = st.selectbox("Cliente", clientes_lbl, index=0)
-
-    with col4:
         if not base["created_at"].isnull().all():
             min_date = base["created_at"].min().date()
             max_date = base["created_at"].max().date()
@@ -990,14 +945,13 @@ with tab_shopify:
         df = df[df["product_title"] == escolha_prod]
     if escolha_var != "(Todas as variantes)":
         df = df[df["variant_title"] == escolha_var]
-    if escolha_cliente != "(Todos os clientes)":
-        df = df[df["customer_name"] == escolha_cliente]
 
     if df.empty:
         st.warning("Nenhum pedido encontrado com os filtros selecionados.")
         st.stop()
 
     # ---- Resumo ----
+    # Usa order_number se existir, senão order_id
     order_col = "order_number" if "order_number" in df.columns and df["order_number"].notna().any() else "order_id"
     total_pedidos = df[order_col].nunique()
     total_unidades = df["quantity"].sum()
@@ -1014,7 +968,7 @@ with tab_shopify:
     st.subheader("📋 Pedidos filtrados")
 
     colunas_existentes = [c for c in [
-        order_col, "created_at", "customer_name", "financial_status", "fulfillment_status",
+        order_col, "created_at", "financial_status", "fulfillment_status",
         "product_title", "variant_title", "sku", "quantity", "price", "line_revenue"
     ] if c in df.columns]
 
@@ -1023,7 +977,6 @@ with tab_shopify:
     tabela.rename(columns={
         order_col: "Pedido",
         "created_at": "Data",
-        "customer_name": "Cliente",
         "financial_status": "Pagamento",
         "fulfillment_status": "Entrega",
         "product_title": "Produto",
