@@ -549,9 +549,7 @@ def fetch_insights_daily(act_id: str, token: str, api_version: str,
                 lpv = rec.get("landing_page_views", None)
                 if lpv is None:
                     lpv = _sum_actions_exact(actions, ["landing_page_view"], allowed_keys=ATTR_KEYS)
-                    if lpv == 0:
-                        lpv = (_sum_actions_exact(actions, ["view_content"], allowed_keys=ATTR_KEYS)
-                               or _sum_actions_contains(actions, ["landing_page"], allowed_keys=ATTR_KEYS))
+
 
                 ic  = _pick_checkout_totals(actions, allowed_keys=ATTR_KEYS)
                 api = _pick_add_payment_totals(actions, allowed_keys=ATTR_KEYS)
