@@ -1769,14 +1769,6 @@ with tab_daily:
     d["date_only"] = d["date"].dt.date
         
 
-        with tab_daypart:
-            st.subheader("⏱️ Horários (principal)")
-            st.info("Gráficos e análises de horários serão carregados aqui.")
-
-        with tab_detail:
-            st.subheader("📊 Detalhamento")
-            st.info("Detalhamento por campanha, público, etc.")
-
 # =====================================================
 # 📦 DASHBOARD – LOGÍSTICA
 # =====================================================
