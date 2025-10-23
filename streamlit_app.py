@@ -859,9 +859,6 @@ def _range_from_preset(p):
         return date(2017, 1, 1), base_end
     return base_end - timedelta(days=6), base_end
 
-_since_auto, _until_auto = _range_from_preset(preset)
-
-
 # =============== Dashboards Principais ===============
 st.title("📈 SporTech Analytics – Painel Completo")
 st.markdown(
