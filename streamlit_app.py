@@ -1716,62 +1716,111 @@ with tab_daily:
 
                 st.markdown("---")
 
-    # ========= FUNIL por CAMPANHA =========
-    if level == "campaign":
-        st.subheader("Campanhas — Funil e Taxas (somatório no período)")
+            # ========= FUNIL por CAMPANHA =========
+            if level == "campaign":
+                st.subheader("📦 Funil por campanha (somatório — inclui acompanhamento em tempo real se o filtro abranger hoje)")
 
-        agg_cols = ["spend", "link_clicks", "lpv", "init_checkout", "add_payment", "purchases", "revenue"]
-        camp = df_daily_view.groupby(["campaign_id", "campaign_name"], as_index=False)[agg_cols].sum()
+                # 🔹 Filtra o período selecionado (inclui hoje se estiver dentro do range)
+                today = pd.Timestamp.today().normalize()
+                since_ts = pd.Timestamp(since)
+                until_ts = pd.Timestamp(until)
 
-    else:
-        st.info("Troque o nível para 'campaign' para ver o detalhamento por campanha.")
-        
-with tab_daypart:
-    st.caption("Explore desempenho por hora: Heatmap no topo, depois comparação de dias e apanhado geral.")
+                if until_ts >= today:
+                    mask_period = (df_daily_view["date"] >= since_ts) & (df_daily_view["date"] <= today)
+                    realtime_mode = True
+                else:
+                    mask_period = (df_daily_view["date"] >= since_ts) & (df_daily_view["date"] <= until_ts)
+                    realtime_mode = False
 
-    level_hourly = "campaign"
+                df_filtered = df_daily_view.loc[mask_period].copy()
 
-    # 2) Cache por chave (granularidade + período)
-    cache = st.session_state.setdefault("hourly_cache", {})
-    hourly_key = (act_id, api_version, level_hourly, str(since), str(until))
+                # 🔹 Se o dia de hoje estiver incluso, atualiza dados em tempo real diretamente da API
+                if realtime_mode:
+                    with st.spinner("⏱️ Atualizando dados de hoje em tempo real (Meta Ads)..."):
+                        try:
+                            df_today_live = fetch_insights_daily(
+                                act_id=act_id,
+                                token=token,
+                                api_version=api_version,
+                                since_str=str(today),
+                                until_str=str(today),
+                                level=level,
+                                product_name=None
+                            )
+                            if df_today_live is not None and not df_today_live.empty:
+                                # Atualiza com dados do dia atual
+                                df_filtered = pd.concat([df_filtered, df_today_live], ignore_index=True)
+                                df_filtered.drop_duplicates(subset=["date", "campaign_id"], inplace=True)
+                                st.success("✅ Dados de hoje atualizados com sucesso!")
+                            else:
+                                st.info("Nenhum dado adicional encontrado para hoje (Meta ainda sincronizando).")
+                        except Exception as e:
+                            st.warning(f"⚠️ Falha ao atualizar dados de hoje: {e}")
 
-    # 3) Lazy-load: só busca quando precisa e guarda no cache
-    if df_hourly is None or hourly_key not in cache:
-        with st.spinner("Carregando breakdown por hora…"):
-            cache[hourly_key] = fetch_insights_hourly(
-                act_id=act_id, token=token, api_version=api_version,
-                since_str=str(since), until_str=str(until), level=level_hourly
-            )
-    df_hourly = cache[hourly_key]
+                if df_filtered.empty:
+                    st.info("Sem dados de campanha no período selecionado.")
+                    st.stop()
 
-    # --------- Filtro por produto (opcional) ---------
-    produto_sel_hr = st.selectbox(
-        "Filtrar por produto (opcional)",
-        ["(Todos)"] + PRODUTOS,
-        key="daypart_produto"
-    )
+                # 🔹 Detecta campanhas ativas (teve gasto > 0 no período)
+                active_campaigns = (
+                    df_filtered.groupby("campaign_id")["spend"]
+                    .sum()
+                    .loc[lambda s: s > 0]
+                    .index
+                    .tolist()
+                )
 
-    # Guard: checa vazio antes de usar
-    if df_hourly is None or df_hourly.empty:
-        st.info("A conta/período não retornou breakdown por hora. Use a visão diária.")
-        st.stop()
+                # 🔹 Mantém apenas campanhas ativas
+                df_active = df_filtered[df_filtered["campaign_id"].isin(active_campaigns)].copy()
 
-    # Agora aplicamos o filtro por produto no campaign_name
-    d = df_hourly.copy()
-    if produto_sel_hr != "(Todos)":
-        mask_hr = d["campaign_name"].str.contains(produto_sel_hr, case=False, na=False)
-        d = d[mask_hr].copy()
+                if df_active.empty:
+                    st.info("Nenhuma campanha ativa no período selecionado.")
+                    st.stop()
 
-    # Slider de gasto mínimo
-    min_spend = st.slider(
-        "Gasto mínimo para considerar o horário (R$)",
-        0.0, 1000.0, 0.0, 10.0
-    )
+                # 🔹 Agrega apenas as campanhas ativas
+                agg_cols = ["spend", "link_clicks", "lpv", "init_checkout", "add_payment", "purchases", "revenue"]
+                camp = df_active.groupby(["campaign_id", "campaign_name"], as_index=False)[agg_cols].sum()
 
-    d = d.dropna(subset=["hour"])
-    d["hour"] = d["hour"].astype(int).clip(0, 23)
-    d["date_only"] = d["date"].dt.date
-        
+                # ===== Divisões seguras linha a linha =====
+                camp["ROAS"] = np.where(camp["spend"] > 0, camp["revenue"] / camp["spend"], np.nan)
+                camp["CPA"] = np.where(camp["purchases"] > 0, camp["spend"] / camp["purchases"], np.nan)
+                camp["LPV/Cliques"] = np.where(camp["link_clicks"] > 0, camp["lpv"] / camp["link_clicks"], np.nan)
+                camp["Checkout/LPV"] = np.where(camp["lpv"] > 0, camp["init_checkout"] / camp["lpv"], np.nan)
+                camp["Compra/Checkout"] = np.where(camp["init_checkout"] > 0, camp["purchases"] / camp["init_checkout"], np.nan)
+
+                # 🔹 Monta dataframe de exibição formatado
+                disp = camp[["campaign_name", "spend", "revenue", "purchases", "ROAS", "CPA",
+                             "LPV/Cliques", "Checkout/LPV", "Compra/Checkout"]]
+                disp.rename(columns={
+                    "campaign_name": "Campanha",
+                    "spend": "Gasto",
+                    "revenue": "Faturamento",
+                    "purchases": "Vendas"
+                }, inplace=True)
+
+                # 🔹 Formatação visual (pt-BR)
+                disp["Gasto"] = disp["Gasto"].map(_fmt_money_br)
+                disp["Faturamento"] = disp["Faturamento"].map(_fmt_money_br)
+                disp["Vendas"] = disp["Vendas"].map(_fmt_int_br)
+                disp["ROAS"] = disp["ROAS"].map(_fmt_ratio_br)
+                disp["CPA"] = disp["CPA"].map(_fmt_money_br)
+                disp["LPV/Cliques"] = disp["LPV/Cliques"].map(_fmt_pct_br)
+                disp["Checkout/LPV"] = disp["Checkout/LPV"].map(_fmt_pct_br)
+                disp["Compra/Checkout"] = disp["Compra/Checkout"].map(_fmt_pct_br)
+
+                # 🔹 Ordena por Faturamento (default)
+                disp = disp.sort_values(by="Faturamento", ascending=False)
+
+                # 🔹 Exibe status de tempo real se ativo
+                if realtime_mode:
+                    st.caption("⏱️ Modo tempo real ativado — exibindo dados parciais do dia atual.")
+
+                # 🔹 Exibe a tabela
+                st.dataframe(disp, use_container_width=True, height=420)
+
+            else:
+                st.info("Troque o nível para 'campaign' para visualizar o detalhamento por campanha.")
+
 
 # =====================================================
 # 📦 DASHBOARD – LOGÍSTICA
