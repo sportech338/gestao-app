@@ -548,7 +548,7 @@ def fetch_insights_daily(act_id: str, token: str, api_version: str,
 
                 lpv = rec.get("landing_page_views")
                 if lpv in (None, "", "null"):
-                    lpv = _sum_actions_exact(actions, ["landing_page_view"], allowed_keys=ATTR_KEYS)
+                    lpv = _sum_actions_exact(actions, ["landing_page_view"], allowed_keys=["7d_click"])
 
 
 
