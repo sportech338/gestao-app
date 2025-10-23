@@ -53,33 +53,54 @@ def get_products_with_variants(limit=250):
 
 @st.cache_data(ttl=600)
 def get_orders(limit=250):
-    url = f"{BASE_URL}/orders.json?limit={limit}&status=any"
-    r = requests.get(url, headers=HEADERS, timeout=60)
-    r.raise_for_status()
-    data = r.json().get("orders", [])
-    rows = []
-    for o in data:
-        # Cliente (nome completo)
-        customer = o.get("customer", {})
-        nome_cliente = f"{customer.get('first_name', '')} {customer.get('last_name', '')}".strip() or "(Cliente não informado)"
+    """Baixa pedidos da Shopify com dados do cliente e produtos."""
+    url = f"{BASE_URL}/orders.json?limit={limit}&status=any&fields=id,order_number,created_at,financial_status,fulfillment_status,customer,line_items"
+    all_rows = []
+    
+    while url:
+        r = requests.get(url, headers=HEADERS, timeout=60)
+        r.raise_for_status()
+        data = r.json()
+        orders = data.get("orders", [])
 
-        # Itens do pedido
-        for it in o.get("line_items", []):
-            rows.append({
-                "order_id": o.get("id"),
-                "order_number": o.get("order_number"),
-                "created_at": o.get("created_at"),
-                "financial_status": o.get("financial_status"),
-                "fulfillment_status": o.get("fulfillment_status"),
-                "customer_name": nome_cliente,   # ✅ agora vem da Shopify
-                "variant_id": it.get("variant_id"),
-                "title": it.get("title"),
-                "variant_title": it.get("variant_title"),
-                "quantity": it.get("quantity", 0),
-                "price": float(it.get("price") or 0),
-            })
-    return pd.DataFrame(rows)
+        for o in orders:
+            # ----- Cliente -----
+            customer = o.get("customer") or {}
+            nome_cliente = f"{customer.get('first_name', '')} {customer.get('last_name', '')}".strip() or "(Cliente não informado)"
+            email_cliente = customer.get("email", "")
+            id_cliente = customer.get("id", "")
 
+            # ----- Itens do pedido -----
+            for it in o.get("line_items", []):
+                all_rows.append({
+                    "order_id": o.get("id"),
+                    "order_number": o.get("order_number"),
+                    "created_at": o.get("created_at"),
+                    "financial_status": o.get("financial_status"),
+                    "fulfillment_status": o.get("fulfillment_status"),
+                    "customer_name": nome_cliente,
+                    "customer_email": email_cliente,
+                    "customer_id": id_cliente,
+                    "variant_id": it.get("variant_id"),
+                    "title": it.get("title"),
+                    "variant_title": it.get("variant_title"),
+                    "quantity": it.get("quantity", 0),
+                    "price": float(it.get("price") or 0),
+                })
+
+        # Paginação (Shopify inclui "Link" no cabeçalho HTTP)
+        link_header = r.headers.get("Link")
+        if link_header and 'rel="next"' in link_header:
+            parts = [p.strip() for p in link_header.split(",")]
+            next_links = [p for p in parts if 'rel="next"' in p]
+            if next_links:
+                url = next_links[0].split(";")[0].strip("<> ")
+            else:
+                url = None
+        else:
+            url = None
+
+    return pd.DataFrame(all_rows)
 
 
 # =============== Config & Estilos ===============
