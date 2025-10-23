@@ -2137,14 +2137,18 @@ with tab_daypart:
     default_untilA = (since - timedelta(days=1))
 
     colA1, colA2, colB1, colB2 = st.columns(4)
+
+    def _fmt_date(d):
+        return d.strftime("%d/%m/%Y")
+    
     with colA1:
-        period_sinceA = st.date_input("Desde (A)", value=default_sinceA, key="cmp_sinceA")
+        period_sinceA = st.date_input("Desde (A)", value=default_sinceA, key="cmp_sinceA", format="DD/MM/YYYY")
     with colA2:
-        period_untilA = st.date_input("Até (A)", value=default_untilA, key="cmp_untilA")
+        period_untilA = st.date_input("Até (A)", value=default_untilA, key="cmp_untilA", format="DD/MM/YYYY")
     with colB1:
-        period_sinceB = st.date_input("Desde (B)", value=since, key="cmp_sinceB")
+        period_sinceB = st.date_input("Desde (B)", value=since, key="cmp_sinceB", format="DD/MM/YYYY")
     with colB2:
-        period_untilB = st.date_input("Até (B)", value=until, key="cmp_untilB")
+        period_untilB = st.date_input("Até (B)", value=until, key="cmp_untilB", format="DD/MM/YYYY")
 
     if period_sinceA > period_untilA or period_sinceB > period_untilB:
         st.warning("Confira as datas: em cada período, 'Desde' não pode ser maior que 'Até'.")
