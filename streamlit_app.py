@@ -948,22 +948,24 @@ with aba_principal[0]:
     # 🔄 Carregar dados da Meta Ads
     # =====================================================
     with st.spinner("Carregando dados da Meta Ads..."):
-        # --- usa cache se já existir ---
-        if "df_daily" in st.session_state and not st.session_state["df_daily"].empty:
-            df_daily = st.session_state["df_daily"]
-        else:
-            df_daily = fetch_insights_daily(
-                act_id=act_id,
-                token=token,
-                api_version=api_version,
-                since_str=str(since),
-                until_str=str(until),
-                level=level,
-                product_name=None
-            )
-            st.session_state["df_daily"] = df_daily
+        # 🔁 Recarrega dados sempre que o preset mudar
+        if st.session_state.get("last_preset") != preset:
+            st.session_state["df_daily"] = pd.DataFrame()
+            st.session_state["last_preset"] = preset
 
-        # --- mesma ideia para horário e detalhamento (opcional) ---
+        # 🔄 Coleta sempre de acordo com o filtro atual
+        df_daily = fetch_insights_daily(
+            act_id=act_id,
+            token=token,
+            api_version=api_version,
+            since_str=str(since),
+            until_str=str(until),
+            level=level,
+            product_name=None
+        )
+        st.session_state["df_daily"] = df_daily
+
+        # 🔁 Garante que as outras bases existam, mesmo se vazias
         if "df_hourly" not in st.session_state or st.session_state["df_hourly"].empty:
             st.session_state["df_hourly"] = pd.DataFrame()
         if "df_breakdown" not in st.session_state or st.session_state["df_breakdown"].empty:
