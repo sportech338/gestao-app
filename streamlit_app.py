@@ -809,299 +809,297 @@ def fetch_insights_breakdown(act_id: str, token: str, api_version: str,
         return df
     df["ROAS"] = np.where(df["spend"]>0, df["revenue"]/df["spend"], np.nan)
     return df
-
-# =============== Sidebar (filtros) ===============
-st.sidebar.header("Configuração")
-act_id = st.sidebar.text_input("Ad Account ID", placeholder="ex.: act_1234567890")
-token = st.sidebar.text_input("Access Token", type="password")
-api_version = st.sidebar.text_input("API Version", value="v23.0")
-level = st.sidebar.selectbox("Nível (recomendado: campaign)", ["campaign"],  index=0)
-
-preset = st.sidebar.radio(
-    "Período rápido",
-    [
-        "Hoje", "Ontem",
-        "Últimos 7 dias", "Últimos 14 dias", "Últimos 30 dias", "Últimos 90 dias",
-        "Esta semana", "Este mês", "Máximo",
-        "Personalizado"
-    ],
-    index=2,
-)
-
-def _range_from_preset(p):
-    local_today = datetime.now(APP_TZ).date()
-    base_end = local_today - timedelta(days=1)
-    if p == "Hoje":
-        return local_today, local_today
-    if p == "Ontem":
-        return local_today - timedelta(days=1), local_today - timedelta(days=1)
-    if p == "Últimos 7 dias":
-        return base_end - timedelta(days=6), base_end
-    if p == "Últimos 14 dias":
-        return base_end - timedelta(days=13), base_end
-    if p == "Últimos 30 dias":
-        return base_end - timedelta(days=29), base_end
-    if p == "Últimos 90 dias":
-        return base_end - timedelta(days=89), base_end
-    if p == "Esta semana":
-        start_week = local_today - timedelta(days=local_today.weekday())
-        return start_week, local_today
-    if p == "Este mês":
-        start_month = local_today.replace(day=1)
-        return start_month, local_today
-    if p == "Máximo":
-        return date(2017, 1, 1), base_end
-    return base_end - timedelta(days=6), base_end
-
-_since_auto, _until_auto = _range_from_preset(preset)
-
-if preset == "Personalizado":
-    since = st.sidebar.date_input("Desde", value=_since_auto, key="since_custom", format="DD/MM/YYYY")
-    until = st.sidebar.date_input("Até",   value=_until_auto, key="until_custom", format="DD/MM/YYYY")
-else:
-    # ✅ NÃO usar date_input aqui (evita estado preso)
-    since, until = _since_auto, _until_auto
-    st.sidebar.caption(f"**Desde:** {since}  \n**Até:** {until}")
-
-ready = bool(act_id and token)
-
-# =============== Tela ===============
-st.title("📊 Meta Ads — Paridade com Filtro + Funil")
-st.caption("KPIs + Funil: Cliques → LPV → Checkout → Add Pagamento → Compra. Tudo alinhado ao período selecionado.")
-
-if not ready:
-    st.info("Informe **Ad Account ID** e **Access Token** para iniciar.")
-    st.stop()
-
-# ===================== Coleta =====================
-with st.spinner("Buscando dados da Meta…"):
-    df_daily = fetch_insights_daily(
-        act_id=act_id,
-        token=token,
-        api_version=api_version,
-        since_str=str(since),
-        until_str=str(until),
-        level=level,
-        product_name=st.session_state.get("daily_produto")  # pode ser None na primeira carga
-    )
-
-df_hourly = None  # será carregado apenas quando o usuário abrir a aba de horário
-
-if df_daily.empty and (df_hourly is None or df_hourly.empty):
-    st.warning("Sem dados para o período. Verifique permissões, conta e se há eventos de Purchase (value/currency).")
-    st.stop()
-
-tab_daily, tab_daypart, tab_detail, tab_shopify = st.tabs(["📅 Visão diária", "⏱️ Horários (principal)", "📊 Detalhamento", "📦 Shopify – Variantes e Vendas"])
-
-# =============== Aba Shopify (Visão Geral de Produtos e Variantes) ===============
-with tab_shopify:
-    st.title("📦 Shopify – Visão Geral")
-
-    # ---- Carregar dados da sessão ----
-    produtos = st.session_state.get("produtos")
-    pedidos = st.session_state.get("pedidos")
-
-    # ---- Atualização de dados da Shopify (em segundo plano) ----
-    import threading
-
-    def atualizar_dados_shopify():
-        try:
-            produtos_novos = get_products_with_variants()
-            pedidos_novos = get_orders()
-            st.session_state["produtos"] = produtos_novos
-            st.session_state["pedidos"] = pedidos_novos
-            st.session_state["ultima_atualizacao"] = datetime.now().strftime("%d/%m/%Y %H:%M")
-            st.toast("✅ Dados da Shopify atualizados com sucesso!", icon="🎉")
-        except Exception as e:
-            st.error(f"Erro ao atualizar dados da Shopify: {e}")
-
-    if st.button("🔄 Atualizar dados da Shopify"):
-        st.info("🔁 Atualização iniciada! Você pode continuar usando as outras abas enquanto carrega.")
-        threading.Thread(target=atualizar_dados_shopify, daemon=True).start()
-
-    # ---- Carregamento automático com cache ----
-    if "produtos" not in st.session_state or st.session_state["produtos"] is None:
-        st.session_state["produtos"] = get_products_with_variants()
-
-    if "pedidos" not in st.session_state or st.session_state["pedidos"] is None:
-        st.session_state["pedidos"] = get_orders()
-
-    if "ultima_atualizacao" in st.session_state:
-        st.caption(f"🕒 Última atualização: {st.session_state['ultima_atualizacao']}")
-    
-    produtos = st.session_state["produtos"]
-    pedidos = st.session_state["pedidos"]
+                                 
+# === Helper: traduz período rápido em datas ===
+def _range_from_preset(preset):
+    today = date.today()
+    if preset == "Hoje":
+        return today, today
+    elif preset == "Ontem":
+        return today - timedelta(days=1), today - timedelta(days=1)
+    elif preset == "Últimos 7 dias":
+        return today - timedelta(days=6), today
+    elif preset == "Últimos 14 dias":
+        return today - timedelta(days=13), today
+    elif preset == "Últimos 30 dias":
+        return today - timedelta(days=29), today
+    elif preset == "Últimos 90 dias":
+        return today - timedelta(days=89), today
+    elif preset == "Esta semana":
+        start = today - timedelta(days=today.weekday())
+        return start, today
+    elif preset == "Este mês":
+        start = today.replace(day=1)
+        return start, today
+    else:
+        return today - timedelta(days=29), today
 
 
-    if produtos is None or pedidos is None or produtos.empty or pedidos.empty:
-        st.info("Carregue os dados da Shopify para iniciar (botão acima).")
-        st.stop()
+# =============== Dashboards Principais ===============
+st.title("📈 SporTech Analytics – Painel Completo")
+st.markdown("<h5 style='text-align:center;color:gray;'>Monitoramento completo de performance (Meta Ads + Shopify)</h5>", unsafe_allow_html=True)
 
-    # ---- Normalizar nomes ----
-    def normalizar(df):
-        df.columns = [c.strip().lower() for c in df.columns]
-        ren = {
-            "title": "product_title",
-            "product_name": "product_title",
-            "variant": "variant_title",
-            "variant_name": "variant_title",
-            "id": "variant_id",
-            "variantid": "variant_id"
-        }
-        return df.rename(columns=ren)
+# ---- Cria as abas principais ----
+aba_principal = st.tabs(["📊 Dashboard - Tráfego Pago", "📦 Dashboard - Logística"])
 
-    produtos = normalizar(produtos)
-    pedidos = normalizar(pedidos)
+# =====================================================
+# 📊 DASHBOARD – TRÁFEGO PAGO
+# =====================================================
+with aba_principal[0]:
+    st.header("📊 Dashboard — Tráfego Pago")
 
-    # ---- Garantir colunas obrigatórias (para evitar KeyError) ----
-    for col in ["order_id", "order_number", "financial_status", "fulfillment_status"]:
-        if col not in pedidos.columns:
-            pedidos[col] = None
+    # 🧩 Configurações (antes na sidebar)
+    with st.expander("⚙️ Configurações e Filtros", expanded=True):
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            act_id = st.text_input("Ad Account ID", placeholder="ex.: act_1234567890")
+            level = st.selectbox("Nível (recomendado: campaign)", ["campaign"], index=0)
+        with col2:
+            token = st.text_input("Access Token", type="password")
+            api_version = st.text_input("API Version", value="v23.0")
+        with col3:
+            preset = st.selectbox(
+                "Período rápido",
+                [
+                    "Hoje", "Ontem",
+                    "Últimos 7 dias", "Últimos 14 dias", "Últimos 30 dias", "Últimos 90 dias",
+                    "Esta semana", "Este mês", "Máximo",
+                    "Personalizado"
+                ],
+                index=2,
+            )
 
-    # ---- Juntar pedidos e produtos (corrigido) ----
-    merge_cols = ["variant_id", "sku", "product_title", "variant_title"]
-    merge_cols = [c for c in merge_cols if c in produtos.columns]
-
-    base = pedidos.merge(
-        produtos[merge_cols],
-        on="variant_id",
-        how="left",
-        suffixes=("", "_produto")
-    )
-
-    # ---- Ajustar nomes ----
-    if "product_title_produto" in base.columns and "product_title" not in base.columns:
-        base["product_title"] = base["product_title_produto"]
-
-    if "variant_title_produto" in base.columns and "variant_title" not in base.columns:
-        base["variant_title"] = base["variant_title_produto"]
-
-    base["product_title"].fillna("(Produto desconhecido)", inplace=True)
-    base["variant_title"].fillna("(Variante desconhecida)", inplace=True)
-
-
-    # ---- Tipos e métricas ----
-    base["created_at"] = pd.to_datetime(base.get("created_at"), errors="coerce")
-    base["price"] = pd.to_numeric(base.get("price"), errors="coerce").fillna(0)
-    base["quantity"] = pd.to_numeric(base.get("quantity"), errors="coerce").fillna(0)
-    base["line_revenue"] = base["price"] * base["quantity"]
-
-    # ---- Fallbacks ----
-    base["product_title"].fillna("(Produto desconhecido)", inplace=True)
-    base["variant_title"].fillna("(Variante desconhecida)", inplace=True)
-
-    # ---- Filtros ----
-    st.subheader("🎛️ Filtros")
-    col1, col2, col3 = st.columns(3)
-
-    with col1:
-        produtos_lbl = ["(Todos os produtos)"] + sorted(base["product_title"].dropna().unique().tolist())
-        escolha_prod = st.selectbox("Produto", produtos_lbl, index=0)
-
-    with col2:
-        variantes_lbl = ["(Todas as variantes)"] + sorted(base["variant_title"].dropna().unique().tolist())
-        escolha_var = st.selectbox("Variante", variantes_lbl, index=0)
-
-    with col3:
-        if not base["created_at"].isnull().all():
-            min_date = base["created_at"].min().date()
-            max_date = base["created_at"].max().date()
+        # Cálculo de datas
+        _since_auto, _until_auto = _range_from_preset(preset)
+        if preset == "Personalizado":
+            since = st.date_input("Desde", value=_since_auto, format="DD/MM/YYYY")
+            until = st.date_input("Até", value=_until_auto, format="DD/MM/YYYY")
         else:
-            today = pd.Timestamp.today().date()
-            min_date = max_date = today
-        periodo = st.date_input("Período", (min_date, max_date))
+            since, until = _since_auto, _until_auto
+            st.caption(f"**Desde:** {since}  \n**Até:** {until}")
 
-    # ---- Aplicar filtros ----
-    df = base[
-        (base["created_at"].dt.date >= periodo[0]) &
-        (base["created_at"].dt.date <= periodo[1])
-    ].copy()
-
-    if escolha_prod != "(Todos os produtos)":
-        df = df[df["product_title"] == escolha_prod]
-    if escolha_var != "(Todas as variantes)":
-        df = df[df["variant_title"] == escolha_var]
-
-    if df.empty:
-        st.warning("Nenhum pedido encontrado com os filtros selecionados.")
+    ready = bool(act_id and token)
+    if not ready:
+        st.info("Informe **Ad Account ID** e **Access Token** para iniciar.")
         st.stop()
 
-    # ---- Resumo ----
-    # Usa order_number se existir, senão order_id
-    order_col = "order_number" if "order_number" in df.columns and df["order_number"].notna().any() else "order_id"
-    total_pedidos = df[order_col].nunique()
-    total_unidades = df["quantity"].sum()
-    total_receita = df["line_revenue"].sum()
-    ticket_medio = total_receita / total_pedidos if total_pedidos > 0 else 0
+    # =====================================================
+    # 🧭 Sub-abas internas (Tráfego Pago)
+    # =====================================================
+    tab_daily, tab_daypart, tab_detail = st.tabs([
+        "📅 Visão diária",
+        "⏱️ Horários (principal)",
+        "📊 Detalhamento"
+    ])
 
-    colA, colB, colC, colD = st.columns(4)
-    colA.metric("🧾 Pedidos", total_pedidos)
-    colB.metric("📦 Unidades vendidas", int(total_unidades))
-    colC.metric("💰 Receita total", f"R$ {total_receita:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
-    colD.metric("💸 Ticket médio", f"R$ {ticket_medio:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+# =====================================================
+# 📦 DASHBOARD – LOGÍSTICA
+# =====================================================
+with aba_principal[1]:
+    st.header("📦 Dashboard — Logística")
 
-    # ---- Tabela final ----
-    st.subheader("📋 Pedidos filtrados")
+    tab_shopify = st.tabs(["📦 Shopify – Variantes e Vendas"])[0]
+    
+    with tab_shopify:
+        st.title("📦 Shopify – Visão Geral")
 
-    colunas_existentes = [c for c in [
-        order_col, "created_at", "customer_name", "quantity",
-        "variant_title", "price", "forma_entrega", "estado", "cidade", "fulfillment_status"
-    ] if c in df.columns]
+        # ---- Carregar dados da sessão ----
+        produtos = st.session_state.get("produtos")
+        pedidos = st.session_state.get("pedidos")
 
-    tabela = df[colunas_existentes].sort_values("created_at", ascending=False).copy()
+        # ---- Atualização de dados da Shopify (em segundo plano) ----
+        lock = threading.Lock()
 
-    tabela.rename(columns={
-        order_col: "Pedido",
-        "created_at": "Data do pedido",
-        "customer_name": "Nome do cliente",
-        "quantity": "Quantidade",
-        "variant_title": "Variante",
-        "price": "Preço unitário",
-        "forma_entrega": "Tipo de entrega (PAC, SEDEX, etc)",
-        "estado": "Estado de destino",
-        "cidade": "Cidade de destino",
-        "fulfillment_status": "Status de processamento do pedido"
-    }, inplace=True)
+        def atualizar_dados_shopify():
+            with lock:
+                try:
+                    produtos_novos = get_products_with_variants()
+                    pedidos_novos = get_orders()
+                    st.session_state["produtos"] = produtos_novos
+                    st.session_state["pedidos"] = pedidos_novos
+                    st.session_state["ultima_atualizacao"] = datetime.now().strftime("%d/%m/%Y %H:%M")
+                    st.toast("✅ Dados da Shopify atualizados com sucesso!", icon="🎉")
+                except Exception as e:
+                    st.error(f"Erro ao atualizar dados da Shopify: {e}")
+
+        if st.button("🔄 Atualizar dados da Shopify"):
+            st.info("🔁 Atualização iniciada! Você pode continuar usando as outras abas enquanto carrega.")
+            threading.Thread(target=atualizar_dados_shopify, daemon=True).start()
+
+        # ---- Carregamento automático com cache ----
+        if "produtos" not in st.session_state or st.session_state["produtos"] is None:
+            st.session_state["produtos"] = get_products_with_variants()
+
+        if "pedidos" not in st.session_state or st.session_state["pedidos"] is None:
+            st.session_state["pedidos"] = get_orders()
+
+        if "ultima_atualizacao" in st.session_state:
+            st.caption(f"🕒 Última atualização: {st.session_state['ultima_atualizacao']}")
+        
+        produtos = st.session_state["produtos"]
+        pedidos = st.session_state["pedidos"]
+
+        if produtos is None or pedidos is None or produtos.empty or pedidos.empty:
+            st.info("Carregue os dados da Shopify para iniciar (botão acima).")
+            st.stop()
+
+        # ---- Normalizar nomes ----
+        def normalizar(df):
+            df.columns = [c.strip().lower() for c in df.columns]
+            ren = {
+                "title": "product_title",
+                "product_name": "product_title",
+                "variant": "variant_title",
+                "variant_name": "variant_title",
+                "id": "variant_id",
+                "variantid": "variant_id"
+            }
+            return df.rename(columns=ren)
+
+        produtos = normalizar(produtos)
+        pedidos = normalizar(pedidos)
+
+        # ---- Garantir colunas obrigatórias ----
+        for col in ["order_id", "order_number", "financial_status", "fulfillment_status"]:
+            if col not in pedidos.columns:
+                pedidos[col] = None
+
+        # ---- Juntar pedidos e produtos ----
+        merge_cols = ["variant_id", "sku", "product_title", "variant_title"]
+        merge_cols = [c for c in merge_cols if c in produtos.columns]
+
+        base = pedidos.merge(
+            produtos[merge_cols],
+            on="variant_id",
+            how="left",
+            suffixes=("", "_produto")
+        )
+
+        # ---- Ajustar nomes ----
+        if "product_title_produto" in base.columns and "product_title" not in base.columns:
+            base["product_title"] = base["product_title_produto"]
+
+        if "variant_title_produto" in base.columns and "variant_title" not in base.columns:
+            base["variant_title"] = base["variant_title_produto"]
+
+        base["product_title"].fillna("(Produto desconhecido)", inplace=True)
+        base["variant_title"].fillna("(Variante desconhecida)", inplace=True)
+
+        # ---- Tipos e métricas ----
+        base["created_at"] = pd.to_datetime(base.get("created_at"), errors="coerce")
+        base["price"] = pd.to_numeric(base.get("price"), errors="coerce").fillna(0)
+        base["quantity"] = pd.to_numeric(base.get("quantity"), errors="coerce").fillna(0)
+        base["line_revenue"] = base["price"] * base["quantity"]
+
+        # ---- Filtros ----
+        st.subheader("🎛️ Filtros")
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            produtos_lbl = ["(Todos os produtos)"] + sorted(base["product_title"].dropna().unique().tolist())
+            escolha_prod = st.selectbox("Produto", produtos_lbl, index=0)
+
+        with col2:
+            variantes_lbl = ["(Todas as variantes)"] + sorted(base["variant_title"].dropna().unique().tolist())
+            escolha_var = st.selectbox("Variante", variantes_lbl, index=0)
+
+        with col3:
+            if not base["created_at"].isnull().all():
+                min_date = base["created_at"].min().date()
+                max_date = base["created_at"].max().date()
+            else:
+                today = pd.Timestamp.today().date()
+                min_date = max_date = today
+            periodo = st.date_input("Período", (min_date, max_date))
+
+        # ---- Aplicar filtros ----
+        df = base[
+            (base["created_at"].dt.date >= periodo[0]) &
+            (base["created_at"].dt.date <= periodo[1])
+        ].copy()
+
+        if escolha_prod != "(Todos os produtos)":
+            df = df[df["product_title"] == escolha_prod]
+        if escolha_var != "(Todas as variantes)":
+            df = df[df["variant_title"] == escolha_var]
+
+        if df.empty:
+            st.warning("Nenhum pedido encontrado com os filtros selecionados.")
+            st.stop()
+
+        # ---- Resumo ----
+        order_col = "order_number" if "order_number" in df.columns and df["order_number"].notna().any() else "order_id"
+        total_pedidos = df[order_col].nunique()
+        total_unidades = df["quantity"].sum()
+        total_receita = df["line_revenue"].sum()
+        ticket_medio = total_receita / total_pedidos if total_pedidos > 0 else 0
+
+        colA, colB, colC, colD = st.columns(4)
+        colA.metric("🧾 Pedidos", total_pedidos)
+        colB.metric("📦 Unidades vendidas", int(total_unidades))
+        colC.metric("💰 Receita total", f"R$ {total_receita:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+        colD.metric("💸 Ticket médio", f"R$ {ticket_medio:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+
+        # ---- Tabela final ----
+        st.subheader("📋 Pedidos filtrados")
+
+        colunas_existentes = [c for c in [
+            order_col, "created_at", "customer_name", "quantity",
+            "variant_title", "price", "forma_entrega", "estado", "cidade", "fulfillment_status"
+        ] if c in df.columns]
+
+        tabela = df[colunas_existentes].sort_values("created_at", ascending=False).copy()
+
+        tabela.rename(columns={
+            order_col: "Pedido",
+            "created_at": "Data do pedido",
+            "customer_name": "Nome do cliente",
+            "quantity": "Quantidade",
+            "variant_title": "Variante",
+            "price": "Preço unitário",
+            "forma_entrega": "Tipo de entrega (PAC, SEDEX, etc)",
+            "estado": "Estado de destino",
+            "cidade": "Cidade de destino",
+            "fulfillment_status": "Status de processamento do pedido"
+        }, inplace=True)
 
         # ---- Adicionar coluna de Status de Processamento ----
-    if "fulfillment_status" in df.columns:
-        tabela["Status de processamento do pedido"] = df["fulfillment_status"].apply(
-            lambda x: (
-                "✅ Processado" if str(x).lower() in ["fulfilled", "shipped", "complete"]
-                else "🟡 Não processado"
+        if "fulfillment_status" in df.columns:
+            tabela["Status de processamento do pedido"] = df["fulfillment_status"].apply(
+                lambda x: (
+                    "✅ Processado" if str(x).lower() in ["fulfilled", "shipped", "complete"]
+                    else "🟡 Não processado"
+                )
             )
+        else:
+            tabela["Status de processamento do pedido"] = "🟡 Não processado"
+
+        # ---- Formatação visual ----
+        if "Pedido" in tabela.columns:
+            tabela["Pedido"] = tabela["Pedido"].apply(
+                lambda x: f"#{int(float(x))}" if pd.notnull(x) else "-"
+            )
+
+        if "Data do pedido" in tabela.columns:
+            tabela["Data do pedido"] = pd.to_datetime(
+                tabela["Data do pedido"], errors="coerce"
+            ).dt.strftime("%d/%m/%Y %H:%M")
+
+        if "Preço unitário" in tabela.columns:
+            tabela["Preço unitário"] = tabela["Preço unitário"].apply(
+                lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            )
+
+        st.dataframe(tabela, use_container_width=True)
+
+        # ---- Exportar CSV ----
+        csv = tabela.to_csv(index=False).encode('utf-8-sig')
+        st.download_button(
+            label="📥 Exportar pedidos filtrados (CSV)",
+            data=csv,
+            file_name=f"pedidos_shopify_{periodo[0]}_{periodo[1]}.csv",
+            mime="text/csv",
         )
-    else:
-        tabela["Status de processamento do pedido"] = "🟡 Não processado"
-
-
-    # ---- Formatação visual ----
-    if "Pedido" in tabela.columns:
-        tabela["Pedido"] = tabela["Pedido"].apply(
-            lambda x: f"#{int(float(x))}" if pd.notnull(x) else "-"
-        )
-
-    if "Data do pedido" in tabela.columns:
-        tabela["Data do pedido"] = pd.to_datetime(
-            tabela["Data do pedido"], errors="coerce"
-        ).dt.strftime("%d/%m/%Y %H:%M")
-
-    if "Preço unitário" in tabela.columns:
-        tabela["Preço unitário"] = tabela["Preço unitário"].apply(
-            lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-        )
-
-
-    st.dataframe(tabela, use_container_width=True)
-
-    # ---- Exportar CSV ----
-    csv = tabela.to_csv(index=False).encode('utf-8-sig')
-    st.download_button(
-        label="📥 Exportar pedidos filtrados (CSV)",
-        data=csv,
-        file_name=f"pedidos_shopify_{periodo[0]}_{periodo[1]}.csv",
-        mime="text/csv",
-    )
 
 
 # -------------------- ABA 1: VISÃO DIÁRIA --------------------
