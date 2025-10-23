@@ -972,7 +972,7 @@ with tab_shopify:
         "variant_title", "price", "forma_entrega", "estado", "cidade"
     ] if c in df.columns]
 
-    tabela = df[colunas_existentes].sort_values("created_at", ascending=False)
+    tabela = df[colunas_existentes].sort_values("created_at", ascending=False).copy()
 
     tabela.rename(columns={
         order_col: "Pedido",
