@@ -932,17 +932,27 @@ with tab_shopify:
         if col not in pedidos.columns:
             pedidos[col] = None
 
-    # ---- Juntar pedidos e produtos ----
+    # ---- Juntar pedidos e produtos (corrigido) ----
+    merge_cols = ["variant_id", "sku", "product_title", "variant_title"]
+    merge_cols = [c for c in merge_cols if c in produtos.columns]
+
     base = pedidos.merge(
-        produtos[["variant_id", "sku", "product_title", "variant_title"]],
+        produtos[merge_cols],
         on="variant_id",
         how="left",
-        suffixes=("_pedido", "_produto")
+        suffixes=("", "_produto")
     )
 
     # ---- Ajustar nomes ----
-    base["product_title"] = base["product_title_pedido"].combine_first(base["product_title_produto"])
-    base["variant_title"] = base["variant_title_pedido"].combine_first(base["variant_title_produto"])
+    if "product_title_produto" in base.columns and "product_title" not in base.columns:
+        base["product_title"] = base["product_title_produto"]
+
+    if "variant_title_produto" in base.columns and "variant_title" not in base.columns:
+        base["variant_title"] = base["variant_title_produto"]
+
+    base["product_title"].fillna("(Produto desconhecido)", inplace=True)
+    base["variant_title"].fillna("(Variante desconhecida)", inplace=True)
+
 
     # ---- Tipos e métricas ----
     base["created_at"] = pd.to_datetime(base.get("created_at"), errors="coerce")
