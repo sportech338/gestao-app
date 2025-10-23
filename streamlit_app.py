@@ -1056,7 +1056,7 @@ with tab_shopify:
         "estado": "Estado de destino",
         "cidade": "Cidade de destino",
         "tracking_number": "Código de rastreio",
-        "fulfillment_status": "Status de processamento do pedido"
+        "fulfillment_status": "Status de processamento"
     }, inplace=True)
 
     # ---- Adicionar coluna de Código de Rastreio ----
