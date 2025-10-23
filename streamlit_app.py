@@ -1764,6 +1764,15 @@ with tab_daily:
 # -------------------- ABA 2: HORÁRIOS (PRINCIPAL) --------------------
 with tab_daypart:
 
+    # ================== CONTROLE DE FILTRO DE GASTO ==================
+    min_spend = st.number_input(
+        "💰 Gasto mínimo (R$) — filtra horas com investimento abaixo desse valor",
+        min_value=0.0,
+        value=0.0,
+        step=50.0,
+        help="Define um limite de gasto para incluir no heatmap e nas tabelas. Ex: 200 = só mostra horas com gasto ≥ R$200."
+    )
+
     # =====================================================
     # 🧮 Base de dados horária (d = df_hourly filtrado)
     # =====================================================
