@@ -2234,6 +2234,124 @@ with tab_daypart:
                     st.plotly_chart(_build_barline("Período B —", "(B)", "spend (B)", "revenue (B)", "purchases (B)",
                                                    f"{period_sinceB} a {period_untilB}"), use_container_width=True)
 
+                    # ===== INSIGHTS — Período A =====
+                    st.markdown("### 🔎 Insights — Período A")
+                    a = merged.sort_values("hour").copy()
+                    a_spend, a_rev, a_purch = a["spend (A)"], a["revenue (A)"], a["purchases (A)"]
+                    a_roas_ser = np.where(a_spend > 0, a_rev / a_spend, np.nan)
+
+                    a_tot_spend = float(a_spend.sum())
+                    a_tot_rev = float(a_rev.sum())
+                    a_tot_purch = int(round(float(a_purch.sum())))
+                    a_roas = (a_tot_rev / a_tot_spend) if a_tot_spend > 0 else np.nan
+
+                    c1, c2, c3, c4 = st.columns(4)
+                    c1.metric("Valor usado (A)", _fmt_money_br(a_tot_spend))
+                    c2.metric("Faturamento (A)", _fmt_money_br(a_tot_rev))
+                    c3.metric("Vendas (A)", f"{a_tot_purch:,}".replace(",", "."))
+                    c4.metric("ROAS (A)", _fmt_ratio_br(a_roas) if pd.notnull(a_roas) else "—")
+
+                    # Horas de destaque
+                    h_best_purch = int(a.loc[a["purchases (A)"].idxmax(), "hour"]) if len(a_purch) and a_purch.max() > 0 else None
+                    best_purch_val = int(a_purch.max()) if len(a_purch) else 0
+                    mask_roasA = (a_spend >= float(min_spend)) & (a_spend > 0)
+                    if mask_roasA.any():
+                        roasA_vals = a_roas_ser.copy()
+                        roasA_vals[~mask_roasA] = np.nan
+                        h_best_roasA = int(a.loc[np.nanargmax(roasA_vals), "hour"])
+                        best_roasA_val = float(np.nanmax(roasA_vals))
+                    else:
+                        h_best_roasA, best_roasA_val = None, np.nan
+
+                    rollA = a_purch.rolling(3, min_periods=1).sum()
+                    iA = int(rollA.idxmax()) if len(rollA) else 0
+                    def _bA(ix): return int(a.loc[min(max(ix, 0), len(a)-1), "hour"])
+                    winA_start, winA_mid, winA_end = _bA(iA-1), _bA(iA), _bA(iA+1)
+                    winA_sum = int(rollA.max()) if len(rollA) else 0
+
+                    wastedA = a[(a_spend > 0) & (a_purch == 0)]
+                    wastedA_hours = ", ".join(f"{int(h)}h" for h in wastedA["hour"].tolist()) if not wastedA.empty else "—"
+
+                    st.markdown(f"""
+**Pontos-chave (A)**  
+- 🕐 **Pico de compras:** **{str(h_best_purch)+'h' if h_best_purch is not None else '—'}** ({best_purch_val} compras).  
+- 💹 **Melhor ROAS** (gasto ≥ R$ {min_spend:,.0f}): **{(str(h_best_roasA)+'h') if h_best_roasA is not None else '—'}** ({_fmt_ratio_br(best_roasA_val) if pd.notnull(best_roasA_val) else '—'}).  
+- ⏱️ **Janela forte (3h):** **{winA_start}–{winA_end}h** (centro {winA_mid}h) somando **{winA_sum}** compras.  
+- 🧯 **Horas com gasto e 0 compras:** {wastedA_hours}.
+""".replace(",", "X").replace(".", ",").replace("X", "."))
+
+                    # Top horas A
+                    st.markdown("**Top 5 horas (A)**")
+                    colTA, colTB = st.columns(2)
+                    with colTA:
+                        topA_p = a[["hour","purchases (A)","spend (A)","revenue (A)"]].sort_values("purchases (A)", ascending=False).head(5).copy()
+                        topA_p.rename(columns={"hour":"Hora","purchases (A)":"Compras","spend (A)":"Valor usado","revenue (A)":"Valor de conversão"}, inplace=True)
+                        topA_p["Valor usado"] = topA_p["Valor usado"].apply(_fmt_money_br)
+                        topA_p["Valor de conversão"] = topA_p["Valor de conversão"].apply(_fmt_money_br)
+                        st.dataframe(topA_p, use_container_width=True, height=220)
+                    with colTB:
+                        if mask_roasA.any():
+                            topA_r = a[mask_roasA][["hour","spend (A)","revenue (A)"]].copy()
+                            topA_r["ROAS"] = a_roas_ser[mask_roasA]
+                            topA_r = topA_r.sort_values("ROAS", ascending=False).head(5)
+                            topA_r.rename(columns={"hour":"Hora","spend (A)":"Valor usado","revenue (A)":"Valor de conversão"}, inplace=True)
+                            topA_r["Valor usado"] = topA_r["Valor usado"].apply(_fmt_money_br)
+                            topA_r["Valor de conversão"] = topA_r["Valor de conversão"].apply(_fmt_money_br)
+                            topA_r["ROAS"] = topA_r["ROAS"].map(_fmt_ratio_br)
+                        else:
+                            topA_r = pd.DataFrame(columns=["Hora","Valor usado","Valor de conversão","ROAS"])
+                        st.dataframe(topA_r, use_container_width=True, height=220)
+
+                    st.info("💡 Sugestão: priorize a janela forte e aumente orçamento nas horas de melhor ROAS; reavalie criativos nas horas com gasto e 0 compras.")
+                    st.markdown("---")
+
+                    # ===== INSIGHTS — Período B =====
+                    st.markdown("### 🔎 Insights — Período B")
+                    b = merged.sort_values("hour").copy()
+                    b_spend, b_rev, b_purch = b["spend (B)"], b["revenue (B)"], b["purchases (B)"]
+                    b_roas_ser = np.where(b_spend > 0, b_rev / b_spend, np.nan)
+
+                    b_tot_spend = float(b_spend.sum())
+                    b_tot_rev = float(b_rev.sum())
+                    b_tot_purch = int(round(float(b_purch.sum())))
+                    b_roas = (b_tot_rev / b_tot_spend) if b_tot_spend > 0 else np.nan
+
+                    d1, d2, d3, d4 = st.columns(4)
+                    d1.metric("Valor usado (B)", _fmt_money_br(b_tot_spend))
+                    d2.metric("Faturamento (B)", _fmt_money_br(b_tot_rev))
+                    d3.metric("Vendas (B)", f"{b_tot_purch:,}".replace(",", "."))
+                    d4.metric("ROAS (B)", _fmt_ratio_br(b_roas) if pd.notnull(b_roas) else "—")
+
+                    h_best_purchB = int(b.loc[b["purchases (B)"].idxmax(), "hour"]) if len(b_purch) and b_purch.max() > 0 else None
+                    best_purch_valB = int(b_purch.max()) if len(b_purch) else 0
+                    mask_roasB = (b_spend >= float(min_spend)) & (b_spend > 0)
+                    if mask_roasB.any():
+                        roasB_vals = b_roas_ser.copy()
+                        roasB_vals[~mask_roasB] = np.nan
+                        h_best_roasB = int(b.loc[np.nanargmax(roasB_vals), "hour"])
+                        best_roasB_val = float(np.nanmax(roasB_vals))
+                    else:
+                        h_best_roasB, best_roasB_val = None, np.nan
+
+                    rollB = b_purch.rolling(3, min_periods=1).sum()
+                    iB = int(rollB.idxmax()) if len(rollB) else 0
+                    def _bB(ix): return int(b.loc[min(max(ix, 0), len(b)-1), "hour"])
+                    winB_start, winB_mid, winB_end = _bB(iB-1), _bB(iB), _bB(iB+1)
+                    winB_sum = int(rollB.max()) if len(rollB) else 0
+
+                    wastedB = b[(b_spend > 0) & (b_purch == 0)]
+                    wastedB_hours = ", ".join(f"{int(h)}h" for h in wastedB["hour"].tolist()) if not wastedB.empty else "—"
+
+                    st.markdown(f"""
+**Pontos-chave (B)**  
+- 🕐 **Pico de compras:** **{(str(h_best_purchB)+'h') if h_best_purchB is not None else '—'}** ({best_purch_valB} compras).  
+- 💹 **Melhor ROAS** (gasto ≥ R$ {min_spend:,.0f}): **{(str(h_best_roasB)+'h') if h_best_roasB is not None else '—'}** ({_fmt_ratio_br(best_roasB_val) if pd.notnull(best_roasB_val) else '—'}).  
+- ⏱️ **Janela forte (3h):** **{winB_start}–{winB_end}h** (centro {winB_mid}h) somando **{winB_sum}** compras.  
+- 🧯 **Horas com gasto e 0 compras:** {wastedB_hours}.
+""".replace(",", "X").replace(".", ",").replace("X", "."))
+
+                    st.info("💡 Sugestão: direcione orçamento para as horas com melhor ROAS e pause/teste criativos nas horas com gasto e 0 compras.")
+
 
 # =====================================================
 # 📦 DASHBOARD – LOGÍSTICA
