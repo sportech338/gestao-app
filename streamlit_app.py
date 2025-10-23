@@ -857,6 +857,32 @@ st.markdown(
     unsafe_allow_html=True
 )
 
+# =====================================================
+# 🧩 Carregamento global — executa 1x e persiste em sessão
+# =====================================================
+if "df_daily" not in st.session_state or st.session_state["df_daily"].empty:
+    # ⚙️ Parâmetros padrão ou último input salvo
+    act_id_default = st.session_state.get("act_id", "")
+    token_default = st.session_state.get("token", "")
+    api_version_default = st.session_state.get("api_version", "v23.0")
+    preset_default = st.session_state.get("preset", "Hoje")
+
+    # 🔁 Define datas padrão para inicialização
+    since_default, until_default = _range_from_preset(preset_default)
+
+    if act_id_default and token_default:
+        with st.spinner("Carregando dados iniciais (Meta Ads)..."):
+            df = fetch_insights_daily(
+                act_id=act_id_default,
+                token=token_default,
+                api_version=api_version_default,
+                since_str=str(since_default),
+                until_str=str(until_default),
+                level="campaign",
+                product_name=None,
+            )
+            st.session_state["df_daily"] = df
+
 # ---- Cria as abas principais ----
 aba_principal = st.tabs(["📊 Dashboard - Tráfego Pago", "📦 Dashboard - Logística"])
 
@@ -865,7 +891,6 @@ aba_principal = st.tabs(["📊 Dashboard - Tráfego Pago", "📦 Dashboard - Log
 # =====================================================
 with aba_principal[0]:
     st.header("📊 Dashboard — Tráfego Pago")
-    df_daily = pd.DataFrame()
 
     # 🧩 Configurações (antes na sidebar)
     with st.expander("⚙️ Configurações e Filtros", expanded=True):
@@ -887,14 +912,21 @@ with aba_principal[0]:
                 index=2,
             )
 
-        # Cálculo de datas
-        _since_auto, _until_auto = _range_from_preset(preset)
-        if preset == "Personalizado":
-            since = st.date_input("Desde", value=_since_auto, format="DD/MM/YYYY")
-            until = st.date_input("Até", value=_until_auto, format="DD/MM/YYYY")
-        else:
-            since, until = _since_auto, _until_auto
-            st.caption(f"**Desde:** {since}  \n**Até:** {until}")
+    # 💾 Armazena os valores preenchidos na sessão
+    st.session_state["act_id"] = act_id
+    st.session_state["token"] = token
+    st.session_state["api_version"] = api_version
+    st.session_state["preset"] = preset
+
+    # Cálculo de datas
+    _since_auto, _until_auto = _range_from_preset(preset)
+    if preset == "Personalizado":
+        since = st.date_input("Desde", value=_since_auto, format="DD/MM/YYYY")
+        until = st.date_input("Até", value=_until_auto, format="DD/MM/YYYY")
+    else:
+        since, until = _since_auto, _until_auto
+        st.caption(f"**Desde:** {since}  \n**Até:** {until}")
+
 
     # 🔑 Verifica se credenciais estão preenchidas
     ready = bool(act_id and token)
