@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -9,18 +10,6 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
-
-# ==== HELPERS DE DATA (para excluir ou incluir o dia de hoje) ==================
-def _effective_until(until_dt, include_today: bool = False) -> pd.Timestamp:
-    """Retorna a data final efetiva:
-    - Se include_today=False → corta em ontem.
-    - Se include_today=True → permite incluir o dia de hoje (parcial)."""
-    today = pd.Timestamp.today().normalize()
-    u = pd.Timestamp(until_dt).normalize()
-    if include_today and u >= today:
-        return today
-    return min(u, today - pd.Timedelta(days=1))
-
 
 _session = None
 def _get_session():
@@ -1011,7 +1000,6 @@ with tab_daily:
     df_daily_view = _filter_by_product(df_daily, produto_sel_daily)
 
     # 🔹 FILTRO CORRETO DE PERÍODO (importante!)
-    until_eff = _effective_until(until, include_today=False)
     mask_period = (df_daily_view["date"] >= pd.Timestamp(since)) & (df_daily_view["date"] <= pd.Timestamp(until))
     df_daily_view = df_daily_view.loc[mask_period].copy()
     
@@ -1650,103 +1638,105 @@ with tab_daily:
 
                 st.markdown("---")
 
-# ========= 📦 FUNIL POR CAMPANHA =========
-st.divider()
-st.header("📦 Funil por campanha (somatório do período)")
+    # ========= 📦 FUNIL POR CAMPANHA =========
+    st.divider()
+    st.header("📦 Funil por campanha (somatório — inclui acompanhamento em tempo real se o filtro abranger hoje)")
 
-# ✅ Toggle manual para incluir o dia de hoje (tempo real)
-include_today = st.toggle("Incluir hoje (parcial)", value=False)
+    if level == "campaign":
+        # 🔹 Filtra o período selecionado (inclui hoje se estiver dentro do range)
+        today = pd.Timestamp.today().normalize()
+        since_ts = pd.Timestamp(since)
+        until_ts = pd.Timestamp(until)
 
-if level == "campaign":
-    today = pd.Timestamp.today().normalize()
-    since_ts = pd.Timestamp(since).normalize()
-    until_eff = _effective_until(until, include_today=include_today)
+        if until_ts >= today:
+            mask_period = (df_daily_view["date"] >= since_ts) & (df_daily_view["date"] <= today)
+            realtime_mode = True
+        else:
+            mask_period = (df_daily_view["date"] >= since_ts) & (df_daily_view["date"] <= until_ts)
+            realtime_mode = False
 
-    # 🔹 Filtra sempre até o until efetivo
-    mask_period = (df_daily_view["date"] >= since_ts) & (df_daily_view["date"] <= until_eff)
-    df_filtered = df_daily_view.loc[mask_period].copy()
+        df_filtered = df_daily_view.loc[mask_period].copy()
 
-    # 🔹 Se hoje estiver incluído, ativa modo tempo real
-    realtime_mode = include_today and (until_eff == today)
+        # 🔹 Atualiza dados de hoje se o período inclui a data atual
+        if realtime_mode:
+            with st.spinner("⏱️ Atualizando dados de hoje em tempo real (Meta Ads)..."):
+                try:
+                    df_today_live = fetch_insights_daily(
+                        act_id=act_id,
+                        token=token,
+                        api_version=api_version,
+                        since_str=str(today),
+                        until_str=str(today),
+                        level=level,
+                        product_name=None
+                    )
+                    if df_today_live is not None and not df_today_live.empty:
+                        df_filtered = pd.concat([df_filtered, df_today_live], ignore_index=True)
+                        df_filtered.drop_duplicates(subset=["date", "campaign_id"], inplace=True)
+                        st.success("✅ Dados de hoje atualizados com sucesso!")
+                    else:
+                        st.info("Nenhum dado adicional encontrado para hoje (Meta ainda sincronizando).")
+                except Exception as e:
+                    st.warning(f"⚠️ Falha ao atualizar dados de hoje: {e}")
 
-    if realtime_mode:
-        with st.spinner("⏱️ Atualizando dados de hoje em tempo real (Meta Ads)…"):
-            try:
-                df_today_live = fetch_insights_daily(
-                    act_id=act_id,
-                    token=token,
-                    api_version=api_version,
-                    since_str=str(today.date()),
-                    until_str=str(today.date()),
-                    level=level,
-                    product_name=None
-                )
-                if df_today_live is not None and not df_today_live.empty:
-                    df_filtered = pd.concat([df_filtered, df_today_live], ignore_index=True)
-                    df_filtered.drop_duplicates(subset=["date", "campaign_id"], inplace=True)
-                    st.success("✅ Dados de hoje atualizados com sucesso!")
-                else:
-                    st.info("Nenhum dado adicional para hoje (Meta ainda sincronizando).")
-            except Exception as e:
-                st.warning(f"⚠️ Falha ao atualizar dados de hoje: {e}")
+        if df_filtered.empty:
+            st.info("Sem dados de campanha no período selecionado.")
+            st.stop()
 
-    if df_filtered.empty:
-        st.info("Sem dados de campanha no período selecionado.")
-        st.stop()
+        # 🔹 Detecta campanhas ativas (teve gasto > 0 no período)
+        active_campaigns = (
+            df_filtered.groupby("campaign_id")["spend"]
+            .sum()
+            .loc[lambda s: s > 0]
+            .index
+            .tolist()
+        )
 
-    # 🔹 Detecta campanhas ativas (teve gasto > 0)
-    active_campaigns = (
-        df_filtered.groupby("campaign_id")["spend"]
-        .sum()
-        .loc[lambda s: s > 0]
-        .index
-        .tolist()
-    )
-    df_active = df_filtered[df_filtered["campaign_id"].isin(active_campaigns)].copy()
+        df_active = df_filtered[df_filtered["campaign_id"].isin(active_campaigns)].copy()
 
-    if df_active.empty:
-        st.info("Nenhuma campanha ativa no período selecionado.")
-        st.stop()
+        if df_active.empty:
+            st.info("Nenhuma campanha ativa no período selecionado.")
+            st.stop()
 
-    # 🔹 Agrega KPIs
-    agg_cols = ["spend", "link_clicks", "lpv", "init_checkout", "add_payment", "purchases", "revenue"]
-    camp = df_active.groupby(["campaign_id", "campaign_name"], as_index=False)[agg_cols].sum()
+        # 🔹 Agrega e calcula KPIs
+        agg_cols = ["spend", "link_clicks", "lpv", "init_checkout", "add_payment", "purchases", "revenue"]
+        camp = df_active.groupby(["campaign_id", "campaign_name"], as_index=False)[agg_cols].sum()
 
-    camp["ROAS"] = np.where(camp["spend"] > 0, camp["revenue"] / camp["spend"], np.nan)
-    camp["CPA"] = np.where(camp["purchases"] > 0, camp["spend"] / camp["purchases"], np.nan)
-    camp["LPV/Cliques"] = np.where(camp["link_clicks"] > 0, camp["lpv"] / camp["link_clicks"], np.nan)
-    camp["Checkout/LPV"] = np.where(camp["lpv"] > 0, camp["init_checkout"] / camp["lpv"], np.nan)
-    camp["Compra/Checkout"] = np.where(camp["init_checkout"] > 0, camp["purchases"] / camp["init_checkout"], np.nan)
+        camp["ROAS"] = np.where(camp["spend"] > 0, camp["revenue"] / camp["spend"], np.nan)
+        camp["CPA"] = np.where(camp["purchases"] > 0, camp["spend"] / camp["purchases"], np.nan)
+        camp["LPV/Cliques"] = np.where(camp["link_clicks"] > 0, camp["lpv"] / camp["link_clicks"], np.nan)
+        camp["Checkout/LPV"] = np.where(camp["lpv"] > 0, camp["init_checkout"] / camp["lpv"], np.nan)
+        camp["Compra/Checkout"] = np.where(camp["init_checkout"] > 0, camp["purchases"] / camp["init_checkout"], np.nan)
 
-    disp = camp[[
-        "campaign_name", "spend", "revenue", "purchases", "ROAS", "CPA",
-        "LPV/Cliques", "Checkout/LPV", "Compra/Checkout"
-    ]].rename(columns={
-        "campaign_name": "Campanha",
-        "spend": "Gasto",
-        "revenue": "Faturamento",
-        "purchases": "Vendas"
-    })
+        disp = camp[[
+            "campaign_name", "spend", "revenue", "purchases", "ROAS", "CPA",
+            "LPV/Cliques", "Checkout/LPV", "Compra/Checkout"
+        ]].rename(columns={
+            "campaign_name": "Campanha",
+            "spend": "Gasto",
+            "revenue": "Faturamento",
+            "purchases": "Vendas"
+        })
 
-    disp["Gasto"] = disp["Gasto"].map(_fmt_money_br)
-    disp["Faturamento"] = disp["Faturamento"].map(_fmt_money_br)
-    disp["Vendas"] = disp["Vendas"].map(_fmt_int_br)
-    disp["ROAS"] = disp["ROAS"].map(_fmt_ratio_br)
-    disp["CPA"] = disp["CPA"].map(_fmt_money_br)
-    disp["LPV/Cliques"] = disp["LPV/Cliques"].map(_fmt_pct_br)
-    disp["Checkout/LPV"] = disp["Checkout/LPV"].map(_fmt_pct_br)
-    disp["Compra/Checkout"] = disp["Compra/Checkout"].map(_fmt_pct_br)
+        # 🔹 Formatação visual
+        disp["Gasto"] = disp["Gasto"].map(_fmt_money_br)
+        disp["Faturamento"] = disp["Faturamento"].map(_fmt_money_br)
+        disp["Vendas"] = disp["Vendas"].map(_fmt_int_br)
+        disp["ROAS"] = disp["ROAS"].map(_fmt_ratio_br)
+        disp["CPA"] = disp["CPA"].map(_fmt_money_br)
+        disp["LPV/Cliques"] = disp["LPV/Cliques"].map(_fmt_pct_br)
+        disp["Checkout/LPV"] = disp["Checkout/LPV"].map(_fmt_pct_br)
+        disp["Compra/Checkout"] = disp["Compra/Checkout"].map(_fmt_pct_br)
 
-    disp = disp.sort_values(by="Faturamento", ascending=False)
+        disp = disp.sort_values(by="Faturamento", ascending=False)
 
-    if realtime_mode:
-        st.caption("⏱️ Modo tempo real ativado — exibindo dados parciais do dia atual.")
+        if realtime_mode:
+            st.caption("⏱️ Modo tempo real ativado — exibindo dados parciais do dia atual.")
 
-    st.dataframe(disp, use_container_width=True, height=420)
+        st.dataframe(disp, use_container_width=True, height=420)
 
-else:
-    st.info("Troque o nível para 'campaign' para visualizar o detalhamento por campanha.")
-
+    else:
+        st.info("Troque o nível para 'campaign' para visualizar o detalhamento por campanha.")
 
 # =====================================================
 # 📦 DASHBOARD – LOGÍSTICA
