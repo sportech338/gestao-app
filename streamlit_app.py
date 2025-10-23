@@ -1764,20 +1764,54 @@ with tab_daily:
 # -------------------- ABA 2: HORÁRIOS (PRINCIPAL) --------------------
 with tab_daypart:
 
-    # ================== CONTROLE DE FILTRO DE GASTO ==================
+    # =================== CONTROLES INICIAIS ===================
+    # Define gasto mínimo
     min_spend = st.number_input(
-        "💰 Gasto mínimo (R$) — filtra horas com investimento abaixo desse valor",
+        "💰 Gasto mínimo por hora (R$)",
         min_value=0.0,
         value=0.0,
         step=50.0,
-        help="Define um limite de gasto para incluir no heatmap e nas tabelas. Ex: 200 = só mostra horas com gasto ≥ R$200."
+        key="hr_min_spend"
     )
 
-    # =====================================================
-    # 🧮 Base de dados horária (d = df_hourly filtrado)
-    # =====================================================
+    # Define helper seguro
+    safe_div = _safe_div
+
+    # Carrega base horária (d)
     if "df_hourly" in st.session_state and not st.session_state["df_hourly"].empty:
         d = st.session_state["df_hourly"].copy()
+    else:
+        with st.spinner("Carregando dados horários..."):
+            d = fetch_insights_hourly(
+                act_id=act_id,
+                token=token,
+                api_version=api_version,
+                since_str=str(since),
+                until_str=str(until),
+                level=level,
+            )
+            st.session_state["df_hourly"] = d
+
+    if d is None or d.empty:
+        st.warning("Sem dados horários disponíveis para o período selecionado.")
+        st.stop()
+
+    # =================== FILTRO DE PRODUTO/CAMPANHA ===================
+    if "campaign_name" in d.columns:
+        prod_opts = ["(Todos)"] + sorted(d["campaign_name"].dropna().unique().tolist())
+    else:
+        prod_opts = ["(Todos)"]
+
+    produto_sel_hr = st.selectbox(
+        "🎯 Filtrar por produto/campanha (opcional)",
+        options=prod_opts,
+        index=0,
+        key="sel_produto_hr"
+    )
+
+    if produto_sel_hr != "(Todos)":
+        d = d[d["campaign_name"].str.contains(produto_sel_hr, case=False, na=False)].copy()
+
     else:
         with st.spinner("Carregando dados horários..."):
             d = fetch_insights_hourly(
