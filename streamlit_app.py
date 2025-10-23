@@ -842,7 +842,7 @@ def _range_from_preset(p):
     if p == "Ontem":
         return local_today - timedelta(days=1), local_today - timedelta(days=1)
     if p == "Últimos 7 dias":
-        return base_end - timedelta(days=6), base_end
+        return base_end - timedelta(days=7), base_end
     if p == "Últimos 14 dias":
         return base_end - timedelta(days=13), base_end
     if p == "Últimos 30 dias":
