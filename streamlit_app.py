@@ -507,12 +507,20 @@ def fetch_insights_daily(act_id: str, token: str, api_version: str,
             "limit": 500,
             "action_report_time": "conversion",
             "action_attribution_windows": ",".join(ATTR_KEYS),
+            # 🔹 Inclui campanhas ativas, pausadas e arquivadas (igual ao Ads Manager)
+            "filtering": json.dumps([
+                {"field": "campaign.effective_status", "operator": "IN", "value": ["ACTIVE", "PAUSED", "ARCHIVED"]}
+            ]),
         }
-        # filtro por campanha (produto) direto na API, quando aplicável
+
+        # 🔹 Se houver filtro por produto/campanha específico, adiciona ao filtro existente
         if level == "campaign" and product_name and product_name != "(Todos)":
-            params["filtering"] = json.dumps([{
+            extra_filters = json.loads(params["filtering"])
+            extra_filters.append({
                 "field": "campaign.name", "operator": "CONTAIN", "value": product_name
-            }])
+            })
+            params["filtering"] = json.dumps(extra_filters)
+
 
         rows_local, next_url, next_params = [], base_url, params.copy()
         while next_url:
