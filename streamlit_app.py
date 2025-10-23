@@ -505,7 +505,7 @@ def fetch_insights_daily(act_id: str, token: str, api_version: str,
             "time_increment": 1,
             "fields": ",".join(fields),
             "limit": 500,
-            "action_report_time": "impression",
+            "action_report_time": "conversion",
             "action_attribution_windows": ",".join(ATTR_KEYS),
             # 🔹 Inclui campanhas ativas, pausadas e arquivadas (igual ao Ads Manager)
             "filtering": json.dumps([
@@ -833,39 +833,33 @@ def fetch_insights_breakdown(act_id: str, token: str, api_version: str,
     df["ROAS"] = np.where(df["spend"]>0, df["revenue"]/df["spend"], np.nan)
     return df
                                  
-# === Helper: traduz período rápido em datas (igual ao Meta Ads) ===
-def _range_from_preset(preset: str):
-    today = date.today()
-    yesterday = today - timedelta(days=1)
+# === Helper: traduz período rápido em datas (igual ao script antigo) ===
+APP_TZ = ZoneInfo("America/Sao_Paulo")
 
-    if preset == "Hoje":
-        return today, today
-    elif preset == "Ontem":
-        return yesterday, yesterday
-    elif preset == "Últimos 7 dias":
-        # 7 dias completos ANTES de hoje (exclui o dia atual)
-        return today - timedelta(days=7), yesterday
-    elif preset == "Últimos 14 dias":
-        return today - timedelta(days=14), yesterday
-    elif preset == "Últimos 30 dias":
-        return today - timedelta(days=30), yesterday
-    elif preset == "Últimos 90 dias":
-        return today - timedelta(days=90), yesterday
-    elif preset == "Esta semana":
-        start = today - timedelta(days=today.weekday())
-        return start, yesterday
-    elif preset == "Este mês":
-        start = today.replace(day=1)
-        return start, yesterday
-    elif preset == "Máximo":
-        # defina aqui como preferir; deixei 90 por padrão
-        return today - timedelta(days=90), yesterday
-    elif preset == "Personalizado":
-        # a UI vai abrir os date_inputs; aqui só devolvemos um fallback
-        return today - timedelta(days=30), yesterday
-    else:
-        # fallback genérico — 30 dias completos até ontem
-        return today - timedelta(days=30), yesterday
+def _range_from_preset(p):
+    local_today = datetime.now(APP_TZ).date()
+    base_end = local_today - timedelta(days=1)
+    if p == "Hoje":
+        return local_today, local_today
+    if p == "Ontem":
+        return local_today - timedelta(days=1), local_today - timedelta(days=1)
+    if p == "Últimos 7 dias":
+        return base_end - timedelta(days=6), base_end
+    if p == "Últimos 14 dias":
+        return base_end - timedelta(days=13), base_end
+    if p == "Últimos 30 dias":
+        return base_end - timedelta(days=29), base_end
+    if p == "Últimos 90 dias":
+        return base_end - timedelta(days=89), base_end
+    if p == "Esta semana":
+        start_week = local_today - timedelta(days=local_today.weekday())
+        return start_week, local_today
+    if p == "Este mês":
+        start_month = local_today.replace(day=1)
+        return start_month, local_today
+    if p == "Máximo":
+        return date(2017, 1, 1), base_end
+    return base_end - timedelta(days=6), base_end
 
 
 # =============== Dashboards Principais ===============
