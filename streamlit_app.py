@@ -3165,6 +3165,7 @@ with tab_detail:
 # =====================================================
 # 📦 DASHBOARD – LOGÍSTICA
 # =====================================================
+st.write("✅ Passou da aba principal — entrando na Logística")
 with aba_principal[1]:
     st.header("📦 Dashboard — Logística")
     st.subheader("📦 Shopify – Visão Geral")
