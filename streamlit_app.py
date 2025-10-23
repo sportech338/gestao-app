@@ -968,32 +968,34 @@ with tab_shopify:
     st.subheader("📋 Pedidos filtrados")
 
     colunas_existentes = [c for c in [
-        order_col, "created_at", "financial_status", "fulfillment_status",
-        "product_title", "variant_title", "sku", "quantity", "price", "line_revenue"
+        order_col, "created_at", "customer_name", "quantity",
+        "variant_title", "price", "forma_entrega", "estado", "cidade"
     ] if c in df.columns]
 
     tabela = df[colunas_existentes].sort_values("created_at", ascending=False)
 
     tabela.rename(columns={
         order_col: "Pedido",
-        "created_at": "Data",
-        "financial_status": "Pagamento",
-        "fulfillment_status": "Entrega",
-        "product_title": "Produto",
-        "variant_title": "Variante",
-        "sku": "SKU",
+        "created_at": "Data do pedido",
+        "customer_name": "Nome do cliente",
         "quantity": "Qtd",
-        "price": "Preço Unitário",
-        "line_revenue": "Total"
+        "variant_title": "Variante",
+        "price": "Preço unitário",
+        "forma_entrega": "Tipo de entrega (PAC, SEDEX, etc)",
+        "estado": "Estado de destino",
+        "cidade": "Cidade de destino"
     }, inplace=True)
 
     # ---- Formatação visual ----
-    if "Data" in tabela.columns:
-        tabela["Data"] = pd.to_datetime(tabela["Data"], errors="coerce").dt.strftime("%d/%m/%Y %H:%M")
+    if "Data do pedido" in tabela.columns:
+        tabela["Data do pedido"] = pd.to_datetime(
+            tabela["Data do pedido"], errors="coerce"
+        ).dt.strftime("%d/%m/%Y %H:%M")
 
-    for col in ["Preço Unitário", "Total"]:
-        if col in tabela.columns:
-            tabela[col] = tabela[col].apply(lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+    if "Preço unitário" in tabela.columns:
+        tabela["Preço unitário"] = tabela["Preço unitário"].apply(
+            lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        )
 
     st.dataframe(tabela, use_container_width=True)
 
@@ -1005,6 +1007,7 @@ with tab_shopify:
         file_name=f"pedidos_shopify_{periodo[0]}_{periodo[1]}.csv",
         mime="text/csv",
     )
+
 
 # -------------------- ABA 1: VISÃO DIÁRIA --------------------
 with tab_daily:
