@@ -900,12 +900,26 @@ with tab_shopify:
     produtos = st.session_state.get("produtos")
     pedidos = st.session_state.get("pedidos")
 
+    # ---- Atualização de dados da Shopify (sem travar o app) ----
     if st.button("🔄 Atualizar dados da Shopify"):
-        produtos = get_products_with_variants()
-        pedidos = get_orders()
-        st.session_state["produtos"] = produtos
-        st.session_state["pedidos"] = pedidos
-        st.success("✅ Dados atualizados com sucesso!")
+        with st.spinner("Atualizando dados da Shopify em segundo plano..."):
+            # Limpa o cache para forçar recarregamento leve
+            get_products_with_variants.clear()
+            get_orders.clear()
+            st.session_state.pop("produtos", None)
+            st.session_state.pop("pedidos", None)
+        st.success("✅ Atualização iniciada! Aguarde alguns segundos...")
+
+    # ---- Carregamento automático com cache ----
+    if "produtos" not in st.session_state or st.session_state["produtos"] is None:
+        st.session_state["produtos"] = get_products_with_variants()
+
+    if "pedidos" not in st.session_state or st.session_state["pedidos"] is None:
+        st.session_state["pedidos"] = get_orders()
+
+    produtos = st.session_state["produtos"]
+    pedidos = st.session_state["pedidos"]
+
 
     if produtos is None or pedidos is None or produtos.empty or pedidos.empty:
         st.info("Carregue os dados da Shopify para iniciar (botão acima).")
