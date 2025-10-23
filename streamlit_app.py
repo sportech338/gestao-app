@@ -53,22 +53,26 @@ def get_products_with_variants(limit=250):
     return pd.DataFrame(rows)
 
 @st.cache_data(ttl=600)
-def get_orders(limit=250, only_paid=True):
+def get_orders(limit=250, only_paid=True, since=None, until=None):
     """
     Baixa pedidos da Shopify com dados completos (cliente, entrega, produto e localização).
-    Filtra apenas pedidos pagos por padrão.
+    Filtra apenas pedidos pagos por padrão e permite intervalo de datas.
     """
-    url = f"{BASE_URL}/orders.json?limit={limit}&status=any"
+    params = {"limit": limit, "status": "any"}
+    if since and until:
+        params["created_at_min"] = f"{since}T00:00:00-03:00"
+        params["created_at_max"] = f"{until}T23:59:59-03:00"
+
+    url = f"{BASE_URL}/orders.json"
     all_rows = []
 
     while url:
-        r = requests.get(url, headers=HEADERS, timeout=60)
+        r = requests.get(url, headers=HEADERS, params=params, timeout=60)
         r.raise_for_status()
         data = r.json()
         orders = data.get("orders", [])
 
         for o in orders:
-            # 🔹 Filtra apenas pedidos pagos (opcional)
             if only_paid and o.get("financial_status") not in ["paid", "partially_paid"]:
                 continue
 
@@ -105,12 +109,10 @@ def get_orders(limit=250, only_paid=True):
                     "cidade": shipping.get("city", "N/A"),
                 })
 
-        # 🔁 Paginação segura (Shopify REST)
         next_link = r.links.get("next", {}).get("url")
         url = next_link if next_link else None
 
     return pd.DataFrame(all_rows)
-
 
 
 # =============== Config & Estilos ===============
