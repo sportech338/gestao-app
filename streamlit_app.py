@@ -8,6 +8,7 @@ APP_TZ = ZoneInfo("America/Sao_Paulo")
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
 
 _session = None
 def _get_session():
@@ -900,15 +901,23 @@ with tab_shopify:
     produtos = st.session_state.get("produtos")
     pedidos = st.session_state.get("pedidos")
 
-    # ---- Atualização de dados da Shopify (sem travar o app) ----
+    # ---- Atualização de dados da Shopify (em segundo plano) ----
+    import threading
+
+    def atualizar_dados_shopify():
+        try:
+            produtos_novos = get_products_with_variants()
+            pedidos_novos = get_orders()
+            st.session_state["produtos"] = produtos_novos
+            st.session_state["pedidos"] = pedidos_novos
+            st.session_state["ultima_atualizacao"] = datetime.now().strftime("%d/%m/%Y %H:%M")
+            st.toast("✅ Dados da Shopify atualizados com sucesso!", icon="🎉")
+        except Exception as e:
+            st.error(f"Erro ao atualizar dados da Shopify: {e}")
+
     if st.button("🔄 Atualizar dados da Shopify"):
-        with st.spinner("Atualizando dados da Shopify em segundo plano..."):
-            # Limpa o cache para forçar recarregamento leve
-            get_products_with_variants.clear()
-            get_orders.clear()
-            st.session_state.pop("produtos", None)
-            st.session_state.pop("pedidos", None)
-        st.success("✅ Atualização iniciada! Aguarde alguns segundos...")
+        st.info("🔁 Atualização iniciada! Você pode continuar usando as outras abas enquanto carrega.")
+        threading.Thread(target=atualizar_dados_shopify, daemon=True).start()
 
     # ---- Carregamento automático com cache ----
     if "produtos" not in st.session_state or st.session_state["produtos"] is None:
@@ -917,6 +926,9 @@ with tab_shopify:
     if "pedidos" not in st.session_state or st.session_state["pedidos"] is None:
         st.session_state["pedidos"] = get_orders()
 
+    if "ultima_atualizacao" in st.session_state:
+        st.caption(f"🕒 Última atualização: {st.session_state['ultima_atualizacao']}")
+    
     produtos = st.session_state["produtos"]
     pedidos = st.session_state["pedidos"]
 
