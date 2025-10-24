@@ -2820,25 +2820,22 @@ if menu == "📦 Dashboard – Logística":
         # ---- Atualização de dados da Shopify (em segundo plano) ----
         lock = threading.Lock()
 
-        def atualizar_dados_shopify(start_date, end_date):
+        def atualizar_dados_shopify():
             with lock:
                 try:
                     produtos_novos = get_products_with_variants()
-                    pedidos_novos = get_orders(start_date=start_date, end_date=end_date)
+                    pedidos_novos = get_orders()  # agora traz TUDO
                     st.session_state["produtos"] = produtos_novos
                     st.session_state["pedidos"] = pedidos_novos
                     st.session_state["ultima_atualizacao"] = datetime.now().strftime("%d/%m/%Y %H:%M")
-                    st.toast(f"✅ Dados da Shopify atualizados ({start_date} → {end_date})", icon="🎉")
+                    st.toast("✅ Dados da Shopify atualizados com sucesso!", icon="🎉")
                 except Exception as e:
                     st.error(f"Erro ao atualizar dados da Shopify: {e}")
 
-        if st.button("🔄 Atualizar dados da Shopify", key="btn_atualizar_shopify"):
-            st.info("🔁 Atualização iniciada! Você pode continuar usando as outras abas enquanto carrega.")
-            threading.Thread(
-                target=atualizar_dados_shopify,
-                args=(periodo[0], periodo[1]),
-                daemon=True
-            ).start()
+        # 🔄 Botão para atualizar dados
+        if st.button("🔄 Atualizar dados da Shopify", key="btn_atualizar_shopify_filtros"):
+            st.info("🔁 Atualizando todos os pedidos da Shopify...")
+            threading.Thread(target=atualizar_dados_shopify, daemon=True).start()
 
         # ---- Carregamento automático com cache ----
         if "produtos" not in st.session_state or st.session_state["produtos"] is None:
