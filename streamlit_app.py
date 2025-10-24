@@ -2975,14 +2975,14 @@ if menu == "📦 Dashboard – Logística":
 
         # ---- Adicionar coluna de Status de Processamento ----
     if "fulfillment_status" in df.columns:
-        tabela["Status de processamento do pedido"] = df["fulfillment_status"].apply(
+        tabela["Status de processamento"] = df["fulfillment_status"].apply(
             lambda x: (
                 "✅ Processado" if str(x).lower() in ["fulfilled", "shipped", "complete"]
                 else "🟡 Não processado"
             )
         )
     else:
-        tabela["Status de processamento do pedido"] = "🟡 Não processado"
+        tabela["Status de processamento"] = "🟡 Não processado"
 
 
     # ---- Formatação visual ----
