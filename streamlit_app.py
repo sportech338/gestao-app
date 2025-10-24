@@ -130,6 +130,10 @@ def get_orders(start_date=None, end_date=None, limit=250):
         df["created_at"] = pd.to_datetime(df["created_at"], errors="coerce").dt.tz_convert("America/Sao_Paulo")
     return df
 
+st.write(f"🧾 Total de pedidos carregados: {len(st.session_state['pedidos'])}")
+st.write(st.session_state['pedidos'][['order_number', 'created_at']].head())
+
+
 # =============== Config & Estilos ===============
 st.set_page_config(page_title="Meta Ads — Paridade + Funil", page_icon="📊", layout="wide")
 st.markdown("""
