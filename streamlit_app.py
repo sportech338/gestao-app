@@ -106,7 +106,9 @@ def get_orders(limit=250, only_paid=True):
 
         # 🔁 Paginação segura (Shopify REST)
         next_link = r.links.get("next", {}).get("url")
-        url = next_link if next_link else None
+        if not next_link or not orders:
+            break
+        url = next_link
 
     return pd.DataFrame(all_rows)
 
