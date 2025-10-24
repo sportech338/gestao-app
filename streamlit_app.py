@@ -836,7 +836,7 @@ def _range_from_preset(p):
 # =====================================================
 # 🎛️ MENU PRINCIPAL NA SIDEBAR
 # =====================================================
-st.sidebar.markdown("## SELECIONE O DASHBOARD")
+st.sidebar.markdown("## SELECIONE O DASHBOARD:")
 menu = st.sidebar.radio(
     "",
     ["📊 Dashboard – Tráfego Pago", "📦 Dashboard – Logística"],
