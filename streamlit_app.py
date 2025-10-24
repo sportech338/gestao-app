@@ -2848,11 +2848,11 @@ if menu == "📦 Dashboard – Logística":
             with lock:
                 try:
                     produtos_novos = get_products_with_variants()
-                    pedidos_novos = get_orders(start_date=periodo[0], end_date=periodo[1])
+                    pedidos_novos = get_orders(start_date=start_date, end_date=end_date)
                     st.session_state["produtos"] = produtos_novos
                     st.session_state["pedidos"] = pedidos_novos
                     st.session_state["ultima_atualizacao"] = datetime.now().strftime("%d/%m/%Y %H:%M")
-                    st.toast("✅ Dados da Shopify atualizados com sucesso!", icon="🎉")
+                    st.toast(f"✅ Dados da Shopify atualizados ({start_date} → {end_date})", icon="🎉")
                 except Exception as e:
                     st.error(f"Erro ao atualizar dados da Shopify: {e}")
 
