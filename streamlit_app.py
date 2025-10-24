@@ -2848,7 +2848,7 @@ if menu == "📦 Dashboard – Logística":
             st.session_state["produtos"] = get_products_with_variants()
 
         if "pedidos" not in st.session_state or st.session_state["pedidos"] is None:
-            st.session_state["pedidos"] = get_orders()
+            st.session_state["pedidos"] = get_orders(
                 start_date=periodo[0],
                 end_date=periodo[1]
             )
