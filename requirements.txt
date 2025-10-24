@@ -10,3 +10,5 @@ facebook-business==19.0.0
 requests>=2.31.0
 gspread
 google-auth
+streamlit-date-picker==0.0.4
+
