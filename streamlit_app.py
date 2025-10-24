@@ -2955,7 +2955,7 @@ if menu == "📦 Dashboard – Logística":
 
     colunas_existentes = [c for c in [
         order_col, "created_at", "customer_name", "quantity",
-        "variant_title", "price", "forma_entrega", "estado", "cidade", "fulfillment_status"
+        "variant_title", "price", "forma_entrega", "estado","fulfillment_status"
     ] if c in df.columns]
 
     tabela = df[colunas_existentes].sort_values("created_at", ascending=False).copy()
@@ -2969,7 +2969,6 @@ if menu == "📦 Dashboard – Logística":
         "price": "Preço unitário",
         "forma_entrega": "Frete escolhido",
         "estado": "Estado de destino",
-        "cidade": "Cidade de destino",
         "fulfillment_status": "Status de processamento"
     }, inplace=True)
 
