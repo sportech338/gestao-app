@@ -2920,15 +2920,6 @@ if menu == "📦 Dashboard – Logística":
                 min_date = max_date = today
             periodo = st.date_input("Período", (min_date, max_date), key="filtro_periodo")
 
-        # ⚡ Atualiza os pedidos da Shopify de acordo com o período selecionado
-        if st.button("🔄 Atualizar dados da Shopify", key="btn_atualizar_shopify_filtros"):
-            st.info(f"🔁 Atualizando pedidos de {periodo[0]} até {periodo[1]}...")
-            threading.Thread(
-                target=atualizar_dados_shopify,
-                args=(periodo[0], periodo[1]),
-                daemon=True
-            ).start()
-
         # ⚙️ Carregamento automático
         if "produtos" not in st.session_state or st.session_state["produtos"] is None:
             st.session_state["produtos"] = get_products_with_variants()
