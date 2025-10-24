@@ -2930,13 +2930,6 @@ if menu == "📦 Dashboard – Logística":
             format="DD/MM/YYYY"
         )
 
-        # Exibir o formato de forma amigável
-        periodo_formatado = f"{periodo[0].strftime('%d/%m/%Y')} – {periodo[1].strftime('%d/%m/%Y')}"
-        st.markdown(
-            f"<p style='margin-top:4px;color:#ccc;'>📅 <b>Período selecionado:</b> {periodo_formatado}</p>",
-            unsafe_allow_html=True
-        )
-
 
     # ---- Aplicar filtros ----
     df = base[
