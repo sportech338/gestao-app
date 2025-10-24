@@ -3219,20 +3219,40 @@ with aba_principal[1]:
                 st.error(f"Erro ao atualizar: {e}")
 
     # ---- Carregamento automático inicial (se vazio) ----
+
+    # 🔌 Teste de conexão com a Shopify
+    try:
+        test_url = f"{BASE_URL}/products.json?limit=1"
+        r = shopify_get(test_url)
+        if r.status_code == 200:
+            st.success("✅ Conexão Shopify OK!")
+        else:
+            st.error(f"⚠️ Erro na conexão com Shopify (status {r.status_code})")
+    except Exception as e:
+        st.error(f"❌ Falha ao conectar à Shopify: {e}")
+
+    # 🧭 Carregamento automático de produtos, se ainda não existir na sessão
     if ("produtos" not in st.session_state) or st.session_state["produtos"] is None:
         try:
-            st.session_state["produtos"] = get_products_with_variants()
+            st.info("🔄 Carregando produtos iniciais...")
+            produtos_iniciais = get_products_with_variants()
+            st.session_state["produtos"] = produtos_iniciais
+            st.success(f"✅ {len(produtos_iniciais)} variantes carregadas da Shopify.")
         except Exception as e:
             st.error(f"Erro carregando produtos: {e}")
 
+    # 🧾 Carregamento automático de pedidos, se ainda não existir na sessão
     if ("pedidos" not in st.session_state) or st.session_state["pedidos"] is None:
         try:
             hoje = pd.Timestamp.today().date()
-            st.session_state["pedidos"] = get_orders(
+            st.info("🔄 Carregando pedidos iniciais (últimos 60 dias)...")
+            pedidos_iniciais = get_orders(
                 since=hoje - timedelta(days=60),
                 until=hoje,
                 only_paid=True
             )
+            st.session_state["pedidos"] = pedidos_iniciais
+            st.success(f"✅ {len(pedidos_iniciais)} linhas de pedido carregadas.")
         except Exception as e:
             st.error(f"Erro carregando pedidos: {e}")
 
