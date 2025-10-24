@@ -9,6 +9,15 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+_session = None
+def _get_session():
+    global _session
+    if _session is None:
+        s = requests.Session()
+        s.headers.update({"Accept-Encoding": "gzip, deflate"})
+        _session = s
+    return _session
+
 # =============== Integração com Shopify ===============
 import requests
 import pandas as pd
@@ -43,24 +52,97 @@ def get_products_with_variants(limit=250):
     return pd.DataFrame(rows)
 
 @st.cache_data(ttl=600)
-def get_orders(limit=100):
+def get_orders(limit=250, only_paid=True):
+    """
+    Baixa pedidos da Shopify com dados completos (cliente, entrega, produto e localização).
+    Filtra apenas pedidos pagos por padrão.
+    """
     url = f"{BASE_URL}/orders.json?limit={limit}&status=any"
-    r = requests.get(url, headers=HEADERS, timeout=60)
-    r.raise_for_status()
-    data = r.json().get("orders", [])
-    rows = []
-    for o in data:
-        for it in o.get("line_items", []):
-            rows.append({
-                "order_id": o["id"],
-                "created_at": o["created_at"],
-                "variant_id": it.get("variant_id"),
-                "title": it.get("title"),
-                "variant_title": it.get("variant_title"),
-                "quantity": it.get("quantity", 0),
-                "price": float(it.get("price") or 0),
-            })
-    return pd.DataFrame(rows)
+    all_rows = []
+
+    while url:
+        r = requests.get(url, headers=HEADERS, timeout=60)
+        r.raise_for_status()
+        data = r.json()
+        orders = data.get("orders", [])
+
+        for o in orders:
+            # 🔹 Filtra apenas pedidos pagos (opcional)
+            if only_paid and o.get("financial_status") not in ["paid", "partially_paid"]:
+                continue
+
+            customer = o.get("customer") or {}
+            shipping = o.get("shipping_address") or {}
+            shipping_lines = o.get("shipping_lines") or [{}]
+
+            nome_cliente = (
+                f"{customer.get('first_name', '')} {customer.get('last_name', '')}".strip()
+                or "(Cliente não informado)"
+            )
+
+            for it in o.get("line_items", []):
+                preco = float(it.get("price") or 0)
+                qtd = int(it.get("quantity", 0))
+
+                all_rows.append({
+                    "order_id": o.get("id"),
+                    "order_number": o.get("order_number"),
+                    "created_at": o.get("created_at"),
+                    "financial_status": o.get("financial_status"),
+                    "fulfillment_status": o.get("fulfillment_status"),
+                    "customer_name": nome_cliente,
+                    "customer_email": customer.get("email", ""),
+                    "produto": it.get("title"),
+                    "variant_title": it.get("variant_title"),
+                    "variant_id": it.get("variant_id"),
+                    "sku": it.get("sku"),
+                    "quantity": qtd,
+                    "price": preco,
+                    "line_revenue": preco * qtd,
+                    "forma_entrega": shipping_lines[0].get("title", "N/A"),
+                    "estado": shipping.get("province", "N/A"),
+                    "cidade": shipping.get("city", "N/A"),
+                })
+
+        # 🔁 Paginação segura (Shopify REST)
+        next_link = r.links.get("next", {}).get("url")
+        url = next_link if next_link else None
+
+    return pd.DataFrame(all_rows)
+
+def create_fulfillment(order_id, tracking_number, tracking_company="Correios"):
+    """
+    Cria o fulfillment (processamento) do pedido na Shopify e adiciona o código de rastreio.
+    Corrigido para incluir line_items.
+    """
+    url = f"{BASE_URL}/orders/{order_id}/fulfillments.json"
+
+    # Busca itens do pedido (necessário para fulfillment)
+    try:
+        r_order = requests.get(f"{BASE_URL}/orders/{order_id}.json", headers=HEADERS, timeout=60)
+        r_order.raise_for_status()
+        order_data = r_order.json().get("order", {})
+        line_items = [{"id": item["id"], "quantity": item["quantity"]} for item in order_data.get("line_items", [])]
+    except Exception as e:
+        return False, f"❌ Erro ao buscar itens do pedido: {e}"
+
+    payload = {
+        "fulfillment": {
+            "tracking_number": tracking_number,
+            "tracking_company": tracking_company,
+            "line_items": line_items,
+            "notify_customer": True
+        }
+    }
+
+    try:
+        r = requests.post(url, headers=HEADERS, json=payload, timeout=60)
+        if r.status_code in [200, 201]:
+            return True, "✅ Pedido processado com sucesso na Shopify!"
+        else:
+            return False, f"❌ Erro ao processar pedido ({r.status_code}): {r.text}"
+    except Exception as e:
+        return False, f"❌ Erro de conexão: {e}"
 
 # =============== Config & Estilos ===============
 st.set_page_config(page_title="Meta Ads — Paridade + Funil", page_icon="📊", layout="wide")
@@ -2792,17 +2874,27 @@ if menu == "📦 Dashboard – Logística":
         if col not in pedidos.columns:
             pedidos[col] = None
 
-    # ---- Juntar pedidos e produtos ----
+    # ---- Juntar pedidos e produtos (corrigido) ----
+    merge_cols = ["variant_id", "sku", "product_title", "variant_title"]
+    merge_cols = [c for c in merge_cols if c in produtos.columns]
+
     base = pedidos.merge(
-        produtos[["variant_id", "sku", "product_title", "variant_title"]],
+        produtos[merge_cols],
         on="variant_id",
         how="left",
-        suffixes=("_pedido", "_produto")
+        suffixes=("", "_produto")
     )
 
     # ---- Ajustar nomes ----
-    base["product_title"] = base["product_title_pedido"].combine_first(base["product_title_produto"])
-    base["variant_title"] = base["variant_title_pedido"].combine_first(base["variant_title_produto"])
+    if "product_title_produto" in base.columns and "product_title" not in base.columns:
+        base["product_title"] = base["product_title_produto"]
+
+    if "variant_title_produto" in base.columns and "variant_title" not in base.columns:
+        base["variant_title"] = base["variant_title_produto"]
+
+    base["product_title"].fillna("(Produto desconhecido)", inplace=True)
+    base["variant_title"].fillna("(Variante desconhecida)", inplace=True)
+
 
     # ---- Tipos e métricas ----
     base["created_at"] = pd.to_datetime(base.get("created_at"), errors="coerce")
@@ -2867,35 +2959,113 @@ if menu == "📦 Dashboard – Logística":
     # ---- Tabela final ----
     st.subheader("📋 Pedidos filtrados")
 
+    # ---- Adiciona coluna de Pedido interno (ID real da Shopify) ----
+    if "order_id" in df.columns:
+        df["Pedido interno"] = df["order_id"].astype(str)
+    else:
+        df["Pedido interno"] = ""
+    
     colunas_existentes = [c for c in [
-        order_col, "created_at", "financial_status", "fulfillment_status",
-        "product_title", "variant_title", "sku", "quantity", "price", "line_revenue"
+        order_col, "created_at", "customer_name", "quantity",
+        "variant_title", "price", "forma_entrega", "estado", "cidade", "tracking_number", "fulfillment_status", "Pedido interno"
     ] if c in df.columns]
 
-    tabela = df[colunas_existentes].sort_values("created_at", ascending=False)
+    tabela = df[colunas_existentes].sort_values("created_at", ascending=False).copy()
 
     tabela.rename(columns={
         order_col: "Pedido",
-        "created_at": "Data",
-        "financial_status": "Pagamento",
-        "fulfillment_status": "Entrega",
-        "product_title": "Produto",
+        "created_at": "Data do pedido",
+        "customer_name": "Nome do cliente",
+        "quantity": "Quantidade",
         "variant_title": "Variante",
-        "sku": "SKU",
-        "quantity": "Qtd",
-        "price": "Preço Unitário",
-        "line_revenue": "Total"
+        "price": "Preço unitário",
+        "forma_entrega": "Tipo de entrega (PAC, SEDEX, etc)",
+        "estado": "Estado de destino",
+        "cidade": "Cidade de destino",
+        "tracking_number": "Código de rastreio",
+        "fulfillment_status": "Status de processamento"
     }, inplace=True)
 
+    # ---- Adicionar coluna de Código de Rastreio ----
+    if "tracking_number" in df.columns:
+        tabela["Código de rastreio"] = df["tracking_number"].fillna("")
+    else:
+        tabela["Código de rastreio"] = ""
+
+    
+    # ---- Atualizar status com base no código de rastreio ----
+    if "Código de rastreio" in tabela.columns:
+        tabela["Status de processamento"] = tabela["Código de rastreio"].apply(
+            lambda x: "✅ Processado" if isinstance(x, str) and x.strip() else "🟡 Não processado"
+        )
+    else:
+        tabela["Status de processamento"] = "🟡 Não processado"
+
+
     # ---- Formatação visual ----
-    if "Data" in tabela.columns:
-        tabela["Data"] = pd.to_datetime(tabela["Data"], errors="coerce").dt.strftime("%d/%m/%Y %H:%M")
+    if "Pedido" in tabela.columns:
+        tabela["Pedido"] = tabela["Pedido"].apply(
+            lambda x: f"#{int(float(x))}" if pd.notnull(x) else "-"
+        )
 
-    for col in ["Preço Unitário", "Total"]:
-        if col in tabela.columns:
-            tabela[col] = tabela[col].apply(lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+    if "Data do pedido" in tabela.columns:
+        tabela["Data do pedido"] = pd.to_datetime(
+            tabela["Data do pedido"], errors="coerce"
+        ).dt.strftime("%d/%m/%Y %H:%M")
 
-    st.dataframe(tabela, use_container_width=True)
+    if "Preço unitário" in tabela.columns:
+        tabela["Preço unitário"] = tabela["Preço unitário"].apply(
+            lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        )
+
+    # ---- Tabela editável ----
+    st.write("✏️ Edite a coluna **Código de rastreio** abaixo para processar pedidos:")
+
+    tabela_editavel = st.data_editor(
+        tabela,
+        use_container_width=True,
+        num_rows="dynamic",
+        disabled=["Pedido", "Data do pedido", "Nome do cliente", "Quantidade", "Variante",
+                  "Preço unitário", "Tipo de entrega (PAC, SEDEX, etc)",
+                  "Estado de destino", "Cidade de destino", "Status de processamento","Pedido interno"]
+    )
+
+    # ---- Processar pedidos automaticamente ----
+    if st.button("🚚 Confirmar atualizações na Shopify"):
+        pedidos_para_processar = tabela_editavel[
+            tabela_editavel["Código de rastreio"].astype(str).str.strip() != ""
+        ]
+
+        if pedidos_para_processar.empty:
+            st.warning("Nenhum código de rastreio preenchido.")
+        else:
+            st.info(f"Enviando {len(pedidos_para_processar)} pedidos para processamento...")
+            resultados = []
+
+            # Processa um por um
+            for _, row in pedidos_para_processar.iterrows():
+                order_id = str(row.get("Pedido interno", "")).strip()
+                tracking_number = str(row["Código de rastreio"]).strip()
+                ok, msg = create_fulfillment(order_id, tracking_number)
+                resultados.append((order_id, ok, msg))
+
+            # Exibe resultados
+            for order_id, ok, msg in resultados:
+                if ok:
+                    st.success(f"✅ Pedido #{order_id} processado com sucesso!")
+                else:
+                    st.error(f"❌ Pedido #{order_id}: {msg}")
+
+            # Atualiza status da tabela local (sem precisar recarregar manualmente)
+            for i, row in tabela_editavel.iterrows():
+                if str(row["Código de rastreio"]).strip():
+                    tabela_editavel.at[i, "Status de processamento"] = "✅ Processado"
+
+            # Re-renderiza automaticamente
+            st.session_state["pedidos"] = pedidos
+            st.success("🔄 Tabela atualizada com sucesso! Atualize a página para ver os dados sincronizados.")
+            st.stop()
+
 
     # ---- Exportar CSV ----
     csv = tabela.to_csv(index=False).encode('utf-8-sig')
@@ -2905,3 +3075,5 @@ if menu == "📦 Dashboard – Logística":
         file_name=f"pedidos_shopify_{periodo[0]}_{periodo[1]}.csv",
         mime="text/csv",
     )
+
+
