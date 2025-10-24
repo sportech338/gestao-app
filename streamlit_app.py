@@ -10,6 +10,15 @@ from plotly.subplots import make_subplots
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
 
+_session = None
+def _get_session():
+    global _session
+    if _session is None:
+        s = requests.Session()
+        s.headers.update({"Accept-Encoding": "gzip, deflate"})
+        _session = s
+    return _session
+
 # =============== Integração com Shopify ===============
 
 SHOP_NAME = st.secrets["shopify"]["shop_name"]
