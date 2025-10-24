@@ -3190,249 +3190,130 @@ with tab_detail:
         )
 
 # =====================================================
-# 📦 DASHBOARD – LOGÍSTICA
+# 📦 DASHBOARD – LOGÍSTICA (modelo idêntico ao Tráfego Pago)
 # =====================================================
 with tab_logistica:
     st.header("📦 Dashboard — Logística")
-    st.subheader("📦 Shopify – Visão Geral")
 
-    # ---- Carregar dados da sessão (se existir) ----
-    produtos = st.session_state.get("produtos")
-    pedidos = st.session_state.get("pedidos")
+    # =====================================================
+    # ⚙️ Configurações e Filtros (igual ao Tráfego Pago)
+    # =====================================================
+    with st.expander("⚙️ Configurações da Shopify", expanded=True):
+        col1, col2 = st.columns(2)
+        with col1:
+            shop_name = st.text_input("Shopify Shop Name", placeholder="ex.: minha-loja.myshopify.com")
+        with col2:
+            access_token = st.text_input("Access Token", type="password")
 
-    # ---- Botão: atualizar dados (últimos 60 dias) ----
-    if st.button("🔄 Atualizar dados da Shopify"):
-        with st.spinner("Carregando produtos e pedidos (últimos 60 dias)..."):
-            try:
-                hoje = pd.Timestamp.today().date()
-                produtos_novos = get_products_with_variants()
-                pedidos_novos = get_orders(
-                    since=hoje - timedelta(days=60),
-                    until=hoje,
-                    only_paid=True
-                )
-                st.session_state["produtos"] = produtos_novos
-                st.session_state["pedidos"] = pedidos_novos
-                st.session_state["ultima_atualizacao"] = datetime.now().strftime("%d/%m/%Y %H:%M")
-                st.success(f"✅ Atualizado! {len(produtos_novos)} variantes e {len(pedidos_novos)} linhas de pedido.")
-            except Exception as e:
-                st.error(f"Erro ao atualizar: {e}")
+    ready = bool(shop_name and access_token)
+    if not ready:
+        st.info("Informe **Shop Name** e **Access Token** para iniciar a coleta.")
+        st.stop()
 
-    # ---- Teste de conexão com a Shopify ----
-    try:
-        test_url = f"{BASE_URL}/products.json?limit=1"
-        r = shopify_get(test_url)
-        st.write("🔎 Resultado bruto da conexão Shopify:", r.status_code)
-        st.json(r.json() if r.status_code == 200 else {})
-        if r.status_code == 200:
-            st.success("✅ Conexão Shopify OK!")
-        else:
-            st.error(f"⚠️ Erro na conexão com Shopify (status {r.status_code})")
-    except Exception as e:
-        st.error(f"❌ Falha ao conectar à Shopify: {e}")
+    BASE_URL = f"https://{shop_name}/admin/api/2025-01"
 
-    # ---- Carregamento automático inicial (se vazio) ----
-    if ("produtos" not in st.session_state) or st.session_state["produtos"] is None:
+    # =====================================================
+    # 🔄 Coletar dados da Shopify
+    # =====================================================
+    with st.spinner("Carregando dados da Shopify..."):
         try:
-            st.info("🔄 Carregando produtos iniciais...")
-            produtos_iniciais = get_products_with_variants()
-            st.session_state["produtos"] = produtos_iniciais
-            st.success(f"✅ {len(produtos_iniciais)} variantes carregadas da Shopify.")
-        except Exception as e:
-            st.error(f"Erro carregando produtos: {e}")
-
-    if ("pedidos" not in st.session_state) or st.session_state["pedidos"] is None:
-        try:
+            produtos = get_products_with_variants()
             hoje = pd.Timestamp.today().date()
-            st.info("🔄 Carregando pedidos iniciais (últimos 60 dias)...")
-            pedidos_iniciais = get_orders(
-                since=hoje - timedelta(days=60),
-                until=hoje,
-                only_paid=True
-            )
-            st.session_state["pedidos"] = pedidos_iniciais
-            st.success(f"✅ {len(pedidos_iniciais)} linhas de pedido carregadas.")
-        except Exception as e:
-            st.error(f"Erro carregando pedidos: {e}")
+            pedidos = get_orders(since=hoje - timedelta(days=60), until=hoje, only_paid=True)
 
-    if "ultima_atualizacao" in st.session_state:
+            st.session_state["produtos"] = produtos
+            st.session_state["pedidos"] = pedidos
+            st.session_state["ultima_atualizacao"] = datetime.now().strftime("%d/%m/%Y %H:%M")
+
+            st.success(f"✅ {len(produtos)} variantes e {len(pedidos)} linhas de pedido carregadas.")
+        except Exception as e:
+            st.error(f"❌ Falha ao carregar dados da Shopify: {e}")
+            st.stop()
+
+    # =====================================================
+    # 🧭 Sub-abas internas (iguais ao Tráfego Pago)
+    # =====================================================
+    if produtos.empty and pedidos.empty:
+        st.warning("Nenhum dado encontrado na Shopify.")
+        st.stop()
+    else:
+        tab_overview, tab_orders = st.tabs(["📦 Visão Geral", "📋 Pedidos"])
+
+    # =====================================================
+    # 📦 ABA 1 — VISÃO GERAL
+    # =====================================================
+    with tab_overview:
+        st.subheader("📦 Visão Geral de Vendas e Estoque")
+
+        base = pedidos.copy()
+        base["created_at"] = pd.to_datetime(base.get("created_at"), errors="coerce")
+        base["price"] = pd.to_numeric(base.get("price"), errors="coerce").fillna(0)
+        base["quantity"] = pd.to_numeric(base.get("quantity"), errors="coerce").fillna(0)
+        base["line_revenue"] = base["price"] * base["quantity"]
+
+        total_pedidos = base["order_id"].nunique()
+        total_unidades = int(base["quantity"].sum())
+        total_receita = float(base["line_revenue"].sum())
+        ticket_medio = (total_receita / total_pedidos) if total_pedidos > 0 else 0.0
+
+        def _fmt_money_br(v: float) -> str:
+            return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("🧾 Pedidos", total_pedidos)
+        c2.metric("📦 Unidades vendidas", total_unidades)
+        c3.metric("💰 Receita total", _fmt_money_br(total_receita))
+        c4.metric("💸 Ticket médio", _fmt_money_br(ticket_medio))
+
         st.caption(f"🕒 Última atualização: {st.session_state['ultima_atualizacao']}")
 
-    produtos = st.session_state.get("produtos", pd.DataFrame())
-    pedidos = st.session_state.get("pedidos", pd.DataFrame())
+    # =====================================================
+    # 📋 ABA 2 — PEDIDOS DETALHADOS
+    # =====================================================
+    with tab_orders:
+        st.subheader("📋 Pedidos Detalhados")
 
-    if produtos.empty and pedidos.empty:
-        st.warning("⚠️ Ainda não há dados da Shopify carregados. Use o botão acima.")
-        st.info("🔍 Dica: clique em 'Atualizar dados da Shopify' para forçar a coleta.")
-        st.stop()
+        col1, col2 = st.columns(2)
+        with col1:
+            produtos_lbl = ["(Todos)"] + sorted(produtos["title"].dropna().unique().tolist())
+            filtro_produto = st.selectbox("Produto", produtos_lbl, index=0)
+        with col2:
+            st.caption("Filtrando últimos 60 dias (padrão).")
 
-    # ---- Normalizar nomes ----
-    def normalizar(df: pd.DataFrame) -> pd.DataFrame:
-        if df is None or df.empty:
-            return pd.DataFrame()
-        df = df.copy()
-        df.columns = [c.strip().lower() for c in df.columns]
-        ren = {
-            "title": "product_title",
-            "product_name": "product_title",
-            "variant": "variant_title",
-            "variant_name": "variant_title",
-            "id": "variant_id",
-            "variantid": "variant_id"
-        }
-        return df.rename(columns=ren)
+        df = pedidos.copy()
+        if filtro_produto != "(Todos)":
+            df = df[df["product_title"] == filtro_produto]
 
-    produtos = normalizar(produtos)
-    pedidos = normalizar(pedidos)
-
-    # --- Normalizar tipos de variant_id para evitar falha no merge ---
-    if "variant_id" in produtos.columns:
-        produtos["variant_id"] = pd.to_numeric(produtos["variant_id"], errors="coerce").astype("Int64").astype(str)
-    if "variant_id" in pedidos.columns:
-        pedidos["variant_id"] = pd.to_numeric(pedidos["variant_id"], errors="coerce").astype("Int64").astype(str)
-
-    # ---- Garantir colunas obrigatórias (evita KeyError) ----
-    for col in ["order_id", "order_number", "financial_status", "fulfillment_status"]:
-        if col not in pedidos.columns:
-            pedidos[col] = None
-
-    # ---- Validar se há 'variant_id' ----
-    if "variant_id" not in pedidos.columns or "variant_id" not in produtos.columns:
-        st.error("❌ 'variant_id' ausente — verifique se a função get_orders / get_products_with_variants retorna esse campo.")
-        st.write("🧩 Colunas disponíveis em produtos:", list(produtos.columns))
-        st.write("🧩 Colunas disponíveis em pedidos:", list(pedidos.columns))
-        st.stop()
-
-    # ---- Juntar pedidos e catálogo de variantes ----
-    merge_cols = [c for c in ["variant_id", "sku", "product_title", "variant_title"] if c in produtos.columns]
-    base = pedidos.merge(
-        produtos[merge_cols] if merge_cols else produtos,
-        on="variant_id",
-        how="left",
-        suffixes=("", "_produto")
-    )
-
-    # Ajustes pós-merge
-    if "product_title_produto" in base.columns and "product_title" not in base.columns:
-        base["product_title"] = base["product_title_produto"]
-    if "variant_title_produto" in base.columns and "variant_title" not in base.columns:
-        base["variant_title"] = base["variant_title_produto"]
-
-    base["product_title"] = base["product_title"].fillna("(Produto desconhecido)")
-    base["variant_title"] = base["variant_title"].fillna("(Variante desconhecida)")
-
-    # ---- Tipos e métricas ----
-    base["created_at"] = pd.to_datetime(base.get("created_at"), errors="coerce")
-    base["price"] = pd.to_numeric(base.get("price"), errors="coerce").fillna(0)
-    base["quantity"] = pd.to_numeric(base.get("quantity"), errors="coerce").fillna(0)
-    base["line_revenue"] = base["price"] * base["quantity"]
-
-    # ---- Filtros ----
-    st.subheader("🎛️ Filtros")
-    col1, col2, col3, col4 = st.columns(4)
-
-    with col3:
-        if not base["created_at"].isnull().all():
-            min_date = base["created_at"].min().date()
-            max_date = base["created_at"].max().date()
+        if df.empty:
+            st.warning("Nenhum pedido encontrado para o filtro aplicado.")
         else:
-            today = pd.Timestamp.today().date()
-            min_date = max_date = today
-        periodo = st.date_input("Período", (min_date, max_date), key="shopify_periodo")
+            colunas_existentes = [c for c in [
+                "order_id", "created_at", "customer_name", "product_title",
+                "variant_title", "quantity", "price", "line_revenue"
+            ] if c in df.columns]
 
-    with col4:
-        if st.button("🔍 Filtrar período da Shopify"):
-            with st.spinner("Buscando pedidos no período selecionado..."):
-                try:
-                    pedidos_filtrados = get_orders(
-                        since=periodo[0],
-                        until=periodo[1],
-                        only_paid=True
-                    )
-                    st.session_state["pedidos"] = pedidos_filtrados
-                    st.success(f"✅ {len(pedidos_filtrados)} linhas de pedido no período selecionado.")
-                except Exception as e:
-                    st.error(f"Erro ao filtrar: {e}")
+            tabela = df[colunas_existentes].sort_values("created_at", ascending=False).copy()
+            tabela.rename(columns={
+                "order_id": "Pedido",
+                "created_at": "Data",
+                "customer_name": "Cliente",
+                "product_title": "Produto",
+                "variant_title": "Variante",
+                "quantity": "Qtd",
+                "price": "Preço Unitário",
+                "line_revenue": "Total"
+            }, inplace=True)
 
-    with col1:
-        produtos_lbl = ["(Todos os produtos)"] + sorted(base["product_title"].dropna().unique().tolist())
-        escolha_prod = st.selectbox("Produto", produtos_lbl, index=0)
+            tabela["Data"] = pd.to_datetime(tabela["Data"], errors="coerce").dt.strftime("%d/%m/%Y")
+            tabela["Preço Unitário"] = tabela["Preço Unitário"].apply(lambda x: _fmt_money_br(float(x)))
+            tabela["Total"] = tabela["Total"].apply(lambda x: _fmt_money_br(float(x)))
 
-    with col2:
-        variantes_lbl = ["(Todas as variantes)"] + sorted(base["variant_title"].dropna().unique().tolist())
-        escolha_var = st.selectbox("Variante", variantes_lbl, index=0)
+            st.dataframe(tabela, use_container_width=True)
 
-    # ---- Aplicar filtros ----
-    df = base.copy()
-    df = df[(df["created_at"].dt.date >= periodo[0]) & (df["created_at"].dt.date <= periodo[1])]
-    if escolha_prod != "(Todos os produtos)":
-        df = df[df["product_title"] == escolha_prod]
-    if escolha_var != "(Todas as variantes)":
-        df = df[df["variant_title"] == escolha_var]
-
-    if df.empty:
-        st.warning("Nenhum pedido encontrado com os filtros selecionados.")
-        st.stop()
-
-    # ---- Resumo ----
-    order_col = "order_number" if ("order_number" in df.columns and df["order_number"].notna().any()) else "order_id"
-    total_pedidos = df[order_col].nunique()
-    total_unidades = int(df["quantity"].sum())
-    total_receita = float(df["line_revenue"].sum())
-    ticket_medio = (total_receita / total_pedidos) if total_pedidos > 0 else 0.0
-
-    def _fmt_money_br(v: float) -> str:
-        return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-
-    colA, colB, colC, colD = st.columns(4)
-    colA.metric("🧾 Pedidos", total_pedidos)
-    colB.metric("📦 Unidades vendidas", total_unidades)
-    colC.metric("💰 Receita total", _fmt_money_br(total_receita))
-    colD.metric("💸 Ticket médio", _fmt_money_br(ticket_medio))
-
-    # ---- Tabela ----
-    st.subheader("📋 Pedidos filtrados")
-    colunas_existentes = [c for c in [
-        order_col, "created_at", "customer_name", "quantity",
-        "variant_title", "price", "line_revenue", "inventory",
-        "forma_entrega", "estado", "cidade", "fulfillment_status"
-    ] if c in df.columns]
-
-    tabela = df[colunas_existentes].sort_values("created_at", ascending=False).copy()
-    tabela.rename(columns={
-        order_col: "Pedido",
-        "created_at": "Data do pedido",
-        "customer_name": "Nome do cliente",
-        "quantity": "Quantidade",
-        "variant_title": "Variante",
-        "price": "Preço unitário",
-        "line_revenue": "Total",
-        "inventory": "Estoque (somado)",
-        "forma_entrega": "Tipo de entrega",
-        "estado": "Estado",
-        "cidade": "Cidade",
-        "fulfillment_status": "Status de processamento"
-    }, inplace=True)
-
-    if "Pedido" in tabela.columns:
-        tabela["Pedido"] = tabela["Pedido"].apply(lambda x: f"#{int(float(x))}" if pd.notnull(x) else "-")
-
-    if "Data do pedido" in tabela.columns:
-        tabela["Data do pedido"] = pd.to_datetime(
-            tabela["Data do pedido"], errors="coerce"
-        ).dt.strftime("%d/%m/%Y %H:%M")
-
-    for col_money in ["Preço unitário", "Total"]:
-        if col_money in tabela.columns:
-            tabela[col_money] = tabela[col_money].apply(lambda x: _fmt_money_br(float(x or 0)))
-
-    st.dataframe(tabela, use_container_width=True)
-
-    # ---- Exportar CSV ----
-    csv = tabela.to_csv(index=False).encode("utf-8-sig")
-    st.download_button(
-        label="📥 Exportar pedidos filtrados (CSV)",
-        data=csv,
-        file_name=f"pedidos_shopify_{periodo[0]}_{periodo[1]}.csv",
-        mime="text/csv",
-    )
+            csv = tabela.to_csv(index=False).encode("utf-8-sig")
+            st.download_button(
+                label="📥 Exportar pedidos (CSV)",
+                data=csv,
+                file_name=f"pedidos_shopify_{datetime.now().strftime('%Y-%m-%d')}.csv",
+                mime="text/csv",
+            )
