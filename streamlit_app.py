@@ -8,7 +8,6 @@ APP_TZ = ZoneInfo("America/Sao_Paulo")
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from concurrent.futures import ThreadPoolExecutor, as_completed
-import threading
 
 _session = None
 def _get_session():
@@ -107,9 +106,51 @@ def get_orders(limit=250, only_paid=True):
 
         # 🔁 Paginação segura (Shopify REST)
         next_link = r.links.get("next", {}).get("url")
-        url = next_link if next_link else None
+        if not next_link or not orders:
+            break
+        url = next_link
 
     return pd.DataFrame(all_rows)
+
+def create_fulfillment(order_id, tracking_number, tracking_company="Correios"):
+    """
+    Cria o fulfillment (processamento) do pedido na Shopify e adiciona o código de rastreio.
+    Corrigida para incluir line_items e tracking_info (evita erro 406).
+    """
+    url = f"{BASE_URL}/orders/{order_id}/fulfillments.json"
+
+    # 🔹 Busca itens do pedido (necessário para fulfillment)
+    try:
+        r_order = requests.get(f"{BASE_URL}/orders/{order_id}.json", headers=HEADERS, timeout=60)
+        r_order.raise_for_status()
+        order_data = r_order.json().get("order", {})
+        line_items = [{"id": item["id"], "quantity": item["quantity"]} for item in order_data.get("line_items", [])]
+        if not line_items:
+            return False, f"❌ Pedido {order_id} não contém itens (não pode ser processado)."
+    except Exception as e:
+        return False, f"❌ Erro ao buscar itens do pedido: {e}"
+
+    payload = {
+        "fulfillment": {
+            "line_items": line_items,
+            "tracking_info": {
+                "number": tracking_number,
+                "company": tracking_company,
+                "url": f"https://rastreamento.correios.com.br/app/index.php?objeto={tracking_number}"
+            },
+            "notify_customer": True
+        }
+    }
+
+    try:
+        r = requests.post(url, headers=HEADERS, json=payload, timeout=60)
+        if r.status_code in [200, 201]:
+            return True, "✅ Pedido processado com sucesso na Shopify!"
+        else:
+            # Log detalhado do erro
+            return False, f"❌ Erro ao processar pedido ({r.status_code}): {r.text}"
+    except Exception as e:
+        return False, f"❌ Erro de conexão: {e}"
 
 # =============== Config & Estilos ===============
 st.set_page_config(page_title="Meta Ads — Paridade + Funil", page_icon="📊", layout="wide")
@@ -2515,8 +2556,12 @@ if menu == "📊 Dashboard – Tráfego Pago":
                     col1, col2, col3 = st.columns(3)
                     with col1:
                         st.markdown(f"""
-                        <div style="background-color:#FDF5E6;padding:18px;border-radius:12px;border:1px solid #f4c16c;color:#000000;">
-                            <h5 style="color:#000000 !important;">💰 Melhor Eficiência (ROAS)</h5>
+                        <div style="background-color:#FDF5E6;padding:18px;border-radius:12px;
+                                    border:1px solid #f4c16c;color:#000000;opacity:1;filter:none;">
+                            <h5 style="color:#000000 !important;font-weight:700;font-size:15px;
+                                       margin:0 0 6px 0;opacity:1;filter:none;">
+                                💰 Melhor Eficiência (ROAS)
+                            </h5>
                             <b>{best_roas['Dia da Semana'].capitalize()}</b><br>
                             ROAS: <b>{best_roas['ROAS']:.2f}</b><br>
                             ↑ {(best_roas['ROAS']/media_roas - 1)*100:.1f}% acima da média<br>
@@ -2528,8 +2573,12 @@ if menu == "📊 Dashboard – Tráfego Pago":
 
                     with col2:
                         st.markdown(f"""
-                        <div style="background-color:#EEF6FF;padding:18px;border-radius:12px;border:1px solid #87BFFF;color:#000000;">
-                            <h5 style="color:#000000 !important;">⚡ Maior Volume de Vendas</h5>
+                        <div style="background-color:#EEF6FF;padding:18px;border-radius:12px;
+                                    border:1px solid #87BFFF;color:#000000;opacity:1;filter:none;">
+                            <h5 style="color:#000000 !important;font-weight:700;font-size:15px;
+                                       margin:0 0 6px 0;opacity:1;filter:none;">
+                                ⚡ Maior Volume de Vendas
+                            </h5>
                             <b>{best_pur['Dia da Semana'].capitalize()}</b><br>
                             Compras: <b>{int(best_pur['purchases'])}</b><br>
                             ROAS: {best_pur['ROAS']:.2f}<br>
@@ -2540,8 +2589,12 @@ if menu == "📊 Dashboard – Tráfego Pago":
 
                     with col3:
                         st.markdown(f"""
-                        <div style="background-color:#E8F5E9;padding:18px;border-radius:12px;border:1px solid #7BC47F;color:#000000;">
-                            <h5 style="color:#000000 !important;">💸 Melhor Rentabilidade</h5>
+                        <div style="background-color:#E8F5E9;padding:18px;border-radius:12px;
+                                    border:1px solid #7BC47F;color:#000000;opacity:1;filter:none;">
+                            <h5 style="color:#000000 !important;font-weight:700;font-size:15px;
+                                       margin:0 0 6px 0;opacity:1;filter:none;">
+                                💸 Melhor Rentabilidade
+                            </h5>
                             <b>{best_cpa['Dia da Semana'].capitalize()}</b><br>
                             CPA: <b>{fmt_real(best_cpa['Custo por Compra'])}</b><br>
                             ↓ {(1 - best_cpa['Custo por Compra']/media_cpa)*100:.1f}% abaixo da média<br>
@@ -2554,8 +2607,12 @@ if menu == "📊 Dashboard – Tráfego Pago":
                     col1, col2, col3 = st.columns(3)
                     with col1:
                         st.markdown(f"""
-                        <div style="background-color:#FFF5F5;padding:18px;border-radius:12px;border:1px solid #FCA5A5;color:#000000;">
-                            <h5 style="color:#000000 !important;">📉 Pior Eficiência (ROAS)</h5>
+                        <div style="background-color:#FFF5F5;padding:18px;border-radius:12px;
+                                    border:1px solid #FCA5A5;color:#000000;opacity:1;filter:none;">
+                            <h5 style="color:#000000 !important;font-weight:700;font-size:15px;
+                                       margin:0 0 6px 0;opacity:1;filter:none;">
+                                📉 Pior Eficiência (ROAS)
+                            </h5>
                             <b>{worst_roas['Dia da Semana'].capitalize()}</b><br>
                             ROAS: <b>{worst_roas['ROAS']:.2f}</b><br>
                             ↓ {(1 - worst_roas['ROAS']/media_roas)*100:.1f}% abaixo da média<br>
@@ -2567,8 +2624,12 @@ if menu == "📊 Dashboard – Tráfego Pago":
 
                     with col2:
                         st.markdown(f"""
-                        <div style="background-color:#FFF8E1;padding:18px;border-radius:12px;border:1px solid #FACC15;color:#000000;">
-                            <h5 style="color:#000000 !important;">🐢 Menor Volume de Vendas</h5>
+                        <div style="background-color:#FFF8E1;padding:18px;border-radius:12px;
+                                    border:1px solid #FACC15;color:#000000;opacity:1;filter:none;">
+                            <h5 style="color:#000000 !important;font-weight:700;font-size:15px;
+                                       margin:0 0 6px 0;opacity:1;filter:none;">
+                                🐢 Menor Volume de Vendas
+                            </h5>
                             <b>{worst_pur['Dia da Semana'].capitalize()}</b><br>
                             Compras: <b>{int(worst_pur['purchases'])}</b><br>
                             ROAS: {worst_pur['ROAS']:.2f}<br>
@@ -2579,8 +2640,12 @@ if menu == "📊 Dashboard – Tráfego Pago":
 
                     with col3:
                         st.markdown(f"""
-                        <div style="background-color:#FFF0F0;padding:18px;border-radius:12px;border:1px solid #F87171;color:#000000;">
-                            <h5 style="color:#000000 !important;">🚨 Pior Rentabilidade (Maior CPA)</h5>
+                        <div style="background-color:#FFF0F0;padding:18px;border-radius:12px;
+                                    border:1px solid #F87171;color:#000000;opacity:1;filter:none;">
+                            <h5 style="color:#000000 !important;font-weight:700;font-size:15px;
+                                       margin:0 0 6px 0;opacity:1;filter:none;">
+                                🚨 Pior Rentabilidade (Maior CPA)
+                            </h5>
                             <b>{worst_cpa['Dia da Semana'].capitalize()}</b><br>
                             CPA: <b>{fmt_real(worst_cpa['Custo por Compra'])}</b><br>
                             ↑ {(worst_cpa['Custo por Compra']/media_cpa - 1)*100:.1f}% acima da média<br>
@@ -2590,6 +2655,7 @@ if menu == "📊 Dashboard – Tráfego Pago":
                         """, unsafe_allow_html=True)
 
                     st.caption("Essas métricas consideram apenas o período e filtros aplicados.")
+
 
                     # ====== RANKING GERAL POR DESEMPENHO ======
                     st.markdown("### 🏆 Ranking Geral — Desempenho Consolidado")
@@ -2808,200 +2874,240 @@ if menu == "📦 Dashboard – Logística":
     st.title("📦 Dashboard — Logística")
     st.caption("Visualização dos pedidos e estoque vindos da Shopify.")
     
-        # ---- Carregar dados da sessão ----
-        produtos = st.session_state.get("produtos")
-        pedidos = st.session_state.get("pedidos")
+    # ---- Carregar dados da sessão ----
+    produtos = st.session_state.get("produtos")
+    pedidos = st.session_state.get("pedidos")
 
-        # ---- Atualização de dados da Shopify (em segundo plano) ----
-        lock = threading.Lock()
+    if st.button("🔄 Atualizar dados da Shopify"):
+        produtos = get_products_with_variants()
+        pedidos = get_orders()
+        st.session_state["produtos"] = produtos
+        st.session_state["pedidos"] = pedidos
+        st.success("✅ Dados atualizados com sucesso!")
 
-        def atualizar_dados_shopify():
-            with lock:
-                try:
-                    produtos_novos = get_products_with_variants()
-                    pedidos_novos = get_orders()
-                    st.session_state["produtos"] = produtos_novos
-                    st.session_state["pedidos"] = pedidos_novos
-                    st.session_state["ultima_atualizacao"] = datetime.now().strftime("%d/%m/%Y %H:%M")
-                    st.toast("✅ Dados da Shopify atualizados com sucesso!", icon="🎉")
-                except Exception as e:
-                    st.error(f"Erro ao atualizar dados da Shopify: {e}")
+    if produtos is None or pedidos is None or produtos.empty or pedidos.empty:
+        st.info("Carregue os dados da Shopify para iniciar (botão acima).")
+        st.stop()
 
-        if st.button("🔄 Atualizar dados da Shopify"):
-            st.info("🔁 Atualização iniciada! Você pode continuar usando as outras abas enquanto carrega.")
-            threading.Thread(target=atualizar_dados_shopify, daemon=True).start()
+    # ---- Normalizar nomes ----
+    def normalizar(df):
+        df.columns = [c.strip().lower() for c in df.columns]
+        ren = {
+            "title": "product_title",
+            "product_name": "product_title",
+            "variant": "variant_title",
+            "variant_name": "variant_title",
+            "id": "variant_id",
+            "variantid": "variant_id"
+        }
+        return df.rename(columns=ren)
 
-        # ---- Carregamento automático com cache ----
-        if "produtos" not in st.session_state or st.session_state["produtos"] is None:
-            st.session_state["produtos"] = get_products_with_variants()
+    produtos = normalizar(produtos)
+    pedidos = normalizar(pedidos)
 
-        if "pedidos" not in st.session_state or st.session_state["pedidos"] is None:
-            st.session_state["pedidos"] = get_orders()
+    # ---- Garantir colunas obrigatórias (para evitar KeyError) ----
+    for col in ["order_id", "order_number", "financial_status", "fulfillment_status"]:
+        if col not in pedidos.columns:
+            pedidos[col] = None
 
-        if "ultima_atualizacao" in st.session_state:
-            st.caption(f"🕒 Última atualização: {st.session_state['ultima_atualizacao']}")
+    # ---- Juntar pedidos e produtos (corrigido) ----
+    merge_cols = ["variant_id", "sku", "product_title", "variant_title"]
+    merge_cols = [c for c in merge_cols if c in produtos.columns]
 
-        produtos = st.session_state["produtos"]
-        pedidos = st.session_state["pedidos"]
+    base = pedidos.merge(
+        produtos[merge_cols],
+        on="variant_id",
+        how="left",
+        suffixes=("", "_produto")
+    )
 
-        if produtos is None or pedidos is None or produtos.empty or pedidos.empty:
-            st.info("Carregue os dados da Shopify para iniciar (botão acima).")
-            st.stop()
+    # ---- Ajustar nomes ----
+    if "product_title_produto" in base.columns and "product_title" not in base.columns:
+        base["product_title"] = base["product_title_produto"]
 
-        # ---- Normalizar nomes ----
-        def normalizar(df):
-            df.columns = [c.strip().lower() for c in df.columns]
-            ren = {
-                "title": "product_title",
-                "product_name": "product_title",
-                "variant": "variant_title",
-                "variant_name": "variant_title",
-                "id": "variant_id",
-                "variantid": "variant_id"
-            }
-            return df.rename(columns=ren)
+    if "variant_title_produto" in base.columns and "variant_title" not in base.columns:
+        base["variant_title"] = base["variant_title_produto"]
 
-        produtos = normalizar(produtos)
-        pedidos = normalizar(pedidos)
+    base["product_title"].fillna("(Produto desconhecido)", inplace=True)
+    base["variant_title"].fillna("(Variante desconhecida)", inplace=True)
 
-        # ---- Garantir colunas obrigatórias ----
-        for col in ["order_id", "order_number", "financial_status", "fulfillment_status"]:
-            if col not in pedidos.columns:
-                pedidos[col] = None
 
-        # ---- Juntar pedidos e produtos ----
-        merge_cols = ["variant_id", "sku", "product_title", "variant_title"]
-        merge_cols = [c for c in merge_cols if c in produtos.columns]
+    # ---- Tipos e métricas ----
+    base["created_at"] = pd.to_datetime(base.get("created_at"), errors="coerce")
+    base["price"] = pd.to_numeric(base.get("price"), errors="coerce").fillna(0)
+    base["quantity"] = pd.to_numeric(base.get("quantity"), errors="coerce").fillna(0)
+    base["line_revenue"] = base["price"] * base["quantity"]
 
-        base = pedidos.merge(
-            produtos[merge_cols],
-            on="variant_id",
-            how="left",
-            suffixes=("", "_produto")
-        )
+    # ---- Fallbacks ----
+    base["product_title"].fillna("(Produto desconhecido)", inplace=True)
+    base["variant_title"].fillna("(Variante desconhecida)", inplace=True)
 
-        # ---- Ajustar nomes ----
-        if "product_title_produto" in base.columns and "product_title" not in base.columns:
-            base["product_title"] = base["product_title_produto"]
+    # ---- Filtros ----
+    st.subheader("🎛️ Filtros")
+    col1, col2, col3 = st.columns(3)
 
-        if "variant_title_produto" in base.columns and "variant_title" not in base.columns:
-            base["variant_title"] = base["variant_title_produto"]
+    with col1:
+        produtos_lbl = ["(Todos os produtos)"] + sorted(base["product_title"].dropna().unique().tolist())
+        escolha_prod = st.selectbox("Produto", produtos_lbl, index=0)
 
-        base["product_title"].fillna("(Produto desconhecido)", inplace=True)
-        base["variant_title"].fillna("(Variante desconhecida)", inplace=True)
+    with col2:
+        variantes_lbl = ["(Todas as variantes)"] + sorted(base["variant_title"].dropna().unique().tolist())
+        escolha_var = st.selectbox("Variante", variantes_lbl, index=0)
 
-        # ---- Tipos e métricas ----
-        base["created_at"] = pd.to_datetime(base.get("created_at"), errors="coerce")
-        base["price"] = pd.to_numeric(base.get("price"), errors="coerce").fillna(0)
-        base["quantity"] = pd.to_numeric(base.get("quantity"), errors="coerce").fillna(0)
-        base["line_revenue"] = base["price"] * base["quantity"]
-
-        # ---- Filtros ----
-        st.subheader("🎛️ Filtros")
-        col1, col2, col3 = st.columns(3)
-
-        with col1:
-            produtos_lbl = ["(Todos os produtos)"] + sorted(base["product_title"].dropna().unique().tolist())
-            escolha_prod = st.selectbox("Produto", produtos_lbl, index=0)
-
-        with col2:
-            variantes_lbl = ["(Todas as variantes)"] + sorted(base["variant_title"].dropna().unique().tolist())
-            escolha_var = st.selectbox("Variante", variantes_lbl, index=0)
-
-        with col3:
-            if not base["created_at"].isnull().all():
-                min_date = base["created_at"].min().date()
-                max_date = base["created_at"].max().date()
-            else:
-                today = pd.Timestamp.today().date()
-                min_date = max_date = today
-            periodo = st.date_input("Período", (min_date, max_date))
-
-        # ---- Aplicar filtros ----
-        df = base[
-            (base["created_at"].dt.date >= periodo[0]) &
-            (base["created_at"].dt.date <= periodo[1])
-        ].copy()
-
-        if escolha_prod != "(Todos os produtos)":
-            df = df[df["product_title"] == escolha_prod]
-        if escolha_var != "(Todas as variantes)":
-            df = df[df["variant_title"] == escolha_var]
-
-        if df.empty:
-            st.warning("Nenhum pedido encontrado com os filtros selecionados.")
-            st.stop()
-
-        # ---- Resumo ----
-        order_col = "order_number" if "order_number" in df.columns and df["order_number"].notna().any() else "order_id"
-        total_pedidos = df[order_col].nunique()
-        total_unidades = df["quantity"].sum()
-        total_receita = df["line_revenue"].sum()
-        ticket_medio = total_receita / total_pedidos if total_pedidos > 0 else 0
-
-        colA, colB, colC, colD = st.columns(4)
-        colA.metric("🧾 Pedidos", total_pedidos)
-        colB.metric("📦 Unidades vendidas", int(total_unidades))
-        colC.metric("💰 Receita total", f"R$ {total_receita:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
-        colD.metric("💸 Ticket médio", f"R$ {ticket_medio:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
-
-        # ---- Tabela final ----
-        st.subheader("📋 Pedidos filtrados")
-
-        colunas_existentes = [c for c in [
-            order_col, "created_at", "customer_name", "quantity",
-            "variant_title", "price", "forma_entrega", "estado", "cidade", "fulfillment_status"
-        ] if c in df.columns]
-
-        tabela = df[colunas_existentes].sort_values("created_at", ascending=False).copy()
-
-        tabela.rename(columns={
-            order_col: "Pedido",
-            "created_at": "Data do pedido",
-            "customer_name": "Nome do cliente",
-            "quantity": "Quantidade",
-            "variant_title": "Variante",
-            "price": "Preço unitário",
-            "forma_entrega": "Tipo de entrega (PAC, SEDEX, etc)",
-            "estado": "Estado de destino",
-            "cidade": "Cidade de destino",
-            "fulfillment_status": "Status de processamento do pedido"
-        }, inplace=True)
-
-        # ---- Adicionar coluna de Status de Processamento ----
-        if "fulfillment_status" in df.columns:
-            tabela["Status de processamento do pedido"] = df["fulfillment_status"].apply(
-                lambda x: (
-                    "✅ Processado" if str(x).lower() in ["fulfilled", "shipped", "complete"]
-                    else "🟡 Não processado"
-                )
-            )
+    with col3:
+        if not base["created_at"].isnull().all():
+            min_date = base["created_at"].min().date()
+            max_date = base["created_at"].max().date()
         else:
-            tabela["Status de processamento do pedido"] = "🟡 Não processado"
+            today = pd.Timestamp.today().date()
+            min_date = max_date = today
+        periodo = st.date_input("Período", (min_date, max_date))
 
-        # ---- Formatação visual ----
-        if "Pedido" in tabela.columns:
-            tabela["Pedido"] = tabela["Pedido"].apply(
-                lambda x: f"#{int(float(x))}" if pd.notnull(x) else "-"
-            )
+    # ---- Aplicar filtros ----
+    df = base[
+        (base["created_at"].dt.date >= periodo[0]) &
+        (base["created_at"].dt.date <= periodo[1])
+    ].copy()
 
-        if "Data do pedido" in tabela.columns:
-            tabela["Data do pedido"] = pd.to_datetime(
-                tabela["Data do pedido"], errors="coerce"
-            ).dt.strftime("%d/%m/%Y %H:%M")
+    if escolha_prod != "(Todos os produtos)":
+        df = df[df["product_title"] == escolha_prod]
+    if escolha_var != "(Todas as variantes)":
+        df = df[df["variant_title"] == escolha_var]
 
-        if "Preço unitário" in tabela.columns:
-            tabela["Preço unitário"] = tabela["Preço unitário"].apply(
-                lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-            )
+    if df.empty:
+        st.warning("Nenhum pedido encontrado com os filtros selecionados.")
+        st.stop()
 
-        st.dataframe(tabela, use_container_width=True)
+    # ---- Resumo ----
+    # Usa order_number se existir, senão order_id
+    order_col = "order_number" if "order_number" in df.columns and df["order_number"].notna().any() else "order_id"
+    total_pedidos = df[order_col].nunique()
+    total_unidades = df["quantity"].sum()
+    total_receita = df["line_revenue"].sum()
+    ticket_medio = total_receita / total_pedidos if total_pedidos > 0 else 0
 
-        # ---- Exportar CSV ----
-        csv = tabela.to_csv(index=False).encode('utf-8-sig')
-        st.download_button(
-            label="📥 Exportar pedidos filtrados (CSV)",
-            data=csv,
-            file_name=f"pedidos_shopify_{periodo[0]}_{periodo[1]}.csv",
-            mime="text/csv",
+    colA, colB, colC, colD = st.columns(4)
+    colA.metric("🧾 Pedidos", total_pedidos)
+    colB.metric("📦 Unidades vendidas", int(total_unidades))
+    colC.metric("💰 Receita total", f"R$ {total_receita:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+    colD.metric("💸 Ticket médio", f"R$ {ticket_medio:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+
+    # ---- Tabela final ----
+    st.subheader("📋 Pedidos filtrados")
+
+    # ---- Adiciona coluna de Pedido interno (ID real da Shopify) ----
+    if "order_id" in df.columns:
+        df["Pedido interno"] = df["order_id"].astype(str)
+    else:
+        df["Pedido interno"] = ""
+    
+    colunas_existentes = [c for c in [
+        order_col, "created_at", "customer_name", "quantity",
+        "variant_title", "price", "forma_entrega", "estado", "cidade", "tracking_number", "fulfillment_status", "Pedido interno"
+    ] if c in df.columns]
+
+    tabela = df[colunas_existentes].sort_values("created_at", ascending=False).copy()
+
+    tabela.rename(columns={
+        order_col: "Pedido",
+        "created_at": "Data do pedido",
+        "customer_name": "Nome do cliente",
+        "quantity": "Quantidade",
+        "variant_title": "Variante",
+        "price": "Preço unitário",
+        "forma_entrega": "Tipo de entrega (PAC, SEDEX, etc)",
+        "estado": "Estado de destino",
+        "cidade": "Cidade de destino",
+        "tracking_number": "Código de rastreio",
+        "fulfillment_status": "Status de processamento"
+    }, inplace=True)
+
+    # ---- Adicionar coluna de Código de Rastreio ----
+    if "tracking_number" in df.columns:
+        tabela["Código de rastreio"] = df["tracking_number"].fillna("")
+    else:
+        tabela["Código de rastreio"] = ""
+
+    
+    # ---- Atualizar status com base no código de rastreio ----
+    if "Código de rastreio" in tabela.columns:
+        tabela["Status de processamento"] = tabela["Código de rastreio"].apply(
+            lambda x: "✅ Processado" if isinstance(x, str) and x.strip() else "🟡 Não processado"
         )
+    else:
+        tabela["Status de processamento"] = "🟡 Não processado"
+
+
+    # ---- Formatação visual ----
+    if "Pedido" in tabela.columns:
+        tabela["Pedido"] = tabela["Pedido"].apply(
+            lambda x: f"#{int(float(x))}" if pd.notnull(x) else "-"
+        )
+
+    if "Data do pedido" in tabela.columns:
+        tabela["Data do pedido"] = pd.to_datetime(
+            tabela["Data do pedido"], errors="coerce"
+        ).dt.strftime("%d/%m/%Y %H:%M")
+
+    if "Preço unitário" in tabela.columns:
+        tabela["Preço unitário"] = tabela["Preço unitário"].apply(
+            lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        )
+
+    # ---- Tabela editável ----
+    st.write("✏️ Edite a coluna **Código de rastreio** abaixo para processar pedidos:")
+
+    tabela_editavel = st.data_editor(
+        tabela,
+        use_container_width=True,
+        num_rows="dynamic",
+        disabled=["Pedido", "Data do pedido", "Nome do cliente", "Quantidade", "Variante",
+                  "Preço unitário", "Tipo de entrega (PAC, SEDEX, etc)",
+                  "Estado de destino", "Cidade de destino", "Status de processamento","Pedido interno"]
+    )
+
+    # ---- Processar pedidos automaticamente ----
+    if st.button("🚚 Confirmar atualizações na Shopify"):
+        pedidos_para_processar = tabela_editavel[
+            tabela_editavel["Código de rastreio"].astype(str).str.strip() != ""
+        ]
+
+        if pedidos_para_processar.empty:
+            st.warning("Nenhum código de rastreio preenchido.")
+        else:
+            st.info(f"Enviando {len(pedidos_para_processar)} pedidos para processamento...")
+            resultados = []
+
+            # Processa um por um
+            for _, row in pedidos_para_processar.iterrows():
+                order_id = str(row.get("Pedido interno", "")).strip()
+                tracking_number = str(row["Código de rastreio"]).strip()
+                ok, msg = create_fulfillment(order_id, tracking_number)
+                resultados.append((order_id, ok, msg))
+
+            # Exibe resultados
+            for order_id, ok, msg in resultados:
+                if ok:
+                    st.success(f"✅ Pedido #{order_id} processado com sucesso!")
+                else:
+                    st.error(f"❌ Pedido #{order_id}: {msg}")
+
+            # Atualiza status da tabela local (sem precisar recarregar manualmente)
+            for i, row in tabela_editavel.iterrows():
+                if str(row["Código de rastreio"]).strip():
+                    tabela_editavel.at[i, "Status de processamento"] = "✅ Processado"
+
+            # Re-renderiza automaticamente
+            st.session_state["pedidos"] = pedidos
+            st.success("🔄 Tabela atualizada com sucesso! Atualize a página para ver os dados sincronizados.")
+            st.stop()
+
+
+    # ---- Exportar CSV ----
+    csv = tabela.to_csv(index=False).encode('utf-8-sig')
+    st.download_button(
+        label="📥 Exportar pedidos filtrados (CSV)",
+        data=csv,
+        file_name=f"pedidos_shopify_{periodo[0]}_{periodo[1]}.csv",
+        mime="text/csv",
+    )
