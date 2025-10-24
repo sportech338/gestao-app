@@ -2514,7 +2514,7 @@ if menu == "📊 Dashboard – Tráfego Pago":
                     col1, col2, col3 = st.columns(3)
                     with col1:
                         st.markdown(f"""
-                        <div style="background-color:#FDF5E6;padding:18px;border-radius:12px;
+                        <div style="background-color:#e09053;padding:18px;border-radius:12px;
                                     border:1px solid #f4c16c;color:#000000;opacity:1;filter:none;">
                             <h5 style="color:#000000 !important;font-weight:700;font-size:15px;
                                        margin:0 0 6px 0;opacity:1;filter:none;">
@@ -2531,7 +2531,7 @@ if menu == "📊 Dashboard – Tráfego Pago":
 
                     with col2:
                         st.markdown(f"""
-                        <div style="background-color:#EEF6FF;padding:18px;border-radius:12px;
+                        <div style="background-color:#53c4e0;padding:18px;border-radius:12px;
                                     border:1px solid #87BFFF;color:#000000;opacity:1;filter:none;">
                             <h5 style="color:#000000 !important;font-weight:700;font-size:15px;
                                        margin:0 0 6px 0;opacity:1;filter:none;">
@@ -2547,7 +2547,7 @@ if menu == "📊 Dashboard – Tráfego Pago":
 
                     with col3:
                         st.markdown(f"""
-                        <div style="background-color:#E8F5E9;padding:18px;border-radius:12px;
+                        <div style="background-color:#74e053;padding:18px;border-radius:12px;
                                     border:1px solid #7BC47F;color:#000000;opacity:1;filter:none;">
                             <h5 style="color:#000000 !important;font-weight:700;font-size:15px;
                                        margin:0 0 6px 0;opacity:1;filter:none;">
@@ -2565,7 +2565,7 @@ if menu == "📊 Dashboard – Tráfego Pago":
                     col1, col2, col3 = st.columns(3)
                     with col1:
                         st.markdown(f"""
-                        <div style="background-color:#FFF5F5;padding:18px;border-radius:12px;
+                        <div style="background-color:#e05363;padding:18px;border-radius:12px;
                                     border:1px solid #FCA5A5;color:#000000;opacity:1;filter:none;">
                             <h5 style="color:#000000 !important;font-weight:700;font-size:15px;
                                        margin:0 0 6px 0;opacity:1;filter:none;">
@@ -2582,7 +2582,7 @@ if menu == "📊 Dashboard – Tráfego Pago":
 
                     with col2:
                         st.markdown(f"""
-                        <div style="background-color:#FFF8E1;padding:18px;border-radius:12px;
+                        <div style="background-color:#e07b53;padding:18px;border-radius:12px;
                                     border:1px solid #FACC15;color:#000000;opacity:1;filter:none;">
                             <h5 style="color:#000000 !important;font-weight:700;font-size:15px;
                                        margin:0 0 6px 0;opacity:1;filter:none;">
@@ -2598,7 +2598,7 @@ if menu == "📊 Dashboard – Tráfego Pago":
 
                     with col3:
                         st.markdown(f"""
-                        <div style="background-color:#FFF0F0;padding:18px;border-radius:12px;
+                        <div style="background-color:#e06553;padding:18px;border-radius:12px;
                                     border:1px solid #F87171;color:#000000;opacity:1;filter:none;">
                             <h5 style="color:#000000 !important;font-weight:700;font-size:15px;
                                        margin:0 0 6px 0;opacity:1;filter:none;">
