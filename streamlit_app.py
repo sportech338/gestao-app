@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import requests, json, time
+import threading
 from datetime import date, timedelta, datetime
 from zoneinfo import ZoneInfo
 APP_TZ = ZoneInfo("America/Sao_Paulo")
