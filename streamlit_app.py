@@ -106,51 +106,9 @@ def get_orders(limit=250, only_paid=True):
 
         # 🔁 Paginação segura (Shopify REST)
         next_link = r.links.get("next", {}).get("url")
-        if not next_link or not orders:
-            break
-        url = next_link
+        url = next_link if next_link else None
 
     return pd.DataFrame(all_rows)
-
-def create_fulfillment(order_id, tracking_number, tracking_company="Correios"):
-    """
-    Cria o fulfillment (processamento) do pedido na Shopify e adiciona o código de rastreio.
-    Corrigida para incluir line_items e tracking_info (evita erro 406).
-    """
-    url = f"{BASE_URL}/orders/{order_id}/fulfillments.json"
-
-    # 🔹 Busca itens do pedido (necessário para fulfillment)
-    try:
-        r_order = requests.get(f"{BASE_URL}/orders/{order_id}.json", headers=HEADERS, timeout=60)
-        r_order.raise_for_status()
-        order_data = r_order.json().get("order", {})
-        line_items = [{"id": item["id"], "quantity": item["quantity"]} for item in order_data.get("line_items", [])]
-        if not line_items:
-            return False, f"❌ Pedido {order_id} não contém itens (não pode ser processado)."
-    except Exception as e:
-        return False, f"❌ Erro ao buscar itens do pedido: {e}"
-
-    payload = {
-        "fulfillment": {
-            "line_items": line_items,
-            "tracking_info": {
-                "number": tracking_number,
-                "company": tracking_company,
-                "url": f"https://rastreamento.correios.com.br/app/index.php?objeto={tracking_number}"
-            },
-            "notify_customer": True
-        }
-    }
-
-    try:
-        r = requests.post(url, headers=HEADERS, json=payload, timeout=60)
-        if r.status_code in [200, 201]:
-            return True, "✅ Pedido processado com sucesso na Shopify!"
-        else:
-            # Log detalhado do erro
-            return False, f"❌ Erro ao processar pedido ({r.status_code}): {r.text}"
-    except Exception as e:
-        return False, f"❌ Erro de conexão: {e}"
 
 # =============== Config & Estilos ===============
 st.set_page_config(page_title="Meta Ads — Paridade + Funil", page_icon="📊", layout="wide")
@@ -2995,15 +2953,9 @@ if menu == "📦 Dashboard – Logística":
     # ---- Tabela final ----
     st.subheader("📋 Pedidos filtrados")
 
-    # ---- Adiciona coluna de Pedido interno (ID real da Shopify) ----
-    if "order_id" in df.columns:
-        df["Pedido interno"] = df["order_id"].astype(str)
-    else:
-        df["Pedido interno"] = ""
-    
     colunas_existentes = [c for c in [
         order_col, "created_at", "customer_name", "quantity",
-        "variant_title", "price", "forma_entrega", "estado", "cidade", "tracking_number", "fulfillment_status", "Pedido interno"
+        "variant_title", "price", "forma_entrega", "estado", "cidade", "fulfillment_status"
     ] if c in df.columns]
 
     tabela = df[colunas_existentes].sort_values("created_at", ascending=False).copy()
@@ -3018,24 +2970,19 @@ if menu == "📦 Dashboard – Logística":
         "forma_entrega": "Tipo de entrega (PAC, SEDEX, etc)",
         "estado": "Estado de destino",
         "cidade": "Cidade de destino",
-        "tracking_number": "Código de rastreio",
-        "fulfillment_status": "Status de processamento"
+        "fulfillment_status": "Status de processamento do pedido"
     }, inplace=True)
 
-    # ---- Adicionar coluna de Código de Rastreio ----
-    if "tracking_number" in df.columns:
-        tabela["Código de rastreio"] = df["tracking_number"].fillna("")
-    else:
-        tabela["Código de rastreio"] = ""
-
-    
-    # ---- Atualizar status com base no código de rastreio ----
-    if "Código de rastreio" in tabela.columns:
-        tabela["Status de processamento"] = tabela["Código de rastreio"].apply(
-            lambda x: "✅ Processado" if isinstance(x, str) and x.strip() else "🟡 Não processado"
+        # ---- Adicionar coluna de Status de Processamento ----
+    if "fulfillment_status" in df.columns:
+        tabela["Status de processamento do pedido"] = df["fulfillment_status"].apply(
+            lambda x: (
+                "✅ Processado" if str(x).lower() in ["fulfilled", "shipped", "complete"]
+                else "🟡 Não processado"
+            )
         )
     else:
-        tabela["Status de processamento"] = "🟡 Não processado"
+        tabela["Status de processamento do pedido"] = "🟡 Não processado"
 
 
     # ---- Formatação visual ----
@@ -3054,54 +3001,8 @@ if menu == "📦 Dashboard – Logística":
             lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
         )
 
-    # ---- Tabela editável ----
-    st.write("✏️ Edite a coluna **Código de rastreio** abaixo para processar pedidos:")
 
-    tabela_editavel = st.data_editor(
-        tabela,
-        use_container_width=True,
-        num_rows="dynamic",
-        disabled=["Pedido", "Data do pedido", "Nome do cliente", "Quantidade", "Variante",
-                  "Preço unitário", "Tipo de entrega (PAC, SEDEX, etc)",
-                  "Estado de destino", "Cidade de destino", "Status de processamento","Pedido interno"]
-    )
-
-    # ---- Processar pedidos automaticamente ----
-    if st.button("🚚 Confirmar atualizações na Shopify"):
-        pedidos_para_processar = tabela_editavel[
-            tabela_editavel["Código de rastreio"].astype(str).str.strip() != ""
-        ]
-
-        if pedidos_para_processar.empty:
-            st.warning("Nenhum código de rastreio preenchido.")
-        else:
-            st.info(f"Enviando {len(pedidos_para_processar)} pedidos para processamento...")
-            resultados = []
-
-            # Processa um por um
-            for _, row in pedidos_para_processar.iterrows():
-                order_id = str(row.get("Pedido interno", "")).strip()
-                tracking_number = str(row["Código de rastreio"]).strip()
-                ok, msg = create_fulfillment(order_id, tracking_number)
-                resultados.append((order_id, ok, msg))
-
-            # Exibe resultados
-            for order_id, ok, msg in resultados:
-                if ok:
-                    st.success(f"✅ Pedido #{order_id} processado com sucesso!")
-                else:
-                    st.error(f"❌ Pedido #{order_id}: {msg}")
-
-            # Atualiza status da tabela local (sem precisar recarregar manualmente)
-            for i, row in tabela_editavel.iterrows():
-                if str(row["Código de rastreio"]).strip():
-                    tabela_editavel.at[i, "Status de processamento"] = "✅ Processado"
-
-            # Re-renderiza automaticamente
-            st.session_state["pedidos"] = pedidos
-            st.success("🔄 Tabela atualizada com sucesso! Atualize a página para ver os dados sincronizados.")
-            st.stop()
-
+    st.dataframe(tabela, use_container_width=True)
 
     # ---- Exportar CSV ----
     csv = tabela.to_csv(index=False).encode('utf-8-sig')
