@@ -3216,7 +3216,7 @@ with tab_logistica:
                 hoje = pd.Timestamp.today().date()
                 produtos_novos = get_products_with_variants()
                 pedidos_novos = get_orders(
-                    since=hoje - timedelta(days=60),  # ajuste se quiser
+                    since=hoje - timedelta(days=60),
                     until=hoje,
                     only_paid=True
                 )
@@ -3227,12 +3227,12 @@ with tab_logistica:
             except Exception as e:
                 st.error(f"Erro ao atualizar: {e}")
 
-    # ---- Carregamento automático inicial (se vazio) ----
-
-    # 🔌 Teste de conexão com a Shopify
+    # ---- Teste de conexão com a Shopify ----
     try:
         test_url = f"{BASE_URL}/products.json?limit=1"
         r = shopify_get(test_url)
+        st.write("🔎 Resultado bruto da conexão Shopify:", r.status_code)
+        st.json(r.json() if r.status_code == 200 else {})
         if r.status_code == 200:
             st.success("✅ Conexão Shopify OK!")
         else:
@@ -3240,7 +3240,7 @@ with tab_logistica:
     except Exception as e:
         st.error(f"❌ Falha ao conectar à Shopify: {e}")
 
-    # 🧭 Carregamento automático de produtos, se ainda não existir na sessão
+    # ---- Carregamento automático inicial (se vazio) ----
     if ("produtos" not in st.session_state) or st.session_state["produtos"] is None:
         try:
             st.info("🔄 Carregando produtos iniciais...")
@@ -3250,7 +3250,6 @@ with tab_logistica:
         except Exception as e:
             st.error(f"Erro carregando produtos: {e}")
 
-    # 🧾 Carregamento automático de pedidos, se ainda não existir na sessão
     if ("pedidos" not in st.session_state) or st.session_state["pedidos"] is None:
         try:
             hoje = pd.Timestamp.today().date()
@@ -3273,6 +3272,7 @@ with tab_logistica:
 
     if produtos.empty and pedidos.empty:
         st.warning("⚠️ Ainda não há dados da Shopify carregados. Use o botão acima.")
+        st.info("🔍 Dica: clique em 'Atualizar dados da Shopify' para forçar a coleta.")
         st.stop()
 
     # ---- Normalizar nomes ----
@@ -3294,24 +3294,23 @@ with tab_logistica:
     produtos = normalizar(produtos)
     pedidos = normalizar(pedidos)
 
-
     # --- Normalizar tipos de variant_id para evitar falha no merge ---
     if "variant_id" in produtos.columns:
         produtos["variant_id"] = pd.to_numeric(produtos["variant_id"], errors="coerce").astype("Int64").astype(str)
     if "variant_id" in pedidos.columns:
         pedidos["variant_id"] = pd.to_numeric(pedidos["variant_id"], errors="coerce").astype("Int64").astype(str)
 
-    
     # ---- Garantir colunas obrigatórias (evita KeyError) ----
     for col in ["order_id", "order_number", "financial_status", "fulfillment_status"]:
         if col not in pedidos.columns:
             pedidos[col] = None
 
-    # ✅ Fail-safe: garantir 'variant_id' em ambos para cruzar dados
+    # ---- Validar se há 'variant_id' ----
     if "variant_id" not in pedidos.columns or "variant_id" not in produtos.columns:
-        st.warning("Sem 'variant_id' em pedidos/produtos — não dá para cruzar catálogo. Verifique a coleta da Shopify.")
+        st.error("❌ 'variant_id' ausente — verifique se a função get_orders / get_products_with_variants retorna esse campo.")
+        st.write("🧩 Colunas disponíveis em produtos:", list(produtos.columns))
+        st.write("🧩 Colunas disponíveis em pedidos:", list(pedidos.columns))
         st.stop()
-
 
     # ---- Juntar pedidos e catálogo de variantes ----
     merge_cols = [c for c in ["variant_id", "sku", "product_title", "variant_title"] if c in produtos.columns]
@@ -3322,7 +3321,7 @@ with tab_logistica:
         suffixes=("", "_produto")
     )
 
-    # Ajustes de nome pós-merge (se vieram colunas *_produto)
+    # Ajustes pós-merge
     if "product_title_produto" in base.columns and "product_title" not in base.columns:
         base["product_title"] = base["product_title_produto"]
     if "variant_title_produto" in base.columns and "variant_title" not in base.columns:
@@ -3337,7 +3336,7 @@ with tab_logistica:
     base["quantity"] = pd.to_numeric(base.get("quantity"), errors="coerce").fillna(0)
     base["line_revenue"] = base["price"] * base["quantity"]
 
-    # ---- Filtros (ligados à coleta!) ----
+    # ---- Filtros ----
     st.subheader("🎛️ Filtros")
     col1, col2, col3, col4 = st.columns(4)
 
@@ -3360,23 +3359,6 @@ with tab_logistica:
                         only_paid=True
                     )
                     st.session_state["pedidos"] = pedidos_filtrados
-                    pedidos = normalizar(pedidos_filtrados)
-                    base = pedidos.merge(
-                        produtos[merge_cols] if merge_cols else produtos,
-                        on="variant_id",
-                        how="left",
-                        suffixes=("", "_produto")
-                    )
-                    if "product_title_produto" in base.columns and "product_title" not in base.columns:
-                        base["product_title"] = base["product_title_produto"]
-                    if "variant_title_produto" in base.columns and "variant_title" not in base.columns:
-                        base["variant_title"] = base["variant_title_produto"]
-                    base["product_title"] = base["product_title"].fillna("(Produto desconhecido)")
-                    base["variant_title"] = base["variant_title"].fillna("(Variante desconhecida)")
-                    base["created_at"] = pd.to_datetime(base.get("created_at"), errors="coerce")
-                    base["price"] = pd.to_numeric(base.get("price"), errors="coerce").fillna(0)
-                    base["quantity"] = pd.to_numeric(base.get("quantity"), errors="coerce").fillna(0)
-                    base["line_revenue"] = base["price"] * base["quantity"]
                     st.success(f"✅ {len(pedidos_filtrados)} linhas de pedido no período selecionado.")
                 except Exception as e:
                     st.error(f"Erro ao filtrar: {e}")
