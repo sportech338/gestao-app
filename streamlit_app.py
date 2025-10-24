@@ -50,83 +50,85 @@ def get_products_with_variants(limit=250):
     return pd.DataFrame(rows)
 
 @st.cache_data(ttl=600)
-def get_orders(start_date=None, end_date=None, limit=250):
+def get_orders(start_date=None, end_date=None):
     """
-    Busca TODOS os pedidos da Shopify dentro de um intervalo de datas,
-    respeitando a paginação 'page_info' via header Link.
+    Busca todos os pedidos da Shopify, mês a mês,
+    evitando o limite de 60 dias da API.
     """
     all_orders = []
-    url = f"{BASE_URL}/orders.json"
-    params = {
-        "status": "any",
-        "limit": limit,
-        "order": "created_at asc",
-    }
 
-    # Filtros de data (opcionais)
-    if start_date:
-        params["created_at_min"] = f"{start_date}T00:00:00-03:00"
-    if end_date:
-        params["created_at_max"] = f"{end_date}T23:59:59-03:00"
+    # Se não for passado o intervalo, pega desde o início da loja (por segurança, 2022)
+    if start_date is None:
+        start_date = datetime(2022, 1, 1)
+    if end_date is None:
+        end_date = datetime.now()
 
-    while True:
-        # Requisição
-        response = requests.get(url, headers=HEADERS, params=params, timeout=60)
-        if response.status_code != 200:
-            st.error(f"Erro {response.status_code} ao buscar pedidos: {response.text}")
-            break
+    current_start = start_date
+    while current_start <= end_date:
+        current_end = min(current_start + timedelta(days=29), end_date)
 
-        data = response.json().get("orders", [])
-        if not data:
-            break
+        url = f"{BASE_URL}/orders.json"
+        params = {
+            "status": "any",
+            "limit": 250,
+            "created_at_min": current_start.strftime("%Y-%m-%dT00:00:00-03:00"),
+            "created_at_max": current_end.strftime("%Y-%m-%dT23:59:59-03:00"),
+            "order": "created_at asc",
+        }
 
-        # Armazena todos os pedidos
-        for o in data:
-            for it in o.get("line_items", []):
-                all_orders.append({
-                    "order_id": o.get("id"),
-                    "order_number": o.get("order_number"),
-                    "customer_name": (
-                        ((o.get("customer") or {}).get("first_name") or "") + " " +
-                        ((o.get("customer") or {}).get("last_name") or "")
-                    ).strip(),
-                    "created_at": o.get("created_at"),
-                    "financial_status": o.get("financial_status"),
-                    "fulfillment_status": o.get("fulfillment_status"),
-                    "total_price": float(o.get("total_price") or 0),
-                    "currency": o.get("currency", "BRL"),
-                    "variant_id": it.get("variant_id"),
-                    "title": it.get("title"),
-                    "variant_title": it.get("variant_title"),
-                    "quantity": it.get("quantity", 0),
-                    "price": float(it.get("price") or 0),
-                    "sku": it.get("sku"),
-                    "forma_entrega": (o.get("shipping_lines", [{}])[0] or {}).get("title"),
-                    "estado": (o.get("shipping_address", {}) or {}).get("province", ""),
-                    "cidade": (o.get("shipping_address", {}) or {}).get("city", ""),
-                })
+        while True:
+            response = requests.get(url, headers=HEADERS, params=params, timeout=60)
+            if response.status_code != 200:
+                st.error(f"Erro {response.status_code} ao buscar pedidos: {response.text}")
+                break
 
-        # Paginação via Link header
-        link_header = response.headers.get("Link", "")
-        next_url = None
-        if link_header and 'rel="next"' in link_header:
-            # Captura o link da próxima página (page_info)
-            parts = link_header.split(",")
-            for part in parts:
-                if 'rel="next"' in part:
-                    next_url = part.split(";")[0].strip("<> ")
-                    break
+            data = response.json().get("orders", [])
+            if not data:
+                break
 
-        # Se não houver próxima página, sai do loop
-        if not next_url:
-            break
+            for o in data:
+                for it in o.get("line_items", []):
+                    all_orders.append({
+                        "order_id": o.get("id"),
+                        "order_number": o.get("order_number"),
+                        "customer_name": (
+                            ((o.get("customer") or {}).get("first_name") or "") + " " +
+                            ((o.get("customer") or {}).get("last_name") or "")
+                        ).strip(),
+                        "created_at": o.get("created_at"),
+                        "financial_status": o.get("financial_status"),
+                        "fulfillment_status": o.get("fulfillment_status"),
+                        "total_price": float(o.get("total_price") or 0),
+                        "currency": o.get("currency", "BRL"),
+                        "variant_id": it.get("variant_id"),
+                        "title": it.get("title"),
+                        "variant_title": it.get("variant_title"),
+                        "quantity": it.get("quantity", 0),
+                        "price": float(it.get("price") or 0),
+                        "sku": it.get("sku"),
+                        "forma_entrega": (o.get("shipping_lines", [{}])[0] or {}).get("title"),
+                        "estado": (o.get("shipping_address", {}) or {}).get("province", ""),
+                        "cidade": (o.get("shipping_address", {}) or {}).get("city", ""),
+                    })
 
-        # A próxima URL já vem com page_info, então não precisa de params
-        url = next_url
-        params = None
-        time.sleep(0.2)  # evita rate limit da Shopify
+            # Paginação por "Link"
+            link_header = response.headers.get("Link", "")
+            next_url = None
+            if link_header and 'rel="next"' in link_header:
+                for part in link_header.split(","):
+                    if 'rel="next"' in part:
+                        next_url = part.split(";")[0].strip("<> ")
+                        break
 
-    # Monta DataFrame final
+            if not next_url:
+                break
+            url = next_url
+            params = None
+            time.sleep(0.2)
+
+        st.info(f"✅ Período {current_start.strftime('%b/%Y')} concluído com sucesso ({len(all_orders)} acumulados).")
+        current_start = current_end + timedelta(days=1)
+
     df = pd.DataFrame(all_orders)
     if not df.empty:
         df["created_at"] = pd.to_datetime(df["created_at"], errors="coerce")
@@ -2842,8 +2844,9 @@ if menu == "📦 Dashboard – Logística":
         def atualizar_dados_shopify():
             with lock:
                 try:
+                    st.toast("⏳ Atualizando dados da Shopify... Pode levar alguns minutos.", icon="⏳")
                     produtos_novos = get_products_with_variants()
-                    pedidos_novos = get_orders()  # agora traz TUDO
+                    pedidos_novos = get_orders()
                     st.session_state["produtos"] = produtos_novos
                     st.session_state["pedidos"] = pedidos_novos
                     st.session_state["ultima_atualizacao"] = datetime.now().strftime("%d/%m/%Y %H:%M")
