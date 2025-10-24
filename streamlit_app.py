@@ -50,18 +50,24 @@ def get_products_with_variants(limit=250):
     return pd.DataFrame(rows)
 
 @st.cache_data(ttl=600)
-def get_orders(limit=250):
+def get_orders(start_date=None, end_date=None, limit=250):
     """
-    Busca todos os pedidos da Shopify (sem filtro de data).
-    Faz paginação automática até acabar.
+    Busca todos os pedidos da Shopify dentro de um intervalo de datas, 
+    com paginação completa via 'page_info'.
     """
     all_orders = []
     url = f"{BASE_URL}/orders.json"
     params = {
         "status": "any",
         "limit": limit,
-        "order": "created_at desc",
+        "order": "created_at asc",
     }
+
+    # Adiciona filtros de data se houver
+    if start_date:
+        params["created_at_min"] = f"{start_date}T00:00:00-03:00"
+    if end_date:
+        params["created_at_max"] = f"{end_date}T23:59:59-03:00"
 
     while True:
         r = requests.get(url, headers=HEADERS, params=params, timeout=60)
@@ -98,20 +104,28 @@ def get_orders(limit=250):
                     "cidade": (o.get("shipping_address", {}) or {}).get("city", ""),
                 })
 
-        # Verifica se há próxima página (cursor)
-        import re
+        # Paginação via header Link
         link_header = r.headers.get("Link", "")
-        match = re.search(r'<([^>]+)>; rel="next"', link_header)
-        if match:
-            url = match.group(1)
-            params = None
-        else:
+        next_link = None
+        if link_header:
+            import re
+            match = re.search(r'<([^>]+)>; rel="next"', link_header)
+            if match:
+                next_link = match.group(1)
+
+        if not next_link:
             break
+
+        # A próxima URL já contém o page_info, então limpa params
+        url = next_link
+        params = None
+        time.sleep(0.2)  # evita throttle
 
     df = pd.DataFrame(all_orders)
     if not df.empty:
         df["created_at"] = pd.to_datetime(df["created_at"], errors="coerce")
     return df
+
 
 # =============== Config & Estilos ===============
 st.set_page_config(page_title="Meta Ads — Paridade + Funil", page_icon="📊", layout="wide")
