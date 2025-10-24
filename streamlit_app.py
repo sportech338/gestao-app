@@ -8,7 +8,6 @@ APP_TZ = ZoneInfo("America/Sao_Paulo")
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from streamlit_date_picker import date_range_picker
 
 _session = None
 def _get_session():
@@ -2924,21 +2923,35 @@ if menu == "📦 Dashboard – Logística":
             today = pd.Timestamp.today().date()
             min_date = max_date = today
 
-        st.write("**Período**")
-        periodo = date_range_picker(
-            "Selecione o período",
-            start_date=min_date,
-            end_date=max_date,
-            date_format="DD/MM/YYYY",
-            locale="pt-BR",
-            key="periodo_picker"
+        # Campo nativo com formato BR (DD/MM/YYYY)
+        periodo = st.date_input(
+            "📅 Período",
+            (min_date, max_date),
+            format="DD/MM/YYYY"
         )
 
-        if periodo and len(periodo) == 2:
-            st.markdown(
-                f"<p style='margin-top:4px;color:#ccc;'>📅 <b>Período selecionado:</b> {periodo[0]} – {periodo[1]}</p>",
-                unsafe_allow_html=True
-            )
+        # Exibir o formato de forma amigável
+        periodo_formatado = f"{periodo[0].strftime('%d/%m/%Y')} – {periodo[1].strftime('%d/%m/%Y')}"
+        st.markdown(
+            f"<p style='margin-top:4px;color:#ccc;'>📅 <b>Período selecionado:</b> {periodo_formatado}</p>",
+            unsafe_allow_html=True
+        )
+
+
+    # ---- Aplicar filtros ----
+    df = base[
+        (base["created_at"].dt.date >= periodo[0]) &
+        (base["created_at"].dt.date <= periodo[1])
+    ].copy()
+
+    if escolha_prod != "(Todos os produtos)":
+        df = df[df["product_title"] == escolha_prod]
+    if escolha_var != "(Todas as variantes)":
+        df = df[df["variant_title"] == escolha_var]
+
+    if df.empty:
+        st.warning("Nenhum pedido encontrado com os filtros selecionados.")
+        st.stop()
 
 
     # ---- Aplicar filtros ----
