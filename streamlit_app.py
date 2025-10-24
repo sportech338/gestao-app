@@ -2557,7 +2557,7 @@ if menu == "📊 Dashboard – Tráfego Pago":
                     with col1:
                         st.markdown(f"""
                         <div style="background-color:#FDF5E6;padding:18px;border-radius:12px;border:1px solid #f4c16c;color:#000000;">
-                            <h5 style="color:#000000 !important;">💰 Melhor Eficiência (ROAS)</h5>
+                            <h5 style="color:#000000 !important;margin:0 0 6px 0;font-weight:700;font-size:15px;">💰 Melhor Eficiência (ROAS)</h5>
                             <b>{best_roas['Dia da Semana'].capitalize()}</b><br>
                             ROAS: <b>{best_roas['ROAS']:.2f}</b><br>
                             ↑ {(best_roas['ROAS']/media_roas - 1)*100:.1f}% acima da média<br>
@@ -2570,7 +2570,7 @@ if menu == "📊 Dashboard – Tráfego Pago":
                     with col2:
                         st.markdown(f"""
                         <div style="background-color:#EEF6FF;padding:18px;border-radius:12px;border:1px solid #87BFFF;color:#000000;">
-                            <h5 style="color:#000000 !important;">⚡ Maior Volume de Vendas</h5>
+                            <h5 style="color:#000000 !important;margin:0 0 6px 0;font-weight:700;font-size:15px;">⚡ Maior Volume de Vendas</h5>
                             <b>{best_pur['Dia da Semana'].capitalize()}</b><br>
                             Compras: <b>{int(best_pur['purchases'])}</b><br>
                             ROAS: {best_pur['ROAS']:.2f}<br>
@@ -2582,7 +2582,7 @@ if menu == "📊 Dashboard – Tráfego Pago":
                     with col3:
                         st.markdown(f"""
                         <div style="background-color:#E8F5E9;padding:18px;border-radius:12px;border:1px solid #7BC47F;color:#000000;">
-                            <h5 style="color:#000000 !important;">💸 Melhor Rentabilidade</h5>
+                            <h5 style="color:#000000 !important;margin:0 0 6px 0;font-weight:700;font-size:15px;">💸 Melhor Rentabilidade</h5>
                             <b>{best_cpa['Dia da Semana'].capitalize()}</b><br>
                             CPA: <b>{fmt_real(best_cpa['Custo por Compra'])}</b><br>
                             ↓ {(1 - best_cpa['Custo por Compra']/media_cpa)*100:.1f}% abaixo da média<br>
@@ -2596,7 +2596,7 @@ if menu == "📊 Dashboard – Tráfego Pago":
                     with col1:
                         st.markdown(f"""
                         <div style="background-color:#FFF5F5;padding:18px;border-radius:12px;border:1px solid #FCA5A5;color:#000000;">
-                            <h5 style="color:#000000 !important;">📉 Pior Eficiência (ROAS)</h5>
+                            <h5 style="color:#000000 !important;margin:0 0 6px 0;font-weight:700;font-size:15px;">📉 Pior Eficiência (ROAS)</h5>
                             <b>{worst_roas['Dia da Semana'].capitalize()}</b><br>
                             ROAS: <b>{worst_roas['ROAS']:.2f}</b><br>
                             ↓ {(1 - worst_roas['ROAS']/media_roas)*100:.1f}% abaixo da média<br>
@@ -2609,7 +2609,7 @@ if menu == "📊 Dashboard – Tráfego Pago":
                     with col2:
                         st.markdown(f"""
                         <div style="background-color:#FFF8E1;padding:18px;border-radius:12px;border:1px solid #FACC15;color:#000000;">
-                            <h5 style="color:#000000 !important;">🐢 Menor Volume de Vendas</h5>
+                            <h5 style="color:#000000 !important;margin:0 0 6px 0;font-weight:700;font-size:15px;">🐢 Menor Volume de Vendas</h5>
                             <b>{worst_pur['Dia da Semana'].capitalize()}</b><br>
                             Compras: <b>{int(worst_pur['purchases'])}</b><br>
                             ROAS: {worst_pur['ROAS']:.2f}<br>
@@ -2621,7 +2621,7 @@ if menu == "📊 Dashboard – Tráfego Pago":
                     with col3:
                         st.markdown(f"""
                         <div style="background-color:#FFF0F0;padding:18px;border-radius:12px;border:1px solid #F87171;color:#000000;">
-                            <h5 style="color:#000000 !important;">🚨 Pior Rentabilidade (Maior CPA)</h5>
+                            <h5 style="color:#000000 !important;margin:0 0 6px 0;font-weight:700;font-size:15px;">🚨 Pior Rentabilidade (Maior CPA)</h5>
                             <b>{worst_cpa['Dia da Semana'].capitalize()}</b><br>
                             CPA: <b>{fmt_real(worst_cpa['Custo por Compra'])}</b><br>
                             ↑ {(worst_cpa['Custo por Compra']/media_cpa - 1)*100:.1f}% acima da média<br>
