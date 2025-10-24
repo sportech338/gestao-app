@@ -150,7 +150,6 @@ def create_fulfillment(order_id, tracking_number, tracking_company="Correios"):
     except Exception as e:
         return False, f"❌ Erro de conexão: {e}"
 
-
 # =============== Config & Estilos ===============
 st.set_page_config(page_title="Meta Ads — Paridade + Funil", page_icon="📊", layout="wide")
 st.markdown("""
