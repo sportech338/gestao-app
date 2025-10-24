@@ -130,9 +130,22 @@ def get_orders(start_date=None, end_date=None, limit=250):
         df["created_at"] = pd.to_datetime(df["created_at"], errors="coerce").dt.tz_convert("America/Sao_Paulo")
     return df
 
-st.write(f"🧾 Total de pedidos carregados: {len(st.session_state['pedidos'])}")
-st.write(st.session_state['pedidos'][['order_number', 'created_at']].head())
+# =====================================================
+# 🔍 DEBUG SHOPIFY – VERIFICAR PEDIDOS RETORNADOS
+# =====================================================
+if "pedidos" in st.session_state and isinstance(st.session_state["pedidos"], pd.DataFrame):
+    df_debug = st.session_state["pedidos"]
+    st.write(f"🧾 Total de pedidos carregados: {len(df_debug)}")
+    st.write("📋 Colunas retornadas:", list(df_debug.columns))
 
+    # Mostrar primeiras linhas sem quebrar se faltar coluna
+    cols_to_show = [c for c in ["order_number", "name", "created_at", "processed_at"] if c in df_debug.columns]
+    if cols_to_show:
+        st.dataframe(df_debug[cols_to_show].head())
+    else:
+        st.warning("Nenhuma coluna padrão de pedido encontrada no retorno da Shopify.")
+else:
+    st.info("ℹ️ Nenhum pedido carregado ainda — clique em 'Atualizar dados da Shopify'.")
 
 # =============== Config & Estilos ===============
 st.set_page_config(page_title="Meta Ads — Paridade + Funil", page_icon="📊", layout="wide")
