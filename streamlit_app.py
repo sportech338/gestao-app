@@ -52,8 +52,8 @@ def get_products_with_variants(limit=250):
 @st.cache_data(ttl=600)
 def get_orders(start_date=None, end_date=None, limit=250):
     """
-    Busca todos os pedidos da Shopify dentro de um intervalo de datas, 
-    com paginação completa via 'page_info'.
+    Busca TODOS os pedidos da Shopify dentro de um intervalo de datas,
+    respeitando a paginação 'page_info' via header Link.
     """
     all_orders = []
     url = f"{BASE_URL}/orders.json"
@@ -63,22 +63,24 @@ def get_orders(start_date=None, end_date=None, limit=250):
         "order": "created_at asc",
     }
 
-    # Adiciona filtros de data se houver
+    # Filtros de data (opcionais)
     if start_date:
         params["created_at_min"] = f"{start_date}T00:00:00-03:00"
     if end_date:
         params["created_at_max"] = f"{end_date}T23:59:59-03:00"
 
     while True:
-        r = requests.get(url, headers=HEADERS, params=params, timeout=60)
-        if r.status_code != 200:
-            st.error(f"Erro {r.status_code} ao buscar pedidos: {r.text}")
+        # Requisição
+        response = requests.get(url, headers=HEADERS, params=params, timeout=60)
+        if response.status_code != 200:
+            st.error(f"Erro {response.status_code} ao buscar pedidos: {response.text}")
             break
 
-        data = r.json().get("orders", [])
+        data = response.json().get("orders", [])
         if not data:
             break
 
+        # Armazena todos os pedidos
         for o in data:
             for it in o.get("line_items", []):
                 all_orders.append({
@@ -104,28 +106,31 @@ def get_orders(start_date=None, end_date=None, limit=250):
                     "cidade": (o.get("shipping_address", {}) or {}).get("city", ""),
                 })
 
-        # Paginação via header Link
-        link_header = r.headers.get("Link", "")
-        next_link = None
-        if link_header:
-            import re
-            match = re.search(r'<([^>]+)>; rel="next"', link_header)
-            if match:
-                next_link = match.group(1)
+        # Paginação via Link header
+        link_header = response.headers.get("Link", "")
+        next_url = None
+        if link_header and 'rel="next"' in link_header:
+            # Captura o link da próxima página (page_info)
+            parts = link_header.split(",")
+            for part in parts:
+                if 'rel="next"' in part:
+                    next_url = part.split(";")[0].strip("<> ")
+                    break
 
-        if not next_link:
+        # Se não houver próxima página, sai do loop
+        if not next_url:
             break
 
-        # A próxima URL já contém o page_info, então limpa params
-        url = next_link
+        # A próxima URL já vem com page_info, então não precisa de params
+        url = next_url
         params = None
-        time.sleep(0.2)  # evita throttle
+        time.sleep(0.2)  # evita rate limit da Shopify
 
+    # Monta DataFrame final
     df = pd.DataFrame(all_orders)
     if not df.empty:
         df["created_at"] = pd.to_datetime(df["created_at"], errors="coerce")
     return df
-
 
 # =============== Config & Estilos ===============
 st.set_page_config(page_title="Meta Ads — Paridade + Funil", page_icon="📊", layout="wide")
