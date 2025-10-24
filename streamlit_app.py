@@ -2785,60 +2785,7 @@ if menu == "📦 Dashboard – Logística":
                 except Exception as e:
                     st.error(f"Erro ao atualizar dados da Shopify: {e}")
 
-        if st.button("🔄 Atualizar dados da Shopify"):
-            st.info("🔁 Atualização iniciada! Você pode continuar usando as outras abas enquanto carrega.")
-            threading.Thread(target=atualizar_dados_shopify, daemon=True).start()
-
-        # ---- Carregamento automático com cache ----
-        if "produtos" not in st.session_state or st.session_state["produtos"] is None:
-            st.session_state["produtos"] = get_products_with_variants()
-
-        if "pedidos" not in st.session_state or st.session_state["pedidos"] is None:
-            st.session_state["pedidos"] = get_orders()
-
-        if "ultima_atualizacao" in st.session_state:
-            st.caption(f"🕒 Última atualização: {st.session_state['ultima_atualizacao']}")
-
-        produtos = st.session_state["produtos"]
-        pedidos = st.session_state["pedidos"]
-
-        if produtos is None or pedidos is None or produtos.empty or pedidos.empty:
-            st.info("Carregue os dados da Shopify para iniciar (botão acima).")
-            st.stop()
-
-        # ---- Normalizar nomes ----
-        def normalizar(df):
-            df.columns = [c.strip().lower() for c in df.columns]
-            ren = {
-                "title": "product_title",
-                "product_name": "product_title",
-                "variant": "variant_title",
-                "variant_name": "variant_title",
-                "id": "variant_id",
-                "variantid": "variant_id"
-            }
-            return df.rename(columns=ren)
-
-        # ---- Carregar dados da sessão ----
-        produtos = st.session_state.get("produtos")
-        pedidos = st.session_state.get("pedidos")
-
-        # ---- Atualização de dados da Shopify (em segundo plano) ----
-        lock = threading.Lock()
-
-        def atualizar_dados_shopify():
-            with lock:
-                try:
-                    produtos_novos = get_products_with_variants()
-                    pedidos_novos = get_orders()
-                    st.session_state["produtos"] = produtos_novos
-                    st.session_state["pedidos"] = pedidos_novos
-                    st.session_state["ultima_atualizacao"] = datetime.now().strftime("%d/%m/%Y %H:%M")
-                    st.toast("✅ Dados da Shopify atualizados com sucesso!", icon="🎉")
-                except Exception as e:
-                    st.error(f"Erro ao atualizar dados da Shopify: {e}")
-
-        if st.button("🔄 Atualizar dados da Shopify"):
+        if st.button("🔄 Atualizar dados da Shopify", key="btn_atualizar_shopify"):
             st.info("🔁 Atualização iniciada! Você pode continuar usando as outras abas enquanto carrega.")
             threading.Thread(target=atualizar_dados_shopify, daemon=True).start()
 
@@ -2913,11 +2860,11 @@ if menu == "📦 Dashboard – Logística":
 
         with col1:
             produtos_lbl = ["(Todos os produtos)"] + sorted(base["product_title"].dropna().unique().tolist())
-            escolha_prod = st.selectbox("Produto", produtos_lbl, index=0)
+            escolha_prod = st.selectbox("Produto", produtos_lbl, index=0, key="filtro_produto")
 
         with col2:
             variantes_lbl = ["(Todas as variantes)"] + sorted(base["variant_title"].dropna().unique().tolist())
-            escolha_var = st.selectbox("Variante", variantes_lbl, index=0)
+            escolha_var = st.selectbox("Variante", variantes_lbl, index=0, key="filtro_variante")
 
         with col3:
             if not base["created_at"].isnull().all():
@@ -2926,7 +2873,7 @@ if menu == "📦 Dashboard – Logística":
             else:
                 today = pd.Timestamp.today().date()
                 min_date = max_date = today
-            periodo = st.date_input("Período", (min_date, max_date))
+            periodo = st.date_input("Período", (min_date, max_date), key="filtro_periodo")
 
         # ---- Aplicar filtros ----
         df = base[
@@ -3016,5 +2963,3 @@ if menu == "📦 Dashboard – Logística":
             file_name=f"pedidos_shopify_{periodo[0]}_{periodo[1]}.csv",
             mime="text/csv",
         )
-
-        st.stop()
