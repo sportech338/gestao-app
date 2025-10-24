@@ -23,7 +23,7 @@ def _get_session():
 
 SHOP_NAME = st.secrets["shopify"]["shop_name"]
 ACCESS_TOKEN = st.secrets["shopify"]["access_token"]
-API_VERSION = "2024-10"
+API_VERSION = "2025-10"
 
 BASE_URL = f"https://{SHOP_NAME}/admin/api/{API_VERSION}"
 HEADERS = {"X-Shopify-Access-Token": ACCESS_TOKEN, "Content-Type": "application/json"}
