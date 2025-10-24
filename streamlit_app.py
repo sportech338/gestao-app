@@ -2970,7 +2970,7 @@ if menu == "📦 Dashboard – Logística":
         "forma_entrega": "Frete escolhido",
         "estado": "Estado de destino",
         "cidade": "Cidade de destino",
-        "fulfillment_status": "Status de processamento do pedido"
+        "fulfillment_status": "Status de processamento"
     }, inplace=True)
 
         # ---- Adicionar coluna de Status de Processamento ----
