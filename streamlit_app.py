@@ -113,24 +113,29 @@ def get_orders(limit=250, only_paid=True):
 def create_fulfillment(order_id, tracking_number, tracking_company="Correios"):
     """
     Cria o fulfillment (processamento) do pedido na Shopify e adiciona o código de rastreio.
-    Corrigido para incluir line_items.
+    Corrigida para incluir line_items e tracking_info (evita erro 406).
     """
     url = f"{BASE_URL}/orders/{order_id}/fulfillments.json"
 
-    # Busca itens do pedido (necessário para fulfillment)
+    # 🔹 Busca itens do pedido (necessário para fulfillment)
     try:
         r_order = requests.get(f"{BASE_URL}/orders/{order_id}.json", headers=HEADERS, timeout=60)
         r_order.raise_for_status()
         order_data = r_order.json().get("order", {})
         line_items = [{"id": item["id"], "quantity": item["quantity"]} for item in order_data.get("line_items", [])]
+        if not line_items:
+            return False, f"❌ Pedido {order_id} não contém itens (não pode ser processado)."
     except Exception as e:
         return False, f"❌ Erro ao buscar itens do pedido: {e}"
 
     payload = {
         "fulfillment": {
-            "tracking_number": tracking_number,
-            "tracking_company": tracking_company,
             "line_items": line_items,
+            "tracking_info": {
+                "number": tracking_number,
+                "company": tracking_company,
+                "url": f"https://rastreamento.correios.com.br/app/index.php?objeto={tracking_number}"
+            },
             "notify_customer": True
         }
     }
@@ -140,9 +145,11 @@ def create_fulfillment(order_id, tracking_number, tracking_company="Correios"):
         if r.status_code in [200, 201]:
             return True, "✅ Pedido processado com sucesso na Shopify!"
         else:
+            # Log detalhado do erro
             return False, f"❌ Erro ao processar pedido ({r.status_code}): {r.text}"
     except Exception as e:
         return False, f"❌ Erro de conexão: {e}"
+
 
 # =============== Config & Estilos ===============
 st.set_page_config(page_title="Meta Ads — Paridade + Funil", page_icon="📊", layout="wide")
@@ -3075,5 +3082,3 @@ if menu == "📦 Dashboard – Logística":
         file_name=f"pedidos_shopify_{periodo[0]}_{periodo[1]}.csv",
         mime="text/csv",
     )
-
-
