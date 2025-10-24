@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -52,13 +53,13 @@ def get_products_with_variants(limit=250):
 @st.cache_data(ttl=600)
 def get_orders(start_date=None, end_date=None, limit=250):
     """
-    Busca TODOS os pedidos da Shopify dentro do período informado.
-    Inclui paginação completa e parâmetros 'fields' para garantir colunas essenciais.
+    Busca TODOS os pedidos da Shopify dentro do período informado (sem limite de 60 dias).
+    Inclui paginação via 'page_info' e filtros de data UTC (ISO 8601).
     """
     base_url = f"{BASE_URL}/orders.json"
     headers = HEADERS.copy()
 
-    # Converter datas para UTC ISO 8601
+    # Converter datas para UTC ISO 8601 (com 'Z' no final)
     def to_utc_iso(dt):
         ts = pd.Timestamp(dt).tz_localize("America/Sao_Paulo").tz_convert("UTC")
         return ts.strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -66,14 +67,7 @@ def get_orders(start_date=None, end_date=None, limit=250):
     params = {
         "limit": limit,
         "status": "any",
-        "order": "created_at asc",
-        # ⚙️ Força retorno de colunas completas
-        "fields": ",".join([
-            "id", "name", "order_number", "created_at", "processed_at",
-            "financial_status", "fulfillment_status",
-            "total_price", "currency",
-            "shipping_lines", "shipping_address", "customer", "line_items"
-        ])
+        "order": "created_at asc"
     }
 
     if start_date:
@@ -85,7 +79,11 @@ def get_orders(start_date=None, end_date=None, limit=250):
     next_page_url = None
 
     while True:
-        resp = requests.get(next_page_url or base_url, headers=headers, params=None if next_page_url else params, timeout=60)
+        if next_page_url:
+            resp = requests.get(next_page_url, headers=headers, timeout=60)
+        else:
+            resp = requests.get(base_url, headers=headers, params=params, timeout=60)
+
         resp.raise_for_status()
         data = resp.json().get("orders", [])
         if not data:
@@ -94,10 +92,9 @@ def get_orders(start_date=None, end_date=None, limit=250):
         for o in data:
             for it in o.get("line_items", []):
                 rows.append({
-                    "order_id": o.get("id"),
-                    "order_number": o.get("order_number") or o.get("name"),
+                    "order_id": o["id"],
+                    "order_number": o.get("order_number"),
                     "created_at": o.get("created_at"),
-                    "processed_at": o.get("processed_at"),
                     "financial_status": o.get("financial_status"),
                     "fulfillment_status": o.get("fulfillment_status"),
                     "customer_name": (
@@ -117,36 +114,26 @@ def get_orders(start_date=None, end_date=None, limit=250):
                     "currency": o.get("currency", "BRL"),
                 })
 
-        # Paginação baseada em cursor (Link header)
+        # Detectar próxima página (cursor-based pagination)
         link_header = resp.headers.get("Link", "")
+        if 'rel="next"' not in link_header:
+            break
+
         import re
         match = re.search(r'<([^>]+)>; rel="next"', link_header)
-        if match:
-            next_page_url = match.group(1)
-        else:
+        if not match:
             break
+
+        next_page_url = match.group(1)
 
     df = pd.DataFrame(rows)
     if not df.empty:
         df["created_at"] = pd.to_datetime(df["created_at"], errors="coerce").dt.tz_convert("America/Sao_Paulo")
     return df
 
-# =====================================================
-# 🔍 DEBUG SHOPIFY – VERIFICAR PEDIDOS RETORNADOS
-# =====================================================
-if "pedidos" in st.session_state and isinstance(st.session_state["pedidos"], pd.DataFrame):
-    df_debug = st.session_state["pedidos"]
-    st.write(f"🧾 Total de pedidos carregados: {len(df_debug)}")
-    st.write("📋 Colunas retornadas:", list(df_debug.columns))
+st.write(f"🧾 Total de pedidos carregados: {len(st.session_state['pedidos'])}")
+st.write(st.session_state['pedidos'][['order_number', 'created_at']].head())
 
-    # Mostrar primeiras linhas sem quebrar se faltar coluna
-    cols_to_show = [c for c in ["order_number", "name", "created_at", "processed_at"] if c in df_debug.columns]
-    if cols_to_show:
-        st.dataframe(df_debug[cols_to_show].head())
-    else:
-        st.warning("Nenhuma coluna padrão de pedido encontrada no retorno da Shopify.")
-else:
-    st.info("ℹ️ Nenhum pedido carregado ainda — clique em 'Atualizar dados da Shopify'.")
 
 # =============== Config & Estilos ===============
 st.set_page_config(page_title="Meta Ads — Paridade + Funil", page_icon="📊", layout="wide")
