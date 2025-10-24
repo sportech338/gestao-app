@@ -52,47 +52,35 @@ def get_products_with_variants(limit=250):
 @st.cache_data(ttl=600)
 def get_orders(start_date=None, end_date=None, limit=250):
     """
-    Busca TODOS os pedidos da Shopify dentro do período definido (sem limite de 100).
-    Faz paginação automática com 'page_info' até o fim dos resultados.
+    Busca todos os pedidos da Shopify dentro do período definido,
+    paginando automaticamente com 'page_info'.
     """
-    base_url = f"{BASE_URL}/orders.json"
+    all_orders = []
+    url = f"{BASE_URL}/orders.json"
     params = {
         "status": "any",
-        "order": "created_at desc",
         "limit": limit,
+        "order": "created_at desc",
     }
 
-    # Aplica filtros de data se informados
+    # Filtros de data (formato ISO)
     if start_date:
         params["created_at_min"] = f"{start_date}T00:00:00-03:00"
     if end_date:
         params["created_at_max"] = f"{end_date}T23:59:59-03:00"
 
-    all_orders = []
-    next_page = None
-    tries = 0
-
     while True:
-        # Evita loops infinitos
-        if tries > 200:
-            break
-        tries += 1
-
-        # Se for a primeira página, usa params; caso contrário, segue a URL com page_info
-        if next_page:
-            url = next_page
-            response = requests.get(url, headers=HEADERS, timeout=60)
-        else:
-            response = requests.get(base_url, headers=HEADERS, params=params, timeout=60)
-
-        if response.status_code != 200:
-            st.error(f"Erro {response.status_code} ao buscar pedidos: {response.text}")
+        # Faz a requisição
+        r = requests.get(url, headers=HEADERS, params=params, timeout=60)
+        if r.status_code != 200:
+            st.error(f"Erro {r.status_code} ao buscar pedidos: {r.text}")
             break
 
-        data = response.json().get("orders", [])
+        data = r.json().get("orders", [])
         if not data:
             break
 
+        # Adiciona pedidos atuais
         for o in data:
             for it in o.get("line_items", []):
                 all_orders.append({
@@ -118,22 +106,21 @@ def get_orders(start_date=None, end_date=None, limit=250):
                     "cidade": (o.get("shipping_address", {}) or {}).get("city", ""),
                 })
 
-        # Paginação Shopify via header "Link"
-        link_header = response.headers.get("Link", "")
-        if 'rel="next"' not in link_header:
-            break
-
+        # Verifica se existe próxima página (Link Header)
+        link_header = r.headers.get("Link", "")
         import re
         match = re.search(r'<([^>]+)>; rel="next"', link_header)
-        if not match:
+        if match:
+            # Shopify já inclui todos os parâmetros (inclusive o page_info)
+            url = match.group(1)
+            params = None  # importante: não enviar params novamente
+        else:
             break
 
-        next_page = match.group(1)
-
+    # Converte para DataFrame
     df = pd.DataFrame(all_orders)
     if not df.empty:
         df["created_at"] = pd.to_datetime(df["created_at"], errors="coerce")
-
     return df
 
 
