@@ -8,6 +8,7 @@ APP_TZ = ZoneInfo("America/Sao_Paulo")
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from streamlit_date_picker import date_range_picker
 
 _session = None
 def _get_session():
@@ -2922,20 +2923,31 @@ if menu == "📦 Dashboard – Logística":
         else:
             today = pd.Timestamp.today().date()
             min_date = max_date = today
-        periodo = st.date_input("Período", (min_date, max_date))
-        
-        # Exibir campo formatado (dd/mm/yyyy)
-        periodo_formatado = f"{periodo[0].strftime('%d/%m/%Y')} – {periodo[1].strftime('%d/%m/%Y')}"
-        st.markdown(
-            f"<p style='margin-top:4px;color:#ccc;'>📅 <b>Período selecionado:</b> {periodo_formatado}</p>",
-            unsafe_allow_html=True
+
+        st.write("**Período**")
+        periodo = date_range_picker(
+            "Selecione o período",
+            start_date=min_date,
+            end_date=max_date,
+            date_format="DD/MM/YYYY",
+            locale="pt-BR",
+            key="periodo_picker"
         )
+
+        if periodo and len(periodo) == 2:
+            st.markdown(
+                f"<p style='margin-top:4px;color:#ccc;'>📅 <b>Período selecionado:</b> {periodo[0]} – {periodo[1]}</p>",
+                unsafe_allow_html=True
+            )
 
 
     # ---- Aplicar filtros ----
+    start_date = datetime.strptime(periodo[0], "%d/%m/%Y").date()
+    end_date = datetime.strptime(periodo[1], "%d/%m/%Y").date()
+
     df = base[
-        (base["created_at"].dt.date >= periodo[0]) &
-        (base["created_at"].dt.date <= periodo[1])
+        (base["created_at"].dt.date >= start_date) &
+        (base["created_at"].dt.date <= end_date)
     ].copy()
 
     if escolha_prod != "(Todos os produtos)":
@@ -3019,6 +3031,6 @@ if menu == "📦 Dashboard – Logística":
     st.download_button(
         label="📥 Exportar pedidos filtrados (CSV)",
         data=csv,
-        file_name=f"pedidos_shopify_{periodo[0].strftime('%d-%m-%Y')}_{periodo[1].strftime('%d-%m-%Y')}.csv",
+        file_name=f"pedidos_shopify_{start_date.strftime('%d-%m-%Y')}_{end_date.strftime('%d-%m-%Y')}.csv",
         mime="text/csv",
     )
