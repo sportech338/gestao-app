@@ -10,6 +10,9 @@ from plotly.subplots import make_subplots
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
 
+# =============== Config & Estilos ===============
+st.set_page_config(page_title="Meta Ads — Paridade + Funil", page_icon="📊", layout="wide")
+
 _session = None
 def _get_session():
     global _session
@@ -28,46 +31,79 @@ API_VERSION = "2024-10"
 BASE_URL = f"https://{SHOP_NAME}/admin/api/{API_VERSION}"
 HEADERS = {"X-Shopify-Access-Token": ACCESS_TOKEN, "Content-Type": "application/json"}
 
+def shopify_get(url, *, params=None, max_retries=5, base_wait=1.0):
+    sess = _get_session()
+    wait = base_wait
+    for _ in range(max_retries):
+        resp = sess.get(url, headers=HEADERS, params=params, timeout=60)
+        if resp.status_code == 429:
+            time.sleep(wait)
+            wait = min(wait * 2, 16)
+            continue
+        resp.raise_for_status()
+        return resp
+    raise RuntimeError("Shopify 429 persistente — reduza a taxa/ajuste cache.")
+
 @st.cache_data(ttl=600)
 def get_products_with_variants(limit=250):
-    url = f"{BASE_URL}/products.json?limit={limit}"
-    r = requests.get(url, headers=HEADERS, timeout=60)
-    r.raise_for_status()
-    data = r.json().get("products", [])
-    rows = []
-    for p in data:
-        for v in p.get("variants", []):
-            rows.append({
-                "product_id": p["id"],
-                "product_title": p["title"],
-                "variant_id": v["id"],
-                "variant_title": v["title"],
-                "sku": v.get("sku"),
-                "price": float(v.get("price") or 0),
-                "compare_at_price": float(v.get("compare_at_price") or 0),
-                "inventory": v.get("inventory_quantity"),
-            })
-    return pd.DataFrame(rows)
+    url = f"{BASE_URL}/products.json"
+    params = {"limit": limit}
+    rows, first = [], True
+
+    # 1) Produtos + variantes (pega inventory_item_id)
+    while url:
+        r = shopify_get(url, params=params if first else None)
+        first = False
+        for p in (r.json() or {}).get("products", []):
+            for v in p.get("variants", []):
+                rows.append({
+                    "product_id": p["id"],
+                    "product_title": p["title"],
+                    "variant_id": v["id"],
+                    "variant_title": v["title"],
+                    "inventory_item_id": v.get("inventory_item_id"),
+                    "sku": v.get("sku"),
+                    "price": float(v.get("price") or 0),
+                    "compare_at_price": float(v.get("compare_at_price") or 0),
+                })
+        url = r.links.get("next", {}).get("url")
+
+    df = pd.DataFrame(rows)
+    if df.empty or "inventory_item_id" not in df.columns:
+        return df
+
+    # 2) Busca níveis de inventário por inventory_item_id em lotes (máx. 50 por chamada)
+    item_ids = [str(x) for x in df["inventory_item_id"].dropna().unique().tolist()]
+    inv_map = {}
+    base_levels_url = f"{BASE_URL}/inventory_levels.json"
+
+    for i in range(0, len(item_ids), 50):
+        batch = ",".join(item_ids[i:i+50])
+        # sem 'location_ids' → traz todos os níveis; somamos 'available'
+        r = shopify_get(base_levels_url, params={"inventory_item_ids": batch})
+        levels = (r.json() or {}).get("inventory_levels", [])
+        for lv in levels:
+            iid = str(lv.get("inventory_item_id"))
+            inv_map[iid] = inv_map.get(iid, 0) + int(lv.get("available") or 0)
+
+    # 3) Merge do estoque na base de variantes
+    df["inventory"] = df["inventory_item_id"].astype(str).map(inv_map).fillna(0).astype(int)
+    return df
 
 @st.cache_data(ttl=600)
 def get_orders(limit=250, only_paid=True, since=None, until=None):
-    """
-    Baixa pedidos da Shopify com dados completos (cliente, entrega, produto e localização).
-    Filtra apenas pedidos pagos por padrão e permite intervalo de datas.
-    """
     params = {"limit": limit, "status": "any"}
     if since and until:
         params["created_at_min"] = f"{since}T00:00:00-03:00"
         params["created_at_max"] = f"{until}T23:59:59-03:00"
 
     url = f"{BASE_URL}/orders.json"
-    all_rows = []
+    all_rows, first = [], True
 
     while url:
-        r = requests.get(url, headers=HEADERS, params=params, timeout=60)
-        r.raise_for_status()
-        data = r.json()
-        orders = data.get("orders", [])
+        r = shopify_get(url, params=params if first else None)
+        first = False
+        orders = (r.json() or {}).get("orders", [])
 
         for o in orders:
             if only_paid and o.get("financial_status") not in ["paid", "partially_paid"]:
@@ -75,17 +111,13 @@ def get_orders(limit=250, only_paid=True, since=None, until=None):
 
             customer = o.get("customer") or {}
             shipping = o.get("shipping_address") or {}
-            shipping_lines = o.get("shipping_lines") or [{}]
-
-            nome_cliente = (
-                f"{customer.get('first_name', '')} {customer.get('last_name', '')}".strip()
-                or "(Cliente não informado)"
-            )
+            shipping_lines = (o.get("shipping_lines") or [{}])
+            nome_cliente = (f"{customer.get('first_name','')} {customer.get('last_name','')}".strip()
+                            or "(Cliente não informado)")
 
             for it in o.get("line_items", []):
                 preco = float(it.get("price") or 0)
                 qtd = int(it.get("quantity", 0))
-
                 all_rows.append({
                     "order_id": o.get("id"),
                     "order_number": o.get("order_number"),
@@ -106,14 +138,12 @@ def get_orders(limit=250, only_paid=True, since=None, until=None):
                     "cidade": shipping.get("city", "N/A"),
                 })
 
-        next_link = r.links.get("next", {}).get("url")
-        url = next_link if next_link else None
+        url = r.links.get("next", {}).get("url")  # não reenvie params aqui
 
-    return pd.DataFrame(all_rows)
-
-
-# =============== Config & Estilos ===============
-st.set_page_config(page_title="Meta Ads — Paridade + Funil", page_icon="📊", layout="wide")
+    df = pd.DataFrame(all_rows)
+    if not df.empty:
+        df["created_at"] = pd.to_datetime(df["created_at"], utc=True).dt.tz_convert(APP_TZ)
+    return df
 
 # =====================================================
 # 🧠 Proteção global — cria variáveis de sessão padrão
@@ -829,10 +859,7 @@ def fetch_insights_breakdown(act_id: str, token: str, api_version: str,
     if df.empty:
         return df
     df["ROAS"] = np.where(df["spend"]>0, df["revenue"]/df["spend"], np.nan)
-    return df
-                                 
-# === Helper: traduz período rápido em datas (igual ao script antigo) ===
-APP_TZ = ZoneInfo("America/Sao_Paulo")
+    return df                 
 
 def _range_from_preset(p):
     local_today = datetime.now(APP_TZ).date()
@@ -3165,7 +3192,6 @@ with tab_detail:
 # =====================================================
 # 📦 DASHBOARD – LOGÍSTICA
 # =====================================================
-st.write("✅ Passou da aba principal — entrando na Logística")
 with aba_principal[1]:
     st.header("📦 Dashboard — Logística")
     st.subheader("📦 Shopify – Visão Geral")
@@ -3181,7 +3207,7 @@ with aba_principal[1]:
                 hoje = pd.Timestamp.today().date()
                 produtos_novos = get_products_with_variants()
                 pedidos_novos = get_orders(
-                    since=hoje - pd.Timedelta(days=60),  # ajuste se quiser
+                    since=hoje - timedelta(days=60),  # ajuste se quiser
                     until=hoje,
                     only_paid=True
                 )
@@ -3203,7 +3229,7 @@ with aba_principal[1]:
         try:
             hoje = pd.Timestamp.today().date()
             st.session_state["pedidos"] = get_orders(
-                since=hoje - pd.Timedelta(days=60),
+                since=hoje - timedelta(days=60),
                 until=hoje,
                 only_paid=True
             )
@@ -3239,10 +3265,24 @@ with aba_principal[1]:
     produtos = normalizar(produtos)
     pedidos = normalizar(pedidos)
 
+
+    # --- Normalizar tipos de variant_id para evitar falha no merge ---
+    if "variant_id" in produtos.columns:
+        produtos["variant_id"] = pd.to_numeric(produtos["variant_id"], errors="coerce").astype("Int64").astype(str)
+    if "variant_id" in pedidos.columns:
+        pedidos["variant_id"] = pd.to_numeric(pedidos["variant_id"], errors="coerce").astype("Int64").astype(str)
+
+    
     # ---- Garantir colunas obrigatórias (evita KeyError) ----
     for col in ["order_id", "order_number", "financial_status", "fulfillment_status"]:
         if col not in pedidos.columns:
             pedidos[col] = None
+
+    # ✅ Fail-safe: garantir 'variant_id' em ambos para cruzar dados
+    if "variant_id" not in pedidos.columns or "variant_id" not in produtos.columns:
+        st.warning("Sem 'variant_id' em pedidos/produtos — não dá para cruzar catálogo. Verifique a coleta da Shopify.")
+        st.stop()
+
 
     # ---- Juntar pedidos e catálogo de variantes ----
     merge_cols = [c for c in ["variant_id", "sku", "product_title", "variant_title"] if c in produtos.columns]
@@ -3352,7 +3392,7 @@ with aba_principal[1]:
     st.subheader("📋 Pedidos filtrados")
     colunas_existentes = [c for c in [
         order_col, "created_at", "customer_name", "quantity",
-        "variant_title", "price", "line_revenue",
+        "variant_title", "price", "line_revenue", "inventory",
         "forma_entrega", "estado", "cidade", "fulfillment_status"
     ] if c in df.columns]
 
@@ -3365,6 +3405,7 @@ with aba_principal[1]:
         "variant_title": "Variante",
         "price": "Preço unitário",
         "line_revenue": "Total",
+        "inventory": "Estoque (somado)",
         "forma_entrega": "Tipo de entrega",
         "estado": "Estado",
         "cidade": "Cidade",
