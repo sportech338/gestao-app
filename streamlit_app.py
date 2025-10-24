@@ -2955,8 +2955,7 @@ if menu == "📦 Dashboard – Logística":
 
 
     # ---- Aplicar filtros ----
-    start_date = datetime.strptime(periodo[0], "%d/%m/%Y").date()
-    end_date = datetime.strptime(periodo[1], "%d/%m/%Y").date()
+    start_date, end_date = periodo
 
     df = base[
         (base["created_at"].dt.date >= start_date) &
