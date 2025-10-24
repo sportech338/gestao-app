@@ -2923,8 +2923,14 @@ if menu == "📦 Dashboard – Logística":
             today = pd.Timestamp.today().date()
             min_date = max_date = today
         periodo = st.date_input("Período", (min_date, max_date))
+        
+        # Exibir campo formatado (dd/mm/yyyy)
         periodo_formatado = f"{periodo[0].strftime('%d/%m/%Y')} – {periodo[1].strftime('%d/%m/%Y')}"
-        st.write(f"📅 Período selecionado: **{periodo_formatado}**")
+        st.markdown(
+            f"<p style='margin-top:4px;color:#ccc;'>📅 <b>Período selecionado:</b> {periodo_formatado}</p>",
+            unsafe_allow_html=True
+        )
+
 
     # ---- Aplicar filtros ----
     df = base[
