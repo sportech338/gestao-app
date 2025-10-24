@@ -818,27 +818,11 @@ def fetch_insights_breakdown(act_id: str, token: str, api_version: str,
     df["ROAS"] = np.where(df["spend"]>0, df["revenue"]/df["spend"], np.nan)
     return df
 
-# =============== Sidebar (filtros) ===============
-st.sidebar.header("Configuração")
-act_id = st.sidebar.text_input("Ad Account ID", placeholder="ex.: act_1234567890")
-token = st.sidebar.text_input("Access Token", type="password")
-api_version = st.sidebar.text_input("API Version", value="v23.0")
-level = st.sidebar.selectbox("Nível (recomendado: campaign)", ["campaign"],  index=0)
-
-preset = st.sidebar.radio(
-    "Período rápido",
-    [
-        "Hoje", "Ontem",
-        "Últimos 7 dias", "Últimos 14 dias", "Últimos 30 dias", "Últimos 90 dias",
-        "Esta semana", "Este mês", "Máximo",
-        "Personalizado"
-    ],
-    index=2,
-)
-
 def _range_from_preset(p):
+    """Define intervalos automáticos de data com base no período rápido selecionado."""
     local_today = datetime.now(APP_TZ).date()
-    base_end = local_today - timedelta(days=1)
+    base_end = local_today - timedelta(days=1)  # evita incluir dia parcial
+
     if p == "Hoje":
         return local_today, local_today
     if p == "Ontem":
@@ -859,45 +843,9 @@ def _range_from_preset(p):
         return start_month, local_today
     if p == "Máximo":
         return date(2017, 1, 1), base_end
+    # fallback padrão
     return base_end - timedelta(days=6), base_end
 
-_since_auto, _until_auto = _range_from_preset(preset)
-
-if preset == "Personalizado":
-    since = st.sidebar.date_input("Desde", value=_since_auto, key="since_custom", format="DD/MM/YYYY")
-    until = st.sidebar.date_input("Até",   value=_until_auto, key="until_custom", format="DD/MM/YYYY")
-else:
-    # ✅ NÃO usar date_input aqui (evita estado preso)
-    since, until = _since_auto, _until_auto
-    st.sidebar.caption(f"**Desde:** {since}  \n**Até:** {until}")
-
-ready = bool(act_id and token)
-
-# =============== Tela ===============
-st.title("📊 Meta Ads — Paridade com Filtro + Funil")
-st.caption("KPIs + Funil: Cliques → LPV → Checkout → Add Pagamento → Compra. Tudo alinhado ao período selecionado.")
-
-if not ready:
-    st.info("Informe **Ad Account ID** e **Access Token** para iniciar.")
-    st.stop()
-
-# ===================== Coleta =====================
-with st.spinner("Buscando dados da Meta…"):
-    df_daily = fetch_insights_daily(
-        act_id=act_id,
-        token=token,
-        api_version=api_version,
-        since_str=str(since),
-        until_str=str(until),
-        level=level,
-        product_name=st.session_state.get("daily_produto")  # pode ser None na primeira carga
-    )
-
-df_hourly = None  # será carregado apenas quando o usuário abrir a aba de horário
-
-if df_daily.empty and (df_hourly is None or df_hourly.empty):
-    st.warning("Sem dados para o período. Verifique permissões, conta e se há eventos de Purchase (value/currency).")
-    st.stop()
 
 # =====================================================
 # 🎛️ MENU PRINCIPAL NA SIDEBAR
@@ -915,6 +863,61 @@ menu = st.sidebar.radio(
 if menu == "📊 Dashboard – Tráfego Pago":
     st.title("📈 Dashboard — Tráfego Pago")
     st.caption("Análise completa de campanhas e funil de conversão.")
+
+    # ================= CONFIGURAÇÃO LOCAL DO DASHBOARD =================
+    with st.sidebar:
+        st.markdown("## ⚙️ Configuração — Tráfego Pago")
+
+        act_id = st.text_input("Ad Account ID", placeholder="ex.: act_1234567890")
+        token = st.text_input("Access Token", type="password")
+        api_version = st.text_input("API Version", value="v23.0")
+        level = st.selectbox("Nível (recomendado: campaign)", ["campaign"],  index=0)
+
+        preset = st.radio(
+            "Período rápido",
+            [
+                "Hoje", "Ontem",
+                "Últimos 7 dias", "Últimos 14 dias",
+                "Últimos 30 dias", "Últimos 90 dias",
+                "Esta semana", "Este mês", "Máximo",
+                "Personalizado"
+            ],
+            index=2,
+        )
+
+        _since_auto, _until_auto = _range_from_preset(preset)
+
+        if preset == "Personalizado":
+            since = st.date_input("Desde", value=_since_auto, key="since_custom", format="DD/MM/YYYY")
+            until = st.date_input("Até", value=_until_auto, key="until_custom", format="DD/MM/YYYY")
+        else:
+            since, until = _since_auto, _until_auto
+            st.caption(f"**Desde:** {since}  \n**Até:** {until}")
+
+        ready = bool(act_id and token)
+
+    # ================= VALIDAÇÃO E COLETA DE DADOS =================
+    if not ready:
+        st.info("Informe **Ad Account ID** e **Access Token** para iniciar.")
+        st.stop()
+
+    with st.spinner("Buscando dados da Meta…"):
+        df_daily = fetch_insights_daily(
+            act_id=act_id,
+            token=token,
+            api_version=api_version,
+            since_str=str(since),
+            until_str=str(until),
+            level=level,
+            product_name=st.session_state.get("daily_produto")
+        )
+
+    df_hourly = None
+
+    if df_daily.empty and (df_hourly is None or df_hourly.empty):
+        st.warning("Sem dados para o período. Verifique permissões, conta e se há eventos de Purchase (value/currency).")
+        st.stop()
+
 
     tab_daily, tab_daypart, tab_detail = st.tabs([
         "📅 Visão diária",
