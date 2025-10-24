@@ -2967,7 +2967,7 @@ if menu == "📦 Dashboard – Logística":
         "quantity": "Quantidade",
         "variant_title": "Variante",
         "price": "Preço unitário",
-        "forma_entrega": "Frete",
+        "forma_entrega": "Frete escolhido",
         "estado": "Estado de destino",
         "cidade": "Cidade de destino",
         "fulfillment_status": "Status de processamento do pedido"
