@@ -919,9 +919,7 @@ if "df_daily" not in st.session_state or st.session_state["df_daily"].empty:
             st.session_state["df_daily"] = df
 
 # ---- CRIAR ABAS (teste mínimo) ----
-tab_trafego, tab_logistica = st.tabs(
-    ["📊 Dashboard - Tráfego Pago", "📦 Dashboard - Logística"]
-)
+tab_trafego, tab_logistica = st.tabs(["📊 Dashboard - Tráfego Pago", "📦 Dashboard - Logística"])
 
 with tab_trafego:
     st.header("📊 Dashboard — Tráfego Pago")
@@ -935,7 +933,7 @@ with tab_logistica:
 # =====================================================
 # 📊 DASHBOARD – TRÁFEGO PAGO
 # =====================================================
-with aba_principal[0]:
+with tab_trafego:
     st.header("📊 Dashboard — Tráfego Pago")
 
     # 🧩 Configurações (antes na sidebar)
@@ -3203,7 +3201,7 @@ with tab_detail:
 # =====================================================
 # 📦 DASHBOARD – LOGÍSTICA
 # =====================================================
-with aba_principal[1]:
+with tab_logistica:
     st.header("📦 Dashboard — Logística")
     st.subheader("📦 Shopify – Visão Geral")
 
