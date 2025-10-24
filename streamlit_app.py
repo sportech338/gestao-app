@@ -918,8 +918,19 @@ if "df_daily" not in st.session_state or st.session_state["df_daily"].empty:
             )
             st.session_state["df_daily"] = df
 
-# ---- Cria as abas principais ----
-aba_principal = st.tabs(["📊 Dashboard - Tráfego Pago", "📦 Dashboard - Logística"])
+# ---- CRIAR ABAS (teste mínimo) ----
+tab_trafego, tab_logistica = st.tabs(
+    ["📊 Dashboard - Tráfego Pago", "📦 Dashboard - Logística"]
+)
+
+with tab_trafego:
+    st.header("📊 Dashboard — Tráfego Pago")
+    st.markdown("✅ Checkpoint A (Tráfego): a aba está renderizando.")
+
+with tab_logistica:
+    st.header("📦 Dashboard — Logística")
+    st.markdown("✅ Checkpoint B (Logística): a aba está renderizando.")
+
 
 # =====================================================
 # 📊 DASHBOARD – TRÁFEGO PAGO
