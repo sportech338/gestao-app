@@ -8,25 +8,72 @@ APP_TZ = ZoneInfo("America/Sao_Paulo")
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from concurrent.futures import ThreadPoolExecutor, as_completed
-import threading
+
+_session = None
+def _get_session():
+    global _session
+    if _session is None:
+        s = requests.Session()
+        s.headers.update({"Accept-Encoding": "gzip, deflate"})
+        _session = s
+    return _session
+
+# =============== Integração com Shopify ===============
+import requests
+import pandas as pd
+import streamlit as st
+
+SHOP_NAME = st.secrets["shopify"]["shop_name"]
+ACCESS_TOKEN = st.secrets["shopify"]["access_token"]
+API_VERSION = "2024-10"
+
+BASE_URL = f"https://{SHOP_NAME}/admin/api/{API_VERSION}"
+HEADERS = {"X-Shopify-Access-Token": ACCESS_TOKEN, "Content-Type": "application/json"}
+
+@st.cache_data(ttl=600)
+def get_products_with_variants(limit=250):
+    url = f"{BASE_URL}/products.json?limit={limit}"
+    r = requests.get(url, headers=HEADERS, timeout=60)
+    r.raise_for_status()
+    data = r.json().get("products", [])
+    rows = []
+    for p in data:
+        for v in p.get("variants", []):
+            rows.append({
+                "product_id": p["id"],
+                "product_title": p["title"],
+                "variant_id": v["id"],
+                "variant_title": v["title"],
+                "sku": v.get("sku"),
+                "price": float(v.get("price") or 0),
+                "compare_at_price": float(v.get("compare_at_price") or 0),
+                "inventory": v.get("inventory_quantity"),
+            })
+    return pd.DataFrame(rows)
+
+@st.cache_data(ttl=600)
+def get_orders(limit=100):
+    url = f"{BASE_URL}/orders.json?limit={limit}&status=any"
+    r = requests.get(url, headers=HEADERS, timeout=60)
+    r.raise_for_status()
+    data = r.json().get("orders", [])
+    rows = []
+    for o in data:
+        for it in o.get("line_items", []):
+            rows.append({
+                "order_id": o["id"],
+                "created_at": o["created_at"],
+                "variant_id": it.get("variant_id"),
+                "title": it.get("title"),
+                "variant_title": it.get("variant_title"),
+                "quantity": it.get("quantity", 0),
+                "price": float(it.get("price") or 0),
+            })
+    return pd.DataFrame(rows)
+
 
 # =============== Config & Estilos ===============
 st.set_page_config(page_title="Meta Ads — Paridade + Funil", page_icon="📊", layout="wide")
-
-# =====================================================
-# 🧠 Proteção global — cria variáveis de sessão padrão
-# =====================================================
-for var in ["df_daily", "df_hourly", "df_breakdown", "produtos", "pedidos"]:
-    if var not in st.session_state:
-        st.session_state[var] = pd.DataFrame()
-
-# 🔒 Garante que as variáveis locais existam (evita NameError)
-df_daily = st.session_state.get("df_daily", pd.DataFrame())
-df_hourly = st.session_state.get("df_hourly", pd.DataFrame())
-df_breakdown = st.session_state.get("df_breakdown", pd.DataFrame())
-produtos = st.session_state.get("produtos", pd.DataFrame())
-pedidos = st.session_state.get("pedidos", pd.DataFrame())
-        
 st.markdown("""
 <style>
 .small-muted { color:#6b7280; font-size:12px; }
@@ -404,20 +451,12 @@ def fetch_insights_daily(act_id: str, token: str, api_version: str,
             "limit": 500,
             "action_report_time": "conversion",
             "action_attribution_windows": ",".join(ATTR_KEYS),
-            # 🔹 Inclui campanhas ativas, pausadas e arquivadas (igual ao Ads Manager)
-            "filtering": json.dumps([
-                {"field": "campaign.effective_status", "operator": "IN", "value": ["ACTIVE", "PAUSED", "ARCHIVED"]}
-            ]),
         }
-
-        # 🔹 Se houver filtro por produto/campanha específico, adiciona ao filtro existente
+        # filtro por campanha (produto) direto na API, quando aplicável
         if level == "campaign" and product_name and product_name != "(Todos)":
-            extra_filters = json.loads(params["filtering"])
-            extra_filters.append({
+            params["filtering"] = json.dumps([{
                 "field": "campaign.name", "operator": "CONTAIN", "value": product_name
-            })
-            params["filtering"] = json.dumps(extra_filters)
-
+            }])
 
         rows_local, next_url, next_params = [], base_url, params.copy()
         while next_url:
@@ -443,11 +482,12 @@ def fetch_insights_daily(act_id: str, token: str, api_version: str,
                 if link_clicks is None:
                     link_clicks = _sum_actions_exact(actions, ["link_click"], allowed_keys=ATTR_KEYS)
 
-                lpv = rec.get("landing_page_views")
-                if lpv in (None, "", "null"):
+                lpv = rec.get("landing_page_views", None)
+                if lpv is None:
                     lpv = _sum_actions_exact(actions, ["landing_page_view"], allowed_keys=ATTR_KEYS)
-
-
+                    if lpv == 0:
+                        lpv = (_sum_actions_exact(actions, ["view_content"], allowed_keys=ATTR_KEYS)
+                               or _sum_actions_contains(actions, ["landing_page"], allowed_keys=ATTR_KEYS))
 
                 ic  = _pick_checkout_totals(actions, allowed_keys=ATTR_KEYS)
                 api = _pick_add_payment_totals(actions, allowed_keys=ATTR_KEYS)
@@ -728,9 +768,24 @@ def fetch_insights_breakdown(act_id: str, token: str, api_version: str,
         return df
     df["ROAS"] = np.where(df["spend"]>0, df["revenue"]/df["spend"], np.nan)
     return df
-                                 
-# === Helper: traduz período rápido em datas (igual ao script antigo) ===
-APP_TZ = ZoneInfo("America/Sao_Paulo")
+
+# =============== Sidebar (filtros) ===============
+st.sidebar.header("Configuração")
+act_id = st.sidebar.text_input("Ad Account ID", placeholder="ex.: act_1234567890")
+token = st.sidebar.text_input("Access Token", type="password")
+api_version = st.sidebar.text_input("API Version", value="v23.0")
+level = st.sidebar.selectbox("Nível (recomendado: campaign)", ["campaign"],  index=0)
+
+preset = st.sidebar.radio(
+    "Período rápido",
+    [
+        "Hoje", "Ontem",
+        "Últimos 7 dias", "Últimos 14 dias", "Últimos 30 dias", "Últimos 90 dias",
+        "Esta semana", "Este mês", "Máximo",
+        "Personalizado"
+    ],
+    index=2,
+)
 
 def _range_from_preset(p):
     local_today = datetime.now(APP_TZ).date()
@@ -757,132 +812,199 @@ def _range_from_preset(p):
         return date(2017, 1, 1), base_end
     return base_end - timedelta(days=6), base_end
 
+_since_auto, _until_auto = _range_from_preset(preset)
 
-# =============== Dashboards Principais ===============
-st.title("📈 SporTech Analytics – Painel Completo")
-st.markdown(
-    "<h5 style='text-align:center;color:gray;'>Monitoramento completo de performance (Meta Ads + Shopify)</h5>",
-    unsafe_allow_html=True
-)
+if preset == "Personalizado":
+    since = st.sidebar.date_input("Desde", value=_since_auto, key="since_custom", format="DD/MM/YYYY")
+    until = st.sidebar.date_input("Até",   value=_until_auto, key="until_custom", format="DD/MM/YYYY")
+else:
+    # ✅ NÃO usar date_input aqui (evita estado preso)
+    since, until = _since_auto, _until_auto
+    st.sidebar.caption(f"**Desde:** {since}  \n**Até:** {until}")
 
-# =====================================================
-# 🧩 Carregamento global — executa 1x e persiste em sessão
-# =====================================================
-if "df_daily" not in st.session_state or st.session_state["df_daily"].empty:
-    # ⚙️ Parâmetros padrão ou último input salvo
-    act_id_default = st.session_state.get("act_id", "")
-    token_default = st.session_state.get("token", "")
-    api_version_default = st.session_state.get("api_version", "v23.0")
-    preset_default = st.session_state.get("preset", "Hoje")
-    since_default, until_default = _range_from_preset(preset_default)
+ready = bool(act_id and token)
 
-    if act_id_default and token_default:
-        with st.spinner("Carregando dados iniciais (Meta Ads)..."):
-            df = fetch_insights_daily(
-                act_id=act_id_default,
-                token=token_default,
-                api_version=api_version_default,
-                since_str=str(since_default),
-                until_str=str(until_default),
-                level="campaign",
-                product_name=None,
-            )
-            st.session_state["df_daily"] = df
+# =============== Tela ===============
+st.title("📊 Meta Ads — Paridade com Filtro + Funil")
+st.caption("KPIs + Funil: Cliques → LPV → Checkout → Add Pagamento → Compra. Tudo alinhado ao período selecionado.")
 
-# ---- Cria as abas principais ----
-aba_principal = st.tabs(["📊 Dashboard - Tráfego Pago", "📦 Dashboard - Logística"])
+if not ready:
+    st.info("Informe **Ad Account ID** e **Access Token** para iniciar.")
+    st.stop()
 
-# =====================================================
-# 📊 DASHBOARD – TRÁFEGO PAGO
-# =====================================================
-with aba_principal[0]:
-    st.header("📊 Dashboard — Tráfego Pago")
+# ===================== Coleta =====================
+with st.spinner("Buscando dados da Meta…"):
+    df_daily = fetch_insights_daily(
+        act_id=act_id,
+        token=token,
+        api_version=api_version,
+        since_str=str(since),
+        until_str=str(until),
+        level=level,
+        product_name=st.session_state.get("daily_produto")  # pode ser None na primeira carga
+    )
 
-    # 🧩 Configurações (antes na sidebar)
-    with st.expander("⚙️ Configurações e Filtros", expanded=True):
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            act_id = st.text_input("Ad Account ID", placeholder="ex.: act_1234567890")
-            level = st.selectbox("Nível (recomendado: campaign)", ["campaign"], index=0)
-        with col2:
-            token = st.text_input("Access Token", type="password")
-            api_version = st.text_input("API Version", value="v23.0")
-        with col3:
-            preset = st.selectbox(
-                "Período rápido",
-                [
-                    "Hoje", "Ontem",
-                    "Últimos 7 dias", "Últimos 14 dias", "Últimos 30 dias", "Últimos 90 dias",
-                    "Esta semana", "Este mês", "Máximo", "Personalizado"
-                ],
-                index=2,
-            )
+df_hourly = None  # será carregado apenas quando o usuário abrir a aba de horário
 
-    # 💾 Armazena os valores preenchidos na sessão
-    st.session_state["act_id"] = act_id
-    st.session_state["token"] = token
-    st.session_state["api_version"] = api_version
-    st.session_state["preset"] = preset
+if df_daily.empty and (df_hourly is None or df_hourly.empty):
+    st.warning("Sem dados para o período. Verifique permissões, conta e se há eventos de Purchase (value/currency).")
+    st.stop()
 
-    # Cálculo de datas
-    _since_auto, _until_auto = _range_from_preset(preset)
-    if preset == "Personalizado":
-        since = st.date_input("Desde", value=_since_auto, format="DD/MM/YYYY")
-        until = st.date_input("Até", value=_until_auto, format="DD/MM/YYYY")
-    else:
-        since, until = _since_auto, _until_auto
-        st.caption(f"**Desde:** {since}  \n**Até:** {until}")
+tab_daily, tab_daypart, tab_detail, tab_shopify = st.tabs(["📅 Visão diária", "⏱️ Horários (principal)", "📊 Detalhamento", "📦 Shopify – Variantes e Vendas"])
 
+# =============== Aba Shopify (Visão Geral de Produtos e Variantes) ===============
+with tab_shopify:
+    st.title("📦 Shopify – Visão Geral")
 
-    # 🔑 Verifica se credenciais estão preenchidas
-    ready = bool(act_id and token)
-    if not ready:
-        st.info("Informe **Ad Account ID** e **Access Token** para iniciar.")
+    # ---- Carregar dados da sessão ----
+    produtos = st.session_state.get("produtos")
+    pedidos = st.session_state.get("pedidos")
+
+    if st.button("🔄 Atualizar dados da Shopify"):
+        produtos = get_products_with_variants()
+        pedidos = get_orders()
+        st.session_state["produtos"] = produtos
+        st.session_state["pedidos"] = pedidos
+        st.success("✅ Dados atualizados com sucesso!")
+
+    if produtos is None or pedidos is None or produtos.empty or pedidos.empty:
+        st.info("Carregue os dados da Shopify para iniciar (botão acima).")
         st.stop()
 
-    # =====================================================
-    # 🔄 Carregar dados da Meta Ads
-    # =====================================================
-    with st.spinner("Carregando dados da Meta Ads..."):
-        # 🔁 Recarrega dados sempre que o preset mudar
-        if st.session_state.get("last_preset") != preset:
-            st.session_state["df_daily"] = pd.DataFrame()
-            st.session_state["last_preset"] = preset
+    # ---- Normalizar nomes ----
+    def normalizar(df):
+        df.columns = [c.strip().lower() for c in df.columns]
+        ren = {
+            "title": "product_title",
+            "product_name": "product_title",
+            "variant": "variant_title",
+            "variant_name": "variant_title",
+            "id": "variant_id",
+            "variantid": "variant_id"
+        }
+        return df.rename(columns=ren)
 
-        # 🔄 Coleta sempre de acordo com o filtro atual
-        df_daily = fetch_insights_daily(
-            act_id=act_id,
-            token=token,
-            api_version=api_version,
-            since_str=str(since),
-            until_str=str(until),
-            level=level,
-            product_name=None
-        )
+    produtos = normalizar(produtos)
+    pedidos = normalizar(pedidos)
 
-        st.session_state["df_daily"] = df_daily
+    # ---- Garantir colunas obrigatórias (para evitar KeyError) ----
+    for col in ["order_id", "order_number", "financial_status", "fulfillment_status"]:
+        if col not in pedidos.columns:
+            pedidos[col] = None
 
-        # 🔧 Corrige tipos para evitar erro React (#185)
-        df_daily = df_daily.astype(object).where(pd.notnull(df_daily), None)
+    # ---- Juntar pedidos e produtos ----
+    base = pedidos.merge(
+        produtos[["variant_id", "sku", "product_title", "variant_title"]],
+        on="variant_id",
+        how="left",
+        suffixes=("_pedido", "_produto")
+    )
 
+    # ---- Ajustar nomes ----
+    base["product_title"] = base["product_title_pedido"].combine_first(base["product_title_produto"])
+    base["variant_title"] = base["variant_title_pedido"].combine_first(base["variant_title_produto"])
 
-        # 🔁 Garante que as outras bases existam, mesmo se vazias
-        if "df_hourly" not in st.session_state or st.session_state["df_hourly"].empty:
-            st.session_state["df_hourly"] = pd.DataFrame()
-        if "df_breakdown" not in st.session_state or st.session_state["df_breakdown"].empty:
-            st.session_state["df_breakdown"] = pd.DataFrame()
+    # ---- Tipos e métricas ----
+    base["created_at"] = pd.to_datetime(base.get("created_at"), errors="coerce")
+    base["price"] = pd.to_numeric(base.get("price"), errors="coerce").fillna(0)
+    base["quantity"] = pd.to_numeric(base.get("quantity"), errors="coerce").fillna(0)
+    base["line_revenue"] = base["price"] * base["quantity"]
 
-    # =====================================================
-    # 🧭 Sub-abas internas (Tráfego Pago)
-    # =====================================================
-    if df_daily.empty:
-        st.warning("Nenhum dado encontrado no período selecionado.")
-    else:
-        tab_daily, tab_daypart, tab_detail = st.tabs([
-            "📅 Visão diária",
-            "⏱️ Horários (principal)",
-            "📊 Detalhamento"
-        ])
+    # ---- Fallbacks ----
+    base["product_title"].fillna("(Produto desconhecido)", inplace=True)
+    base["variant_title"].fillna("(Variante desconhecida)", inplace=True)
+
+    # ---- Filtros ----
+    st.subheader("🎛️ Filtros")
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        produtos_lbl = ["(Todos os produtos)"] + sorted(base["product_title"].dropna().unique().tolist())
+        escolha_prod = st.selectbox("Produto", produtos_lbl, index=0)
+
+    with col2:
+        variantes_lbl = ["(Todas as variantes)"] + sorted(base["variant_title"].dropna().unique().tolist())
+        escolha_var = st.selectbox("Variante", variantes_lbl, index=0)
+
+    with col3:
+        if not base["created_at"].isnull().all():
+            min_date = base["created_at"].min().date()
+            max_date = base["created_at"].max().date()
+        else:
+            today = pd.Timestamp.today().date()
+            min_date = max_date = today
+        periodo = st.date_input("Período", (min_date, max_date))
+
+    # ---- Aplicar filtros ----
+    df = base[
+        (base["created_at"].dt.date >= periodo[0]) &
+        (base["created_at"].dt.date <= periodo[1])
+    ].copy()
+
+    if escolha_prod != "(Todos os produtos)":
+        df = df[df["product_title"] == escolha_prod]
+    if escolha_var != "(Todas as variantes)":
+        df = df[df["variant_title"] == escolha_var]
+
+    if df.empty:
+        st.warning("Nenhum pedido encontrado com os filtros selecionados.")
+        st.stop()
+
+    # ---- Resumo ----
+    # Usa order_number se existir, senão order_id
+    order_col = "order_number" if "order_number" in df.columns and df["order_number"].notna().any() else "order_id"
+    total_pedidos = df[order_col].nunique()
+    total_unidades = df["quantity"].sum()
+    total_receita = df["line_revenue"].sum()
+    ticket_medio = total_receita / total_pedidos if total_pedidos > 0 else 0
+
+    colA, colB, colC, colD = st.columns(4)
+    colA.metric("🧾 Pedidos", total_pedidos)
+    colB.metric("📦 Unidades vendidas", int(total_unidades))
+    colC.metric("💰 Receita total", f"R$ {total_receita:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+    colD.metric("💸 Ticket médio", f"R$ {ticket_medio:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+
+    # ---- Tabela final ----
+    st.subheader("📋 Pedidos filtrados")
+
+    colunas_existentes = [c for c in [
+        order_col, "created_at", "financial_status", "fulfillment_status",
+        "product_title", "variant_title", "sku", "quantity", "price", "line_revenue"
+    ] if c in df.columns]
+
+    tabela = df[colunas_existentes].sort_values("created_at", ascending=False)
+
+    tabela.rename(columns={
+        order_col: "Pedido",
+        "created_at": "Data",
+        "financial_status": "Pagamento",
+        "fulfillment_status": "Entrega",
+        "product_title": "Produto",
+        "variant_title": "Variante",
+        "sku": "SKU",
+        "quantity": "Qtd",
+        "price": "Preço Unitário",
+        "line_revenue": "Total"
+    }, inplace=True)
+
+    # ---- Formatação visual ----
+    if "Data" in tabela.columns:
+        tabela["Data"] = pd.to_datetime(tabela["Data"], errors="coerce").dt.strftime("%d/%m/%Y %H:%M")
+
+    for col in ["Preço Unitário", "Total"]:
+        if col in tabela.columns:
+            tabela[col] = tabela[col].apply(lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+
+    st.dataframe(tabela, use_container_width=True)
+
+    # ---- Exportar CSV ----
+    csv = tabela.to_csv(index=False).encode('utf-8-sig')
+    st.download_button(
+        label="📥 Exportar pedidos filtrados (CSV)",
+        data=csv,
+        file_name=f"pedidos_shopify_{periodo[0]}_{periodo[1]}.csv",
+        mime="text/csv",
+    )
 
 # -------------------- ABA 1: VISÃO DIÁRIA --------------------
 with tab_daily:
@@ -911,10 +1033,6 @@ with tab_daily:
 
     df_daily_view = _filter_by_product(df_daily, produto_sel_daily)
 
-    # 🔹 FILTRO CORRETO DE PERÍODO (importante!)
-    mask_period = (df_daily_view["date"] >= pd.Timestamp(since)) & (df_daily_view["date"] <= pd.Timestamp(until))
-    df_daily_view = df_daily_view.loc[mask_period].copy()
-    
     if df_daily_view.empty:
         st.info("Sem dados para o produto selecionado nesse período.")
         st.stop()
@@ -1431,11 +1549,11 @@ with tab_daily:
         with colA:
             st.markdown("**Período A**")
             sinceA = st.date_input("Desde (A)", value=default_sinceA, key="sinceA")
-            untilA = st.date_input("Até (A)", value=default_untilA, key="untilA")
+            untilA = st.date_input("Até (A)",   value=default_untilA, key="untilA")
         with colB:
             st.markdown("**Período B**")
             sinceB = st.date_input("Desde (B)", value=since, key="sinceB")
-            untilB = st.date_input("Até (B)", value=until, key="untilB")
+            untilB = st.date_input("Até (B)",   value=until, key="untilB")
 
         if sinceA > untilA or sinceB > untilB:
             st.warning("Confira as datas: 'Desde' não pode ser maior que 'Até'.")
@@ -1464,47 +1582,51 @@ with tab_daily:
                         "add_payment": d["add_payment"].sum(),
                     }
 
-                A = _agg(dfA)
-                B = _agg(dfB)
+                A = _agg(dfA); B = _agg(dfB)
 
                 roasA = _safe_div(A["revenue"], A["spend"])
                 roasB = _safe_div(B["revenue"], B["spend"])
-                cpaA = _safe_div(A["spend"], A["purchases"])
-                cpaB = _safe_div(B["spend"], B["purchases"])
-                cpcA = _safe_div(A["spend"], A["clicks"])
-                cpcB = _safe_div(B["spend"], B["clicks"])
+                cpaA  = _safe_div(A["spend"], A["purchases"])
+                cpaB  = _safe_div(B["spend"], B["purchases"])
+                cpcA  = _safe_div(A["spend"], A["clicks"])
+                cpcB  = _safe_div(B["spend"], B["clicks"])
 
                 dir_map = {
                     "Valor usado": "neutral",
                     "Faturamento": "higher",
-                    "Vendas": "higher",
-                    "ROAS": "higher",
-                    "CPC": "lower",
-                    "CPA": "lower",
+                    "Vendas":      "higher",
+                    "ROAS":        "higher",
+                    "CPC":         "lower",
+                    "CPA":         "lower",
                 }
                 delta_map = {
-                    "Valor usado": B["spend"] - A["spend"],
-                    "Faturamento": B["revenue"] - A["revenue"],
-                    "Vendas": B["purchases"] - A["purchases"],
-                    "ROAS": (roasB - roasA) if pd.notnull(roasA) and pd.notnull(roasB) else np.nan,
-                    "CPC": (cpcB - cpcA) if pd.notnull(cpcA) and pd.notnull(cpcB) else np.nan,
-                    "CPA": (cpaB - cpaA) if pd.notnull(cpaA) and pd.notnull(cpaB) else np.nan,
+                    "Valor usado":  B["spend"] - A["spend"],
+                    "Faturamento":  B["revenue"] - A["revenue"],
+                    "Vendas":       B["purchases"] - A["purchases"],
+                    "ROAS":         (roasB - roasA) if pd.notnull(roasA) and pd.notnull(roasB) else np.nan,
+                    "CPC":          (cpcB - cpcA)   if pd.notnull(cpcA) and pd.notnull(cpcB) else np.nan,
+                    "CPA":          (cpaB - cpaA)   if pd.notnull(cpaA) and pd.notnull(cpaB) else np.nan,
                 }
 
                 kpi_rows = [
-                    ("Valor usado", _fmt_money_br(A["spend"]), _fmt_money_br(B["spend"]), _fmt_money_br(B["spend"] - A["spend"])),
+                    ("Valor usado", _fmt_money_br(A["spend"]),   _fmt_money_br(B["spend"]),   _fmt_money_br(B["spend"] - A["spend"])),
                     ("Faturamento", _fmt_money_br(A["revenue"]), _fmt_money_br(B["revenue"]), _fmt_money_br(B["revenue"] - A["revenue"])),
-                    ("Vendas", _fmt_int_br(A["purchases"]), _fmt_int_br(B["purchases"]), _fmt_int_br(B["purchases"] - A["purchases"])),
-                    ("ROAS", _fmt_ratio_br(roasA), _fmt_ratio_br(roasB), (_fmt_ratio_br(roasB - roasA) if pd.notnull(roasA) and pd.notnull(roasB) else "")),
-                    ("CPC", _fmt_money_br(cpcA) if pd.notnull(cpcA) else "", _fmt_money_br(cpcB) if pd.notnull(cpcB) else "", _fmt_money_br(cpcB - cpcA) if pd.notnull(cpcA) and pd.notnull(cpcB) else ""),
-                    ("CPA", _fmt_money_br(cpaA) if pd.notnull(cpaA) else "", _fmt_money_br(cpaB) if pd.notnull(cpaB) else "", _fmt_money_br(cpaB - cpaA) if pd.notnull(cpaA) and pd.notnull(cpaB) else ""),
+                    ("Vendas",      _fmt_int_br(A["purchases"]), _fmt_int_br(B["purchases"]), _fmt_int_br(B["purchases"] - A["purchases"])),
+                    ("ROAS",        _fmt_ratio_br(roasA),        _fmt_ratio_br(roasB),
+                                     (_fmt_ratio_br(roasB - roasA) if pd.notnull(roasA) and pd.notnull(roasB) else "")),
+                    ("CPC",         _fmt_money_br(cpcA) if pd.notnull(cpcA) else "",
+                                     _fmt_money_br(cpcB) if pd.notnull(cpcB) else "",
+                                     _fmt_money_br(cpcB - cpcA) if pd.notnull(cpcA) and pd.notnull(cpcB) else ""),
+                    ("CPA",         _fmt_money_br(cpaA) if pd.notnull(cpaA) else "",
+                                     _fmt_money_br(cpaB) if pd.notnull(cpaB) else "",
+                                     _fmt_money_br(cpaB - cpaA) if pd.notnull(cpaA) and pd.notnull(cpaB) else ""),
                 ]
                 kpi_df_disp = pd.DataFrame(kpi_rows, columns=["Métrica", "Período A", "Período B", "Δ (B - A)"])
 
                 def _style_kpi(row):
                     metric = row["Métrica"]
-                    d = delta_map.get(metric, np.nan)
-                    rule = dir_map.get(metric, "neutral")
+                    d      = delta_map.get(metric, np.nan)
+                    rule   = dir_map.get(metric, "neutral")
                     styles = [""] * len(row)
                     try:
                         idxB = list(row.index).index("Período B")
@@ -1514,7 +1636,7 @@ with tab_daily:
                     if pd.isna(d) or rule == "neutral" or d == 0:
                         return styles
                     better = (d > 0) if rule == "higher" else (d < 0)
-                    color = "#16a34a" if better else "#dc2626"
+                    color  = "#16a34a" if better else "#dc2626"
                     weight = "700"
                     styles[idxB] = f"color:{color}; font-weight:{weight};"
                     styles[idxD] = f"color:{color}; font-weight:{weight};"
@@ -1545,210 +1667,154 @@ with tab_daily:
                 for col in ["Período A", "Período B", "Δ"]:
                     rates_disp[col] = rates_disp[col].map(_fmt_pct_br)
 
+                delta_by_taxa = dict(zip(rates_num["Taxa"], rates_num["Δ"]))
+
+                def _style_rate(row):
+                    taxa = row["Taxa"]
+                    d    = delta_by_taxa.get(taxa, np.nan)
+                    styles = [""] * len(row)
+                    try:
+                        idxB = list(row.index).index("Período B")
+                        idxD = list(row.index).index("Δ")
+                    except Exception:
+                        return styles
+                    if pd.isna(d) or d == 0:
+                        return styles
+                    better = d > 0
+                    color  = "#16a34a" if better else "#dc2626"
+                    weight = "700"
+                    styles[idxB] = f"color:{color}; font-weight:{weight};"
+                    styles[idxD] = f"color:{color}; font-weight:{weight};"
+                    return styles
+
                 st.markdown("**Taxas do funil (A vs B)**")
-                st.dataframe(rates_disp, use_container_width=True, height=180)
+                st.dataframe(rates_disp.style.apply(_style_rate, axis=1), use_container_width=True, height=180)
+
+                # Funis lado a lado
+                labels_funnel = ["Cliques", "LPV", "Checkout", "Add Pagamento", "Compra"]
+                valsA = [int(round(A["clicks"])), int(round(A["lpv"])), int(round(A["checkout"])),
+                         int(round(A["add_payment"])), int(round(A["purchases"]))]
+                valsB = [int(round(B["clicks"])), int(round(B["lpv"])), int(round(B["checkout"])),
+                         int(round(B["add_payment"])), int(round(B["purchases"]))]
+                valsA_plot = enforce_monotonic(valsA)
+                valsB_plot = enforce_monotonic(valsB)
+
+                cA, cB = st.columns(2)
+                with cA:
+                    st.plotly_chart(
+                        funnel_fig(labels_funnel, valsA_plot, title=f"Funil — Período A ({sinceA} a {untilA})"),
+                        use_container_width=True
+                    )
+                with cB:
+                    st.plotly_chart(
+                        funnel_fig(labels_funnel, valsB_plot, title=f"Funil — Período B ({sinceB} a {untilB})"),
+                        use_container_width=True
+                    )
+
+                # Δ por etapa
+                delta_counts = [b - a for a, b in zip(valsA, valsB)]
+                delta_df = pd.DataFrame({
+                    "Etapa": labels_funnel,
+                    "Período A": valsA,
+                    "Período B": valsB,
+                    "Δ (B - A)": delta_counts,
+                })
+                delta_disp = delta_df.copy()
+                delta_disp["Período A"]  = delta_disp["Período A"].map(_fmt_int_br)
+                delta_disp["Período B"]  = delta_disp["Período B"].map(_fmt_int_br)
+                delta_disp["Δ (B - A)"]  = delta_disp["Δ (B - A)"].map(_fmt_int_signed_br)
+
+                delta_by_stage = dict(zip(delta_df["Etapa"], delta_df["Δ (B - A)"]))
+
+                def _style_delta_counts(row):
+                    d = delta_by_stage.get(row["Etapa"], np.nan)
+                    styles = [""] * len(row)
+                    try:
+                        idxB = list(row.index).index("Período B")
+                        idxD = list(row.index).index("Δ (B - A)")
+                    except Exception:
+                        return styles
+                    if pd.isna(d) or d == 0:
+                        return styles
+                    color  = "#16a34a" if d > 0 else "#dc2626"
+                    weight = "700"
+                    styles[idxB] = f"color:{color}; font-weight:{weight};"
+                    styles[idxD] = f"color:{color}; font-weight:{weight};"
+                    return styles
+
+                st.markdown("**Pessoas a mais/menos em cada etapa (B − A)**")
+                st.dataframe(delta_disp.style.apply(_style_delta_counts, axis=1), use_container_width=True, height=240)
 
                 st.markdown("---")
 
-    # ========= 📦 FUNIL POR CAMPANHA =========
-    st.divider()
-    st.header("📦 Funil por campanha (somatório — inclui acompanhamento em tempo real se o filtro abranger hoje)")
-
+    # ========= FUNIL por CAMPANHA =========
     if level == "campaign":
-        # 🔹 Filtra o período selecionado (inclui hoje se estiver dentro do range)
-        today = pd.Timestamp.today().normalize()
-        since_ts = pd.Timestamp(since)
-        until_ts = pd.Timestamp(until)
+        st.subheader("Campanhas — Funil e Taxas (somatório no período)")
 
-        if until_ts >= today:
-            mask_period = (df_daily_view["date"] >= since_ts) & (df_daily_view["date"] <= today)
-            realtime_mode = True
-        else:
-            mask_period = (df_daily_view["date"] >= since_ts) & (df_daily_view["date"] <= until_ts)
-            realtime_mode = False
-
-        df_filtered = df_daily_view.loc[mask_period].copy()
-
-        # 🔹 Atualiza dados de hoje se o período inclui a data atual
-        if realtime_mode:
-            with st.spinner("⏱️ Atualizando dados de hoje em tempo real (Meta Ads)..."):
-                try:
-                    df_today_live = fetch_insights_daily(
-                        act_id=act_id,
-                        token=token,
-                        api_version=api_version,
-                        since_str=str(today),
-                        until_str=str(today),
-                        level=level,
-                        product_name=None
-                    )
-                    if df_today_live is not None and not df_today_live.empty:
-                        df_filtered = pd.concat([df_filtered, df_today_live], ignore_index=True)
-                        df_filtered.drop_duplicates(subset=["date", "campaign_id"], inplace=True)
-                        st.success("✅ Dados de hoje atualizados com sucesso!")
-                    else:
-                        st.info("Nenhum dado adicional encontrado para hoje (Meta ainda sincronizando).")
-                except Exception as e:
-                    st.warning(f"⚠️ Falha ao atualizar dados de hoje: {e}")
-
-        if df_filtered.empty:
-            st.info("Sem dados de campanha no período selecionado.")
-            st.stop()
-
-        # 🔹 Detecta campanhas ativas (teve gasto > 0 no período)
-        active_campaigns = (
-            df_filtered.groupby("campaign_id")["spend"]
-            .sum()
-            .loc[lambda s: s > 0]
-            .index
-            .tolist()
-        )
-
-        df_active = df_filtered[df_filtered["campaign_id"].isin(active_campaigns)].copy()
-
-        if df_active.empty:
-            st.info("Nenhuma campanha ativa no período selecionado.")
-            st.stop()
-
-        # 🔹 Agrega e calcula KPIs
         agg_cols = ["spend", "link_clicks", "lpv", "init_checkout", "add_payment", "purchases", "revenue"]
-        camp = df_active.groupby(["campaign_id", "campaign_name"], as_index=False)[agg_cols].sum()
-
-        # ===== Divisões seguras linha a linha =====
-        def safe_div(num, den):
-            try:
-                return num / den if (pd.notnull(den) and den != 0) else np.nan
-            except Exception:
-                return np.nan
-
-        camp["ROAS"] = camp.apply(lambda r: safe_div(r["revenue"], r["spend"]), axis=1)
-        camp["CPA"] = camp.apply(lambda r: safe_div(r["spend"], r["purchases"]), axis=1)
-        camp["LPV/Cliques"] = camp.apply(lambda r: safe_div(r["lpv"], r["link_clicks"]), axis=1)
-        camp["Checkout/LPV"] = camp.apply(lambda r: safe_div(r["init_checkout"], r["lpv"]), axis=1)
-        camp["Compra/Checkout"] = camp.apply(lambda r: safe_div(r["purchases"], r["init_checkout"]), axis=1)
-
-        disp = camp[[
-            "campaign_name", "spend", "revenue", "purchases", "ROAS", "CPA",
-            "LPV/Cliques", "Checkout/LPV", "Compra/Checkout"
-        ]].rename(columns={
-            "campaign_name": "Campanha",
-            "spend": "Gasto",
-            "revenue": "Faturamento",
-            "purchases": "Vendas"
-        })
-
-        # 🔹 Formatação visual
-        disp["Gasto"] = disp["Gasto"].map(_fmt_money_br)
-        disp["Faturamento"] = disp["Faturamento"].map(_fmt_money_br)
-        disp["Vendas"] = disp["Vendas"].map(_fmt_int_br)
-        disp["ROAS"] = disp["ROAS"].map(_fmt_ratio_br)
-        disp["CPA"] = disp["CPA"].map(_fmt_money_br)
-        disp["LPV/Cliques"] = disp["LPV/Cliques"].map(_fmt_pct_br)
-        disp["Checkout/LPV"] = disp["Checkout/LPV"].map(_fmt_pct_br)
-        disp["Compra/Checkout"] = disp["Compra/Checkout"].map(_fmt_pct_br)
-
-        disp = disp.sort_values(by="Faturamento", ascending=False)
-
-        if realtime_mode:
-            st.caption("⏱️ Modo tempo real ativado — exibindo dados parciais do dia atual.")
-
-        st.dataframe(disp, use_container_width=True, height=420)
+        camp = df_daily_view.groupby(["campaign_id", "campaign_name"], as_index=False)[agg_cols].sum()
 
     else:
-        st.info("Troque o nível para 'campaign' para visualizar o detalhamento por campanha.")
-
-
-# -------------------- ABA 2: HORÁRIOS (PRINCIPAL) --------------------
+        st.info("Troque o nível para 'campaign' para ver o detalhamento por campanha.")
+        
 with tab_daypart:
+    st.caption("Explore desempenho por hora: Heatmap no topo, depois comparação de dias e apanhado geral.")
 
-    # =================== CONTROLES INICIAIS ===================
-    # Define gasto mínimo
-    min_spend = st.number_input(
-        "💰 Gasto mínimo por hora (R$)",
-        min_value=0.0,
-        value=0.0,
-        step=50.0,
-        key="hr_min_spend"
-    )
+    level_hourly = "campaign"
 
-    # Define helper seguro
-    safe_div = _safe_div
+    # 2) Cache por chave (granularidade + período)
+    cache = st.session_state.setdefault("hourly_cache", {})
+    hourly_key = (act_id, api_version, level_hourly, str(since), str(until))
 
-    # Carrega base horária (d)
-    if "df_hourly" in st.session_state and not st.session_state["df_hourly"].empty:
-        d = st.session_state["df_hourly"].copy()
-    else:
-        with st.spinner("Carregando dados horários..."):
-            d = fetch_insights_hourly(
-                act_id=act_id,
-                token=token,
-                api_version=api_version,
-                since_str=str(since),
-                until_str=str(until),
-                level=level,
+    # 3) Lazy-load: só busca quando precisa e guarda no cache
+    if df_hourly is None or hourly_key not in cache:
+        with st.spinner("Carregando breakdown por hora…"):
+            cache[hourly_key] = fetch_insights_hourly(
+                act_id=act_id, token=token, api_version=api_version,
+                since_str=str(since), until_str=str(until), level=level_hourly
             )
-            st.session_state["df_hourly"] = d
+    df_hourly = cache[hourly_key]
 
-    if d is None or d.empty:
-        st.warning("Sem dados horários disponíveis para o período selecionado.")
-        st.stop()
-
-    # =================== FILTRO DE PRODUTO/CAMPANHA ===================
-    if "campaign_name" in d.columns:
-        prod_opts = ["(Todos)"] + sorted(d["campaign_name"].dropna().unique().tolist())
-    else:
-        prod_opts = ["(Todos)"]
-
+    # --------- Filtro por produto (opcional) ---------
     produto_sel_hr = st.selectbox(
-        "🎯 Filtrar por produto/campanha (opcional)",
-        options=prod_opts,
-        index=0,
-        key="sel_produto_hr"
+        "Filtrar por produto (opcional)",
+        ["(Todos)"] + PRODUTOS,
+        key="daypart_produto"
     )
 
-    if produto_sel_hr != "(Todos)":
-        d = d[d["campaign_name"].str.contains(produto_sel_hr, case=False, na=False)].copy()
-
-    else:
-        with st.spinner("Carregando dados horários..."):
-            d = fetch_insights_hourly(
-                act_id=act_id,
-                token=token,
-                api_version=api_version,
-                since_str=str(since),
-                until_str=str(until),
-                level=level,
-            )
-            st.session_state["df_hourly"] = d
-
-    if d is None or d.empty:
-        st.warning("Sem dados horários disponíveis para o período selecionado.")
+    # Guard: checa vazio antes de usar
+    if df_hourly is None or df_hourly.empty:
+        st.info("A conta/período não retornou breakdown por hora. Use a visão diária.")
         st.stop()
+
+    # Agora aplicamos o filtro por produto no campaign_name
+    d = df_hourly.copy()
+    if produto_sel_hr != "(Todos)":
+        mask_hr = d["campaign_name"].str.contains(produto_sel_hr, case=False, na=False)
+        d = d[mask_hr].copy()
+
+    # Slider de gasto mínimo
+    min_spend = st.slider(
+        "Gasto mínimo para considerar o horário (R$)",
+        0.0, 1000.0, 0.0, 10.0
+    )
+
+    d = d.dropna(subset=["hour"])
+    d["hour"] = d["hour"].astype(int).clip(0, 23)
+    d["date_only"] = d["date"].dt.date
 
     # ============== 1) HEATMAP HORA × DIA (TOPO) ==============
     st.subheader("📆 Heatmap — Hora × Dia")
     cube_hm = d.groupby(["dow_label","hour"], as_index=False)[
         ["spend","revenue","purchases","link_clicks","lpv","init_checkout","add_payment"]
     ].sum()
-
-    cube_hm["roas"] = cube_hm.apply(lambda r: safe_div(r["revenue"], r["spend"]), axis=1)
+    cube_hm["roas"] = np.where(cube_hm["spend"]>0, cube_hm["revenue"]/cube_hm["spend"], np.nan)
 
     if min_spend > 0:
         cube_hm = cube_hm[cube_hm["spend"] >= min_spend]
 
-    metric_hm = st.selectbox(
-        "Métrica para o heatmap",
-        ["Compras","Faturamento","Gasto","ROAS"],
-        index=0,
-        key="hm_metric_top"
-    )
-
-    mcol_hm = {
-        "Compras": "purchases",
-        "Faturamento": "revenue",
-        "Gasto": "spend",
-        "ROAS": "roas"
-    }[metric_hm]
+    metric_hm = st.selectbox("Métrica para o heatmap", ["Compras","Faturamento","Gasto","ROAS"], index=0, key="hm_metric_top")
+    mcol_hm = {"Compras":"purchases","Faturamento":"revenue","Gasto":"spend","ROAS":"roas"}[metric_hm]
 
     if mcol_hm == "roas":
         pvt = cube_hm.groupby(["dow_label","hour"], as_index=False)[mcol_hm].mean()
@@ -1765,9 +1831,7 @@ with tab_daypart:
     heat.columns = list(range(24))
 
     fig_hm = go.Figure(data=go.Heatmap(
-        z=heat.values,
-        x=heat.columns,
-        y=heat.index,
+        z=heat.values, x=heat.columns, y=heat.index,
         colorbar=dict(title=metric_hm),
         hovertemplate="Dia: %{y}<br>Hora: %{x}h<br>"+metric_hm+": %{z}<extra></extra>"
     ))
@@ -1786,31 +1850,21 @@ with tab_daypart:
     cube_hr = d.groupby("hour", as_index=False)[
         ["spend","revenue","purchases","link_clicks","lpv","init_checkout","add_payment"]
     ].sum()
-
-    cube_hr["ROAS"] = cube_hr.apply(lambda r: safe_div(r["revenue"], r["spend"]), axis=1)
-
+    cube_hr["ROAS"] = np.where(cube_hr["spend"]>0, cube_hr["revenue"]/cube_hr["spend"], np.nan)
     if min_spend > 0:
         cube_hr = cube_hr[cube_hr["spend"] >= min_spend]
 
     top_hr = cube_hr.sort_values(["purchases","ROAS"], ascending=[False,False]).copy()
-    show_cols = ["hour","ROAS","spend","revenue","link_clicks","lpv","init_checkout","add_payment","purchases"]
-
+    show_cols = ["hour","ROAS","spend","revenue","link_clicks","lpv","init_checkout","add_payment", "purchases"]
     disp_top = top_hr[show_cols].rename(columns={
-        "hour":"Hora",
-        "purchases":"Compras",
-        "spend":"Valor usado",
-        "revenue":"Valor de conversão"
+        "hour":"Hora","purchases":"Compras","spend":"Valor usado","revenue":"Valor de conversão"
     })
     disp_top["Valor usado"] = disp_top["Valor usado"].apply(_fmt_money_br)
     disp_top["Valor de conversão"] = disp_top["Valor de conversão"].apply(_fmt_money_br)
     disp_top["ROAS"] = disp_top["ROAS"].map(_fmt_ratio_br)
-
     st.dataframe(disp_top, use_container_width=True, height=360)
 
-    fig_bar = go.Figure(go.Bar(
-        x=cube_hr.sort_values("hour")["hour"],
-        y=cube_hr.sort_values("hour")["purchases"]
-    ))
+    fig_bar = go.Figure(go.Bar(x=cube_hr.sort_values("hour")["hour"], y=cube_hr.sort_values("hour")["purchases"]))
     fig_bar.update_layout(
         title="Compras por hora (total do período)",
         xaxis_title="Hora do dia",
@@ -1823,7 +1877,6 @@ with tab_daypart:
     st.plotly_chart(fig_bar, use_container_width=True)
 
     st.info("Dica: use o 'Gasto mínimo' para filtrar horas com investimento muito baixo e evitar falsos positivos.")
-
 
     # ============== 2) TAXAS POR HORA (gráficos em cima + tabela de quantidades abaixo) ==============
     st.subheader("🎯 Taxas por hora — médias diárias (sinais puros, com cap de funil)")
@@ -1847,9 +1900,9 @@ with tab_daypart:
     cube_hr_all["Checkout_cap"] = np.minimum(cube_hr_all["init_checkout"], cube_hr_all["LPV_cap"])
 
     # ---- Taxas (frações 0–1) — taxa da HORA (instantânea)
-    cube_hr_all["tx_lpv_clicks"]      = cube_hr_all.apply(lambda r: safe_div(r["LPV_cap"],      r["link_clicks"]),  axis=1)
-    cube_hr_all["tx_checkout_lpv"]    = cube_hr_all.apply(lambda r: safe_div(r["Checkout_cap"], r["LPV_cap"]),      axis=1)
-    cube_hr_all["tx_compra_checkout"] = cube_hr_all.apply(lambda r: safe_div(r["purchases"],    r["Checkout_cap"]), axis=1)
+    cube_hr_all["tx_lpv_clicks"]      = cube_hr_all.apply(lambda r: _safe_div(r["LPV_cap"],      r["link_clicks"]),  axis=1)
+    cube_hr_all["tx_checkout_lpv"]    = cube_hr_all.apply(lambda r: _safe_div(r["Checkout_cap"], r["LPV_cap"]),      axis=1)
+    cube_hr_all["tx_compra_checkout"] = cube_hr_all.apply(lambda r: _safe_div(r["purchases"],    r["Checkout_cap"]), axis=1)
 
     # ---- Linha cumulativa (até a hora) — soma horas para trás e calcula a taxa no acumulado
     show_cum = st.checkbox("Mostrar linha cumulativa (até a hora)", value=True, key="hr_show_cum")
@@ -1899,19 +1952,21 @@ with tab_daypart:
     _purch_tot    = float(_last["cum_purch"])
 
     # médias do período (frações 0–1) com cap no acumulado
-    avg_lpv_clicks   = safe_div(_lpv_cap_tot, _clicks_tot)
-    avg_chk_lpv      = safe_div(_chk_cap_tot, _lpv_cap_tot)
-    avg_buy_checkout = safe_div(_purch_tot,   _chk_cap_tot)
+    avg_lpv_clicks   = _safe_div(_lpv_cap_tot, _clicks_tot)
+    avg_chk_lpv      = _safe_div(_chk_cap_tot, _lpv_cap_tot)
+    avg_buy_checkout = _safe_div(_purch_tot,   _chk_cap_tot)
 
+    # formato %
     def _pct(x): 
         return "–" if (x is None or np.isnan(x)) else f"{x*100:,.2f}%"
 
+    # cards bonitos tipo o exemplo (escuros e com número grande)
     card_css = """
     <style>
     .kpi-wrap {display:grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 14px; margin: 6px 0 12px;}
     .kpi {
-      background: #0f172a;
-      border: 1px solid #1f2937;
+      background: #0f172a; /* slate-900 */
+      border: 1px solid #1f2937; /* gray-800 */
       border-radius: 12px; padding: 14px 16px;
     }
     .kpi h4 {margin: 0 0 6px; font-size: 0.92rem; color: #cbd5e1; font-weight: 600;}
@@ -1939,20 +1994,22 @@ with tab_daypart:
     """
     st.markdown(cards_html, unsafe_allow_html=True)
 
-
     # =================== GRÁFICOS — 3 linhas de TAXAS (%) (EM CIMA) ===================
     def _line_hour_pct(x, y, title, band_range=None, show_band=False, y_aux=None, aux_label="Cumulativa"):
         fig = go.Figure(go.Scatter(
             x=x, y=y, mode="lines+markers", name=title,
             hovertemplate=f"<b>{title}</b><br>Hora: %{{x}}h<br>Taxa: %{{y:.2f}}%<extra></extra>"
         ))
+        # banda saudável (faixa alvo)
         if show_band and band_range and len(band_range) == 2:
             lo, hi = band_range
+            # retângulo de -0.5 a 23.5 para cobrir o eixo inteiro
             fig.add_shape(
                 type="rect", xref="x", yref="y",
                 x0=-0.5, x1=23.5, y0=lo, y1=hi,
                 fillcolor="rgba(34,197,94,0.10)", line=dict(width=0), layer="below"
             )
+        # linha amarela cumulativa (até a hora)
         if show_cum and y_aux is not None:
             fig.add_trace(go.Scatter(
                 x=x, y=y_aux, mode="lines", name=f"{aux_label}",
@@ -2026,32 +2083,33 @@ with tab_daypart:
     st.caption("Contagens por hora no período selecionado")
     st.dataframe(taxas_qtd, use_container_width=True, height=360)
 
+
     # ============== 4) COMPARAR DOIS PERÍODOS (A vs B) — HORA A HORA ==============
     st.subheader("🆚 Comparar dois períodos (A vs B) — hora a hora")
 
+    # Defaults: B = período atual (since/until), A = período anterior com mesma duração
     base_len = (until - since).days + 1
     default_sinceA = (since - timedelta(days=base_len))
     default_untilA = (since - timedelta(days=1))
 
     colA1, colA2, colB1, colB2 = st.columns(4)
-
-    def _fmt_date(d):
-        return d.strftime("%d/%m/%Y")
-    
     with colA1:
-        period_sinceA = st.date_input("Desde (A)", value=default_sinceA, key="cmp_sinceA", format="DD/MM/YYYY")
+        period_sinceA = st.date_input("Desde (A)", value=default_sinceA, key="cmp_sinceA")
     with colA2:
-        period_untilA = st.date_input("Até (A)", value=default_untilA, key="cmp_untilA", format="DD/MM/YYYY")
+        period_untilA = st.date_input("Até (A)", value=default_untilA, key="cmp_untilA")
     with colB1:
-        period_sinceB = st.date_input("Desde (B)", value=since, key="cmp_sinceB", format="DD/MM/YYYY")
+        period_sinceB = st.date_input("Desde (B)", value=since, key="cmp_sinceB")
     with colB2:
-        period_untilB = st.date_input("Até (B)", value=until, key="cmp_untilB", format="DD/MM/YYYY")
+        period_untilB = st.date_input("Até (B)", value=until, key="cmp_untilB")
 
+    # Validação rápida
     if period_sinceA > period_untilA or period_sinceB > period_untilB:
         st.warning("Confira as datas: em cada período, 'Desde' não pode ser maior que 'Até'.")
     else:
+        # Buscar dados por hora cobrindo A ∪ B
         union_since = min(period_sinceA, period_sinceB)
         union_until = max(period_untilA, period_untilB)
+
         level_union = "campaign"
 
         with st.spinner("Carregando dados por hora dos períodos selecionados…"):
@@ -2060,6 +2118,7 @@ with tab_daypart:
                 since_str=str(union_since), until_str=str(union_until), level=level_union
             )
 
+        # aplica o filtro de produto no union (se houver)
         if df_hourly_union is not None and not df_hourly_union.empty and produto_sel_hr != "(Todos)":
             mask_union = df_hourly_union["campaign_name"].str.contains(produto_sel_hr, case=False, na=False)
             df_hourly_union = df_hourly_union[mask_union].copy()
@@ -2067,10 +2126,12 @@ with tab_daypart:
         if df_hourly_union is None or df_hourly_union.empty:
             st.info("Sem dados no intervalo combinado dos períodos selecionados.")
         else:
+            # Base preparada
             d_cmp = df_hourly_union.dropna(subset=["hour"]).copy()
             d_cmp["hour"] = d_cmp["hour"].astype(int).clip(0, 23)
             d_cmp["date_only"] = d_cmp["date"].dt.date
 
+            # Filtra pelos períodos A e B
             A_mask = (d_cmp["date_only"] >= period_sinceA) & (d_cmp["date_only"] <= period_untilA)
             B_mask = (d_cmp["date_only"] >= period_sinceB) & (d_cmp["date_only"] <= period_untilB)
             datA, datB = d_cmp[A_mask], d_cmp[B_mask]
@@ -2079,10 +2140,15 @@ with tab_daypart:
                 st.info("Sem dados em um dos períodos selecionados.")
             else:
                 agg_cols = ["spend","revenue","purchases","link_clicks","lpv","init_checkout","add_payment"]
+
+                # Soma por hora
                 gA = datA.groupby("hour", as_index=False)[agg_cols].sum()
                 gB = datB.groupby("hour", as_index=False)[agg_cols].sum()
 
+                # Merge A vs B
                 merged = pd.merge(gA, gB, on="hour", how="outer", suffixes=(" (A)", " (B)")).fillna(0.0)
+
+                # Filtro de gasto mínimo (descarta só se AMBOS forem baixos)
                 if min_spend > 0:
                     keep = (merged["spend (A)"] >= min_spend) | (merged["spend (B)"] >= min_spend)
                     merged = merged[keep]
@@ -2090,6 +2156,7 @@ with tab_daypart:
                 if merged.empty:
                     st.info("Após o filtro de gasto mínimo, não sobraram horas para comparar.")
                 else:
+                    # 0..23 sempre presentes (preenche horas faltantes com 0)
                     hours_full = list(range(24))
                     merged = (
                         merged.set_index("hour")
@@ -2098,53 +2165,140 @@ with tab_daypart:
                               .reset_index()
                     )
 
+                    # Eixo X (numérico 0..23)
                     x = merged["hour"].astype(int)
 
+                    # Teto comum para as BARRAS (Gasto + Receita)
                     barsA_max = (merged["spend (A)"] + merged["revenue (A)"]).max()
                     barsB_max = (merged["spend (B)"] + merged["revenue (B)"]).max()
                     bars_max = max(barsA_max, barsB_max)
-                    bars_max = 1.05 * (bars_max if np.isfinite(bars_max) and bars_max > 0 else 1.0)
+                    if not np.isfinite(bars_max) or bars_max <= 0:
+                        bars_max = 1.0
+                    bars_max *= 1.05  # folga de 5%
 
+                    # Teto comum para a LINHA (Compras)
                     lineA_max = merged["purchases (A)"].max()
                     lineB_max = merged["purchases (B)"].max()
-                    line_max = 1.05 * (max(lineA_max, lineB_max) if np.isfinite(max(lineA_max, lineB_max)) else 1.0)
+                    line_max = max(lineA_max, lineB_max)
+                    if not np.isfinite(line_max) or line_max <= 0:
+                        line_max = 1.0
+                    line_max *= 1.05  # folga de 5%
 
-                    COLOR_SPEND, COLOR_REVENUE, COLOR_LINE = "#E74C3C", "#3498DB", "#2ECC71"
+                    # ==================== CORES ====================
+                    COLOR_SPEND   = "#E74C3C"  # vermelho (Gasto)
+                    COLOR_REVENUE = "#3498DB"  # azul (Faturamento)
+                    COLOR_LINE    = "#2ECC71"  # verde (Compras)
 
-                    def _build_barline(title_prefix, suffix, spend_col, rev_col, purch_col, period_label):
-                        fig = make_subplots(specs=[[{"secondary_y": True}]])
-                        fig.add_trace(go.Bar(name=f"Gasto {suffix}", x=x, y=merged[spend_col],
-                                             marker_color=COLOR_SPEND, offsetgroup=suffix))
-                        fig.add_trace(go.Bar(name=f"Faturamento {suffix}", x=x, y=merged[rev_col],
-                                             marker_color=COLOR_REVENUE, offsetgroup=suffix))
-                        fig.add_trace(go.Scatter(name=f"Compras {suffix} — {period_label}", x=x,
-                                                 y=merged[purch_col], mode="lines+markers",
-                                                 line=dict(color=COLOR_LINE, width=2)), secondary_y=True)
-                        fig.update_layout(
-                            title=f"{title_prefix} {period_label} (Gasto + Faturamento + Compras)",
-                            barmode="stack", bargap=0.15, template="plotly_white",
-                            height=460, margin=dict(l=10, r=10, t=48, b=10), separators=",."
+                    # ==================== GRÁFICO — Período A ====================
+                    fig_A = make_subplots(specs=[[{"secondary_y": True}]])
+
+                    fig_A.add_trace(
+                        go.Bar(
+                            name="Gasto (A)",
+                            x=x, y=merged["spend (A)"],
+                            legendgroup="A",
+                            offsetgroup="A",
+                            marker_color=COLOR_SPEND,
                         )
-                        fig.update_xaxes(title_text="Hora do dia", tickmode="linear", tick0=0, dtick=1)
-                        fig.update_yaxes(title_text="Valores (R$)", secondary_y=False, range=[0, bars_max])
-                        fig.update_yaxes(title_text="Compras (unid.)", secondary_y=True, range=[0, line_max])
-                        return fig
+                    )
+                    fig_A.add_trace(
+                        go.Bar(
+                            name="Faturamento (A)",
+                            x=x, y=merged["revenue (A)"],
+                            legendgroup="A",
+                            offsetgroup="A",
+                            marker_color=COLOR_REVENUE,
+                        )
+                    )
+                    fig_A.add_trace(
+                        go.Scatter(
+                            name=f"Compras (A) — {period_sinceA} a {period_untilA}",
+                            x=x, y=merged["purchases (A)"],
+                            mode="lines+markers",
+                            legendgroup="A",
+                            line=dict(color=COLOR_LINE, width=2),
+                        ),
+                        secondary_y=True,
+                    )
 
-                    st.plotly_chart(_build_barline("Período A —", "(A)", "spend (A)", "revenue (A)", "purchases (A)",
-                                                   f"{period_sinceA} a {period_untilA}"), use_container_width=True)
-                    st.plotly_chart(_build_barline("Período B —", "(B)", "spend (B)", "revenue (B)", "purchases (B)",
-                                                   f"{period_sinceB} a {period_untilB}"), use_container_width=True)
+                    fig_A.update_layout(
+                        title=f"Período A — {period_sinceA} a {period_untilA} (Gasto + Faturamento + Compras)",
+                        barmode="stack",
+                        bargap=0.15,
+                        bargroupgap=0.12,
+                        template="plotly_white",
+                        height=460,
+                        margin=dict(l=10, r=10, t=48, b=10),
+                        legend_title_text="",
+                        separators=",.",
+                    )
+                    fig_A.update_xaxes(title_text="Hora do dia", tickmode="linear", tick0=0, dtick=1, range=[-0.5, 23.5])
+                    fig_A.update_yaxes(title_text="Valores (R$)", secondary_y=False, range=[0, bars_max])
+                    fig_A.update_yaxes(title_text="Compras (unid.)", secondary_y=True, range=[0, line_max])
+
+                    st.plotly_chart(fig_A, use_container_width=True)
+
+                    # ==================== GRÁFICO — Período B ====================
+                    fig_B = make_subplots(specs=[[{"secondary_y": True}]])
+
+                    fig_B.add_trace(
+                        go.Bar(
+                            name="Gasto (B)",
+                            x=x, y=merged["spend (B)"],
+                            legendgroup="B",
+                            offsetgroup="B",
+                            marker_color=COLOR_SPEND,
+                        )
+                    )
+                    fig_B.add_trace(
+                        go.Bar(
+                            name="Faturamento (B)",
+                            x=x, y=merged["revenue (B)"],
+                            legendgroup="B",
+                            offsetgroup="B",
+                            marker_color=COLOR_REVENUE,
+                        )
+                    )
+                    fig_B.add_trace(
+                        go.Scatter(
+                            name=f"Compras (B) — {period_sinceB} a {period_untilB}",
+                            x=x, y=merged["purchases (B)"],
+                            mode="lines+markers",
+                            legendgroup="B",
+                            line=dict(color=COLOR_LINE, width=2),
+                        ),
+                        secondary_y=True,
+                    )
+
+                    fig_B.update_layout(
+                        title=f"Período B — {period_sinceB} a {period_untilB} (Gasto + Faturamento + Compras)",
+                        barmode="stack",
+                        bargap=0.15,
+                        bargroupgap=0.12,
+                        template="plotly_white",
+                        height=460,
+                        margin=dict(l=10, r=10, t=48, b=10),
+                        legend_title_text="",
+                        separators=",.",
+                    )
+                    fig_B.update_xaxes(title_text="Hora do dia", tickmode="linear", tick0=0, dtick=1, range=[-0.5, 23.5])
+                    fig_B.update_yaxes(title_text="Valores (R$)", secondary_y=False, range=[0, bars_max])
+                    fig_B.update_yaxes(title_text="Compras (unid.)", secondary_y=True, range=[0, line_max])
+
+                    st.plotly_chart(fig_B, use_container_width=True)
 
                     # ===== INSIGHTS — Período A =====
                     st.markdown("### 🔎 Insights — Período A")
                     a = merged.sort_values("hour").copy()
-                    a_spend, a_rev, a_purch = a["spend (A)"], a["revenue (A)"], a["purchases (A)"]
-                    a_roas_ser = np.where(a_spend > 0, a_rev / a_spend, np.nan)
+                    a_spend     = a["spend (A)"]
+                    a_rev       = a["revenue (A)"]
+                    a_purch     = a["purchases (A)"]
+                    a_roas_ser  = np.where(a_spend > 0, a_rev / a_spend, np.nan)
 
                     a_tot_spend = float(a_spend.sum())
-                    a_tot_rev = float(a_rev.sum())
+                    a_tot_rev   = float(a_rev.sum())
                     a_tot_purch = int(round(float(a_purch.sum())))
-                    a_roas = (a_tot_rev / a_tot_spend) if a_tot_spend > 0 else np.nan
+                    a_roas      = (a_tot_rev / a_tot_spend) if a_tot_spend > 0 else np.nan
 
                     c1, c2, c3, c4 = st.columns(4)
                     c1.metric("Valor usado (A)", _fmt_money_br(a_tot_spend))
@@ -2152,9 +2306,9 @@ with tab_daypart:
                     c3.metric("Vendas (A)", f"{a_tot_purch:,}".replace(",", "."))
                     c4.metric("ROAS (A)", _fmt_ratio_br(a_roas) if pd.notnull(a_roas) else "—")
 
-                    # Horas de destaque
                     h_best_purch = int(a.loc[a["purchases (A)"].idxmax(), "hour"]) if len(a_purch) and a_purch.max() > 0 else None
                     best_purch_val = int(a_purch.max()) if len(a_purch) else 0
+
                     mask_roasA = (a_spend >= float(min_spend)) & (a_spend > 0)
                     if mask_roasA.any():
                         roasA_vals = a_roas_ser.copy()
@@ -2173,15 +2327,16 @@ with tab_daypart:
                     wastedA = a[(a_spend > 0) & (a_purch == 0)]
                     wastedA_hours = ", ".join(f"{int(h)}h" for h in wastedA["hour"].tolist()) if not wastedA.empty else "—"
 
-                    st.markdown(f"""
+                    st.markdown(
+                        f"""
 **Pontos-chave (A)**  
 - 🕐 **Pico de compras:** **{str(h_best_purch)+'h' if h_best_purch is not None else '—'}** ({best_purch_val} compras).  
 - 💹 **Melhor ROAS** (gasto ≥ R$ {min_spend:,.0f}): **{(str(h_best_roasA)+'h') if h_best_roasA is not None else '—'}** ({_fmt_ratio_br(best_roasA_val) if pd.notnull(best_roasA_val) else '—'}).  
 - ⏱️ **Janela forte (3h):** **{winA_start}–{winA_end}h** (centro {winA_mid}h) somando **{winA_sum}** compras.  
 - 🧯 **Horas com gasto e 0 compras:** {wastedA_hours}.
-""".replace(",", "X").replace(".", ",").replace("X", "."))
+""".replace(",", "X").replace(".", ",").replace("X", ".")
+                    )
 
-                    # Top horas A
                     st.markdown("**Top 5 horas (A)**")
                     colTA, colTB = st.columns(2)
                     with colTA:
@@ -2203,19 +2358,21 @@ with tab_daypart:
                             topA_r = pd.DataFrame(columns=["Hora","Valor usado","Valor de conversão","ROAS"])
                         st.dataframe(topA_r, use_container_width=True, height=220)
 
-                    st.info("💡 Sugestão: priorize a janela forte e aumente orçamento nas horas de melhor ROAS; reavalie criativos nas horas com gasto e 0 compras.")
+                    st.info("Sugestões (A): priorize a janela forte, aumente orçamento nas horas de melhor ROAS (com gasto mínimo atendido) e reavalie criativo/lance nas horas com gasto e 0 compras.")
                     st.markdown("---")
 
                     # ===== INSIGHTS — Período B =====
                     st.markdown("### 🔎 Insights — Período B")
                     b = merged.sort_values("hour").copy()
-                    b_spend, b_rev, b_purch = b["spend (B)"], b["revenue (B)"], b["purchases (B)"]
-                    b_roas_ser = np.where(b_spend > 0, b_rev / b_spend, np.nan)
+                    b_spend     = b["spend (B)"]
+                    b_rev       = b["revenue (B)"]
+                    b_purch     = b["purchases (B)"]
+                    b_roas_ser  = np.where(b_spend > 0, b_rev / b_spend, np.nan)
 
                     b_tot_spend = float(b_spend.sum())
-                    b_tot_rev = float(b_rev.sum())
+                    b_tot_rev   = float(b_rev.sum())
                     b_tot_purch = int(round(float(b_purch.sum())))
-                    b_roas = (b_tot_rev / b_tot_spend) if b_tot_spend > 0 else np.nan
+                    b_roas      = (b_tot_rev / b_tot_spend) if b_tot_spend > 0 else np.nan
 
                     d1, d2, d3, d4 = st.columns(4)
                     d1.metric("Valor usado (B)", _fmt_money_br(b_tot_spend))
@@ -2225,6 +2382,7 @@ with tab_daypart:
 
                     h_best_purchB = int(b.loc[b["purchases (B)"].idxmax(), "hour"]) if len(b_purch) and b_purch.max() > 0 else None
                     best_purch_valB = int(b_purch.max()) if len(b_purch) else 0
+
                     mask_roasB = (b_spend >= float(min_spend)) & (b_spend > 0)
                     if mask_roasB.any():
                         roasB_vals = b_roas_ser.copy()
@@ -2243,16 +2401,37 @@ with tab_daypart:
                     wastedB = b[(b_spend > 0) & (b_purch == 0)]
                     wastedB_hours = ", ".join(f"{int(h)}h" for h in wastedB["hour"].tolist()) if not wastedB.empty else "—"
 
-                    st.markdown(f"""
+                    st.markdown(
+                        f"""
 **Pontos-chave (B)**  
 - 🕐 **Pico de compras:** **{(str(h_best_purchB)+'h') if h_best_purchB is not None else '—'}** ({best_purch_valB} compras).  
 - 💹 **Melhor ROAS** (gasto ≥ R$ {min_spend:,.0f}): **{(str(h_best_roasB)+'h') if h_best_roasB is not None else '—'}** ({_fmt_ratio_br(best_roasB_val) if pd.notnull(best_roasB_val) else '—'}).  
 - ⏱️ **Janela forte (3h):** **{winB_start}–{winB_end}h** (centro {winB_mid}h) somando **{winB_sum}** compras.  
 - 🧯 **Horas com gasto e 0 compras:** {wastedB_hours}.
-""".replace(",", "X").replace(".", ",").replace("X", "."))
+""".replace(",", "X").replace(".", ",").replace("X", ".")
+                    )
 
-                    st.info("💡 Sugestão: direcione orçamento para as horas com melhor ROAS e pause/teste criativos nas horas com gasto e 0 compras.")
+                    colTB1, colTB2 = st.columns(2)
+                    with colTB1:
+                        topB_p = b[["hour","purchases (B)","spend (B)","revenue (B)"]].sort_values("purchases (B)", ascending=False).head(5).copy()
+                        topB_p.rename(columns={"hour":"Hora","purchases (B)":"Compras","spend (B)":"Valor usado","revenue (B)":"Valor de conversão"}, inplace=True)
+                        topB_p["Valor usado"] = topB_p["Valor usado"].apply(_fmt_money_br)
+                        topB_p["Valor de conversão"] = topB_p["Valor de conversão"].apply(_fmt_money_br)
+                        st.dataframe(topB_p, use_container_width=True, height=220)
+                    with colTB2:
+                        if mask_roasB.any():
+                            topB_r = b[mask_roasB][["hour","spend (B)","revenue (B)"]].copy()
+                            topB_r["ROAS"] = b_roas_ser[mask_roasB]
+                            topB_r = topB_r.sort_values("ROAS", ascending=False).head(5)
+                            topB_r.rename(columns={"hour":"Hora","spend (B)":"Valor usado","revenue (B)":"Valor de conversão"}, inplace=True)
+                            topB_r["Valor usado"] = topB_r["Valor usado"].apply(_fmt_money_br)
+                            topB_r["Valor de conversão"] = topB_r["Valor de conversão"].apply(_fmt_money_br)
+                            topB_r["ROAS"] = topB_r["ROAS"].map(_fmt_ratio_br)
+                        else:
+                            topB_r = pd.DataFrame(columns=["Hora","Valor usado","Valor de conversão","ROAS"])
+                        st.dataframe(topB_r, use_container_width=True, height=220)
 
+                    st.info("Sugestões (B): direcione orçamento para as horas com melhor ROAS e pause/teste criativos nas horas com gasto e 0 compras.")
 
 # -------------------- ABA 3: 📊 DETALHAMENTO --------------------
 with tab_detail:
@@ -2309,10 +2488,7 @@ with tab_detail:
 
         agg_cols = ["spend", "revenue", "purchases", "link_clicks", "lpv", "init_checkout", "add_payment"]
         g = df2.groupby(group_cols, dropna=False, as_index=False)[agg_cols].sum()
-        g["ROAS"] = np.divide(
-            g["revenue"].astype(float),
-            g["spend"].replace(0, np.nan).astype(float)
-        )
+        g["ROAS"] = np.where(g["spend"] > 0, g["revenue"] / g["spend"], np.nan)
 
         if min_spend_det and float(min_spend_det) > 0:
             g = g[g["spend"] >= float(min_spend_det)]
@@ -2363,10 +2539,7 @@ with tab_detail:
                 ["spend", "revenue", "purchases", "link_clicks", "lpv", "init_checkout", "add_payment"]
             ].sum()
         )
-        g["ROAS"] = np.divide(
-            g["revenue"].astype(float),
-            g["spend"].replace(0, np.nan).astype(float)
-        )
+        g["ROAS"] = np.where(g["spend"] > 0, g["revenue"] / g["spend"], np.nan)
 
         if min_spend_det and float(min_spend_det) > 0:
             g = g[g["spend"] >= float(min_spend_det)]
@@ -2447,14 +2620,8 @@ with tab_detail:
         # Agregar dados principais
         agg_cols = ["spend", "revenue", "purchases"]
         g = base.groupby("Dia da Semana", dropna=False, as_index=False)[agg_cols].sum()
-        g["ROAS"] = np.divide(
-            g["revenue"].astype(float),
-            g["spend"].replace(0, np.nan).astype(float)
-        )
-        g["Custo por Compra"] = np.divide(
-            g["spend"].astype(float),
-            g["purchases"].replace(0, np.nan).astype(float)
-        )
+        g["ROAS"] = np.where(g["spend"] > 0, g["revenue"] / g["spend"], np.nan)
+        g["Custo por Compra"] = np.where(g["purchases"] > 0, g["spend"] / g["purchases"], np.nan)
 
         if min_spend_det and float(min_spend_det) > 0:
             g = g[g["spend"] >= float(min_spend_det)]
@@ -2666,10 +2833,7 @@ with tab_detail:
             df_rank["Custo por Compra"] = df_rank["Custo por Compra"].apply(fmt_real)
             df_rank["ROAS"] = df_rank["ROAS"].round(2)
             df_rank["Compras"] = df_rank["purchases"].astype(int)
-            df_rank["score_final"] = pd.to_numeric(df_rank["score_final"], errors="coerce").fillna(0)
-            df_rank["Score (%)"] = (
-                pd.to_numeric(df_rank["score_final"], errors="coerce") * 100
-            ).round(1)
+            df_rank["Score (%)"] = (df_rank["score_final"] * 100).round(1)
 
             disp_rank = df_rank[
                 ["Posição", "Dia da Semana", "Compras", "Investimento", "Faturamento", "ROAS", "Custo por Compra", "Score (%)"]
@@ -3060,234 +3224,4 @@ with tab_detail:
             f"Período B: **{_fmt_range_br(since_B, until_B)}**"
         )
 
-# =====================================================
-# 📦 DASHBOARD – LOGÍSTICA
-# =====================================================
-st.write("✅ Passou da aba principal — entrando na Logística")
-with aba_principal[1]:
-    st.header("📦 Dashboard — Logística")
-    st.subheader("📦 Shopify – Visão Geral")
-
-    # ---- Carregar dados da sessão (se existir) ----
-    produtos = st.session_state.get("produtos")
-    pedidos = st.session_state.get("pedidos")
-
-    # ---- Botão: atualizar dados (últimos 60 dias) ----
-    if st.button("🔄 Atualizar dados da Shopify"):
-        with st.spinner("Carregando produtos e pedidos (últimos 60 dias)..."):
-            try:
-                hoje = pd.Timestamp.today().date()
-                produtos_novos = get_products_with_variants()
-                pedidos_novos = get_orders(
-                    since=hoje - pd.Timedelta(days=60),  # ajuste se quiser
-                    until=hoje,
-                    only_paid=True
-                )
-                st.session_state["produtos"] = produtos_novos
-                st.session_state["pedidos"] = pedidos_novos
-                st.session_state["ultima_atualizacao"] = datetime.now().strftime("%d/%m/%Y %H:%M")
-                st.success(f"✅ Atualizado! {len(produtos_novos)} variantes e {len(pedidos_novos)} linhas de pedido.")
-            except Exception as e:
-                st.error(f"Erro ao atualizar: {e}")
-
-    # ---- Carregamento automático inicial (se vazio) ----
-    if ("produtos" not in st.session_state) or st.session_state["produtos"] is None:
-        try:
-            st.session_state["produtos"] = get_products_with_variants()
-        except Exception as e:
-            st.error(f"Erro carregando produtos: {e}")
-
-    if ("pedidos" not in st.session_state) or st.session_state["pedidos"] is None:
-        try:
-            hoje = pd.Timestamp.today().date()
-            st.session_state["pedidos"] = get_orders(
-                since=hoje - pd.Timedelta(days=60),
-                until=hoje,
-                only_paid=True
-            )
-        except Exception as e:
-            st.error(f"Erro carregando pedidos: {e}")
-
-    if "ultima_atualizacao" in st.session_state:
-        st.caption(f"🕒 Última atualização: {st.session_state['ultima_atualizacao']}")
-
-    produtos = st.session_state.get("produtos", pd.DataFrame())
-    pedidos = st.session_state.get("pedidos", pd.DataFrame())
-
-    if produtos.empty and pedidos.empty:
-        st.warning("⚠️ Ainda não há dados da Shopify carregados. Use o botão acima.")
         st.stop()
-
-    # ---- Normalizar nomes ----
-    def normalizar(df: pd.DataFrame) -> pd.DataFrame:
-        if df is None or df.empty:
-            return pd.DataFrame()
-        df = df.copy()
-        df.columns = [c.strip().lower() for c in df.columns]
-        ren = {
-            "title": "product_title",
-            "product_name": "product_title",
-            "variant": "variant_title",
-            "variant_name": "variant_title",
-            "id": "variant_id",
-            "variantid": "variant_id"
-        }
-        return df.rename(columns=ren)
-
-    produtos = normalizar(produtos)
-    pedidos = normalizar(pedidos)
-
-    # ---- Garantir colunas obrigatórias (evita KeyError) ----
-    for col in ["order_id", "order_number", "financial_status", "fulfillment_status"]:
-        if col not in pedidos.columns:
-            pedidos[col] = None
-
-    # ---- Juntar pedidos e catálogo de variantes ----
-    merge_cols = [c for c in ["variant_id", "sku", "product_title", "variant_title"] if c in produtos.columns]
-    base = pedidos.merge(
-        produtos[merge_cols] if merge_cols else produtos,
-        on="variant_id",
-        how="left",
-        suffixes=("", "_produto")
-    )
-
-    # Ajustes de nome pós-merge (se vieram colunas *_produto)
-    if "product_title_produto" in base.columns and "product_title" not in base.columns:
-        base["product_title"] = base["product_title_produto"]
-    if "variant_title_produto" in base.columns and "variant_title" not in base.columns:
-        base["variant_title"] = base["variant_title_produto"]
-
-    base["product_title"] = base["product_title"].fillna("(Produto desconhecido)")
-    base["variant_title"] = base["variant_title"].fillna("(Variante desconhecida)")
-
-    # ---- Tipos e métricas ----
-    base["created_at"] = pd.to_datetime(base.get("created_at"), errors="coerce")
-    base["price"] = pd.to_numeric(base.get("price"), errors="coerce").fillna(0)
-    base["quantity"] = pd.to_numeric(base.get("quantity"), errors="coerce").fillna(0)
-    base["line_revenue"] = base["price"] * base["quantity"]
-
-    # ---- Filtros (ligados à coleta!) ----
-    st.subheader("🎛️ Filtros")
-    col1, col2, col3, col4 = st.columns(4)
-
-    with col3:
-        if not base["created_at"].isnull().all():
-            min_date = base["created_at"].min().date()
-            max_date = base["created_at"].max().date()
-        else:
-            today = pd.Timestamp.today().date()
-            min_date = max_date = today
-        periodo = st.date_input("Período", (min_date, max_date), key="shopify_periodo")
-
-    with col4:
-        if st.button("🔍 Filtrar período da Shopify"):
-            with st.spinner("Buscando pedidos no período selecionado..."):
-                try:
-                    pedidos_filtrados = get_orders(
-                        since=periodo[0],
-                        until=periodo[1],
-                        only_paid=True
-                    )
-                    st.session_state["pedidos"] = pedidos_filtrados
-                    pedidos = normalizar(pedidos_filtrados)
-                    base = pedidos.merge(
-                        produtos[merge_cols] if merge_cols else produtos,
-                        on="variant_id",
-                        how="left",
-                        suffixes=("", "_produto")
-                    )
-                    if "product_title_produto" in base.columns and "product_title" not in base.columns:
-                        base["product_title"] = base["product_title_produto"]
-                    if "variant_title_produto" in base.columns and "variant_title" not in base.columns:
-                        base["variant_title"] = base["variant_title_produto"]
-                    base["product_title"] = base["product_title"].fillna("(Produto desconhecido)")
-                    base["variant_title"] = base["variant_title"].fillna("(Variante desconhecida)")
-                    base["created_at"] = pd.to_datetime(base.get("created_at"), errors="coerce")
-                    base["price"] = pd.to_numeric(base.get("price"), errors="coerce").fillna(0)
-                    base["quantity"] = pd.to_numeric(base.get("quantity"), errors="coerce").fillna(0)
-                    base["line_revenue"] = base["price"] * base["quantity"]
-                    st.success(f"✅ {len(pedidos_filtrados)} linhas de pedido no período selecionado.")
-                except Exception as e:
-                    st.error(f"Erro ao filtrar: {e}")
-
-    with col1:
-        produtos_lbl = ["(Todos os produtos)"] + sorted(base["product_title"].dropna().unique().tolist())
-        escolha_prod = st.selectbox("Produto", produtos_lbl, index=0)
-
-    with col2:
-        variantes_lbl = ["(Todas as variantes)"] + sorted(base["variant_title"].dropna().unique().tolist())
-        escolha_var = st.selectbox("Variante", variantes_lbl, index=0)
-
-    # ---- Aplicar filtros ----
-    df = base.copy()
-    df = df[(df["created_at"].dt.date >= periodo[0]) & (df["created_at"].dt.date <= periodo[1])]
-    if escolha_prod != "(Todos os produtos)":
-        df = df[df["product_title"] == escolha_prod]
-    if escolha_var != "(Todas as variantes)":
-        df = df[df["variant_title"] == escolha_var]
-
-    if df.empty:
-        st.warning("Nenhum pedido encontrado com os filtros selecionados.")
-        st.stop()
-
-    # ---- Resumo ----
-    order_col = "order_number" if ("order_number" in df.columns and df["order_number"].notna().any()) else "order_id"
-    total_pedidos = df[order_col].nunique()
-    total_unidades = int(df["quantity"].sum())
-    total_receita = float(df["line_revenue"].sum())
-    ticket_medio = (total_receita / total_pedidos) if total_pedidos > 0 else 0.0
-
-    def _fmt_money_br(v: float) -> str:
-        return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-
-    colA, colB, colC, colD = st.columns(4)
-    colA.metric("🧾 Pedidos", total_pedidos)
-    colB.metric("📦 Unidades vendidas", total_unidades)
-    colC.metric("💰 Receita total", _fmt_money_br(total_receita))
-    colD.metric("💸 Ticket médio", _fmt_money_br(ticket_medio))
-
-    # ---- Tabela ----
-    st.subheader("📋 Pedidos filtrados")
-    colunas_existentes = [c for c in [
-        order_col, "created_at", "customer_name", "quantity",
-        "variant_title", "price", "line_revenue",
-        "forma_entrega", "estado", "cidade", "fulfillment_status"
-    ] if c in df.columns]
-
-    tabela = df[colunas_existentes].sort_values("created_at", ascending=False).copy()
-    tabela.rename(columns={
-        order_col: "Pedido",
-        "created_at": "Data do pedido",
-        "customer_name": "Nome do cliente",
-        "quantity": "Quantidade",
-        "variant_title": "Variante",
-        "price": "Preço unitário",
-        "line_revenue": "Total",
-        "forma_entrega": "Tipo de entrega",
-        "estado": "Estado",
-        "cidade": "Cidade",
-        "fulfillment_status": "Status de processamento"
-    }, inplace=True)
-
-    if "Pedido" in tabela.columns:
-        tabela["Pedido"] = tabela["Pedido"].apply(lambda x: f"#{int(float(x))}" if pd.notnull(x) else "-")
-
-    if "Data do pedido" in tabela.columns:
-        tabela["Data do pedido"] = pd.to_datetime(
-            tabela["Data do pedido"], errors="coerce"
-        ).dt.strftime("%d/%m/%Y %H:%M")
-
-    for col_money in ["Preço unitário", "Total"]:
-        if col_money in tabela.columns:
-            tabela[col_money] = tabela[col_money].apply(lambda x: _fmt_money_br(float(x or 0)))
-
-    st.dataframe(tabela, use_container_width=True)
-
-    # ---- Exportar CSV ----
-    csv = tabela.to_csv(index=False).encode("utf-8-sig")
-    st.download_button(
-        label="📥 Exportar pedidos filtrados (CSV)",
-        data=csv,
-        file_name=f"pedidos_shopify_{periodo[0]}_{periodo[1]}.csv",
-        mime="text/csv",
-    )
