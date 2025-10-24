@@ -356,6 +356,11 @@ def _filter_by_product(df: pd.DataFrame, produto: str) -> pd.DataFrame:
     mask = df["campaign_name"].str.contains(produto, case=False, na=False)
     return df[mask].copy()
 
+# =====================================================
+# 🔑 Constantes globais de configuração da API Meta Ads
+# =====================================================
+ATTR_KEYS = ["7d_click", "1d_view"]
+HOUR_BREAKDOWN = "hourly_stats_aggregated_by_advertiser_time_zone"
 
 # =============== Coleta (com fallback de campos extras) ===============
 @st.cache_data(ttl=600, show_spinner=True)
