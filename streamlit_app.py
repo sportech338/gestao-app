@@ -2566,6 +2566,7 @@ if menu == "📊 Dashboard – Tráfego Pago":
                             Compras: {int(best_roas['purchases'])}
                         </div>
                         """, unsafe_allow_html=True)
+
                     with col2:
                         st.markdown(f"""
                         <div style="background-color:#EEF6FF;padding:18px;border-radius:12px;border:1px solid #87BFFF;color:#000000;">
@@ -2577,6 +2578,7 @@ if menu == "📊 Dashboard – Tráfego Pago":
                             Inv.: {fmt_real(best_pur['spend'])}
                         </div>
                         """, unsafe_allow_html=True)
+
                     with col3:
                         st.markdown(f"""
                         <div style="background-color:#E8F5E9;padding:18px;border-radius:12px;border:1px solid #7BC47F;color:#000000;">
@@ -2603,6 +2605,7 @@ if menu == "📊 Dashboard – Tráfego Pago":
                             Compras: {int(worst_roas['purchases'])}
                         </div>
                         """, unsafe_allow_html=True)
+
                     with col2:
                         st.markdown(f"""
                         <div style="background-color:#FFF8E1;padding:18px;border-radius:12px;border:1px solid #FACC15;color:#000000;">
@@ -2614,6 +2617,7 @@ if menu == "📊 Dashboard – Tráfego Pago":
                             Inv.: {fmt_real(worst_pur['spend'])}
                         </div>
                         """, unsafe_allow_html=True)
+
                     with col3:
                         st.markdown(f"""
                         <div style="background-color:#FFF0F0;padding:18px;border-radius:12px;border:1px solid #F87171;color:#000000;">
