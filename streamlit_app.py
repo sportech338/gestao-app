@@ -50,10 +50,10 @@ def get_products_with_variants(limit=250):
     return pd.DataFrame(rows)
 
 @st.cache_data(ttl=600)
-def get_orders(start_date=None, end_date=None, limit=250):
+def get_orders(limit=250):
     """
-    Busca todos os pedidos da Shopify dentro do período definido,
-    paginando automaticamente com 'page_info'.
+    Busca todos os pedidos da Shopify (sem filtro de data).
+    Faz paginação automática até acabar.
     """
     all_orders = []
     url = f"{BASE_URL}/orders.json"
@@ -63,14 +63,7 @@ def get_orders(start_date=None, end_date=None, limit=250):
         "order": "created_at desc",
     }
 
-    # Filtros de data (formato ISO)
-    if start_date:
-        params["created_at_min"] = f"{start_date}T00:00:00-03:00"
-    if end_date:
-        params["created_at_max"] = f"{end_date}T23:59:59-03:00"
-
     while True:
-        # Faz a requisição
         r = requests.get(url, headers=HEADERS, params=params, timeout=60)
         if r.status_code != 200:
             st.error(f"Erro {r.status_code} ao buscar pedidos: {r.text}")
@@ -80,7 +73,6 @@ def get_orders(start_date=None, end_date=None, limit=250):
         if not data:
             break
 
-        # Adiciona pedidos atuais
         for o in data:
             for it in o.get("line_items", []):
                 all_orders.append({
@@ -106,23 +98,20 @@ def get_orders(start_date=None, end_date=None, limit=250):
                     "cidade": (o.get("shipping_address", {}) or {}).get("city", ""),
                 })
 
-        # Verifica se existe próxima página (Link Header)
-        link_header = r.headers.get("Link", "")
+        # Verifica se há próxima página (cursor)
         import re
+        link_header = r.headers.get("Link", "")
         match = re.search(r'<([^>]+)>; rel="next"', link_header)
         if match:
-            # Shopify já inclui todos os parâmetros (inclusive o page_info)
             url = match.group(1)
-            params = None  # importante: não enviar params novamente
+            params = None
         else:
             break
 
-    # Converte para DataFrame
     df = pd.DataFrame(all_orders)
     if not df.empty:
         df["created_at"] = pd.to_datetime(df["created_at"], errors="coerce")
     return df
-
 
 # =============== Config & Estilos ===============
 st.set_page_config(page_title="Meta Ads — Paridade + Funil", page_icon="📊", layout="wide")
@@ -2948,11 +2937,8 @@ if menu == "📦 Dashboard – Logística":
             st.session_state["produtos"] = get_products_with_variants()
 
         if "pedidos" not in st.session_state or st.session_state["pedidos"] is None:
-            st.session_state["pedidos"] = get_orders(
-                start_date=periodo[0],
-                end_date=periodo[1]
-            )
-
+            st.session_state["pedidos"] = get_orders()
+            
         # ---- Aplicar filtros ----
         df = base[
             (base["created_at"].dt.date >= periodo[0]) &
