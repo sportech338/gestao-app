@@ -2946,15 +2946,6 @@ if menu == "📦 Dashboard – Logística":
             variantes_lbl = ["(Todas as variantes)"] + sorted(base["variant_title"].dropna().unique().tolist())
             escolha_var = st.selectbox("Variante", variantes_lbl, index=0, key="filtro_variante")
 
-        with col3:
-            if not base["created_at"].isnull().all():
-                min_date = base["created_at"].min().date()
-                max_date = base["created_at"].max().date()
-            else:
-                today = pd.Timestamp.today().date()
-                min_date = max_date = today
-            periodo = st.date_input("Período", (min_date, max_date), key="filtro_periodo")
-
         if "pedidos" not in st.session_state or st.session_state["pedidos"] is None:
             st.session_state["pedidos"] = get_orders(
                 start_date=periodo[0],
