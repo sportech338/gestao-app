@@ -2832,14 +2832,15 @@ if menu == "📦 Dashboard – Logística":
     st.title("📦 Dashboard — Logística")
     st.caption("Visualização dos pedidos e estoque vindos da Shopify.")
 
-# ==== Filtro de período (DEVE vir antes de chamar get_orders) ====
-hoje = pd.Timestamp.today().date()
-periodo = st.date_input(
-    "📆 Período para buscar pedidos da Shopify",
-    (hoje - timedelta(days=30), hoje),
-    key="filtro_periodo_principal"
-)
+    # ==== Filtro de período (DEVE vir antes de chamar get_orders) ====
+    hoje = pd.Timestamp.today().date()
+    periodo = st.date_input(
+        "📆 Período para buscar pedidos da Shopify",
+        (hoje - timedelta(days=30), hoje),
+        key="filtro_periodo_principal"
+    )
 
+    # 🧩 AQUI está o nível correto — mesmo nível do st.title()
     tab_pedidos = st.tabs(["📦 Pedidos"])[0]
     with tab_pedidos:
         st.subheader("📦 Shopify – Visão Geral")
