@@ -13,14 +13,33 @@ import threading
 # =============== Config & Estilos ===============
 st.set_page_config(page_title="Meta Ads — Paridade + Funil", page_icon="📊", layout="wide")
 
-_session = None
-def _get_session():
-    global _session
-    if _session is None:
-        s = requests.Session()
-        s.headers.update({"Accept-Encoding": "gzip, deflate"})
-        _session = s
-    return _session
+# =====================================================
+# 🎨 ESTILOS GERAIS (cards e textos)
+# =====================================================
+st.markdown("""
+<style>
+.kpi-card {
+    background-color: #111827;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    padding: 14px 18px;
+    margin: 6px;
+    text-align: center;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+}
+.small-muted {
+    font-size: 13px;
+    color: #9ca3af;
+    margin-bottom: 4px;
+    font-weight: 500;
+}
+.big-number {
+    font-size: 26px;
+    font-weight: 700;
+    color: #02BFE4;
+}
+</style>
+""", unsafe_allow_html=True)
 
 # =============== Helpers genéricos ===============
 def _retry_call(fn, max_retries=5, base_wait=1.2):
