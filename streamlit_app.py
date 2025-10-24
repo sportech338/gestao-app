@@ -854,7 +854,10 @@ if menu == "📊 Dashboard – Tráfego Pago":
     with st.sidebar:
         st.markdown("## ⚙️ Configuração — Tráfego Pago")
 
-        act_id = st.text_input("Ad Account ID", placeholder="ex.: act_1234567890")
+        act_id_input = st.text_input("Ad Account ID", placeholder="ex.: 1234567890")
+        if act_id_input and not act_id_input.isdigit():
+            st.warning("Por favor, insira apenas números (sem letras ou símbolos).")
+        act_id = f"act_{act_id_input.strip()}" if act_id_input.isdigit() else None
         token = st.text_input("Access Token", type="password")
         api_version = st.text_input("API Version", value="v23.0")
         level = st.selectbox("Nível (recomendado: campaign)", ["campaign"],  index=0)
