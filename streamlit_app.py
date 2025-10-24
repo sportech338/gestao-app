@@ -2556,7 +2556,7 @@ if menu == "📊 Dashboard – Tráfego Pago":
                     col1, col2, col3 = st.columns(3)
                     with col1:
                         st.markdown(f"""
-                        <div style="background-color:#FDF5E6;padding:18px;border-radius:12px;border:1px solid #f4c16c;">
+                        <div style="background-color:#FDF5E6;padding:18px;border-radius:12px;border:1px solid #f4c16c;color:#000000;">
                             <h5>💰 Melhor Eficiência (ROAS)</h5>
                             <b>{best_roas['Dia da Semana'].capitalize()}</b><br>
                             ROAS: <b>{best_roas['ROAS']:.2f}</b><br>
@@ -2568,7 +2568,7 @@ if menu == "📊 Dashboard – Tráfego Pago":
                         """, unsafe_allow_html=True)
                     with col2:
                         st.markdown(f"""
-                        <div style="background-color:#EEF6FF;padding:18px;border-radius:12px;border:1px solid #87BFFF;">
+                        <div style="background-color:#EEF6FF;padding:18px;border-radius:12px;border:1px solid #87BFFF;color:#000000;">
                             <h5>⚡ Maior Volume de Vendas</h5>
                             <b>{best_pur['Dia da Semana'].capitalize()}</b><br>
                             Compras: <b>{int(best_pur['purchases'])}</b><br>
@@ -2579,7 +2579,7 @@ if menu == "📊 Dashboard – Tráfego Pago":
                         """, unsafe_allow_html=True)
                     with col3:
                         st.markdown(f"""
-                        <div style="background-color:#E8F5E9;padding:18px;border-radius:12px;border:1px solid #7BC47F;">
+                        <div style="background-color:#E8F5E9;padding:18px;border-radius:12px;border:1px solid #7BC47F;color:#000000;">
                             <h5>💸 Melhor Rentabilidade</h5>
                             <b>{best_cpa['Dia da Semana'].capitalize()}</b><br>
                             CPA: <b>{fmt_real(best_cpa['Custo por Compra'])}</b><br>
@@ -2593,7 +2593,7 @@ if menu == "📊 Dashboard – Tráfego Pago":
                     col1, col2, col3 = st.columns(3)
                     with col1:
                         st.markdown(f"""
-                        <div style="background-color:#FFF5F5;padding:18px;border-radius:12px;border:1px solid #FCA5A5;">
+                        <div style="background-color:#FFF5F5;padding:18px;border-radius:12px;border:1px solid #FCA5A5;color:#000000;">
                             <h5>📉 Pior Eficiência (ROAS)</h5>
                             <b>{worst_roas['Dia da Semana'].capitalize()}</b><br>
                             ROAS: <b>{worst_roas['ROAS']:.2f}</b><br>
@@ -2605,7 +2605,7 @@ if menu == "📊 Dashboard – Tráfego Pago":
                         """, unsafe_allow_html=True)
                     with col2:
                         st.markdown(f"""
-                        <div style="background-color:#FFF8E1;padding:18px;border-radius:12px;border:1px solid #FACC15;">
+                        <div style="background-color:#FFF8E1;padding:18px;border-radius:12px;border:1px solid #FACC15;color:#000000;">
                             <h5>🐢 Menor Volume de Vendas</h5>
                             <b>{worst_pur['Dia da Semana'].capitalize()}</b><br>
                             Compras: <b>{int(worst_pur['purchases'])}</b><br>
@@ -2616,7 +2616,7 @@ if menu == "📊 Dashboard – Tráfego Pago":
                         """, unsafe_allow_html=True)
                     with col3:
                         st.markdown(f"""
-                        <div style="background-color:#FFF0F0;padding:18px;border-radius:12px;border:1px solid #F87171;">
+                        <div style="background-color:#FFF0F0;padding:18px;border-radius:12px;border:1px solid #F87171;color:#000000;">
                             <h5>🚨 Pior Rentabilidade (Maior CPA)</h5>
                             <b>{worst_cpa['Dia da Semana'].capitalize()}</b><br>
                             CPA: <b>{fmt_real(worst_cpa['Custo por Compra'])}</b><br>
@@ -2627,7 +2627,6 @@ if menu == "📊 Dashboard – Tráfego Pago":
                         """, unsafe_allow_html=True)
 
                     st.caption("Essas métricas consideram apenas o período e filtros aplicados.")
-
 
                     # ====== RANKING GERAL POR DESEMPENHO ======
                     st.markdown("### 🏆 Ranking Geral — Desempenho Consolidado")
