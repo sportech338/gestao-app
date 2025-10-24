@@ -868,7 +868,7 @@ if menu == "📊 Dashboard – Tráfego Pago":
     ])
 
     # -------------------- ABA 1: VISÃO DIÁRIA --------------------
-    with tab_daily:
+with tab_daily:
     # === Moeda detectada e override opcional ===
     currency_detected = (df_daily["currency"].dropna().iloc[0]
                          if "currency" in df_daily.columns and not df_daily["currency"].dropna().empty else "BRL")
