@@ -2832,14 +2832,6 @@ if menu == "📦 Dashboard – Logística":
     st.title("📦 Dashboard — Logística")
     st.caption("Visualização dos pedidos e estoque vindos da Shopify.")
 
-    # ==== Filtro de período (DEVE vir antes de chamar get_orders) ====
-    hoje = pd.Timestamp.today().date()
-    periodo = st.date_input(
-        "📆 Período para buscar pedidos da Shopify",
-        (hoje - timedelta(days=30), hoje),
-        key="filtro_periodo_principal"
-    )
-
     # 🧩 AQUI está o nível correto — mesmo nível do st.title()
     tab_pedidos = st.tabs(["📦 Pedidos"])[0]
     with tab_pedidos:
@@ -2954,6 +2946,19 @@ if menu == "📦 Dashboard – Logística":
                 today = pd.Timestamp.today().date()
                 min_date = max_date = today
             periodo = st.date_input("Período", (min_date, max_date), key="filtro_periodo")
+
+        # ⚡ Atualiza os pedidos da Shopify de acordo com o período selecionado
+        if st.button("🔄 Atualizar dados da Shopify", key="btn_atualizar_shopify"):
+            st.info(f"🔁 Atualizando pedidos de {periodo[0]} até {periodo[1]}...")
+            threading.Thread(
+                target=atualizar_dados_shopify,
+                args=(periodo[0], periodo[1]),
+                daemon=True
+            ).start()
+
+        # ⚙️ Carregamento automático
+        if "produtos" not in st.session_state or st.session_state["produtos"] is None:
+            st.session_state["produtos"] = get_products_with_variants()
 
         if "pedidos" not in st.session_state or st.session_state["pedidos"] is None:
             st.session_state["pedidos"] = get_orders(
