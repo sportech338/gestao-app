@@ -2866,10 +2866,12 @@ if menu == "📦 Dashboard – Logística":
 
         if st.button("🔄 Atualizar dados da Shopify", key="btn_atualizar_shopify"):
             st.info("🔁 Atualização iniciada! Você pode continuar usando as outras abas enquanto carrega.")
-            target=atualizar_dados_shopify,
-            args=(periodo[0], periodo[1]),
-            daemon=True
-        ).start()
+            threading.Thread(
+                target=atualizar_dados_shopify,
+                args=(periodo[0], periodo[1]),
+                daemon=True
+            ).start()
+
         # ---- Carregamento automático com cache ----
         if "produtos" not in st.session_state or st.session_state["produtos"] is None:
             st.session_state["produtos"] = get_products_with_variants()
