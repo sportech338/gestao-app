@@ -2923,6 +2923,8 @@ if menu == "📦 Dashboard – Logística":
             today = pd.Timestamp.today().date()
             min_date = max_date = today
         periodo = st.date_input("Período", (min_date, max_date))
+        periodo_formatado = f"{periodo[0].strftime('%d/%m/%Y')} – {periodo[1].strftime('%d/%m/%Y')}"
+        st.write(f"📅 Período selecionado: **{periodo_formatado}**")
 
     # ---- Aplicar filtros ----
     df = base[
@@ -3011,6 +3013,6 @@ if menu == "📦 Dashboard – Logística":
     st.download_button(
         label="📥 Exportar pedidos filtrados (CSV)",
         data=csv,
-        file_name=f"pedidos_shopify_{periodo[0]}_{periodo[1]}.csv",
+        file_name=f"pedidos_shopify_{periodo[0].strftime('%d-%m-%Y')}_{periodo[1].strftime('%d-%m-%Y')}.csv",
         mime="text/csv",
     )
