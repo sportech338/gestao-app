@@ -2171,6 +2171,587 @@ if menu == "📊 Dashboard – Tráfego Pago":
 
                         st.info("💡 Sugestão: direcione orçamento para as horas com melhor ROAS e pause/teste criativos nas horas com gasto e 0 compras.")
 
+        # -------------------- ABA 3: 📊 DETALHAMENTO --------------------
+        with tab_detail:
+            st.caption(
+                "Explore por dimensão: Idade, Gênero, Idade+Gênero, País, Plataforma, "
+                "Posicionamento, Dia e Hora. Há um modo 'Populares' com os TOP 5."
+            )
+
+            # ===== Filtros =====
+            colf1, colf2 = st.columns([2, 1])
+            with colf1:
+                produto_sel_det = st.selectbox(
+                    "Filtrar por produto (opcional)",
+                    ["(Todos)"] + PRODUTOS,
+                    key="det_produto",
+                )
+            with colf2:
+                min_spend_det = st.slider(
+                    "Gasto mínimo para considerar (R$)",
+                    0.0, 2000.0, 0.0, 10.0,
+                    key="det_min_spend",
+                )
+
+            dimensao = st.radio(
+                "Dimensão",
+                [
+                    "Populares", "Idade", "Gênero", "Idade + Gênero",
+                    "Região", "País", "Plataforma", "Posicionamento", "Dia da Semana",
+                ],
+                index=0,
+                horizontal=True,
+            )
+
+            # ========= Helpers =========
+            def _apply_prod_filter(df_base: pd.DataFrame) -> pd.DataFrame:
+                if produto_sel_det and produto_sel_det != "(Todos)":
+                    mask = df_base["campaign_name"].str.contains(produto_sel_det, case=False, na=False)
+                    return df_base[mask].copy()
+                return df_base
+
+            def _ensure_cols_exist(df: pd.DataFrame) -> pd.DataFrame:
+                for col in ["spend", "revenue", "purchases", "link_clicks", "lpv", "init_checkout", "add_payment"]:
+                    if col not in df.columns:
+                        df[col] = 0.0
+                return df
+
+            def _agg_and_format(df: pd.DataFrame, group_cols: list[str]):
+                if df is None or df.empty:
+                    return pd.DataFrame(), pd.DataFrame()
+                df2 = _apply_prod_filter(df)
+                if df2.empty:
+                    return pd.DataFrame(), pd.DataFrame()
+                df2 = _ensure_cols_exist(df2)
+
+                agg_cols = ["spend", "revenue", "purchases", "link_clicks", "lpv", "init_checkout", "add_payment"]
+                g = df2.groupby(group_cols, dropna=False, as_index=False)[agg_cols].sum()
+                g["ROAS"] = np.divide(
+                    g["revenue"].astype(float),
+                    g["spend"].replace(0, np.nan).astype(float)
+                )
+
+                if min_spend_det and float(min_spend_det) > 0:
+                    g = g[g["spend"] >= float(min_spend_det)]
+                if not g.empty:
+                    g = g.sort_values(["purchases", "ROAS"], ascending=[False, False])
+                return g, g.copy()
+
+            def _bar_chart(x_labels, y_values, title, x_title, y_title):
+                fig = go.Figure(go.Bar(x=x_labels, y=y_values, text=y_values, textposition="outside"))
+                fig.update_layout(
+                    title=title,
+                    xaxis_title=x_title,
+                    yaxis_title=y_title,
+                    height=420,
+                    template="plotly_white",
+                    margin=dict(l=10, r=10, t=48, b=10),
+                    separators=".,",
+                )
+                st.plotly_chart(fig, use_container_width=True)
+
+            # === Cores e formatação de período ===
+            COLOR_A = "#636EFA"   # azul
+            COLOR_B = "#EF553B"   # laranja
+
+            def _fmt_range_br(d1, d2) -> str:
+                d1 = pd.to_datetime(str(d1)).date()
+                d2 = pd.to_datetime(str(d2)).date()
+                return f"{d1.strftime('%d/%m/%Y')} → {d2.strftime('%d/%m/%Y')}"
+
+            # ========= Helpers p/ taxas =========
+            def _rates_from_raw(df: pd.DataFrame, group_cols: list[str]) -> pd.DataFrame:
+                df = df.copy()
+                df["LPV/Cliques"]        = df.apply(lambda r: _safe_div(r["lpv"], r["link_clicks"]), axis=1)
+                df["Checkout/LPV"]       = df.apply(lambda r: _safe_div(r["init_checkout"], r["lpv"]), axis=1)
+                df["Compra/Checkout"]    = df.apply(lambda r: _safe_div(r["purchases"], r["init_checkout"]), axis=1)
+                df["Add Pagto/Checkout"] = df.apply(lambda r: _safe_div(r["add_payment"], r["init_checkout"]), axis=1)
+                df["Compra/Add Pagto"]   = df.apply(lambda r: _safe_div(r["purchases"], r["add_payment"]), axis=1)
+                return df
+
+            # ========= POPULARES =========
+            if dimensao == "Populares":
+                base = df_daily.copy()
+                base = _apply_prod_filter(base)
+                base = _ensure_cols_exist(base)
+
+                g = (
+                    base.groupby(["campaign_id", "campaign_name"], as_index=False)[
+                        ["spend", "revenue", "purchases", "link_clicks", "lpv", "init_checkout", "add_payment"]
+                    ].sum()
+                )
+                g["ROAS"] = np.divide(
+                    g["revenue"].astype(float),
+                    g["spend"].replace(0, np.nan).astype(float)
+                )
+
+                if min_spend_det and float(min_spend_det) > 0:
+                    g = g[g["spend"] >= float(min_spend_det)]
+
+                top_comp = g.sort_values(["purchases", "ROAS"], ascending=[False, False]).head(5).copy()
+                top_roas = g[g["spend"] > 0].sort_values("ROAS", ascending=False).head(5).copy()
+
+                def _fmt_disp(df_):
+                    out = df_.copy()
+                    out["Valor usado"]        = out["spend"].apply(_fmt_money_br)
+                    out["Valor de conversão"] = out["revenue"].apply(_fmt_money_br)
+                    out["ROAS"]               = out["ROAS"].map(_fmt_ratio_br)
+                    out.rename(
+                        columns={
+                            "campaign_name": "Campanha",
+                            "purchases": "Compras",
+                            "link_clicks": "Cliques",
+                            "lpv": "LPV",
+                            "init_checkout": "Checkout",
+                            "add_payment": "Add Pagto",
+                        },
+                        inplace=True,
+                    )
+                    return out
+
+                disp_comp = _fmt_disp(top_comp)[
+                    ["Campanha", "Compras", "Valor usado", "Valor de conversão", "ROAS", "Cliques", "LPV", "Checkout", "Add Pagto"]
+                ]
+                disp_roas = _fmt_disp(top_roas)[
+                    ["Campanha", "ROAS", "Compras", "Valor usado", "Valor de conversão", "Cliques", "LPV", "Checkout", "Add Pagto"]
+                ]
+
+                st.subheader("TOP 5 — Campanhas")
+                c1, c2 = st.columns(2)
+                with c1:
+                    st.dataframe(disp_comp, use_container_width=True, height=260)
+                with c2:
+                    st.dataframe(disp_roas, use_container_width=True, height=260)
+                st.stop()
+
+            # ========= DIA DA SEMANA =========
+            if dimensao == "Dia da Semana":
+                base = df_daily.copy()
+                base = _apply_prod_filter(base)
+                base = _ensure_cols_exist(base)
+
+                # Detecta coluna de data automaticamente
+                date_col = None
+                for c in base.columns:
+                    if "date" in c.lower() or "data" in c.lower():
+                        date_col = c
+                        break
+                if not date_col:
+                    st.error("Nenhuma coluna de data encontrada em df_daily.")
+                    st.stop()
+
+                # Converter datas e gerar nome do dia (sem depender de locale)
+                base["date_start"] = pd.to_datetime(base[date_col], errors="coerce")
+                base["Dia da Semana"] = base["date_start"].dt.day_name()
+                traducao_dias = {
+                    "Monday": "segunda-feira",
+                    "Tuesday": "terça-feira",
+                    "Wednesday": "quarta-feira",
+                    "Thursday": "quinta-feira",
+                    "Friday": "sexta-feira",
+                    "Saturday": "sábado",
+                    "Sunday": "domingo",
+                }
+                base["Dia da Semana"] = base["Dia da Semana"].map(traducao_dias)
+
+                # Ordenar dias na sequência natural
+                ordem_dias = [
+                    "segunda-feira", "terça-feira", "quarta-feira",
+                    "quinta-feira", "sexta-feira", "sábado", "domingo"
+                ]
+                base["Dia da Semana"] = pd.Categorical(base["Dia da Semana"], categories=ordem_dias, ordered=True)
+
+                # Agregar dados principais
+                agg_cols = ["spend", "revenue", "purchases"]
+                g = base.groupby("Dia da Semana", dropna=False, as_index=False)[agg_cols].sum()
+                g["ROAS"] = np.divide(
+                    g["revenue"].astype(float),
+                    g["spend"].replace(0, np.nan).astype(float)
+                )
+                g["Custo por Compra"] = np.divide(
+                    g["spend"].astype(float),
+                    g["purchases"].replace(0, np.nan).astype(float)
+                )
+
+                if min_spend_det and float(min_spend_det) > 0:
+                    g = g[g["spend"] >= float(min_spend_det)]
+
+                # Preenche dias faltantes com 0 (caso algum dia não tenha vendas)
+                g = g.set_index("Dia da Semana").reindex(ordem_dias, fill_value=0).reset_index()
+
+                # ====== VISUAL ======
+                st.subheader("📊 Investimento × Vendas por Dia da Semana")
+
+                def fmt_real(v):
+                    return f"R${v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+                # Barras = Compras
+                fig = go.Figure()
+                fig.add_trace(go.Bar(
+                    x=g["Dia da Semana"],
+                    y=g["purchases"],
+                    name="Compras",
+                    marker_color="#1f77b4",
+                    text=g["purchases"],
+                    textposition="outside",
+                    hovertemplate="<b>%{x}</b><br>Compras: %{y}",
+                    yaxis="y1",
+                ))
+
+                # Linha = Investimento
+                custom_hover = []
+                for _, row in g.iterrows():
+                    hover_text = (
+                        f"<b>{row['Dia da Semana']}</b><br>"
+                        f"Investimento: {fmt_real(row['spend'])}<br>"
+                        f"ROAS: {row['ROAS']:.2f}<br>"
+                        f"Custo por compra: {fmt_real(row['Custo por Compra'])}"
+                    )
+                    custom_hover.append(hover_text)
+
+                fig.add_trace(go.Scatter(
+                    x=g["Dia da Semana"],
+                    y=g["spend"],
+                    name="Investimento (R$)",
+                    mode="lines+markers+text",
+                    text=[fmt_real(v) for v in g["spend"]],
+                    textposition="top center",
+                    marker_color="#ff7f0e",
+                    line=dict(width=3),
+                    hovertext=custom_hover,
+                    hoverinfo="text",
+                    yaxis="y2",
+                ))
+
+                fig.update_layout(
+                    title=dict(
+                        text="Relação entre Investimento e Vendas por Dia da Semana",
+                        x=0.5,
+                        xanchor="center",
+                        font=dict(size=16)
+                    ),
+                    xaxis=dict(title="Dia da Semana"),
+                    yaxis=dict(title="Compras", side="left", showgrid=False, zeroline=False),
+                    yaxis2=dict(title="Investimento (R$)", overlaying="y", side="right", showgrid=False, zeroline=False),
+                    legend=dict(
+                        orientation="h",
+                        x=0.5, y=-0.2,
+                        xanchor="center", yanchor="top",
+                        bgcolor="rgba(255,255,255,0.8)",
+                        font=dict(color="black", size=12)
+                    ),
+                    height=480,
+                    template="plotly_white",
+                    margin=dict(l=10, r=10, t=60, b=80),
+                    separators=".,",
+                    hovermode="x unified"
+                )
+                st.plotly_chart(fig, use_container_width=True)
+
+
+                if not g.empty and g["spend"].sum() > 0:
+                    media_roas = g["ROAS"].mean()
+                    media_cpa = g["Custo por Compra"].mean()
+                    best_roas = g.loc[g["ROAS"].idxmax()]
+                    best_cpa = g.loc[g["Custo por Compra"].idxmin()]
+                    best_pur = g.loc[g["purchases"].idxmax()]
+
+                    st.markdown("### 🧠 Insights Automáticos (Período Selecionado)")
+                    # ==== Melhores dias ====
+                    best_roas = g.loc[g["ROAS"].idxmax()]
+                    best_cpa = g.loc[g["Custo por Compra"].idxmin()]
+                    best_pur = g.loc[g["purchases"].idxmax()]
+                    # ==== Piores dias ====
+                    worst_roas = g.loc[g["ROAS"].idxmin()]
+                    worst_cpa = g.loc[g["Custo por Compra"].idxmax()]
+                    worst_pur = g.loc[g["purchases"].idxmin()]
+
+                    st.markdown("#### 🟢 Melhores Desempenhos")
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.markdown(f"""
+                        <div style="background-color:#FDF5E6;padding:18px;border-radius:12px;border:1px solid #f4c16c;">
+                            <h5>💰 Melhor Eficiência (ROAS)</h5>
+                            <b>{best_roas['Dia da Semana'].capitalize()}</b><br>
+                            ROAS: <b>{best_roas['ROAS']:.2f}</b><br>
+                            ↑ {(best_roas['ROAS']/media_roas - 1)*100:.1f}% acima da média<br>
+                            Investimento: {fmt_real(best_roas['spend'])}<br>
+                            CPA: {fmt_real(best_roas['Custo por Compra'])}<br>
+                            Compras: {int(best_roas['purchases'])}
+                        </div>
+                        """, unsafe_allow_html=True)
+                    with col2:
+                        st.markdown(f"""
+                        <div style="background-color:#EEF6FF;padding:18px;border-radius:12px;border:1px solid #87BFFF;">
+                            <h5>⚡ Maior Volume de Vendas</h5>
+                            <b>{best_pur['Dia da Semana'].capitalize()}</b><br>
+                            Compras: <b>{int(best_pur['purchases'])}</b><br>
+                            ROAS: {best_pur['ROAS']:.2f}<br>
+                            CPA: {fmt_real(best_pur['Custo por Compra'])}<br>
+                            Inv.: {fmt_real(best_pur['spend'])}
+                        </div>
+                        """, unsafe_allow_html=True)
+                    with col3:
+                        st.markdown(f"""
+                        <div style="background-color:#E8F5E9;padding:18px;border-radius:12px;border:1px solid #7BC47F;">
+                            <h5>💸 Melhor Rentabilidade</h5>
+                            <b>{best_cpa['Dia da Semana'].capitalize()}</b><br>
+                            CPA: <b>{fmt_real(best_cpa['Custo por Compra'])}</b><br>
+                            ↓ {(1 - best_cpa['Custo por Compra']/media_cpa)*100:.1f}% abaixo da média<br>
+                            ROAS: {best_cpa['ROAS']:.2f}<br>
+                            Compras: {int(best_cpa['purchases'])}
+                        </div>
+                        """, unsafe_allow_html=True)
+
+                    st.markdown("#### 🔴 Piores Desempenhos")
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.markdown(f"""
+                        <div style="background-color:#FFF5F5;padding:18px;border-radius:12px;border:1px solid #FCA5A5;">
+                            <h5>📉 Pior Eficiência (ROAS)</h5>
+                            <b>{worst_roas['Dia da Semana'].capitalize()}</b><br>
+                            ROAS: <b>{worst_roas['ROAS']:.2f}</b><br>
+                            ↓ {(1 - worst_roas['ROAS']/media_roas)*100:.1f}% abaixo da média<br>
+                            Inv.: {fmt_real(worst_roas['spend'])}<br>
+                            CPA: {fmt_real(worst_roas['Custo por Compra'])}<br>
+                            Compras: {int(worst_roas['purchases'])}
+                        </div>
+                        """, unsafe_allow_html=True)
+                    with col2:
+                        st.markdown(f"""
+                        <div style="background-color:#FFF8E1;padding:18px;border-radius:12px;border:1px solid #FACC15;">
+                            <h5>🐢 Menor Volume de Vendas</h5>
+                            <b>{worst_pur['Dia da Semana'].capitalize()}</b><br>
+                            Compras: <b>{int(worst_pur['purchases'])}</b><br>
+                            ROAS: {worst_pur['ROAS']:.2f}<br>
+                            CPA: {fmt_real(worst_pur['Custo por Compra'])}<br>
+                            Inv.: {fmt_real(worst_pur['spend'])}
+                        </div>
+                        """, unsafe_allow_html=True)
+                    with col3:
+                        st.markdown(f"""
+                        <div style="background-color:#FFF0F0;padding:18px;border-radius:12px;border:1px solid #F87171;">
+                            <h5>🚨 Pior Rentabilidade (Maior CPA)</h5>
+                            <b>{worst_cpa['Dia da Semana'].capitalize()}</b><br>
+                            CPA: <b>{fmt_real(worst_cpa['Custo por Compra'])}</b><br>
+                            ↑ {(worst_cpa['Custo por Compra']/media_cpa - 1)*100:.1f}% acima da média<br>
+                            ROAS: {worst_cpa['ROAS']:.2f}<br>
+                            Compras: {int(worst_cpa['purchases'])}
+                        </div>
+                        """, unsafe_allow_html=True)
+
+                    st.caption("Essas métricas consideram apenas o período e filtros aplicados.")
+
+
+                    # ====== RANKING GERAL POR DESEMPENHO ======
+                    st.markdown("### 🏆 Ranking Geral — Desempenho Consolidado")
+
+                    df_rank = g.copy()
+                    df_rank["score_vendas"] = (df_rank["purchases"] - df_rank["purchases"].min()) / (df_rank["purchases"].max() - df_rank["purchases"].min() + 1e-9)
+                    df_rank["score_roas"] = (df_rank["ROAS"] - df_rank["ROAS"].min()) / (df_rank["ROAS"].max() - df_rank["ROAS"].min() + 1e-9)
+                    df_rank["score_invest"] = (df_rank["spend"].max() - df_rank["spend"]) / (df_rank["spend"].max() - df_rank["spend"].min() + 1e-9)
+
+                    PESO_VENDAS = 0.35
+                    PESO_ROAS = 0.50
+                    PESO_INVEST = 0.15
+
+                    df_rank["score_final"] = (
+                        df_rank["score_vendas"] * PESO_VENDAS
+                        + df_rank["score_roas"] * PESO_ROAS
+                        + df_rank["score_invest"] * PESO_INVEST
+                    )
+
+                    df_rank = df_rank.sort_values("score_final", ascending=False).reset_index(drop=True)
+                    df_rank["Posição"] = df_rank.index + 1
+
+                    df_rank["Investimento"] = df_rank["spend"].apply(fmt_real)
+                    df_rank["Faturamento"] = df_rank["revenue"].apply(fmt_real)
+                    df_rank["Custo por Compra"] = df_rank["Custo por Compra"].apply(fmt_real)
+                    df_rank["ROAS"] = df_rank["ROAS"].round(2)
+                    df_rank["Compras"] = df_rank["purchases"].astype(int)
+                    df_rank["Score (%)"] = (df_rank["score_final"] * 100).round(1)
+
+                    disp_rank = df_rank[
+                        ["Posição", "Dia da Semana", "Compras", "Investimento", "Faturamento", "ROAS", "Custo por Compra", "Score (%)"]
+                    ]
+
+                    def _highlight_rank(row):
+                        if row["Posição"] == 1:
+                            return ['background-color: #d1fae5; font-weight: bold; color: #065f46;'] * len(row)
+                        elif row["Posição"] == 2:
+                            return ['background-color: #fef3c7; font-weight: bold; color: #92400e;'] * len(row)
+                        elif row["Posição"] == 3:
+                            return ['background-color: #dbeafe; font-weight: bold; color: #1e3a8a;'] * len(row)
+                        elif row["Posição"] == len(df_rank):
+                            return ['background-color: #fee2e2; color: #991b1b;'] * len(row)
+                        else:
+                            return [''] * len(row)
+
+                    st.dataframe(
+                        disp_rank.style.apply(_highlight_rank, axis=1),
+                        use_container_width=True,
+                        height=380,
+                    )
+
+                    st.caption("Ranking pondera Compras (35%), ROAS (50%) e Investimento (15%) — equilíbrio entre eficiência e volume.")
+
+                # ====== TABELA ======
+                disp = g.copy()
+                disp["Investimento"] = disp["spend"].apply(_fmt_money_br)
+                disp["Faturamento"] = disp["revenue"].apply(_fmt_money_br)
+                disp["ROAS"] = disp["ROAS"].map(_fmt_ratio_br)
+                disp["Custo por Compra"] = disp["Custo por Compra"].apply(_fmt_money_br)
+                disp["Compras"] = disp["purchases"].astype(int)
+
+                st.markdown("### 🧾 Detalhamento por Dia da Semana")
+                st.dataframe(
+                    disp[["Dia da Semana", "Compras", "Investimento", "Faturamento", "ROAS", "Custo por Compra"]],
+                    use_container_width=True,
+                    height=380,
+                )
+                st.stop()
+
+            # ========= DEMAIS DIMENSÕES =========
+            dim_to_breakdowns = {
+                "Idade": ["age"],
+                "Gênero": ["gender"],
+                "Idade + Gênero": ["age", "gender"],
+                "Região": ["region"],
+                "País": ["country"],
+                "Plataforma": ["publisher_platform"],
+                "Posicionamento": ["publisher_platform", "platform_position"],
+            }
+
+            level_bd = level
+            if dimensao == "Posicionamento" and level_bd not in ["adset", "ad"]:
+                level_bd = "adset"
+
+            if dimensao in dim_to_breakdowns:
+                bks = dim_to_breakdowns[dimensao]
+                df_bd = fetch_insights_breakdown(
+                    act_id, token, api_version, str(since), str(until),
+                    bks, level_bd, product_name=st.session_state.get("det_produto"),
+                )
+
+                if df_bd.empty:
+                    st.info(f"Sem dados para {dimensao} no período/filtro.")
+                    st.stop()
+
+                rename_map = {
+                    "age": "Idade",
+                    "gender": "Gênero",
+                    "region": "Região",
+                    "country": "País",
+                    "publisher_platform": "Plataforma",
+                    "platform_position": "Posicionamento",
+                }
+                group_cols = [rename_map.get(c, c) for c in bks]
+
+                raw, disp = _agg_and_format(df_bd.rename(columns=rename_map), group_cols)
+                if disp.empty:
+                    st.info(f"Sem dados para {dimensao} após aplicar filtros.")
+                    st.stop()
+
+                st.subheader(f"Desempenho por {dimensao}")
+
+                # ----- gráfico -----
+                if len(group_cols) == 1:
+                    xlab = group_cols[0]
+                    _bar_chart(raw[xlab], raw["purchases"], f"Compras por {xlab}", xlab, "Compras")
+                else:
+                    idx, col = group_cols
+                    pvt = raw.pivot_table(index=idx, columns=col, values="purchases", aggfunc="sum").fillna(0)
+                    fig = go.Figure(
+                        data=go.Heatmap(
+                            z=pvt.values,
+                            x=pvt.columns.astype(str),
+                            y=pvt.index.astype(str),
+                            colorbar=dict(title="Compras"),
+                            hovertemplate=(f"{idx}: " + "%{y}<br>" + f"{col}: " + "%{x}<br>" + "Compras: %{z}<extra></extra>"),
+                        )
+                    )
+                    fig.update_layout(
+                        title=f"Heatmap — Compras por {idx} × {col}",
+                        height=460,
+                        template="plotly_white",
+                        margin=dict(l=10, r=10, t=48, b=10),
+                        separators=".,",
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+
+                # ====== COMPARAR PERÍODOS ======
+                st.markdown("### Comparar períodos A vs B (Taxas em p.p.)")
+                from datetime import timedelta
+                since_dt = pd.to_datetime(str(since)).date()
+                until_dt = pd.to_datetime(str(until)).date()
+                delta = until_dt - since_dt
+
+                colp1, colp2 = st.columns(2)
+                with colp1:
+                    perA = st.date_input("Período A", (since_dt, until_dt), key="perA_det_tbl", format="DD/MM/YYYY")
+                with colp2:
+                    default_b_end = since_dt - timedelta(days=1)
+                    default_b_start = default_b_end - delta
+                    perB = st.date_input("Período B", (default_b_start, default_b_end), key="perB_det_tbl", format="DD/MM/YYYY")
+
+                since_A, until_A = perA
+                since_B, until_B = perB
+
+                def _load_rates_for_range(d1, d2):
+                    dfR = fetch_insights_breakdown(
+                        act_id, token, api_version, str(d1), str(d2),
+                        bks, level_bd, product_name=st.session_state.get("det_produto"),
+                    )
+                    rawR, _ = _agg_and_format(dfR.rename(columns=rename_map), group_cols)
+                    return _rates_from_raw(rawR, group_cols)
+
+                raw_A = _load_rates_for_range(since_A, until_A)
+                raw_B = _load_rates_for_range(since_B, until_B)
+
+                comp_num = pd.merge(raw_A, raw_B, on=group_cols, how="outer", suffixes=(" A", " B")).fillna(0)
+                rate_specs = ["LPV/Cliques", "Checkout/LPV", "Compra/Checkout", "Add Pagto/Checkout", "Compra/Add Pagto"]
+
+                deltas = comp_num[group_cols].copy()
+                for label in rate_specs:
+                    a_col, b_col = f"{label} A", f"{label} B"
+                    if a_col in comp_num.columns and b_col in comp_num.columns:
+                        deltas[f"Δ {label} (p.p.)"] = (comp_num[a_col] - comp_num[b_col]) * 100
+
+                POS_BG = "rgba(22, 163, 74, 0.45)"
+                NEG_BG = "rgba(239, 68, 68, 0.45)"
+
+                def _bg_sign(val):
+                    try:
+                        v = float(val)
+                    except Exception:
+                        return ""
+                    if v > 0:
+                        return f"background-color: {POS_BG}; font-weight: 700;"
+                    if v < 0:
+                        return f"background-color: {NEG_BG}; font-weight: 700;"
+                    return ""
+
+                def _fmt_pp(v):
+                    if pd.isna(v) or np.isinf(v):
+                        return "—"
+                    sign = "+" if v >= 0 else ""
+                    s = f"{sign}{v:.1f}".replace(".", ",")
+                    return f"{s} p.p."
+
+                pp_cols = [c for c in deltas.columns if c.endswith("(p.p.)")]
+
+                styled = (
+                    deltas.style
+                    .applymap(_bg_sign, subset=pp_cols)
+                    .format({c: _fmt_pp for c in pp_cols})
+                    .set_properties(subset=pp_cols, **{"text-align": "center", "padding": "6px"})
+                )
+
+                st.table(styled)
+                st.caption(
+                    f"Período A: **{_fmt_range_br(since_A, until_A)}** | "
+                    f"Período B: **{_fmt_range_br(since_B, until_B)}**"
+                )
 
 
 # =====================================================
