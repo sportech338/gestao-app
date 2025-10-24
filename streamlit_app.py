@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -53,39 +52,31 @@ def get_products_with_variants(limit=250):
 @st.cache_data(ttl=600)
 def get_orders(start_date=None, end_date=None, limit=250):
     """
-    Busca TODOS os pedidos da Shopify dentro do período informado (sem limite de 60 dias).
-    Inclui paginação via 'page_info' e filtros de data UTC (ISO 8601).
+    Busca TODOS os pedidos da Shopify dentro do período definido.
+    Usa paginação automática via 'page_info' da API.
     """
     base_url = f"{BASE_URL}/orders.json"
-    headers = HEADERS.copy()
-
-    # Converter datas para UTC ISO 8601 (com 'Z' no final)
-    def to_utc_iso(dt):
-        ts = pd.Timestamp(dt).tz_localize("America/Sao_Paulo").tz_convert("UTC")
-        return ts.strftime("%Y-%m-%dT%H:%M:%SZ")
-
     params = {
         "limit": limit,
         "status": "any",
-        "order": "created_at asc"
+        "order": "created_at desc",
     }
 
+    # Se o dashboard passar um intervalo, aplica na query
     if start_date:
-        params["created_at_min"] = to_utc_iso(start_date)
+        params["created_at_min"] = f"{start_date}T00:00:00-03:00"
     if end_date:
-        params["created_at_max"] = to_utc_iso(end_date)
+        params["created_at_max"] = f"{end_date}T23:59:59-03:00"
 
     rows = []
-    next_page_url = None
+    page = 1
+    next_page = None
 
     while True:
-        if next_page_url:
-            resp = requests.get(next_page_url, headers=headers, timeout=60)
-        else:
-            resp = requests.get(base_url, headers=headers, params=params, timeout=60)
-
-        resp.raise_for_status()
-        data = resp.json().get("orders", [])
+        url = base_url if not next_page else next_page
+        r = requests.get(url, headers=HEADERS, params=params if not next_page else None, timeout=60)
+        r.raise_for_status()
+        data = r.json().get("orders", [])
         if not data:
             break
 
@@ -94,13 +85,15 @@ def get_orders(start_date=None, end_date=None, limit=250):
                 rows.append({
                     "order_id": o["id"],
                     "order_number": o.get("order_number"),
-                    "created_at": o.get("created_at"),
+                    "customer_name": (
+                        (o.get("customer", {}) or {}).get("first_name", "") + " " +
+                        (o.get("customer", {}) or {}).get("last_name", "")
+                    ).strip(),
+                    "created_at": o["created_at"],
                     "financial_status": o.get("financial_status"),
                     "fulfillment_status": o.get("fulfillment_status"),
-                    "customer_name": (
-                        ((o.get("customer", {}) or {}).get("first_name", "") + " " +
-                         (o.get("customer", {}) or {}).get("last_name", "")).strip()
-                    ),
+                    "total_price": float(o.get("total_price") or 0),
+                    "currency": o.get("currency", "BRL"),
                     "variant_id": it.get("variant_id"),
                     "title": it.get("title"),
                     "variant_title": it.get("variant_title"),
@@ -110,30 +103,26 @@ def get_orders(start_date=None, end_date=None, limit=250):
                     "forma_entrega": (o.get("shipping_lines", [{}])[0] or {}).get("title"),
                     "estado": (o.get("shipping_address", {}) or {}).get("province", ""),
                     "cidade": (o.get("shipping_address", {}) or {}).get("city", ""),
-                    "total_price": float(o.get("total_price") or 0),
-                    "currency": o.get("currency", "BRL"),
                 })
 
-        # Detectar próxima página (cursor-based pagination)
-        link_header = resp.headers.get("Link", "")
+        # Verificar se existe próxima página
+        link_header = r.headers.get("Link", "")
         if 'rel="next"' not in link_header:
             break
 
+        # Extrair cursor da próxima página
         import re
         match = re.search(r'<([^>]+)>; rel="next"', link_header)
         if not match:
             break
 
-        next_page_url = match.group(1)
+        next_page = match.group(1)
+        page += 1
 
     df = pd.DataFrame(rows)
     if not df.empty:
-        df["created_at"] = pd.to_datetime(df["created_at"], errors="coerce").dt.tz_convert("America/Sao_Paulo")
+        df["created_at"] = pd.to_datetime(df["created_at"], errors="coerce")
     return df
-
-st.write(f"🧾 Total de pedidos carregados: {len(st.session_state['pedidos'])}")
-st.write(st.session_state['pedidos'][['order_number', 'created_at']].head())
-
 
 # =============== Config & Estilos ===============
 st.set_page_config(page_title="Meta Ads — Paridade + Funil", page_icon="📊", layout="wide")
