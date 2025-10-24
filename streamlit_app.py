@@ -755,6 +755,9 @@ if "df_daily" not in st.session_state or st.session_state["df_daily"].empty:
             )
             st.session_state["df_daily"] = df
 
+# ====== Lista de produtos (fixa ou simulada) ======
+PRODUTOS = ["FlexLive", "KneePro", "NasalFlex", "Meniscus"]
+
 # ---- CRIAR ABAS ----
 tab_trafego = st.tabs(["📊 Dashboard - Tráfego Pago"])[0]
 
