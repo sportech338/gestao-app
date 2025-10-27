@@ -2849,15 +2849,15 @@ if menu == "📦 Dashboard – Logística":
     hoje = datetime.now(APP_TZ).date()
     periodo = st.date_input(
         "📅 Período",
-        (hoje, hoje),  # padrão: dia atual
+        (hoje, hoje),
         format="DD/MM/YYYY"
     )
 
-    # 🩵 Corrige: garante sempre duas datas válidas
-    if isinstance(periodo, tuple):
-        start_date, end_date = periodo
-    else:
-        start_date = end_date = periodo
+    if not isinstance(periodo, tuple):
+        st.warning("⚠️ Selecione um intervalo de datas (início e fim) para visualizar os pedidos.")
+        st.stop()
+
+    start_date, end_date = periodo
 
     # ---- Atualiza dados automaticamente quando o período muda ----
     periodo_atual = st.session_state.get("periodo_atual")
