@@ -3159,30 +3159,31 @@ if menu == "📦 Dashboard – Logística":
     # -------------------------------------------------
     st.subheader("📋 Pedidos filtrados")
 
+    # Define estilo CSS
     st.markdown("""
         <style>
-        .tabela-custom {
+        table.custom {
             width: 100%;
             border-collapse: collapse;
             font-size: 15px;
         }
-        .tabela-custom th, .tabela-custom td {
-            padding: 8px 10px;
+        table.custom th, table.custom td {
             border-bottom: 1px solid #ddd;
+            padding: 6px 8px;
             text-align: left;
         }
-        .tabela-custom tr:hover {
-            background-color: #f6f6f6;
+        table.custom tr:hover {
+            background-color: #f5f5f5;
         }
-        .repetido {
-            background-color: rgba(0, 123, 255, 0.1);
+        table.custom .repetido {
+            background-color: rgba(0, 123, 255, 0.12);
         }
         </style>
     """, unsafe_allow_html=True)
 
-    # Mantém colunas principais
-    colunas = ["created_at", order_col, "customer_name", "quantity", "product_title",
-               "variant_title", "forma_entrega"]
+    # Colunas principais
+    colunas = ["created_at", order_col, "customer_name", "quantity",
+               "product_title", "variant_title", "forma_entrega"]
     colunas = [c for c in colunas if c in df.columns]
     tabela = df[colunas].sort_values("created_at", ascending=False).copy()
 
@@ -3196,40 +3197,37 @@ if menu == "📦 Dashboard – Logística":
         "forma_entrega": "Frete"
     }, inplace=True)
 
+    # Limpa formatação do pedido
     if "Pedido" in tabela.columns:
         tabela["Pedido"] = tabela["Pedido"].astype(str).str.replace(",", "").str.replace(".0", "", regex=False)
 
-    # Identifica clientes repetidos
-    repeticoes = tabela["Nome do cliente"].value_counts()
-    nomes_repetidos = repeticoes[repeticoes > 1].index.tolist()
+    # Conta repetições
+    rep_counts = tabela["Nome do cliente"].value_counts()
+    tabela["Repeticoes"] = tabela["Nome do cliente"].map(rep_counts)
 
-    # Ordena: repetidos primeiro
-    tabela["Repeticoes"] = tabela["Nome do cliente"].map(repeticoes)
-    tabela.sort_values(
-        by=["Repeticoes", "Nome do cliente", "Data do pedido"],
-        ascending=[False, True, False],
-        inplace=True
-    )
+    # Ordena — repetidos primeiro
+    tabela.sort_values(by=["Repeticoes", "Nome do cliente", "Data do pedido"],
+                       ascending=[False, True, False], inplace=True)
 
-    # Constrói HTML manual com destaque azul
-    html = "<table class='tabela-custom'><thead><tr>"
+    # Monta HTML da tabela
+    html = "<table class='custom'><thead><tr>"
     for col in tabela.columns.drop("Repeticoes"):
         html += f"<th>{col}</th>"
     html += "</tr></thead><tbody>"
 
     for _, row in tabela.iterrows():
-        classe = "repetido" if row["Nome do cliente"] in nomes_repetidos else ""
+        classe = "repetido" if row["Repeticoes"] > 1 else ""
         html += f"<tr class='{classe}'>"
         for col in tabela.columns.drop("Repeticoes"):
-            valor = row[col]
-            valor_fmt = valor.strftime("%d/%m/%Y") if isinstance(valor, pd.Timestamp) else valor
-            html += f"<td>{valor_fmt}</td>"
+            val = row[col]
+            if isinstance(val, pd.Timestamp):
+                val = val.strftime("%d/%m/%Y")
+            html += f"<td>{val}</td>"
         html += "</tr>"
 
     html += "</tbody></table>"
+
     st.markdown(html, unsafe_allow_html=True)
-
-
 
     # -------------------------------------------------
     # 🚚 Processamento de pedidos
