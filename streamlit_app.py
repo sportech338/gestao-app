@@ -3190,24 +3190,31 @@ if menu == "📦 Dashboard – Logística":
         lambda x: "✅ Processado" if str(x).lower() in ["fulfilled", "shipped", "complete"] else "🟡 Não processado"
     )
 
-    # 🔝 Coloca todos os nomes repetidos no topo
+    # 🔝 1️⃣ Coloca todos os nomes repetidos no topo
     tabela["duplicado"] = tabela["Nome do cliente"].duplicated(keep=False)
-    tabela = tabela.sort_values(by=["duplicado", "Data do pedido"], ascending=[False, False])
 
-    # 🎨 Destaca as linhas duplicadas com fundo azul translúcido
+    # 🚚 2️⃣ Cria flag para SEDEX
+    tabela["is_sedex"] = tabela["Frete"].str.contains("SEDEX", case=False, na=False)
+
+    # 📦 Ordena com prioridades:
+    # - duplicados primeiro
+    # - não SEDEX primeiro (SEDEX por último)
+    # - pedidos mais recentes primeiro
+    tabela = tabela.sort_values(
+        by=["duplicado", "is_sedex", "Data do pedido"],
+        ascending=[False, True, False]
+    )
+
+    # 🎨 Destaca duplicados com fundo azul translúcido
     def highlight_duplicados(row):
         if row["duplicado"]:
             return ['background-color: rgba(0, 123, 255, 0.15)'] * len(row)
         else:
             return [''] * len(row)
 
-    # Define colunas que serão mostradas (oculta visualmente a 'duplicado')
-    colunas_visiveis = [c for c in tabela.columns if c != "duplicado"]
-
-    # Aplica o estilo somente nas colunas visíveis
+    colunas_visiveis = [c for c in tabela.columns if c not in ["duplicado", "is_sedex"]]
     styled_tabela = tabela[colunas_visiveis + ["duplicado"]].style.apply(highlight_duplicados, axis=1)
 
-    # Exibe apenas as colunas visíveis
     st.dataframe(styled_tabela.hide(["duplicado"], axis=1), use_container_width=True)
 
 
