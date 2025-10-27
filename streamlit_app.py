@@ -3214,7 +3214,7 @@ if menu == "📦 Dashboard – Logística":
     tabela = df[colunas].sort_values("created_at", ascending=False).copy()
 
     tabela.rename(columns={
-        order_col: "Pedido", "created_at": "Data do pedido", "customer_name": "Nome do cliente",
+        order_col: "Pedido", "created_at": "Data do pedido", "customer_name": "Nome",
         "quantity": "Qtd", "product_title": "Produto", "variant_title": "Variante",
         "price": "Preço", "fulfillment_status": "Status de processamento",
         "forma_entrega": "Frete", "estado": "Estado"
@@ -3228,7 +3228,7 @@ if menu == "📦 Dashboard – Logística":
     )
 
     # 🔝 1️⃣ Coloca todos os nomes repetidos no topo
-    tabela["duplicado"] = tabela["Nome do cliente"].duplicated(keep=False)
+    tabela["duplicado"] = tabela["Nome"].duplicated(keep=False)
 
     # 🚚 2️⃣ Cria flag para SEDEX
     tabela["is_sedex"] = tabela["Frete"].str.contains("SEDEX", case=False, na=False)
