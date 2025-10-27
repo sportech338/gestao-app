@@ -2938,35 +2938,26 @@ if menu == "📦 Dashboard – Logística":
     st.caption("Visualização dos pedidos, estoque e processamento manual via Shopify API.")
 
     # -------------------------------------------------
-    # 📅 Seção de período
+    # 🔄 Carregamento inicial
     # -------------------------------------------------
     hoje = datetime.now(APP_TZ).date()
-    periodo = st.date_input("📅 Período", (hoje, hoje), format="DD/MM/YYYY")
+    periodo_padrao = (hoje, hoje)
 
-    if isinstance(periodo, tuple) and len(periodo) == 2:
-        start_date, end_date = periodo
-    else:
-        st.info("🟡 Selecione o fim do período para carregar os pedidos.")
-        st.stop()
-
-    # -------------------------------------------------
-    # 🔄 Carregamento de dados (com cache leve)
-    # -------------------------------------------------
-    periodo_atual = st.session_state.get("periodo_atual")
-    if periodo_atual != (start_date, end_date):
-        with st.spinner("🔄 Carregando dados da Shopify..."):
+    # Garante que os dados básicos estejam carregados antes de qualquer filtro
+    if "produtos" not in st.session_state or "pedidos" not in st.session_state:
+        with st.spinner("🔄 Carregando dados iniciais da Shopify..."):
             produtos = get_products_with_variants()
-            pedidos = get_orders(start_date=start_date, end_date=end_date)
+            pedidos = get_orders(start_date=periodo_padrao[0], end_date=periodo_padrao[1])
             st.session_state["produtos"] = produtos
             st.session_state["pedidos"] = pedidos
-            st.session_state["periodo_atual"] = (start_date, end_date)
-        st.success(f"✅ Dados carregados de {start_date.strftime('%d/%m/%Y')} até {end_date.strftime('%d/%m/%Y')}")
+            st.session_state["periodo_atual"] = periodo_padrao
+        st.success("✅ Dados iniciais carregados!")
     else:
-        produtos = st.session_state.get("produtos")
-        pedidos = st.session_state.get("pedidos")
+        produtos = st.session_state["produtos"]
+        pedidos = st.session_state["pedidos"]
 
     # -------------------------------------------------
-    # 🧩 Preparação e filtros
+    # 🧩 Preparação dos dados
     # -------------------------------------------------
     for col in ["order_id", "order_number", "financial_status", "fulfillment_status"]:
         if col not in pedidos.columns:
@@ -2986,7 +2977,46 @@ if menu == "📦 Dashboard – Logística":
     base["line_revenue"] = base["price"] * base["quantity"]
 
     # -------------------------------------------------
-    # 🎛️ Filtros adicionais
+    # 🔍 Busca rápida (no topo, sem restrição de data)
+    # -------------------------------------------------
+    st.subheader("🔍 Busca rápida")
+    busca = st.text_input("Digite parte do nome do cliente ou número do pedido:", "")
+
+    df = base.copy()  # começa com todos os pedidos por padrão
+
+    if busca:
+        busca_lower = busca.strip().lower()
+        resultados = base[
+            base["customer_name"].str.lower().str.contains(busca_lower, na=False)
+            | base["order_number"].astype(str).str.contains(busca_lower, na=False)
+            | base["order_id"].astype(str).str.contains(busca_lower, na=False)
+        ]
+
+        if not resultados.empty:
+            st.success(f"🔎 {len(resultados)} resultado(s) encontrado(s) para '{busca}' (sem filtro de data).")
+            df = resultados.copy()
+        else:
+            st.warning(f"❌ Nenhum resultado encontrado para '{busca}'.")
+            st.stop()
+
+    # -------------------------------------------------
+    # 📅 Filtro de período
+    # -------------------------------------------------
+    st.subheader("📅 Período")
+    periodo = st.date_input("Selecione o intervalo de datas:", periodo_padrao, format="DD/MM/YYYY")
+
+    if isinstance(periodo, tuple) and len(periodo) == 2:
+        start_date, end_date = periodo
+    else:
+        st.info("🟡 Selecione o fim do período para carregar os pedidos.")
+        st.stop()
+
+    # Filtra apenas se NÃO houver busca ativa
+    if not busca:
+        df = df[(df["created_at"].dt.date >= start_date) & (df["created_at"].dt.date <= end_date)]
+
+    # -------------------------------------------------
+    # 🎛️ Filtros adicionais (produto e variante)
     # -------------------------------------------------
     st.subheader("🎛️ Filtros adicionais")
     col1, col2 = st.columns(2)
@@ -2994,8 +3024,6 @@ if menu == "📦 Dashboard – Logística":
         escolha_prod = st.selectbox("Produto", ["(Todos)"] + sorted(base["product_title"].dropna().unique().tolist()), index=0)
     with col2:
         escolha_var = st.selectbox("Variante", ["(Todas)"] + sorted(base["variant_title"].dropna().unique().tolist()), index=0)
-
-    df = base[(base["created_at"].dt.date >= start_date) & (base["created_at"].dt.date <= end_date)].copy()
 
     if escolha_prod != "(Todos)":
         df = df[df["product_title"] == escolha_prod]
@@ -3005,21 +3033,6 @@ if menu == "📦 Dashboard – Logística":
     if df.empty:
         st.warning("Nenhum pedido encontrado com os filtros selecionados.")
         st.stop()
-
-    # -------------------------------------------------
-    # 🔍 Campo de busca rápida
-    # -------------------------------------------------
-    st.subheader("🔍 Busca rápida")
-    busca = st.text_input("Digite parte do nome do cliente ou número do pedido:", "")
-
-    if busca:
-        busca_lower = busca.strip().lower()
-        df = df[
-            df["customer_name"].str.lower().str.contains(busca_lower, na=False)
-            | df["order_number"].astype(str).str.contains(busca_lower, na=False)
-            | df["order_id"].astype(str).str.contains(busca_lower, na=False)
-        ]
-        st.info(f"🔎 {len(df)} resultado(s) encontrado(s) para '{busca}'.")
 
     # -------------------------------------------------
     # 📊 Métricas de resumo
@@ -3041,7 +3054,6 @@ if menu == "📦 Dashboard – Logística":
     # -------------------------------------------------
     st.subheader("📋 Pedidos filtrados")
 
-    # CSS opcional: alinha a coluna de pedidos à direita
     st.markdown("""
         <style>
         thead tr th:first-child, tbody tr td:first-child {
@@ -3066,7 +3078,6 @@ if menu == "📦 Dashboard – Logística":
         "price": "Preço", "fulfillment_status": "Status de processamento", "forma_entrega": "Frete", "estado": "Estado"
     }, inplace=True)
 
-    # ✅ Corrige formatação do número do pedido (remove vírgulas e .0)
     if "Pedido" in tabela.columns:
         tabela["Pedido"] = tabela["Pedido"].astype(str).str.replace(",", "").str.replace(".0", "", regex=False)
 
@@ -3076,16 +3087,8 @@ if menu == "📦 Dashboard – Logística":
 
     st.dataframe(tabela, use_container_width=True)
 
-    csv = tabela.to_csv(index=False).encode("utf-8-sig")
-    st.download_button(
-        "📥 Exportar pedidos filtrados (CSV)",
-        data=csv,
-        file_name=f"pedidos_shopify_{start_date.strftime('%d-%m-%Y')}_{end_date.strftime('%d-%m-%Y')}.csv",
-        mime="text/csv"
-    )
-
     # -------------------------------------------------
-    # 🚚 PROCESSAMENTO DE PEDIDOS MANUAL
+    # 🚚 Processamento de pedidos
     # -------------------------------------------------
     st.subheader("🚚 Processar pedidos manualmente")
 
