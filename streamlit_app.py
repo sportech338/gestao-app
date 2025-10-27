@@ -52,14 +52,28 @@ def get_products_with_variants(limit=250):
     return pd.DataFrame(rows)
 
 @st.cache_data(ttl=600)
-def get_orders(limit=250, only_paid=True):
+def get_orders(start_date=None, end_date=None, only_paid=True, limit=250):
     """
-    Baixa pedidos da Shopify com dados completos (cliente, entrega, produto e localização).
-    Filtra apenas pedidos pagos por padrão.
+    Baixa pedidos da Shopify com filtro dinâmico de período (start_date, end_date).
+    Por padrão, busca apenas o dia atual.
     """
-    url = f"{BASE_URL}/orders.json?limit={limit}&status=any"
-    all_rows = []
+    # ---- Garantir que as datas sejam datetime.date ----
+    hoje = datetime.now(APP_TZ).date()
+    if start_date is None:
+        start_date = hoje
+    if end_date is None:
+        end_date = hoje
 
+    # ---- Converter para string ISO com timezone ----
+    start_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=APP_TZ)
+    end_dt = datetime.combine(end_date, datetime.max.time(), tzinfo=APP_TZ)
+
+    start_str = start_dt.strftime("%Y-%m-%dT%H:%M:%S%z")
+    end_str = end_dt.strftime("%Y-%m-%dT%H:%M:%S%z")
+
+    url = f"{BASE_URL}/orders.json?limit={limit}&status=any&created_at_min={start_str}&created_at_max={end_str}"
+
+    all_rows = []
     while url:
         r = requests.get(url, headers=HEADERS, timeout=60)
         r.raise_for_status()
@@ -67,7 +81,6 @@ def get_orders(limit=250, only_paid=True):
         orders = data.get("orders", [])
 
         for o in orders:
-            # 🔹 Filtra apenas pedidos pagos (opcional)
             if only_paid and o.get("financial_status") not in ["paid", "partially_paid"]:
                 continue
 
@@ -104,9 +117,7 @@ def get_orders(limit=250, only_paid=True):
                     "cidade": shipping.get("city", "N/A"),
                 })
 
-        # 🔁 Paginação segura (Shopify REST)
-        next_link = r.links.get("next", {}).get("url")
-        url = next_link if next_link else None
+        url = r.links.get("next", {}).get("url")
 
     return pd.DataFrame(all_rows)
 
