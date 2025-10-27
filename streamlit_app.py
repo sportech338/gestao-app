@@ -3178,10 +3178,13 @@ if menu == "📦 Dashboard – Logística":
     tabela = df[colunas].sort_values("created_at", ascending=False).copy()
 
     tabela.rename(columns={
-        order_col: "Pedido", "created_at": "Data do pedido", "customer_name": "Nome do cliente",
-        "quantity": "Qtd", "product_title": "Produto", "variant_title": "Variante",
-        "price": "Preço", "fulfillment_status": "Status de processamento",
-        "forma_entrega": "Frete", "estado": "Estado"
+        order_col: "Pedido",
+        "created_at": "Data do pedido",
+        "customer_name": "Nome do cliente",
+        "quantity": "Qtd",
+        "product_title": "Produto",
+        "variant_title": "Variante",
+        "forma_entrega": "Frete"
     }, inplace=True)
 
     if "Pedido" in tabela.columns:
@@ -3197,31 +3200,24 @@ if menu == "📦 Dashboard – Logística":
     rep_counts = tabela["Nome do cliente"].value_counts()
     tabela["Repeticoes"] = tabela["Nome do cliente"].map(rep_counts)
 
-    # Ordena — repetidos primeiro
+    # Ordena: repetidos primeiro
     tabela.sort_values(
         by=["Repeticoes", "Nome do cliente", "Data do pedido"],
         ascending=[False, True, False],
         inplace=True
     )
 
-    # Aplica destaque visual nos clientes repetidos
-    def highlight_repetidos(val, nome_cliente, repeticoes):
-        if repeticoes > 1:
-            return "background-color: rgba(0, 123, 255, 0.12);"
-        return ""
+    # Função de destaque — agora por linha (axis=1)
+    def highlight_repetidos(row):
+        if row["Repeticoes"] > 1:
+            return ["background-color: rgba(0, 123, 255, 0.15)"] * len(row)
+        else:
+            return [""] * len(row)
 
-    # Cria cópia limpa sem coluna auxiliar
-    styled_table = (
-        tabela.drop(columns=["Repeticoes"])
-        .style.apply(
-            lambda s: [
-                highlight_repetidos(v, tabela.loc[v.index, "Nome do cliente"], tabela.loc[v.index, "Repeticoes"])
-                for v in s
-            ],
-            axis=0
-        )
-    )
+    # Aplica estilo com segurança
+    styled_table = tabela.drop(columns=["Repeticoes"]).style.apply(highlight_repetidos, axis=1)
 
+    # Exibe tabela com destaque azul
     st.dataframe(styled_table, use_container_width=True)
 
 
