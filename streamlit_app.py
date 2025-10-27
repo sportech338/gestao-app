@@ -2845,35 +2845,34 @@ if menu == "📦 Dashboard – Logística":
     st.title("📦 Dashboard — Logística")
     st.caption("Visualização dos pedidos e estoque vindos da Shopify.")
     
-    # ---- Carregar dados da sessão ----
-    produtos = st.session_state.get("produtos")
-    pedidos = st.session_state.get("pedidos")
-
-    # ---- Filtros ----
-    st.subheader("🎛️ Filtros")
-    col1, col2, col3 = st.columns(3)
-
+    # ---- Datas padrão ----
     hoje = datetime.now(APP_TZ).date()
     periodo = st.date_input(
         "📅 Período",
         (hoje, hoje),  # padrão: dia atual
         format="DD/MM/YYYY"
     )
+    start_date, end_date = periodo
 
-    # ---- Atualizar dados da Shopify conforme o período selecionado ----
-    if st.button("🔄 Atualizar dados da Shopify"):
-        start_date, end_date = periodo
-        produtos = get_products_with_variants()
-        pedidos = get_orders(start_date=start_date, end_date=end_date)
-        st.session_state["produtos"] = produtos
-        st.session_state["pedidos"] = pedidos
+    # ---- Atualiza dados automaticamente quando o período muda ----
+    periodo_atual = st.session_state.get("periodo_atual")
+    if periodo_atual != (start_date, end_date):
+        with st.spinner("🔄 Carregando dados da Shopify..."):
+            produtos = get_products_with_variants()
+            pedidos = get_orders(start_date=start_date, end_date=end_date)
+            st.session_state["produtos"] = produtos
+            st.session_state["pedidos"] = pedidos
+            st.session_state["periodo_atual"] = (start_date, end_date)
         st.success(
             f"✅ Dados carregados de {start_date.strftime('%d/%m/%Y')} até {end_date.strftime('%d/%m/%Y')}"
         )
+    else:
+        produtos = st.session_state.get("produtos")
+        pedidos = st.session_state.get("pedidos")
 
     # ---- Verificações ----
     if produtos is None or pedidos is None or produtos.empty or pedidos.empty:
-        st.info("Carregue os dados da Shopify para iniciar (botão acima).")
+        st.info("Nenhum pedido encontrado para o período selecionado.")
         st.stop()
 
     # ---- Normalizar nomes ----
@@ -2925,6 +2924,9 @@ if menu == "📦 Dashboard – Logística":
     base["line_revenue"] = base["price"] * base["quantity"]
 
     # ---- Seletores de produto e variante ----
+    st.subheader("🎛️ Filtros adicionais")
+    col1, col2 = st.columns(2)
+
     with col1:
         produtos_lbl = ["(Todos os produtos)"] + sorted(base["product_title"].dropna().unique().tolist())
         escolha_prod = st.selectbox("Produto", produtos_lbl, index=0)
@@ -2934,8 +2936,6 @@ if menu == "📦 Dashboard – Logística":
         escolha_var = st.selectbox("Variante", variantes_lbl, index=0)
 
     # ---- Aplicar filtros ----
-    start_date, end_date = periodo
-
     df = base[
         (base["created_at"].dt.date >= start_date) &
         (base["created_at"].dt.date <= end_date)
@@ -2991,7 +2991,7 @@ if menu == "📦 Dashboard – Logística":
         "fulfillment_status": "Status de processamento"
     }, inplace=True)
 
-    # ---- Adicionar coluna de Status de Processamento ----
+    # ---- Status de Processamento ----
     if "fulfillment_status" in df.columns:
         tabela["Status de processamento"] = df["fulfillment_status"].apply(
             lambda x: (
