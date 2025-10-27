@@ -3200,27 +3200,30 @@ if menu == "📦 Dashboard – Logística":
     # -------------------------------------------------
     # 💠 Clientes repetidos no topo + destaque azul (corrigido)
     # -------------------------------------------------
-    tabela["Repeticoes"] = tabela.groupby("Nome do cliente")["Nome do cliente"].transform("count")
+    # Conta repetições e ordena para trazer repetidos primeiro
+    rep_counts = tabela["Nome do cliente"].value_counts()
+    tabela["Repeticoes"] = tabela["Nome do cliente"].map(rep_counts)
 
-    # Ordena: primeiro quem aparece mais de uma vez, depois os demais
     tabela.sort_values(
         by=["Repeticoes", "Nome do cliente", "Data do pedido"],
         ascending=[False, True, False],
         inplace=True
     )
 
-    # Destacar TODO o grupo de clientes repetidos (não só linhas seguintes)
-    def highlight_duplicates(df):
-        colors = []
-        for _, row in df.iterrows():
-            name = row["Nome do cliente"]
-            if df[df["Nome do cliente"] == name]["Repeticoes"].iloc[0] > 1:
-                colors.append(['background-color: rgba(0, 123, 255, 0.15);'] * len(df.columns))
-            else:
-                colors.append([''] * len(df.columns))
-        return pd.DataFrame(colors, columns=df.columns)
+    # Identifica nomes que se repetem
+    nomes_repetidos = set(tabela.loc[tabela["Repeticoes"] > 1, "Nome do cliente"])
 
-    styled_table = tabela.drop(columns=["Repeticoes"]).style.apply(highlight_duplicates, axis=None)
+    # Aplica cor azul translúcida em TODO o grupo de clientes repetidos
+    def highlight_repetidos(row):
+        if row["Nome do cliente"] in nomes_repetidos:
+            return ['background-color: rgba(0, 123, 255, 0.15);'] * len(row)
+        else:
+            return [''] * len(row)
+
+    styled_table = (
+        tabela.drop(columns=["Repeticoes"])
+        .style.apply(lambda df: [highlight_repetidos(r) for _, r in df.iterrows()], axis=None)
+    )
 
     st.dataframe(styled_table, use_container_width=True)
 
