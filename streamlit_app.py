@@ -2968,7 +2968,7 @@ if menu == "📦 Dashboard – Logística":
         order_col: "Pedido",
         "created_at": "Data do pedido",
         "customer_name": "Nome do cliente",
-        "quantity": "Quantidade",
+        "quantity": "Qtd",
         "product_title": "Produto",
         "variant_title": "Variante",
         "price": "Preço",
