@@ -3174,11 +3174,8 @@ if menu == "📦 Dashboard – Logística":
     colunas = ["created_at", order_col, "customer_name", "quantity", "product_title",
                "variant_title", "forma_entrega"]
     colunas = [c for c in colunas if c in df.columns]
-
-    # Base padrão (sem ordenação ainda)
     tabela = df[colunas].copy()
 
-    # Renomeia para cabeçalhos amigáveis (usados nos selects também)
     tabela.rename(columns={
         order_col: "Pedido",
         "created_at": "Data do pedido",
@@ -3189,57 +3186,48 @@ if menu == "📦 Dashboard – Logística":
         "forma_entrega": "Frete",
     }, inplace=True)
 
-    # Normaliza Pedido como texto legível
     if "Pedido" in tabela.columns:
         tabela["Pedido"] = tabela["Pedido"].astype(str).str.replace(",", "").str.replace(".0", "", regex=False)
 
-    # (opcional) Status humanizado — se quiser exibir depois, basta adicionar a coluna no 'colunas' inicial
-    # tabela["Status de processamento"] = df["fulfillment_status"].apply(
-    #     lambda x: "✅ Processado" if str(x).lower() in ["fulfilled", "shipped", "complete"] else "🟡 Não processado"
-    # )
-
     # -------------------------------------------------
-    # ⚙️ Ordenação avançada (até 3 níveis, estável)
+    # ⚙️ Ordenação avançada com prioridade de valores
     # -------------------------------------------------
     st.markdown("### ⚙️ Ordenação avançada")
 
-    # Opções disponíveis com os nomes já renomeados acima
-    opcoes_ord = [c for c in ["Nome do cliente", "Produto", "Frete", "Data do pedido", "Pedido", "Variante", "Qtd"] if c in tabela.columns]
+    opcoes_colunas = [c for c in ["Nome do cliente", "Produto", "Frete", "Data do pedido", "Variante", "Qtd"] if c in tabela.columns]
     nenhum = "— (nenhum)"
-
-    # Defaults inteligentes
-    def _default_if_exists(name, fallback=None):
-        return name if name in opcoes_ord else (fallback if fallback in opcoes_ord else (opcoes_ord[0] if opcoes_ord else nenhum))
 
     colA, colB, colC = st.columns(3)
     with colA:
-        sort1_col = st.selectbox("1º nível", opcoes_ord, index=opcoes_ord.index(_default_if_exists("Nome do cliente")))
+        sort1_col = st.selectbox("1º nível (coluna)", opcoes_colunas, index=opcoes_colunas.index("Nome do cliente"))
         asc1 = st.toggle("Crescente", value=True, key="asc1")
     with colB:
-        sort2_col = st.selectbox("2º nível", [nenhum] + opcoes_ord, index=( [nenhum] + opcoes_ord ).index(_default_if_exists("Produto", nenhum)))
-        asc2 = st.toggle("Crescente ", value=True, key="asc2") if sort2_col != nenhum else True
+        sort2_col = st.selectbox("2º nível (coluna)", [nenhum] + opcoes_colunas, index=([nenhum] + opcoes_colunas).index("Produto"))
+        valor_prioritario_2 = ""
+        if sort2_col != nenhum:
+            valores_unicos = sorted(tabela[sort2_col].dropna().unique().tolist())
+            valor_prioritario_2 = st.selectbox(f"Priorizar valor em '{sort2_col}'", [nenhum] + valores_unicos, index=0, key="val2")
     with colC:
-        sort3_col = st.selectbox("3º nível", [nenhum] + opcoes_ord, index=( [nenhum] + opcoes_ord ).index(_default_if_exists("Frete", nenhum)))
-        asc3 = st.toggle("Crescente  ", value=True, key="asc3") if sort3_col != nenhum else True
+        sort3_col = st.selectbox("3º nível (coluna)", [nenhum] + opcoes_colunas, index=([nenhum] + opcoes_colunas).index("Frete"))
+        valor_prioritario_3 = ""
+        if sort3_col != nenhum:
+            valores_unicos = sorted(tabela[sort3_col].dropna().unique().tolist())
+            valor_prioritario_3 = st.selectbox(f"Priorizar valor em '{sort3_col}'", [nenhum] + valores_unicos, index=0, key="val3")
 
-    # Monta listas de ordenação na ordem de prioridade escolhida
-    by_cols = [c for c in [sort1_col, sort2_col, sort3_col] if c != nenhum]
+    # Ordenação principal (nome do cliente, padrão)
+    tabela = tabela.sort_values(by=[sort1_col], ascending=asc1, kind="mergesort")
 
-    # Ascendentes correspondentes
-    asc_list = []
-    for c in [sort1_col, sort2_col, sort3_col]:
-        if c == nenhum:
-            continue
-        asc_list.append(asc1 if c == sort1_col else (asc2 if c == sort2_col else asc3))
+    # 2º nível: se o usuário escolheu um valor prioritário dentro da coluna
+    if sort2_col != nenhum and valor_prioritario_2 != nenhum:
+        tabela["prioridade_2"] = tabela[sort2_col].apply(lambda x: 0 if x == valor_prioritario_2 else 1)
+        tabela = tabela.sort_values(by=["prioridade_2", sort2_col], ascending=[True, True], kind="mergesort")
+        tabela.drop(columns=["prioridade_2"], inplace=True)
 
-    # Tie-breaker por Data do pedido (desc) se existir e não tiver sido escolhida antes
-    if "Data do pedido" in tabela.columns and "Data do pedido" not in by_cols:
-        by_cols.append("Data do pedido")
-        asc_list.append(False)  # mais recente primeiro
-
-    # Aplica a ordenação estável
-    if by_cols:
-        tabela = tabela.sort_values(by=by_cols, ascending=asc_list, kind="mergesort")
+    # 3º nível: se o usuário escolheu um valor prioritário dentro da coluna
+    if sort3_col != nenhum and valor_prioritario_3 != nenhum:
+        tabela["prioridade_3"] = tabela[sort3_col].apply(lambda x: 0 if x == valor_prioritario_3 else 1)
+        tabela = tabela.sort_values(by=["prioridade_3", sort3_col], ascending=[True, True], kind="mergesort")
+        tabela.drop(columns=["prioridade_3"], inplace=True)
 
     # -------------------------------------------------
     # 📊 Exibição final
