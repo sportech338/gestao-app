@@ -2957,8 +2957,19 @@ if menu == "📦 Dashboard – Logística":
     )
 
     # ---- Ajustar nomes ----
-    base["product_title"] = base.get("product_title") or base.get("product_title_produto", "(Produto desconhecido)")
-    base["variant_title"] = base.get("variant_title") or base.get("variant_title_produto", "(Variante desconhecida)")
+    if "product_title_produto" in base.columns:
+        base["product_title"] = base["product_title"].fillna(base["product_title_produto"])
+    else:
+        base["product_title"] = base.get("product_title", "(Produto desconhecido)")
+
+    if "variant_title_produto" in base.columns:
+        base["variant_title"] = base["variant_title"].fillna(base["variant_title_produto"])
+    else:
+        base["variant_title"] = base.get("variant_title", "(Variante desconhecida)")
+
+    base["product_title"].fillna("(Produto desconhecido)", inplace=True)
+    base["variant_title"].fillna("(Variante desconhecida)", inplace=True)
+
 
     # ---- Tipos e métricas ----
     base["created_at"] = pd.to_datetime(base.get("created_at"), errors="coerce")
