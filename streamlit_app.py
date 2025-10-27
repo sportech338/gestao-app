@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -3174,65 +3175,43 @@ if menu == "📦 Dashboard – Logística":
     colunas = ["created_at", order_col, "customer_name", "quantity", "product_title",
                "variant_title", "forma_entrega"]
     colunas = [c for c in colunas if c in df.columns]
-    tabela = df[colunas].copy()
+    tabela = df[colunas].sort_values("created_at", ascending=False).copy()
 
     tabela.rename(columns={
-        order_col: "Pedido",
-        "created_at": "Data do pedido",
-        "customer_name": "Nome do cliente",
-        "quantity": "Qtd",
-        "product_title": "Produto",
-        "variant_title": "Variante",
-        "forma_entrega": "Frete",
+        order_col: "Pedido", "created_at": "Data do pedido", "customer_name": "Nome do cliente",
+        "quantity": "Qtd", "product_title": "Produto", "variant_title": "Variante",
+        "price": "Preço", "fulfillment_status": "Status de processamento",
+        "forma_entrega": "Frete", "estado": "Estado"
     }, inplace=True)
 
     if "Pedido" in tabela.columns:
         tabela["Pedido"] = tabela["Pedido"].astype(str).str.replace(",", "").str.replace(".0", "", regex=False)
 
-    # -------------------------------------------------
-    # ⚙️ Ordenação avançada com prioridade de valores
-    # -------------------------------------------------
-    st.markdown("### ⚙️ Ordenação avançada")
+    tabela["Status de processamento"] = df["fulfillment_status"].apply(
+        lambda x: "✅ Processado" if str(x).lower() in ["fulfilled", "shipped", "complete"] else "🟡 Não processado"
+    )
 
-    opcoes_colunas = [c for c in ["Nome do cliente", "Produto", "Frete", "Data do pedido", "Variante", "Qtd"] if c in tabela.columns]
-    nenhum = "— (nenhum)"
-
-    colA, colB, colC = st.columns(3)
-    with colA:
-        sort1_col = st.selectbox("1º nível (coluna)", opcoes_colunas, index=opcoes_colunas.index("Nome do cliente"))
-        asc1 = st.toggle("Crescente", value=True, key="asc1")
-    with colB:
-        sort2_col = st.selectbox("2º nível (coluna)", [nenhum] + opcoes_colunas, index=([nenhum] + opcoes_colunas).index("Produto"))
-        valor_prioritario_2 = ""
-        if sort2_col != nenhum:
-            valores_unicos = sorted(tabela[sort2_col].dropna().unique().tolist())
-            valor_prioritario_2 = st.selectbox(f"Priorizar valor em '{sort2_col}'", [nenhum] + valores_unicos, index=0, key="val2")
-    with colC:
-        sort3_col = st.selectbox("3º nível (coluna)", [nenhum] + opcoes_colunas, index=([nenhum] + opcoes_colunas).index("Frete"))
-        valor_prioritario_3 = ""
-        if sort3_col != nenhum:
-            valores_unicos = sorted(tabela[sort3_col].dropna().unique().tolist())
-            valor_prioritario_3 = st.selectbox(f"Priorizar valor em '{sort3_col}'", [nenhum] + valores_unicos, index=0, key="val3")
-
-    # Ordenação principal (nome do cliente, padrão)
-    tabela = tabela.sort_values(by=[sort1_col], ascending=asc1, kind="mergesort")
-
-    # 2º nível: se o usuário escolheu um valor prioritário dentro da coluna
-    if sort2_col != nenhum and valor_prioritario_2 != nenhum:
-        tabela["prioridade_2"] = tabela[sort2_col].apply(lambda x: 0 if x == valor_prioritario_2 else 1)
-        tabela = tabela.sort_values(by=["prioridade_2", sort2_col], ascending=[True, True], kind="mergesort")
-        tabela.drop(columns=["prioridade_2"], inplace=True)
-
-    # 3º nível: se o usuário escolheu um valor prioritário dentro da coluna
-    if sort3_col != nenhum and valor_prioritario_3 != nenhum:
-        tabela["prioridade_3"] = tabela[sort3_col].apply(lambda x: 0 if x == valor_prioritario_3 else 1)
-        tabela = tabela.sort_values(by=["prioridade_3", sort3_col], ascending=[True, True], kind="mergesort")
-        tabela.drop(columns=["prioridade_3"], inplace=True)
-
-    # -------------------------------------------------
-    # 📊 Exibição final
-    # -------------------------------------------------
     st.dataframe(tabela, use_container_width=True)
+
+    # -------------------------------------------------
+    # 🚚 Processamento de pedidos
+    # -------------------------------------------------
+    st.subheader("🚚 Processar pedidos manualmente")
+
+    pendentes = df[df["fulfillment_status"].isin(["unfulfilled", None, "null"])]
+    if not pendentes.empty:
+        if st.button("🚀 Processar TODOS os pedidos pendentes"):
+            progress = st.progress(0)
+            total = len(pendentes)
+            for i, row in enumerate(pendentes.itertuples(), start=1):
+                try:
+                    create_fulfillment(row.order_id)
+                except Exception as e:
+                    st.warning(f"Erro no pedido {row.order_id}: {e}")
+                progress.progress(i / total)
+            st.success("✅ Todos os pedidos pendentes foram processados com sucesso!")
+    else:
+        st.info("✅ Nenhum pedido pendente para processar.")
 
     # -------------------------------------------------
     # 📦 Processar individualmente (sem reload)
