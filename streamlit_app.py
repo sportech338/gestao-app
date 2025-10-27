@@ -2931,21 +2931,63 @@ if menu == "📊 Dashboard – Tráfego Pago":
 # 📦 DASHBOARD – LOGÍSTICA
 # =====================================================
 if menu == "📦 Dashboard – Logística":
+    # -------------------------------------------------
+    # 🧭 Cabeçalho e estilo geral
+    # -------------------------------------------------
     st.title("📦 Dashboard — Logística")
-    st.caption("Visualização dos pedidos e estoque vindos da Shopify.")
+    st.caption("Visualização dos pedidos, estoque e processamento manual via Shopify API.")
 
-    # ---- Datas padrão ----
+    # 💅 CSS leve para visual moderno
+    st.markdown("""
+        <style>
+        /* Fundo geral */
+        .stApp { background-color: #f9fafb; }
+
+        /* Cards de métricas */
+        .stMetric { background: #fff; border-radius: 10px; padding: 12px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+
+        /* Containers de pedidos */
+        div[data-testid="stVerticalBlock"] > div[style*="border: 1px solid"] {
+            border-radius: 10px !important;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+            background: white;
+            padding: 1rem !important;
+            margin-bottom: 1rem;
+            transition: all 0.2s ease;
+        }
+        div[data-testid="stVerticalBlock"] > div[style*="border: 1px solid"]:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+        }
+
+        /* Botões */
+        button[kind="primary"] {
+            border-radius: 8px !important;
+            font-weight: 600 !important;
+        }
+
+        /* Inputs */
+        input, textarea {
+            border-radius: 8px !important;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
+    # -------------------------------------------------
+    # 📅 Seção de período
+    # -------------------------------------------------
     hoje = datetime.now(APP_TZ).date()
     periodo = st.date_input("📅 Período", (hoje, hoje), format="DD/MM/YYYY")
 
-    # ---- Controle de período ----
     if isinstance(periodo, tuple) and len(periodo) == 2:
         start_date, end_date = periodo
     else:
         st.info("🟡 Selecione o fim do período para carregar os pedidos.")
         st.stop()
 
-    # ---- Atualiza dados automaticamente ----
+    # -------------------------------------------------
+    # 🔄 Carregamento de dados (com cache leve)
+    # -------------------------------------------------
     periodo_atual = st.session_state.get("periodo_atual")
     if periodo_atual != (start_date, end_date):
         with st.spinner("🔄 Carregando dados da Shopify..."):
@@ -2954,54 +2996,42 @@ if menu == "📦 Dashboard – Logística":
             st.session_state["produtos"] = produtos
             st.session_state["pedidos"] = pedidos
             st.session_state["periodo_atual"] = (start_date, end_date)
-        st.success(
-            f"✅ Dados carregados de {start_date.strftime('%d/%m/%Y')} até {end_date.strftime('%d/%m/%Y')}"
-        )
+        st.success(f"✅ Dados carregados de {start_date.strftime('%d/%m/%Y')} até {end_date.strftime('%d/%m/%Y')}")
     else:
         produtos = st.session_state.get("produtos")
         pedidos = st.session_state.get("pedidos")
 
-    # ---- Garantir colunas obrigatórias ----
+    # -------------------------------------------------
+    # 🧩 Preparação e filtros
+    # -------------------------------------------------
     for col in ["order_id", "order_number", "financial_status", "fulfillment_status"]:
         if col not in pedidos.columns:
             pedidos[col] = None
 
-    # ---- Juntar pedidos e produtos ----
     merge_cols = [c for c in ["variant_id", "sku", "product_title", "variant_title"] if c in produtos.columns]
     base = pedidos.merge(produtos[merge_cols], on="variant_id", how="left", suffixes=("", "_produto"))
 
-    # ---- Ajustes de nomes ----
     for c in ["product_title", "variant_title"]:
         if f"{c}_produto" in base.columns and c not in base.columns:
             base[c] = base[f"{c}_produto"]
         base[c].fillna(f"({c} desconhecido)", inplace=True)
 
-    # ---- Tipos e métricas ----
     base["created_at"] = pd.to_datetime(base.get("created_at"), errors="coerce")
     base["price"] = pd.to_numeric(base.get("price"), errors="coerce").fillna(0)
     base["quantity"] = pd.to_numeric(base.get("quantity"), errors="coerce").fillna(0)
     base["line_revenue"] = base["price"] * base["quantity"]
 
-    # ---- Filtros ----
+    # -------------------------------------------------
+    # 🎛️ Filtros adicionais
+    # -------------------------------------------------
     st.subheader("🎛️ Filtros adicionais")
     col1, col2 = st.columns(2)
     with col1:
-        escolha_prod = st.selectbox(
-            "Produto",
-            ["(Todos)"] + sorted(base["product_title"].dropna().unique().tolist()),
-            index=0,
-        )
+        escolha_prod = st.selectbox("Produto", ["(Todos)"] + sorted(base["product_title"].dropna().unique().tolist()), index=0)
     with col2:
-        escolha_var = st.selectbox(
-            "Variante",
-            ["(Todas)"] + sorted(base["variant_title"].dropna().unique().tolist()),
-            index=0,
-        )
+        escolha_var = st.selectbox("Variante", ["(Todas)"] + sorted(base["variant_title"].dropna().unique().tolist()), index=0)
 
-    df = base[
-        (base["created_at"].dt.date >= start_date)
-        & (base["created_at"].dt.date <= end_date)
-    ].copy()
+    df = base[(base["created_at"].dt.date >= start_date) & (base["created_at"].dt.date <= end_date)].copy()
 
     if escolha_prod != "(Todos)":
         df = df[df["product_title"] == escolha_prod]
@@ -3012,7 +3042,9 @@ if menu == "📦 Dashboard – Logística":
         st.warning("Nenhum pedido encontrado com os filtros selecionados.")
         st.stop()
 
-    # ---- Resumo ----
+    # -------------------------------------------------
+    # 📊 Métricas de resumo
+    # -------------------------------------------------
     order_col = "order_number" if df["order_number"].notna().any() else "order_id"
     total_pedidos = df[order_col].nunique()
     total_unidades = df["quantity"].sum()
@@ -3025,48 +3057,35 @@ if menu == "📦 Dashboard – Logística":
     colC.metric("💰 Receita total", f"R$ {total_receita:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
     colD.metric("💸 Ticket médio", f"R$ {ticket_medio:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
 
-    # ---- Tabela de pedidos ----
+    # -------------------------------------------------
+    # 📋 Tabela de pedidos
+    # -------------------------------------------------
     st.subheader("📋 Pedidos filtrados")
-    colunas = [order_col, "created_at", "customer_name", "quantity", "product_title",
-               "variant_title", "price", "fulfillment_status", "forma_entrega", "estado"]
+    colunas = [order_col, "created_at", "customer_name", "quantity", "product_title", "variant_title", "price", "fulfillment_status", "forma_entrega", "estado"]
     colunas = [c for c in colunas if c in df.columns]
     tabela = df[colunas].sort_values("created_at", ascending=False).copy()
 
     tabela.rename(columns={
-        order_col: "Pedido",
-        "created_at": "Data do pedido",
-        "customer_name": "Nome do cliente",
-        "quantity": "Qtd",
-        "product_title": "Produto",
-        "variant_title": "Variante",
-        "price": "Preço",
-        "fulfillment_status": "Status de processamento",
-        "forma_entrega": "Frete",
-        "estado": "Estado"
+        order_col: "Pedido", "created_at": "Data do pedido", "customer_name": "Nome do cliente",
+        "quantity": "Qtd", "product_title": "Produto", "variant_title": "Variante",
+        "price": "Preço", "fulfillment_status": "Status de processamento", "forma_entrega": "Frete", "estado": "Estado"
     }, inplace=True)
 
     tabela["Status de processamento"] = df["fulfillment_status"].apply(
         lambda x: "✅ Processado" if str(x).lower() in ["fulfilled", "shipped", "complete"] else "🟡 Não processado"
     )
 
-    # ---- Exibir pedidos ----
     st.dataframe(tabela, use_container_width=True)
 
-    # ---- Exportar CSV ----
     csv = tabela.to_csv(index=False).encode("utf-8-sig")
-    st.download_button(
-        label="📥 Exportar pedidos filtrados (CSV)",
-        data=csv,
-        file_name=f"pedidos_shopify_{start_date.strftime('%d-%m-%Y')}_{end_date.strftime('%d-%m-%Y')}.csv",
-        mime="text/csv",
-    )
+    st.download_button("📥 Exportar pedidos filtrados (CSV)", data=csv, file_name=f"pedidos_shopify_{start_date.strftime('%d-%m-%Y')}_{end_date.strftime('%d-%m-%Y')}.csv", mime="text/csv")
 
-    # =====================================================
+    # -------------------------------------------------
     # 🚚 PROCESSAMENTO DE PEDIDOS MANUAL
-    # =====================================================
+    # -------------------------------------------------
     st.subheader("🚚 Processar pedidos manualmente")
 
-    # ---- Botão para processar todos de uma vez ----
+    # ---- Botão global ----
     pendentes = df[df["fulfillment_status"].isin(["unfulfilled", None, "null"])]
     if not pendentes.empty:
         if st.button("🚀 Processar TODOS os pedidos pendentes"):
@@ -3082,38 +3101,44 @@ if menu == "📦 Dashboard – Logística":
     else:
         st.info("✅ Nenhum pedido pendente para processar.")
 
-    # =====================================================
-    # 📦 PROCESSAR INDIVIDUALMENTE (com rastreio)
-    # =====================================================
+    # -------------------------------------------------
+    # 📦 Processar individualmente (sem reload)
+    # -------------------------------------------------
     st.markdown("### 📦 Processar individualmente")
 
     for _, row in df.iterrows():
-        if str(row["fulfillment_status"]).lower() not in ["fulfilled", "shipped", "complete"]:
-            order_display = int(float(row[order_col])) if pd.notna(row[order_col]) else row["order_id"]
+        if str(row["fulfillment_status"]).lower() in ["fulfilled", "shipped", "complete"]:
+            continue
 
-            with st.container(border=True):
-                st.markdown(f"**Pedido #{order_display}** — {row['customer_name']}")
+        order_display = int(float(row[order_col])) if pd.notna(row[order_col]) else row["order_id"]
+        status_key = f"status_{row.order_id}"
+        if status_key not in st.session_state:
+            st.session_state[status_key] = ""
 
-                # Campo de rastreio
-                tracking_number = st.text_input(
-                    f"📦 Código de rastreio (opcional) — Pedido #{order_display}",
-                    "",
-                    key=f"track_{row['order_id']}"
-                )
+        with st.container(border=True):
+            st.markdown(f"#### Pedido #{order_display} — {row['customer_name']}")
+            st.caption(f"Produto: {row['product_title']} — Variante: {row['variant_title']}")
 
-                # Botão de processamento
-                if st.button(f"✅ Processar pedido #{order_display}", key=f"fulfill_{str(row['order_id'])}"):
+            with st.form(key=f"form_{row.order_id}", clear_on_submit=True):
+                tracking_number = st.text_input("📦 Código de rastreio (opcional)", key=f"track_{row['order_id']}")
+                submitted = st.form_submit_button("✅ Processar pedido")
+
+                if submitted:
                     try:
                         with st.spinner(f"Processando pedido #{order_display}..."):
-                            result = create_fulfillment(
-                                row.order_id,
-                                tracking_number=tracking_number or None,
-                                tracking_company="Correios"
-                            )
+                            result = create_fulfillment(row.order_id, tracking_number=tracking_number or None, tracking_company="Correios")
                             log_fulfillment(row.order_id)
-                        st.success(f"✅ Pedido #{order_display} processado com sucesso!")
+                        st.session_state[status_key] = f"✅ Pedido #{order_display} processado com sucesso!"
                         if tracking_number:
-                            st.info(f"📬 Código de rastreio enviado: `{tracking_number}`")
-                        st.json(result)
+                            st.session_state[status_key] += f"\n📬 Código de rastreio: `{tracking_number}`"
                     except Exception as e:
-                        st.error(f"❌ Erro ao processar pedido #{order_display}: {e}")
+                        st.session_state[status_key] = f"❌ Erro ao processar pedido #{order_display}: {e}"
+
+            msg = st.session_state[status_key]
+            if msg:
+                if msg.startswith("✅"):
+                    st.success(msg)
+                elif msg.startswith("❌"):
+                    st.error(msg)
+                else:
+                    st.info(msg)
