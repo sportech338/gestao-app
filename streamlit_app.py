@@ -2844,7 +2844,7 @@ if menu == "📊 Dashboard – Tráfego Pago":
 if menu == "📦 Dashboard – Logística":
     st.title("📦 Dashboard — Logística")
     st.caption("Visualização dos pedidos e estoque vindos da Shopify.")
-    
+
     # ---- Datas padrão ----
     hoje = datetime.now(APP_TZ).date()
     periodo = st.date_input(
@@ -2853,11 +2853,12 @@ if menu == "📦 Dashboard – Logística":
         format="DD/MM/YYYY"
     )
 
-    if not isinstance(periodo, tuple):
-        st.warning("⚠️ Selecione um intervalo de datas (início e fim) para visualizar os pedidos.")
+    # ✅ Garante segurança: trata caso o usuário clique em apenas uma data
+    if isinstance(periodo, tuple):
+        start_date, end_date = periodo
+    else:
+        st.warning("⚠️ Por favor, selecione um intervalo de datas (início e fim) para carregar os pedidos.")
         st.stop()
-
-    start_date, end_date = periodo
 
     # ---- Atualiza dados automaticamente quando o período muda ----
     periodo_atual = st.session_state.get("periodo_atual")
