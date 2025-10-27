@@ -3196,17 +3196,21 @@ if menu == "📦 Dashboard – Logística":
     # 🚚 2️⃣ Marca fretes SEDEX
     tabela["is_sedex"] = tabela["Frete"].str.contains("SEDEX", case=False, na=False)
 
-    # 🧩 Ordena com prioridade real:
-    # 1️⃣ duplicados primeiro
-    # 2️⃣ dentro disso, não-SEDEX primeiro (SEDEX por último)
-    # 3️⃣ mais recentes primeiro
+    # 🧩 Ordena com prioridade fixa:
+    # - duplicados primeiro
+    # - SEDEX sempre por último (independente da direção)
+    # - dentro disso, ordena pela data (respeita sentido decrescente)
     tabela = tabela.sort_values(
-        by=["duplicado", "is_sedex", "Data do pedido"],
-        ascending=[False, True, False],
-        kind="stable"   # 🔒 mantém estabilidade entre empates
+        by=["duplicado", "Data do pedido"],
+        ascending=[False, False],
+        kind="stable"
     )
 
-    # 🎨 Cores visuais
+    # Reordena manualmente colocando SEDEX no final SEM depender do ascending global
+    sedex_mask = tabela["is_sedex"]
+    tabela = pd.concat([tabela[~sedex_mask], tabela[sedex_mask]])
+
+    # 🎨 Cores visuais (azul duplicado / amarelo SEDEX)
     def highlight_prioridades(row):
         if row["duplicado"]:
             return ['background-color: rgba(0, 123, 255, 0.15); border-left: 3px solid rgba(0,123,255,0.4)'] * len(row)
@@ -3219,6 +3223,7 @@ if menu == "📦 Dashboard – Logística":
     styled_tabela = tabela[colunas_visiveis + ["duplicado", "is_sedex"]].style.apply(highlight_prioridades, axis=1)
 
     st.dataframe(styled_tabela.hide(["duplicado", "is_sedex"], axis=1), use_container_width=True)
+
 
     # -------------------------------------------------
     # 🚚 Processamento de pedidos
