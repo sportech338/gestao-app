@@ -3190,39 +3190,25 @@ if menu == "📦 Dashboard – Logística":
         lambda x: "✅ Processado" if str(x).lower() in ["fulfilled", "shipped", "complete"] else "🟡 Não processado"
     )
 
-    # 🔝 1️⃣ Marca nomes duplicados
+    # 🔝 Coloca todos os nomes repetidos no topo
     tabela["duplicado"] = tabela["Nome do cliente"].duplicated(keep=False)
+    tabela = tabela.sort_values(by=["duplicado", "Data do pedido"], ascending=[False, False])
 
-    # 🚚 2️⃣ Marca fretes SEDEX
-    tabela["is_sedex"] = tabela["Frete"].str.contains("SEDEX", case=False, na=False)
-
-    # 🧩 Ordena com prioridade fixa:
-    # - duplicados primeiro
-    # - SEDEX sempre por último (independente da direção)
-    # - dentro disso, ordena pela data (respeita sentido decrescente)
-    tabela = tabela.sort_values(
-        by=["duplicado", "Data do pedido"],
-        ascending=[False, False],
-        kind="stable"
-    )
-
-    # Reordena manualmente colocando SEDEX no final SEM depender do ascending global
-    sedex_mask = tabela["is_sedex"]
-    tabela = pd.concat([tabela[~sedex_mask], tabela[sedex_mask]])
-
-    # 🎨 Cores visuais (azul duplicado / amarelo SEDEX)
-    def highlight_prioridades(row):
+    # 🎨 Destaca as linhas duplicadas com fundo azul translúcido
+    def highlight_duplicados(row):
         if row["duplicado"]:
-            return ['background-color: rgba(0, 123, 255, 0.15); border-left: 3px solid rgba(0,123,255,0.4)'] * len(row)
-        elif row["is_sedex"]:
-            return ['background-color: rgba(255, 215, 0, 0.15); border-left: 3px solid rgba(255,215,0,0.4)'] * len(row)
+            return ['background-color: rgba(0, 123, 255, 0.15)'] * len(row)
         else:
             return [''] * len(row)
 
-    colunas_visiveis = [c for c in tabela.columns if c not in ["duplicado", "is_sedex"]]
-    styled_tabela = tabela[colunas_visiveis + ["duplicado", "is_sedex"]].style.apply(highlight_prioridades, axis=1)
+    # Define colunas que serão mostradas (oculta visualmente a 'duplicado')
+    colunas_visiveis = [c for c in tabela.columns if c != "duplicado"]
 
-    st.dataframe(styled_tabela.hide(["duplicado", "is_sedex"], axis=1), use_container_width=True)
+    # Aplica o estilo somente nas colunas visíveis
+    styled_tabela = tabela[colunas_visiveis + ["duplicado"]].style.apply(highlight_duplicados, axis=1)
+
+    # Exibe apenas as colunas visíveis
+    st.dataframe(styled_tabela.hide(["duplicado"], axis=1), use_container_width=True)
 
 
     # -------------------------------------------------
