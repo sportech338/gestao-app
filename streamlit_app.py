@@ -2853,24 +2853,8 @@ if menu == "📦 Dashboard – Logística":
         format="DD/MM/YYYY"
     )
 
-    # =========================================================
-    # ✅ Tratamento seguro — evita ValueError e dá feedback claro
-    # =========================================================
-    start_date = None
-    end_date = None
-
-    # Se o retorno for uma tupla (intervalo)
-    if isinstance(periodo, tuple) and len(periodo) == 2:
-        start_date, end_date = periodo
-
-    # Se o retorno for apenas uma data (usuário clicou em um dia só)
-    elif isinstance(periodo, date):
-        st.warning("⚠️ Selecione um intervalo de datas (início e fim) para visualizar os pedidos.")
-        st.stop()
-
-    # Qualquer outro caso inesperado
     else:
-        st.error("❌ Erro ao interpretar as datas selecionadas. Tente novamente.")
+        st.error("⚠️ Selecione um intervalo de datas (início e fim) para visualizar os pedidos.")
         st.stop()
     # =========================================================
 
