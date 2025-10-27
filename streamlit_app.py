@@ -3190,10 +3190,6 @@ if menu == "📦 Dashboard – Logística":
         lambda x: "✅ Processado" if str(x).lower() in ["fulfilled", "shipped", "complete"] else "🟡 Não processado"
     )
 
-    # 🔝 Coloca os nomes repetidos no topo
-    duplicados = tabela["Nome do cliente"].duplicated(keep=False)
-    tabela = tabela.sort_values(by=duplicados, ascending=False)
-
     st.dataframe(tabela, use_container_width=True)
 
     # -------------------------------------------------
