@@ -3172,7 +3172,7 @@ if menu == "📦 Dashboard – Logística":
     """, unsafe_allow_html=True)
 
     colunas = ["created_at", order_col, "customer_name", "quantity", "product_title",
-               "variant_title", "fulfillment_status"]
+               "variant_title", "forma_entrega"]
     colunas = [c for c in colunas if c in df.columns]
     tabela = df[colunas].sort_values("created_at", ascending=False).copy()
 
