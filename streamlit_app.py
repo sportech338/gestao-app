@@ -1018,18 +1018,13 @@ def _range_from_preset(p):
     return base_end - timedelta(days=6), base_end
 
 # =====================================================
-# 📊 DASHBOARD – TRÁFEGO PAGO
+# ================== DASHBOARD TRÁFEGO PAGO ============
 # =====================================================
 if menu == "📊 Dashboard – Tráfego Pago":
     st.title("📈 Dashboard — Tráfego Pago")
     st.caption("Análise completa de campanhas e funil de conversão.")
 
-    # 1️⃣ Cria as variáveis fora do sidebar (para evitar NameError)
-    ready = False
-    act_id = None
-    token = None
-
-    # 2️⃣ Bloco de configurações na sidebar
+    # ================= CONFIGURAÇÃO LOCAL DO DASHBOARD =================
     with st.sidebar:
         st.markdown("## ⚙️ Configuração — Tráfego Pago")
 
@@ -1037,60 +1032,32 @@ if menu == "📊 Dashboard – Tráfego Pago":
         if act_id_input and not act_id_input.isdigit():
             st.warning("Por favor, insira apenas números (sem letras ou símbolos).")
         act_id = f"act_{act_id_input.strip()}" if act_id_input.isdigit() else None
-
         token = st.text_input("Access Token", type="password")
         api_version = st.text_input("API Version", value="v23.0")
-        level = st.selectbox("Nível (recomendado: campaign)", ["campaign"], index=0)
+        level = st.selectbox("Nível (recomendado: campaign)", ["campaign"],  index=0)
 
-        # Agora sim, ready é atualizado aqui
-        ready = bool(act_id and token)
+        preset = st.radio(
+            "Período rápido",
+            [
+                "Hoje", "Ontem",
+                "Últimos 7 dias", "Últimos 14 dias",
+                "Últimos 30 dias", "Últimos 90 dias",
+                "Esta semana", "Este mês", "Máximo",
+                "Personalizado"
+            ],
+            index=2,
+        )
 
-    # 3️⃣ Testa se as credenciais foram preenchidas
-    if not ready:
-        st.warning("⚠️ Preencha o Ad Account ID e o Access Token para continuar.")
-        st.stop()
+        _since_auto, _until_auto = _range_from_preset(preset)
 
-    # 4️⃣ Se passou daqui, continua o app normalmente
-    st.sidebar.header("📅 Período rápido")
-
-    hoje = datetime.now(APP_TZ).date()
-    opcoes_periodo = [
-        "Hoje", "Ontem", "Últimos 7 dias", "Últimos 14 dias",
-        "Últimos 30 dias", "Últimos 90 dias", "Esta semana",
-        "Este mês", "Máximo", "Personalizado"
-    ]
-
-    escolha_periodo = st.sidebar.radio("Selecione:", opcoes_periodo, index=2)
-
-    if escolha_periodo == "Hoje":
-        start_date, end_date = hoje, hoje
-    elif escolha_periodo == "Ontem":
-        start_date, end_date = hoje - timedelta(days=1), hoje - timedelta(days=1)
-    elif escolha_periodo == "Últimos 7 dias":
-        start_date, end_date = hoje - timedelta(days=7), hoje - timedelta(days=1)
-    elif escolha_periodo == "Últimos 14 dias":
-        start_date, end_date = hoje - timedelta(days=14), hoje - timedelta(days=1)
-    elif escolha_periodo == "Últimos 30 dias":
-        start_date, end_date = hoje - timedelta(days=30), hoje - timedelta(days=1)
-    elif escolha_periodo == "Últimos 90 dias":
-        start_date, end_date = hoje - timedelta(days=90), hoje - timedelta(days=1)
-    elif escolha_periodo == "Esta semana":
-        start_date, end_date = hoje - timedelta(days=hoje.weekday()), hoje
-    elif escolha_periodo == "Este mês":
-        start_date = hoje.replace(day=1)
-        end_date = hoje
-    elif escolha_periodo == "Máximo":
-        start_date = date(2020, 1, 1)
-        end_date = hoje
-    else:
-        periodo = st.sidebar.date_input("📆 Selecione o intervalo:", (hoje, hoje), format="DD/MM/YYYY")
-        if isinstance(periodo, tuple) and len(periodo) == 2:
-            start_date, end_date = periodo
+        if preset == "Personalizado":
+            since = st.date_input("Desde", value=_since_auto, key="since_custom", format="DD/MM/YYYY")
+            until = st.date_input("Até", value=_until_auto, key="until_custom", format="DD/MM/YYYY")
         else:
-            st.sidebar.warning("🟡 Selecione o fim do período.")
-            st.stop()
+            since, until = _since_auto, _until_auto
+            st.caption(f"**Desde:** {since}  \n**Até:** {until}")
 
-    st.sidebar.markdown(f"**Desde:** {start_date}  \n**Até:** {end_date}")
+        ready = bool(act_id and token)
 
     # ================= VALIDAÇÃO E COLETA DE DADOS =================
     if not ready:
