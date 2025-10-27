@@ -2958,7 +2958,7 @@ if menu == "📦 Dashboard – Logística":
     st.subheader("📋 Pedidos filtrados")
 
     colunas_existentes = [c for c in [
-        order_col, "created_at", "customer_name", "quantity",
+        order_col, "created_at", "customer_name", "quantity", "product_title",
         "variant_title", "price", "forma_entrega", "estado", "fulfillment_status"
     ] if c in df.columns]
 
@@ -2969,6 +2969,7 @@ if menu == "📦 Dashboard – Logística":
         "created_at": "Data do pedido",
         "customer_name": "Nome do cliente",
         "quantity": "Quantidade",
+        "product_title": "Produto",
         "variant_title": "Variante",
         "price": "Preço",
         "forma_entrega": "Frete escolhido",
