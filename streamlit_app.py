@@ -3025,7 +3025,18 @@ if menu == "📦 Dashboard – Logística":
     # 📋 Tabela de pedidos
     # -------------------------------------------------
     st.subheader("📋 Pedidos filtrados")
-    colunas = [order_col, "created_at", "customer_name", "quantity", "product_title", "variant_title", "price", "fulfillment_status", "forma_entrega", "estado"]
+
+    # CSS opcional: alinha a coluna de pedidos à direita
+    st.markdown("""
+        <style>
+        thead tr th:first-child, tbody tr td:first-child {
+            text-align: right !important;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
+    colunas = [order_col, "created_at", "customer_name", "quantity", "product_title",
+               "variant_title", "price", "fulfillment_status", "forma_entrega", "estado"]
     colunas = [c for c in colunas if c in df.columns]
     tabela = df[colunas].sort_values("created_at", ascending=False).copy()
 
@@ -3035,6 +3046,10 @@ if menu == "📦 Dashboard – Logística":
         "price": "Preço", "fulfillment_status": "Status de processamento", "forma_entrega": "Frete", "estado": "Estado"
     }, inplace=True)
 
+    # ✅ Corrige formatação do número do pedido (remove vírgulas e .0)
+    if "Pedido" in tabela.columns:
+        tabela["Pedido"] = tabela["Pedido"].astype(str).str.replace(",", "").str.replace(".0", "", regex=False)
+
     tabela["Status de processamento"] = df["fulfillment_status"].apply(
         lambda x: "✅ Processado" if str(x).lower() in ["fulfilled", "shipped", "complete"] else "🟡 Não processado"
     )
@@ -3042,14 +3057,18 @@ if menu == "📦 Dashboard – Logística":
     st.dataframe(tabela, use_container_width=True)
 
     csv = tabela.to_csv(index=False).encode("utf-8-sig")
-    st.download_button("📥 Exportar pedidos filtrados (CSV)", data=csv, file_name=f"pedidos_shopify_{start_date.strftime('%d-%m-%Y')}_{end_date.strftime('%d-%m-%Y')}.csv", mime="text/csv")
+    st.download_button(
+        "📥 Exportar pedidos filtrados (CSV)",
+        data=csv,
+        file_name=f"pedidos_shopify_{start_date.strftime('%d-%m-%Y')}_{end_date.strftime('%d-%m-%Y')}.csv",
+        mime="text/csv"
+    )
 
     # -------------------------------------------------
     # 🚚 PROCESSAMENTO DE PEDIDOS MANUAL
     # -------------------------------------------------
     st.subheader("🚚 Processar pedidos manualmente")
 
-    # ---- Botão global ----
     pendentes = df[df["fulfillment_status"].isin(["unfulfilled", None, "null"])]
     if not pendentes.empty:
         if st.button("🚀 Processar TODOS os pedidos pendentes"):
@@ -3090,7 +3109,11 @@ if menu == "📦 Dashboard – Logística":
                 if submitted:
                     try:
                         with st.spinner(f"Processando pedido #{order_display}..."):
-                            result = create_fulfillment(row.order_id, tracking_number=tracking_number or None, tracking_company="Correios")
+                            result = create_fulfillment(
+                                row.order_id,
+                                tracking_number=tracking_number or None,
+                                tracking_company="Correios"
+                            )
                             log_fulfillment(row.order_id)
                         st.session_state[status_key] = f"✅ Pedido #{order_display} processado com sucesso!"
                         if tracking_number:
