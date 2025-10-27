@@ -117,6 +117,65 @@ def get_orders(start_date=None, end_date=None, only_paid=True, limit=250):
 
     return pd.DataFrame(all_rows)
 
+# ==== Fulfillment (processar pedido) ====
+def _get(url, **kwargs):
+    r = requests.get(url, headers=HEADERS, timeout=60, **kwargs)
+    r.raise_for_status()
+    return r.json()
+
+def _post(url, payload, idempotency_key=None, **kwargs):
+    headers = dict(HEADERS)
+    if idempotency_key:
+        headers["Idempotency-Key"] = idempotency_key  # evita criar fulfillment duplicado se clicar 2x
+    r = requests.post(url, headers=headers, json=payload, timeout=60, **kwargs)
+    r.raise_for_status()
+    return r.json()
+
+def list_fulfillment_orders(order_id: int):
+    url = f"{BASE_URL}/orders/{order_id}/fulfillment_orders.json"
+    data = _get(url)
+    return data.get("fulfillment_orders", [])
+
+def create_fulfillment(order_id: int, tracking_number: str | None = None,
+                       tracking_company: str | None = None,
+                       tracking_url: str | None = None,
+                       notify_customer: bool = True):
+    fos = list_fulfillment_orders(order_id)
+    if not fos:
+        raise RuntimeError("Pedido sem Fulfillment Orders elegíveis.")
+
+    line_items_by_fo = []
+    for fo in fos:
+        items = []
+        for li in fo.get("line_items", []):
+            rem = li.get("remaining_quantity") or li.get("quantity") or 0
+            if rem > 0:
+                items.append({"id": li["id"], "quantity": rem})
+        if items:
+            line_items_by_fo.append({
+                "fulfillment_order_id": fo["id"],
+                "fulfillment_order_line_items": items
+            })
+
+    if not line_items_by_fo:
+        raise RuntimeError("Nada a cumprir (pedido já está totalmente processado).")
+
+    payload = {
+        "fulfillment": {
+            "line_items_by_fulfillment_order": line_items_by_fo,
+            "notify_customer": bool(notify_customer)
+        }
+    }
+    if tracking_number or tracking_company or tracking_url:
+        ti = {}
+        if tracking_number: ti["number"] = tracking_number
+        if tracking_company: ti["company"] = tracking_company
+        if tracking_url: ti["url"] = tracking_url
+        if ti: payload["fulfillment"]["tracking_info"] = ti
+
+    resp = _post(f"{BASE_URL}/fulfillments.json", payload, idempotency_key=str(time.time()))
+    return resp.get("fulfillment")
+
 # =============== Config & Estilos ===============
 st.set_page_config(page_title="Meta Ads — Paridade + Funil", page_icon="📊", layout="wide")
 st.markdown("""
@@ -3000,9 +3059,27 @@ if menu == "📦 Dashboard – Logística":
             lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
         )
 
-    st.dataframe(tabela, use_container_width=True)
+    # ---- Exibição com botão de ação ----
+    st.subheader("🧭 Ações de processamento")
+
+    for idx, row in tabela.iterrows():
+        col1, col2, col3 = st.columns([3, 3, 1])
+        col1.write(f"**Pedido:** {row['Pedido']}")
+        col2.write(f"**Status:** {row['Status de processamento']}")
+
+        if row['Status de processamento'] != "✅ Processado":
+            if col3.button("🚀 Processar", key=f"process_{idx}"):
+                try:
+                    order_id = int(float(row["Pedido"].replace("#", "")))
+                    fulfillment = create_fulfillment(order_id)
+                    st.success(f"Pedido {row['Pedido']} processado com sucesso!")
+                except Exception as e:
+                    st.error(f"Erro ao processar o pedido {row['Pedido']}: {e}")
+        else:
+            col3.write("✅ Já processado")
 
     # ---- Exportar CSV ----
+    st.subheader("📤 Exportação")
     csv = tabela.to_csv(index=False).encode('utf-8-sig')
     st.download_button(
         label="📥 Exportar pedidos filtrados (CSV)",
