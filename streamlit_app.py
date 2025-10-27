@@ -3190,27 +3190,28 @@ if menu == "📦 Dashboard – Logística":
         lambda x: "✅ Processado" if str(x).lower() in ["fulfilled", "shipped", "complete"] else "🟡 Não processado"
     )
 
-    # 🔝 1️⃣ Coloca todos os nomes repetidos no topo
+    # 🔝 1️⃣ Marca nomes duplicados
     tabela["duplicado"] = tabela["Nome do cliente"].duplicated(keep=False)
 
-    # 🚚 2️⃣ Cria flag para SEDEX
+    # 🚚 2️⃣ Marca fretes SEDEX
     tabela["is_sedex"] = tabela["Frete"].str.contains("SEDEX", case=False, na=False)
 
-    # 📦 Ordena com prioridades:
-    # - duplicados primeiro
-    # - não SEDEX primeiro (SEDEX por último)
-    # - pedidos mais recentes primeiro
+    # 🧩 Ordena com prioridade real:
+    # 1️⃣ duplicados primeiro
+    # 2️⃣ dentro disso, não-SEDEX primeiro (SEDEX por último)
+    # 3️⃣ mais recentes primeiro
     tabela = tabela.sort_values(
         by=["duplicado", "is_sedex", "Data do pedido"],
-        ascending=[False, True, False]
+        ascending=[False, True, False],
+        kind="stable"   # 🔒 mantém estabilidade entre empates
     )
 
-    # 🎨 Destaca duplicados (azul) e SEDEX (amarelo suave)
+    # 🎨 Cores visuais
     def highlight_prioridades(row):
         if row["duplicado"]:
-            return ['background-color: rgba(0, 123, 255, 0.15)'] * len(row)
+            return ['background-color: rgba(0, 123, 255, 0.15); border-left: 3px solid rgba(0,123,255,0.4)'] * len(row)
         elif row["is_sedex"]:
-            return ['background-color: rgba(255, 215, 0, 0.15)'] * len(row)
+            return ['background-color: rgba(255, 215, 0, 0.15); border-left: 3px solid rgba(255,215,0,0.4)'] * len(row)
         else:
             return [''] * len(row)
 
