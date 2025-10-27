@@ -1024,7 +1024,12 @@ if menu == "📊 Dashboard – Tráfego Pago":
     st.title("📈 Dashboard — Tráfego Pago")
     st.caption("Análise completa de campanhas e funil de conversão.")
 
-    # ================= CONFIGURAÇÃO LOCAL DO DASHBOARD =================
+    # 1️⃣ Cria as variáveis fora do sidebar (para evitar NameError)
+    ready = False
+    act_id = None
+    token = None
+
+    # 2️⃣ Bloco de configurações na sidebar
     with st.sidebar:
         st.markdown("## ⚙️ Configuração — Tráfego Pago")
 
@@ -1032,17 +1037,23 @@ if menu == "📊 Dashboard – Tráfego Pago":
         if act_id_input and not act_id_input.isdigit():
             st.warning("Por favor, insira apenas números (sem letras ou símbolos).")
         act_id = f"act_{act_id_input.strip()}" if act_id_input.isdigit() else None
+
         token = st.text_input("Access Token", type="password")
         api_version = st.text_input("API Version", value="v23.0")
         level = st.selectbox("Nível (recomendado: campaign)", ["campaign"], index=0)
 
-    # -------------------------------------------------
-    # 🧭 SIDEBAR — Filtro lateral de período
-    # -------------------------------------------------
+        # Agora sim, ready é atualizado aqui
+        ready = bool(act_id and token)
+
+    # 3️⃣ Testa se as credenciais foram preenchidas
+    if not ready:
+        st.warning("⚠️ Preencha o Ad Account ID e o Access Token para continuar.")
+        st.stop()
+
+    # 4️⃣ Se passou daqui, continua o app normalmente
     st.sidebar.header("📅 Período rápido")
 
     hoje = datetime.now(APP_TZ).date()
-
     opcoes_periodo = [
         "Hoje", "Ontem", "Últimos 7 dias", "Últimos 14 dias",
         "Últimos 30 dias", "Últimos 90 dias", "Esta semana",
