@@ -3161,17 +3161,26 @@ if menu == "📦 Dashboard – Logística":
 
     st.markdown("""
         <style>
-        thead tr th:first-child, tbody tr td:first-child {
-            text-align: right !important;
+        .tabela-custom {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 15px;
         }
-        input[type="text"] {
-            border-radius: 10px;
-            border: 1px solid #444;
-            padding: 8px 12px;
+        .tabela-custom th, .tabela-custom td {
+            padding: 8px 10px;
+            border-bottom: 1px solid #ddd;
+            text-align: left;
+        }
+        .tabela-custom tr:hover {
+            background-color: #f6f6f6;
+        }
+        .repetido {
+            background-color: rgba(0, 123, 255, 0.1);
         }
         </style>
     """, unsafe_allow_html=True)
 
+    # Mantém colunas principais
     colunas = ["created_at", order_col, "customer_name", "quantity", "product_title",
                "variant_title", "forma_entrega"]
     colunas = [c for c in colunas if c in df.columns]
@@ -3184,45 +3193,42 @@ if menu == "📦 Dashboard – Logística":
         "quantity": "Qtd",
         "product_title": "Produto",
         "variant_title": "Variante",
-        "price": "Preço",
-        "fulfillment_status": "Status de processamento",
-        "forma_entrega": "Frete",
-        "estado": "Estado"
+        "forma_entrega": "Frete"
     }, inplace=True)
 
     if "Pedido" in tabela.columns:
         tabela["Pedido"] = tabela["Pedido"].astype(str).str.replace(",", "").str.replace(".0", "", regex=False)
 
-    tabela["Status de processamento"] = df["fulfillment_status"].apply(
-        lambda x: "✅ Processado" if str(x).lower() in ["fulfilled", "shipped", "complete"] else "🟡 Não processado"
-    )
-
-    # -------------------------------------------------
-    # 💠 Clientes repetidos no topo + destaque azul
-    # -------------------------------------------------
-    rep_counts = tabela["Nome do cliente"].value_counts()
-    tabela["Repeticoes"] = tabela["Nome do cliente"].map(rep_counts)
+    # Identifica clientes repetidos
+    repeticoes = tabela["Nome do cliente"].value_counts()
+    nomes_repetidos = repeticoes[repeticoes > 1].index.tolist()
 
     # Ordena: repetidos primeiro
+    tabela["Repeticoes"] = tabela["Nome do cliente"].map(repeticoes)
     tabela.sort_values(
         by=["Repeticoes", "Nome do cliente", "Data do pedido"],
         ascending=[False, True, False],
         inplace=True
     )
 
-    # Lista com nomes que aparecem mais de uma vez
-    nomes_repetidos = tabela.loc[tabela["Repeticoes"] > 1, "Nome do cliente"].unique().tolist()
+    # Constrói HTML manual com destaque azul
+    html = "<table class='tabela-custom'><thead><tr>"
+    for col in tabela.columns.drop("Repeticoes"):
+        html += f"<th>{col}</th>"
+    html += "</tr></thead><tbody>"
 
-    # Função correta de highlight compatível com Styler
-    def highlight_repetidos(row):
-        if row["Nome do cliente"] in nomes_repetidos:
-            return ['background-color: rgba(0, 123, 255, 0.15)'] * len(row)
-        else:
-            return [''] * len(row)
+    for _, row in tabela.iterrows():
+        classe = "repetido" if row["Nome do cliente"] in nomes_repetidos else ""
+        html += f"<tr class='{classe}'>"
+        for col in tabela.columns.drop("Repeticoes"):
+            valor = row[col]
+            valor_fmt = valor.strftime("%d/%m/%Y") if isinstance(valor, pd.Timestamp) else valor
+            html += f"<td>{valor_fmt}</td>"
+        html += "</tr>"
 
-    styled_table = tabela.drop(columns=["Repeticoes"]).style.apply(lambda df: df.apply(highlight_repetidos, axis=1))
+    html += "</tbody></table>"
+    st.markdown(html, unsafe_allow_html=True)
 
-    st.dataframe(styled_table, use_container_width=True)
 
 
     # -------------------------------------------------
