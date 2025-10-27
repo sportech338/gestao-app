@@ -2973,7 +2973,7 @@ if menu == "📦 Dashboard – Logística":
         start_date = date(2020, 1, 1)
         end_date = hoje
     else:
-        # Personalizado: exibe o seletor normal de datas
+        # Personalizado
         periodo = st.sidebar.date_input("📆 Selecione o intervalo:", (hoje, hoje), format="DD/MM/YYYY")
         if isinstance(periodo, tuple) and len(periodo) == 2:
             start_date, end_date = periodo
@@ -3000,12 +3000,12 @@ if menu == "📦 Dashboard – Logística":
         pedidos = st.session_state["pedidos"]
 
     # -------------------------------------------------
-    # 🔍 Busca rápida (no topo)
+    # 🔍 Busca rápida (ignora período)
     # -------------------------------------------------
     st.subheader("🔍 Busca rápida")
     busca = st.text_input("Digite parte do nome do cliente ou número do pedido:")
 
-    # Preparação
+    # Preparação base
     for col in ["order_id", "order_number", "financial_status", "fulfillment_status"]:
         if col not in pedidos.columns:
             pedidos[col] = None
@@ -3023,23 +3023,21 @@ if menu == "📦 Dashboard – Logística":
     base["quantity"] = pd.to_numeric(base.get("quantity"), errors="coerce").fillna(0)
     base["line_revenue"] = base["price"] * base["quantity"]
 
-    # Aplica período
-    df = base[(base["created_at"].dt.date >= start_date) & (base["created_at"].dt.date <= end_date)].copy()
-
-    # Aplica busca
+    # -------------------------------------------------
+    # 🧠 Lógica de busca e filtro de período
+    # -------------------------------------------------
     if busca:
+        # A busca ignora o filtro de datas
         busca_lower = busca.strip().lower()
-        resultados = base[
+        df = base[
             base["customer_name"].str.lower().str.contains(busca_lower, na=False)
             | base["order_number"].astype(str).str.contains(busca_lower, na=False)
             | base["order_id"].astype(str).str.contains(busca_lower, na=False)
         ]
-        if not resultados.empty:
-            st.success(f"🔎 {len(resultados)} resultado(s) encontrado(s) para '{busca}'.")
-            df = resultados.copy()
-        else:
-            st.warning(f"❌ Nenhum resultado encontrado para '{busca}'.")
-            st.stop()
+        st.success(f"🔎 {len(df)} resultado(s) encontrado(s) para '{busca}' (sem filtro de data).")
+    else:
+        # Se não houver busca, filtra pelo período lateral
+        df = base[(base["created_at"].dt.date >= start_date) & (base["created_at"].dt.date <= end_date)].copy()
 
     # -------------------------------------------------
     # 🎛️ Filtros adicionais
@@ -3055,7 +3053,6 @@ if menu == "📦 Dashboard – Logística":
         df = df[df["product_title"] == escolha_prod]
     if escolha_var != "(Todas)":
         df = df[df["variant_title"] == escolha_var]
-
 
     if df.empty:
         st.warning("Nenhum pedido encontrado com os filtros selecionados.")
