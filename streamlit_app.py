@@ -3042,7 +3042,7 @@ if menu == "📦 Dashboard – Logística":
     # 🔍 Busca rápida (no topo)
     # -------------------------------------------------
     st.subheader("🔍 Busca rápida")
-    busca = st.text_input("Digite parte do nome do cliente ou número do pedido:")
+    busca = st.text_input("Digite parte do nome do cliente, email ou número do pedido:")
 
     # -------------------------------------------------
     # 🔄 Carregamento de dados (cache leve + busca direta na Shopify)
