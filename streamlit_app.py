@@ -2849,16 +2849,30 @@ if menu == "📦 Dashboard – Logística":
     hoje = datetime.now(APP_TZ).date()
     periodo = st.date_input(
         "📅 Período",
-        (hoje, hoje),
+        (hoje, hoje),  # padrão: dia atual
         format="DD/MM/YYYY"
     )
 
-    # ✅ Garante segurança: trata caso o usuário clique em apenas uma data
-    if isinstance(periodo, tuple):
+    # =========================================================
+    # ✅ Tratamento seguro — evita ValueError e dá feedback claro
+    # =========================================================
+    start_date = None
+    end_date = None
+
+    # Se o retorno for uma tupla (intervalo)
+    if isinstance(periodo, tuple) and len(periodo) == 2:
         start_date, end_date = periodo
-    else:
-        st.warning("⚠️ Por favor, selecione um intervalo de datas (início e fim) para carregar os pedidos.")
+
+    # Se o retorno for apenas uma data (usuário clicou em um dia só)
+    elif isinstance(periodo, date):
+        st.warning("⚠️ Selecione um intervalo de datas (início e fim) para visualizar os pedidos.")
         st.stop()
+
+    # Qualquer outro caso inesperado
+    else:
+        st.error("❌ Erro ao interpretar as datas selecionadas. Tente novamente.")
+        st.stop()
+    # =========================================================
 
     # ---- Atualiza dados automaticamente quando o período muda ----
     periodo_atual = st.session_state.get("periodo_atual")
@@ -2875,7 +2889,6 @@ if menu == "📦 Dashboard – Logística":
     else:
         produtos = st.session_state.get("produtos")
         pedidos = st.session_state.get("pedidos")
-
     # ---- Verificações ----
     if produtos is None or pedidos is None or produtos.empty or pedidos.empty:
         st.info("Nenhum pedido encontrado para o período selecionado.")
