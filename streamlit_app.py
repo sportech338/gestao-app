@@ -2973,7 +2973,6 @@ if menu == "📦 Dashboard – Logística":
         start_date = date(2020, 1, 1)
         end_date = hoje
     else:
-        # Personalizado
         periodo = st.sidebar.date_input("📆 Selecione o intervalo:", (hoje, hoje), format="DD/MM/YYYY")
         if isinstance(periodo, tuple) and len(periodo) == 2:
             start_date, end_date = periodo
@@ -2984,21 +2983,24 @@ if menu == "📦 Dashboard – Logística":
     st.sidebar.markdown(f"**Desde:** {start_date}  \n**Até:** {end_date}")
 
     # -------------------------------------------------
-    # 🔄 Carregamento de dados (cache leve)
+    # 🔍 Busca rápida (antes do carregamento)
+    # -------------------------------------------------
+    st.subheader("🔍 Busca rápida")
+    busca = st.text_input("Digite parte do nome do cliente ou número do pedido:")
+    busca_global = bool(busca.strip())
+
+    # -------------------------------------------------
+    # 🔄 Carregamento de dados (cache leve e busca global)
     # -------------------------------------------------
     periodo_atual = st.session_state.get("periodo_atual")
 
-    # Detecta se há busca ativa antes do carregamento
-    busca_ativa = "busca_ativa" in st.session_state and st.session_state["busca_ativa"]
-
-    if periodo_atual != (start_date, end_date) or busca_ativa:
+    if periodo_atual != (start_date, end_date) or busca_global:
         with st.spinner("🔄 Carregando dados da Shopify..."):
-
             produtos = get_products_with_variants()
 
-            # Se há busca ativa, ignora o período e busca o histórico completo
-            if st.session_state.get("busca_ativa", False):
-                st.info("📦 Carregando todos os pedidos (busca global ativada)...")
+            # Se houver busca, ignora o filtro de data e traz o histórico completo
+            if busca_global:
+                st.info("📦 Busca global ativada — carregando todos os pedidos disponíveis (sem filtro de data)...")
                 pedidos = get_orders(start_date=date(2020, 1, 1), end_date=hoje)
             else:
                 pedidos = get_orders(start_date=start_date, end_date=end_date)
@@ -3006,21 +3008,18 @@ if menu == "📦 Dashboard – Logística":
             st.session_state["produtos"] = produtos
             st.session_state["pedidos"] = pedidos
             st.session_state["periodo_atual"] = (start_date, end_date)
-            st.session_state["busca_ativa"] = False  # reseta o estado
 
-        st.success(f"✅ Dados carregados de {start_date.strftime('%d/%m/%Y')} até {end_date.strftime('%d/%m/%Y')}")
+        if busca_global:
+            st.success("✅ Dados completos carregados para busca global (sem filtro de data).")
+        else:
+            st.success(f"✅ Dados carregados de {start_date.strftime('%d/%m/%Y')} até {end_date.strftime('%d/%m/%Y')}")
     else:
         produtos = st.session_state["produtos"]
         pedidos = st.session_state["pedidos"]
 
     # -------------------------------------------------
-    # 🔍 Busca rápida (ignora período)
+    # 🧩 Preparação base
     # -------------------------------------------------
-    st.subheader("🔍 Busca rápida")
-    busca = st.text_input("Digite parte do nome do cliente ou número do pedido:")
-    st.session_state["busca_ativa"] = bool(busca.strip())
-
-    # Preparação base
     for col in ["order_id", "order_number", "financial_status", "fulfillment_status"]:
         if col not in pedidos.columns:
             pedidos[col] = None
@@ -3041,8 +3040,7 @@ if menu == "📦 Dashboard – Logística":
     # -------------------------------------------------
     # 🧠 Lógica de busca e filtro de período
     # -------------------------------------------------
-    if busca:
-        # A busca ignora o filtro de datas
+    if busca_global:
         busca_lower = busca.strip().lower()
         df = base[
             base["customer_name"].str.lower().str.contains(busca_lower, na=False)
@@ -3051,7 +3049,6 @@ if menu == "📦 Dashboard – Logística":
         ]
         st.success(f"🔎 {len(df)} resultado(s) encontrado(s) para '{busca}' (sem filtro de data).")
     else:
-        # Se não houver busca, filtra pelo período lateral
         df = base[(base["created_at"].dt.date >= start_date) & (base["created_at"].dt.date <= end_date)].copy()
 
     # -------------------------------------------------
