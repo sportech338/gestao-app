@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -3190,26 +3191,34 @@ if menu == "📦 Dashboard – Logística":
         lambda x: "✅ Processado" if str(x).lower() in ["fulfilled", "shipped", "complete"] else "🟡 Não processado"
     )
 
-    # 🔝 Coloca todos os nomes repetidos no topo
+    # 🔝 1️⃣ Coloca todos os nomes repetidos no topo
     tabela["duplicado"] = tabela["Nome do cliente"].duplicated(keep=False)
-    tabela = tabela.sort_values(by=["duplicado", "Data do pedido"], ascending=[False, False])
 
-    # 🎨 Destaca as linhas duplicadas com fundo azul translúcido
-    def highlight_duplicados(row):
+    # 🚚 2️⃣ Cria flag para SEDEX
+    tabela["is_sedex"] = tabela["Frete"].str.contains("SEDEX", case=False, na=False)
+
+    # 📦 Ordena com prioridades:
+    # - duplicados primeiro
+    # - não SEDEX primeiro (SEDEX por último)
+    # - pedidos mais recentes primeiro
+    tabela = tabela.sort_values(
+        by=["duplicado", "is_sedex", "Data do pedido"],
+        ascending=[False, True, False]
+    )
+
+    # 🎨 Destaca duplicados (azul) e SEDEX (amarelo suave)
+    def highlight_prioridades(row):
         if row["duplicado"]:
             return ['background-color: rgba(0, 123, 255, 0.15)'] * len(row)
+        elif row["is_sedex"]:
+            return ['background-color: rgba(255, 215, 0, 0.15)'] * len(row)
         else:
             return [''] * len(row)
 
-    # Define colunas que serão mostradas (oculta visualmente a 'duplicado')
-    colunas_visiveis = [c for c in tabela.columns if c != "duplicado"]
+    colunas_visiveis = [c for c in tabela.columns if c not in ["duplicado", "is_sedex"]]
+    styled_tabela = tabela[colunas_visiveis + ["duplicado", "is_sedex"]].style.apply(highlight_prioridades, axis=1)
 
-    # Aplica o estilo somente nas colunas visíveis
-    styled_tabela = tabela[colunas_visiveis + ["duplicado"]].style.apply(highlight_duplicados, axis=1)
-
-    # Exibe apenas as colunas visíveis
-    st.dataframe(styled_tabela.hide(["duplicado"], axis=1), use_container_width=True)
-
+    st.dataframe(styled_tabela.hide(["duplicado", "is_sedex"], axis=1), use_container_width=True)
 
     # -------------------------------------------------
     # 🚚 Processamento de pedidos
