@@ -3212,7 +3212,8 @@ if menu == "📦 Dashboard – Logística":
             st.markdown(f"#### Pedido #{order_display} — {row['customer_name']}")
             st.caption(f"Produto: {row['product_title']} — Variante: {row['variant_title']}")
 
-            with st.form(key=f"form_{row.order_id}", clear_on_submit=True):
+            unique_form_key = f"form_{row.order_id}_{row.Index}"
+            with st.form(key=unique_form_key, clear_on_submit=True):
                 tracking_number = st.text_input("📦 Código de rastreio (opcional)", key=f"track_{row['order_id']}")
                 submitted = st.form_submit_button("✅ Processar pedido")
 
