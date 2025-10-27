@@ -3154,7 +3154,7 @@ if menu == "📦 Dashboard – Logística":
     colD.metric("💸 Ticket médio", f"R$ {ticket_medio:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
 
     # -------------------------------------------------
-    # 📋 Tabela de pedidos
+    # 📋 Tabela de pedidos (com agrupamento hierárquico)
     # -------------------------------------------------
     st.subheader("📋 Pedidos filtrados")
 
@@ -3177,22 +3177,24 @@ if menu == "📦 Dashboard – Logística":
     tabela = df[colunas].copy()
 
     # -------------------------------------------------
-    # 🔽 Filtros de ordenação dinâmicos
+    # 🔽 Agrupamento hierárquico
     # -------------------------------------------------
-    st.markdown("#### 🔽 Ordenar tabela por:")
+    st.markdown("#### 🔽 Agrupar por:")
 
     col1, col2, col3 = st.columns(3)
     with col1:
-        sort1 = st.selectbox("1️⃣ Primeiro critério", colunas, index=colunas.index("customer_name") if "customer_name" in colunas else 0)
+        group1 = st.selectbox("1️⃣ Primeiro agrupamento", colunas, key="group1", index=colunas.index("customer_name") if "customer_name" in colunas else 0)
     with col2:
-        sort2 = st.selectbox("2️⃣ Segundo critério (opcional)", ["(Nenhum)"] + colunas)
+        group2 = st.selectbox("2️⃣ Segundo agrupamento (opcional)", ["(Nenhum)"] + colunas, key="group2")
     with col3:
-        sort3 = st.selectbox("3️⃣ Terceiro critério (opcional)", ["(Nenhum)"] + colunas)
+        group3 = st.selectbox("3️⃣ Terceiro agrupamento (opcional)", ["(Nenhum)"] + colunas, key="group3")
 
-    sort_columns = [c for c in [sort1, sort2, sort3] if c and c != "(Nenhum)"]
-    ascending = st.toggle("⬆️ Ordem crescente", value=True)
+    # Monta lista dinâmica de agrupamentos
+    group_cols = [c for c in [group1, group2, group3] if c and c != "(Nenhum)"]
 
-    tabela = tabela.sort_values(by=sort_columns, ascending=ascending).copy()
+    # ✅ Reordena com base nos agrupamentos (mantendo integridade da linha)
+    if group_cols:
+        tabela = tabela.sort_values(by=group_cols, kind="stable", na_position="last").copy()
 
     # -------------------------------------------------
     # 🏷️ Renomeia colunas e prepara exibição
