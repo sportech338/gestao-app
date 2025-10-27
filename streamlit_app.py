@@ -3205,18 +3205,19 @@ if menu == "📦 Dashboard – Logística":
         ascending=[False, True, False]
     )
 
-    # 🎨 Destaca duplicados com fundo azul translúcido
-    def highlight_duplicados(row):
+    # 🎨 Destaca duplicados (azul) e SEDEX (amarelo suave)
+    def highlight_prioridades(row):
         if row["duplicado"]:
             return ['background-color: rgba(0, 123, 255, 0.15)'] * len(row)
+        elif row["is_sedex"]:
+            return ['background-color: rgba(255, 215, 0, 0.15)'] * len(row)
         else:
             return [''] * len(row)
 
     colunas_visiveis = [c for c in tabela.columns if c not in ["duplicado", "is_sedex"]]
-    styled_tabela = tabela[colunas_visiveis + ["duplicado"]].style.apply(highlight_duplicados, axis=1)
+    styled_tabela = tabela[colunas_visiveis + ["duplicado", "is_sedex"]].style.apply(highlight_prioridades, axis=1)
 
-    st.dataframe(styled_tabela.hide(["duplicado"], axis=1), use_container_width=True)
-
+    st.dataframe(styled_tabela.hide(["duplicado", "is_sedex"], axis=1), use_container_width=True)
 
     # -------------------------------------------------
     # 🚚 Processamento de pedidos
