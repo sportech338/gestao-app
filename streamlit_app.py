@@ -3178,10 +3178,16 @@ if menu == "📦 Dashboard – Logística":
     tabela = df[colunas].sort_values("created_at", ascending=False).copy()
 
     tabela.rename(columns={
-        order_col: "Pedido", "created_at": "Data do pedido", "customer_name": "Nome do cliente",
-        "quantity": "Qtd", "product_title": "Produto", "variant_title": "Variante",
-        "price": "Preço", "fulfillment_status": "Status de processamento",
-        "forma_entrega": "Frete", "estado": "Estado"
+        order_col: "Pedido",
+        "created_at": "Data do pedido",
+        "customer_name": "Nome do cliente",
+        "quantity": "Qtd",
+        "product_title": "Produto",
+        "variant_title": "Variante",
+        "price": "Preço",
+        "fulfillment_status": "Status de processamento",
+        "forma_entrega": "Frete",
+        "estado": "Estado"
     }, inplace=True)
 
     if "Pedido" in tabela.columns:
@@ -3191,7 +3197,33 @@ if menu == "📦 Dashboard – Logística":
         lambda x: "✅ Processado" if str(x).lower() in ["fulfilled", "shipped", "complete"] else "🟡 Não processado"
     )
 
-    st.dataframe(tabela, use_container_width=True)
+    # -------------------------------------------------
+    # 💠 Clientes repetidos no topo + destaque azul
+    # -------------------------------------------------
+    tabela["Repeticoes"] = tabela.groupby("Nome do cliente")["Nome do cliente"].transform("count")
+
+    # Ordena colocando primeiro quem aparece mais de uma vez
+    tabela.sort_values(
+        by=["Repeticoes", "Nome do cliente", "Data do pedido"],
+        ascending=[False, True, False],
+        inplace=True
+    )
+
+    def highlight_duplicates(df):
+        colors = []
+        prev_name = None
+        for _, row in df.iterrows():
+            name = row["Nome do cliente"]
+            if name == prev_name:
+                colors.append(['background-color: rgba(0, 123, 255, 0.15);'] * len(df.columns))
+            else:
+                colors.append([''] * len(df.columns))
+            prev_name = name
+        return pd.DataFrame(colors, columns=df.columns)
+
+    styled_table = tabela.drop(columns=["Repeticoes"]).style.apply(highlight_duplicates, axis=None)
+
+    st.dataframe(styled_table, use_container_width=True)
 
     # -------------------------------------------------
     # 🚚 Processamento de pedidos
