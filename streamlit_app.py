@@ -3201,11 +3201,15 @@ if menu == "📦 Dashboard – Logística":
         else:
             return [''] * len(row)
 
-    styled_tabela = tabela.style.apply(highlight_duplicados, axis=1)
-
-    # ✅ Exibe a tabela SEM mostrar a coluna 'duplicado'
+    # Define colunas que serão mostradas (oculta visualmente a 'duplicado')
     colunas_visiveis = [c for c in tabela.columns if c != "duplicado"]
-    st.dataframe(styled_tabela[ colunas_visiveis ], use_container_width=True)
+
+    # Aplica o estilo somente nas colunas visíveis
+    styled_tabela = tabela[colunas_visiveis + ["duplicado"]].style.apply(highlight_duplicados, axis=1)
+
+    # Exibe apenas as colunas visíveis
+    st.dataframe(styled_tabela.hide(["duplicado"], axis=1), use_container_width=True)
+
 
     # -------------------------------------------------
     # 🚚 Processamento de pedidos
