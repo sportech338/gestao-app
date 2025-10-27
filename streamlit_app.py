@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -3154,7 +3155,7 @@ if menu == "📦 Dashboard – Logística":
     colD.metric("💸 Ticket médio", f"R$ {ticket_medio:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
 
     # -------------------------------------------------
-    # 📋 Tabela de pedidos (com agrupamento hierárquico)
+    # 📋 Tabela de pedidos
     # -------------------------------------------------
     st.subheader("📋 Pedidos filtrados")
 
@@ -3171,34 +3172,11 @@ if menu == "📦 Dashboard – Logística":
         </style>
     """, unsafe_allow_html=True)
 
-    colunas = ["created_at", order_col, "customer_name", "quantity",
-               "product_title", "variant_title", "forma_entrega"]
+    colunas = ["created_at", order_col, "customer_name", "quantity", "product_title",
+               "variant_title", "forma_entrega"]
     colunas = [c for c in colunas if c in df.columns]
-    tabela = df[colunas].copy()
+    tabela = df[colunas].sort_values("created_at", ascending=False).copy()
 
-    # -------------------------------------------------
-    # 🔽 Agrupamento hierárquico
-    # -------------------------------------------------
-    st.markdown("#### 🔽 Agrupar por:")
-
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        group1 = st.selectbox("1️⃣ Primeiro agrupamento", colunas, key="group1", index=colunas.index("customer_name") if "customer_name" in colunas else 0)
-    with col2:
-        group2 = st.selectbox("2️⃣ Segundo agrupamento (opcional)", ["(Nenhum)"] + colunas, key="group2")
-    with col3:
-        group3 = st.selectbox("3️⃣ Terceiro agrupamento (opcional)", ["(Nenhum)"] + colunas, key="group3")
-
-    # Monta lista dinâmica de agrupamentos
-    group_cols = [c for c in [group1, group2, group3] if c and c != "(Nenhum)"]
-
-    # ✅ Reordena com base nos agrupamentos (mantendo integridade da linha)
-    if group_cols:
-        tabela = tabela.sort_values(by=group_cols, kind="stable", na_position="last").copy()
-
-    # -------------------------------------------------
-    # 🏷️ Renomeia colunas e prepara exibição
-    # -------------------------------------------------
     tabela.rename(columns={
         order_col: "Pedido", "created_at": "Data do pedido", "customer_name": "Nome do cliente",
         "quantity": "Qtd", "product_title": "Produto", "variant_title": "Variante",
