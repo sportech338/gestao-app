@@ -2937,42 +2937,6 @@ if menu == "📦 Dashboard – Logística":
     st.title("📦 Dashboard — Logística")
     st.caption("Visualização dos pedidos, estoque e processamento manual via Shopify API.")
 
-    # 💅 CSS leve para visual moderno
-    st.markdown("""
-        <style>
-        /* Fundo geral */
-        .stApp { background-color: #f9fafb; }
-
-        /* Cards de métricas */
-        .stMetric { background: #fff; border-radius: 10px; padding: 12px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
-
-        /* Containers de pedidos */
-        div[data-testid="stVerticalBlock"] > div[style*="border: 1px solid"] {
-            border-radius: 10px !important;
-            box-shadow: 0 2px 6px rgba(0,0,0,0.08);
-            background: white;
-            padding: 1rem !important;
-            margin-bottom: 1rem;
-            transition: all 0.2s ease;
-        }
-        div[data-testid="stVerticalBlock"] > div[style*="border: 1px solid"]:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 4px 10px rgba(0,0,0,0.15);
-        }
-
-        /* Botões */
-        button[kind="primary"] {
-            border-radius: 8px !important;
-            font-weight: 600 !important;
-        }
-
-        /* Inputs */
-        input, textarea {
-            border-radius: 8px !important;
-        }
-        </style>
-    """, unsafe_allow_html=True)
-
     # -------------------------------------------------
     # 📅 Seção de período
     # -------------------------------------------------
