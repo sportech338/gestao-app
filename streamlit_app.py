@@ -2852,7 +2852,12 @@ if menu == "📦 Dashboard – Logística":
         (hoje, hoje),  # padrão: dia atual
         format="DD/MM/YYYY"
     )
-    start_date, end_date = periodo
+
+    # 🩵 Corrige: garante sempre duas datas válidas
+    if isinstance(periodo, tuple):
+        start_date, end_date = periodo
+    else:
+        start_date = end_date = periodo
 
     # ---- Atualiza dados automaticamente quando o período muda ----
     periodo_atual = st.session_state.get("periodo_atual")
