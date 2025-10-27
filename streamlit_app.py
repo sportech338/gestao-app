@@ -2987,13 +2987,27 @@ if menu == "📦 Dashboard – Logística":
     # 🔄 Carregamento de dados (cache leve)
     # -------------------------------------------------
     periodo_atual = st.session_state.get("periodo_atual")
-    if periodo_atual != (start_date, end_date):
+
+    # Detecta se há busca ativa antes do carregamento
+    busca_ativa = "busca_ativa" in st.session_state and st.session_state["busca_ativa"]
+
+    if periodo_atual != (start_date, end_date) or busca_ativa:
         with st.spinner("🔄 Carregando dados da Shopify..."):
+
             produtos = get_products_with_variants()
-            pedidos = get_orders(start_date=start_date, end_date=end_date)
+
+            # Se há busca ativa, ignora o período e busca o histórico completo
+            if st.session_state.get("busca_ativa", False):
+                st.info("📦 Carregando todos os pedidos (busca global ativada)...")
+                pedidos = get_orders(start_date=date(2020, 1, 1), end_date=hoje)
+            else:
+                pedidos = get_orders(start_date=start_date, end_date=end_date)
+
             st.session_state["produtos"] = produtos
             st.session_state["pedidos"] = pedidos
             st.session_state["periodo_atual"] = (start_date, end_date)
+            st.session_state["busca_ativa"] = False  # reseta o estado
+
         st.success(f"✅ Dados carregados de {start_date.strftime('%d/%m/%Y')} até {end_date.strftime('%d/%m/%Y')}")
     else:
         produtos = st.session_state["produtos"]
@@ -3004,6 +3018,7 @@ if menu == "📦 Dashboard – Logística":
     # -------------------------------------------------
     st.subheader("🔍 Busca rápida")
     busca = st.text_input("Digite parte do nome do cliente ou número do pedido:")
+    st.session_state["busca_ativa"] = bool(busca.strip())
 
     # Preparação base
     for col in ["order_id", "order_number", "financial_status", "fulfillment_status"]:
