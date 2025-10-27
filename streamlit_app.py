@@ -2932,33 +2932,80 @@ if menu == "📊 Dashboard – Tráfego Pago":
 # =====================================================
 if menu == "📦 Dashboard – Logística":
     # -------------------------------------------------
-    # 🧭 Cabeçalho e estilo geral
+    # 🧭 Cabeçalho
     # -------------------------------------------------
     st.title("📦 Dashboard — Logística")
     st.caption("Visualização dos pedidos, estoque e processamento manual via Shopify API.")
 
     # -------------------------------------------------
-    # 🔄 Carregamento inicial
+    # 🧭 SIDEBAR — Filtro lateral de período
     # -------------------------------------------------
-    hoje = datetime.now(APP_TZ).date()
-    periodo_padrao = (hoje, hoje)
+    st.sidebar.header("📅 Período rápido")
 
-    # Garante que os dados básicos estejam carregados antes de qualquer filtro
-    if "produtos" not in st.session_state or "pedidos" not in st.session_state:
-        with st.spinner("🔄 Carregando dados iniciais da Shopify..."):
+    hoje = datetime.now(APP_TZ).date()
+
+    opcoes_periodo = [
+        "Hoje", "Ontem", "Últimos 7 dias", "Últimos 14 dias",
+        "Últimos 30 dias", "Últimos 90 dias", "Esta semana",
+        "Este mês", "Máximo", "Personalizado"
+    ]
+
+    escolha_periodo = st.sidebar.radio("Selecione:", opcoes_periodo, index=2)
+
+    if escolha_periodo == "Hoje":
+        start_date, end_date = hoje, hoje
+    elif escolha_periodo == "Ontem":
+        start_date, end_date = hoje - timedelta(days=1), hoje - timedelta(days=1)
+    elif escolha_periodo == "Últimos 7 dias":
+        start_date, end_date = hoje - timedelta(days=7), hoje
+    elif escolha_periodo == "Últimos 14 dias":
+        start_date, end_date = hoje - timedelta(days=14), hoje
+    elif escolha_periodo == "Últimos 30 dias":
+        start_date, end_date = hoje - timedelta(days=30), hoje
+    elif escolha_periodo == "Últimos 90 dias":
+        start_date, end_date = hoje - timedelta(days=90), hoje
+    elif escolha_periodo == "Esta semana":
+        start_date, end_date = hoje - timedelta(days=hoje.weekday()), hoje
+    elif escolha_periodo == "Este mês":
+        start_date = hoje.replace(day=1)
+        end_date = hoje
+    elif escolha_periodo == "Máximo":
+        start_date = date(2020, 1, 1)
+        end_date = hoje
+    else:
+        # Personalizado: exibe o seletor normal de datas
+        periodo = st.sidebar.date_input("📆 Selecione o intervalo:", (hoje, hoje), format="DD/MM/YYYY")
+        if isinstance(periodo, tuple) and len(periodo) == 2:
+            start_date, end_date = periodo
+        else:
+            st.sidebar.warning("🟡 Selecione o fim do período.")
+            st.stop()
+
+    st.sidebar.markdown(f"**Desde:** {start_date}  \n**Até:** {end_date}")
+
+    # -------------------------------------------------
+    # 🔄 Carregamento de dados (cache leve)
+    # -------------------------------------------------
+    periodo_atual = st.session_state.get("periodo_atual")
+    if periodo_atual != (start_date, end_date):
+        with st.spinner("🔄 Carregando dados da Shopify..."):
             produtos = get_products_with_variants()
-            pedidos = get_orders(start_date=periodo_padrao[0], end_date=periodo_padrao[1])
+            pedidos = get_orders(start_date=start_date, end_date=end_date)
             st.session_state["produtos"] = produtos
             st.session_state["pedidos"] = pedidos
-            st.session_state["periodo_atual"] = periodo_padrao
-        st.success("✅ Dados iniciais carregados!")
+            st.session_state["periodo_atual"] = (start_date, end_date)
+        st.success(f"✅ Dados carregados de {start_date.strftime('%d/%m/%Y')} até {end_date.strftime('%d/%m/%Y')}")
     else:
         produtos = st.session_state["produtos"]
         pedidos = st.session_state["pedidos"]
 
     # -------------------------------------------------
-    # 🧩 Preparação dos dados
+    # 🔍 Busca rápida (no topo)
     # -------------------------------------------------
+    st.subheader("🔍 Busca rápida")
+    busca = st.text_input("Digite parte do nome do cliente ou número do pedido:")
+
+    # Preparação
     for col in ["order_id", "order_number", "financial_status", "fulfillment_status"]:
         if col not in pedidos.columns:
             pedidos[col] = None
@@ -2976,14 +3023,10 @@ if menu == "📦 Dashboard – Logística":
     base["quantity"] = pd.to_numeric(base.get("quantity"), errors="coerce").fillna(0)
     base["line_revenue"] = base["price"] * base["quantity"]
 
-    # -------------------------------------------------
-    # 🔍 Busca rápida (no topo, sem restrição de data)
-    # -------------------------------------------------
-    st.subheader("🔍 Busca rápida")
-    busca = st.text_input("Digite parte do nome do cliente ou número do pedido:", "")
+    # Aplica período
+    df = base[(base["created_at"].dt.date >= start_date) & (base["created_at"].dt.date <= end_date)].copy()
 
-    df = base.copy()  # começa com todos os pedidos por padrão
-
+    # Aplica busca
     if busca:
         busca_lower = busca.strip().lower()
         resultados = base[
@@ -2991,44 +3034,28 @@ if menu == "📦 Dashboard – Logística":
             | base["order_number"].astype(str).str.contains(busca_lower, na=False)
             | base["order_id"].astype(str).str.contains(busca_lower, na=False)
         ]
-
         if not resultados.empty:
-            st.success(f"🔎 {len(resultados)} resultado(s) encontrado(s) para '{busca}' (sem filtro de data).")
+            st.success(f"🔎 {len(resultados)} resultado(s) encontrado(s) para '{busca}'.")
             df = resultados.copy()
         else:
             st.warning(f"❌ Nenhum resultado encontrado para '{busca}'.")
             st.stop()
 
     # -------------------------------------------------
-    # 📅 Filtro de período
-    # -------------------------------------------------
-    st.subheader("📅 Período")
-    periodo = st.date_input("Selecione o intervalo de datas:", periodo_padrao, format="DD/MM/YYYY")
-
-    if isinstance(periodo, tuple) and len(periodo) == 2:
-        start_date, end_date = periodo
-    else:
-        st.info("🟡 Selecione o fim do período para carregar os pedidos.")
-        st.stop()
-
-    # Filtra apenas se NÃO houver busca ativa
-    if not busca:
-        df = df[(df["created_at"].dt.date >= start_date) & (df["created_at"].dt.date <= end_date)]
-
-    # -------------------------------------------------
-    # 🎛️ Filtros adicionais (produto e variante)
+    # 🎛️ Filtros adicionais
     # -------------------------------------------------
     st.subheader("🎛️ Filtros adicionais")
     col1, col2 = st.columns(2)
     with col1:
-        escolha_prod = st.selectbox("Produto", ["(Todos)"] + sorted(base["product_title"].dropna().unique().tolist()), index=0)
+        escolha_prod = st.selectbox("Produto", ["(Todos)"] + sorted(base["product_title"].dropna().unique().tolist()))
     with col2:
-        escolha_var = st.selectbox("Variante", ["(Todas)"] + sorted(base["variant_title"].dropna().unique().tolist()), index=0)
+        escolha_var = st.selectbox("Variante", ["(Todas)"] + sorted(base["variant_title"].dropna().unique().tolist()))
 
     if escolha_prod != "(Todos)":
         df = df[df["product_title"] == escolha_prod]
     if escolha_var != "(Todas)":
         df = df[df["variant_title"] == escolha_var]
+
 
     if df.empty:
         st.warning("Nenhum pedido encontrado com os filtros selecionados.")
