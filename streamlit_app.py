@@ -10,6 +10,8 @@ from plotly.subplots import make_subplots
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional
 
+st.set_page_config(page_title="Meta Ads — Paridade + Funil", page_icon="📊", layout="wide")
+
 # =====================================================
 # 🎛️ MENU PRINCIPAL NA SIDEBAR
 # =====================================================
@@ -221,7 +223,6 @@ def log_fulfillment(order_id):
         f.write(f"{datetime.now(APP_TZ)} - Pedido {order_id} processado\n")
 
 # =============== Config & Estilos ===============
-st.set_page_config(page_title="Meta Ads — Paridade + Funil", page_icon="📊", layout="wide")
 st.markdown("""
 <style>
 .small-muted { color:#6b7280; font-size:12px; }
