@@ -3159,75 +3159,71 @@ if menu == "📦 Dashboard – Logística":
     # -------------------------------------------------
     st.subheader("📋 Pedidos filtrados")
 
-    # Define estilo CSS
     st.markdown("""
         <style>
-        table.custom {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 15px;
+        thead tr th:first-child, tbody tr td:first-child {
+            text-align: right !important;
         }
-        table.custom th, table.custom td {
-            border-bottom: 1px solid #ddd;
-            padding: 6px 8px;
-            text-align: left;
-        }
-        table.custom tr:hover {
-            background-color: #f5f5f5;
-        }
-        table.custom .repetido {
-            background-color: rgba(0, 123, 255, 0.12);
+        input[type="text"] {
+            border-radius: 10px;
+            border: 1px solid #444;
+            padding: 8px 12px;
         }
         </style>
     """, unsafe_allow_html=True)
 
-    # Colunas principais
-    colunas = ["created_at", order_col, "customer_name", "quantity",
-               "product_title", "variant_title", "forma_entrega"]
+    colunas = ["created_at", order_col, "customer_name", "quantity", "product_title",
+               "variant_title", "forma_entrega"]
     colunas = [c for c in colunas if c in df.columns]
     tabela = df[colunas].sort_values("created_at", ascending=False).copy()
 
     tabela.rename(columns={
-        order_col: "Pedido",
-        "created_at": "Data do pedido",
-        "customer_name": "Nome do cliente",
-        "quantity": "Qtd",
-        "product_title": "Produto",
-        "variant_title": "Variante",
-        "forma_entrega": "Frete"
+        order_col: "Pedido", "created_at": "Data do pedido", "customer_name": "Nome do cliente",
+        "quantity": "Qtd", "product_title": "Produto", "variant_title": "Variante",
+        "price": "Preço", "fulfillment_status": "Status de processamento",
+        "forma_entrega": "Frete", "estado": "Estado"
     }, inplace=True)
 
-    # Limpa formatação do pedido
     if "Pedido" in tabela.columns:
         tabela["Pedido"] = tabela["Pedido"].astype(str).str.replace(",", "").str.replace(".0", "", regex=False)
 
-    # Conta repetições
+    tabela["Status de processamento"] = df["fulfillment_status"].apply(
+        lambda x: "✅ Processado" if str(x).lower() in ["fulfilled", "shipped", "complete"] else "🟡 Não processado"
+    )
+
+    # -------------------------------------------------
+    # 💠 Prioriza e destaca clientes repetidos
+    # -------------------------------------------------
     rep_counts = tabela["Nome do cliente"].value_counts()
     tabela["Repeticoes"] = tabela["Nome do cliente"].map(rep_counts)
 
     # Ordena — repetidos primeiro
-    tabela.sort_values(by=["Repeticoes", "Nome do cliente", "Data do pedido"],
-                       ascending=[False, True, False], inplace=True)
+    tabela.sort_values(
+        by=["Repeticoes", "Nome do cliente", "Data do pedido"],
+        ascending=[False, True, False],
+        inplace=True
+    )
 
-    # Monta HTML da tabela
-    html = "<table class='custom'><thead><tr>"
-    for col in tabela.columns.drop("Repeticoes"):
-        html += f"<th>{col}</th>"
-    html += "</tr></thead><tbody>"
+    # Aplica destaque visual nos clientes repetidos
+    def highlight_repetidos(val, nome_cliente, repeticoes):
+        if repeticoes > 1:
+            return "background-color: rgba(0, 123, 255, 0.12);"
+        return ""
 
-    for _, row in tabela.iterrows():
-        classe = "repetido" if row["Repeticoes"] > 1 else ""
-        html += f"<tr class='{classe}'>"
-        for col in tabela.columns.drop("Repeticoes"):
-            val = row[col]
-            if isinstance(val, pd.Timestamp):
-                val = val.strftime("%d/%m/%Y")
-            html += f"<td>{val}</td>"
-        html += "</tr>"
+    # Cria cópia limpa sem coluna auxiliar
+    styled_table = (
+        tabela.drop(columns=["Repeticoes"])
+        .style.apply(
+            lambda s: [
+                highlight_repetidos(v, tabela.loc[v.index, "Nome do cliente"], tabela.loc[v.index, "Repeticoes"])
+                for v in s
+            ],
+            axis=0
+        )
+    )
 
-    html += "</tbody></table>"
+    st.dataframe(styled_table, use_container_width=True)
 
-    st.markdown(html, unsafe_allow_html=True)
 
     # -------------------------------------------------
     # 🚚 Processamento de pedidos
