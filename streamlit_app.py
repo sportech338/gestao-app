@@ -3154,7 +3154,7 @@ if menu == "📦 Dashboard – Logística":
     colD.metric("💸 Ticket médio", f"R$ {ticket_medio:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
 
     # -------------------------------------------------
-    # 📋 Tabela de pedidos
+    # 📋 Tabela de pedidos (com filtros por coluna)
     # -------------------------------------------------
     st.subheader("📋 Pedidos filtrados")
 
@@ -3190,27 +3190,36 @@ if menu == "📦 Dashboard – Logística":
         lambda x: "✅ Processado" if str(x).lower() in ["fulfilled", "shipped", "complete"] else "🟡 Não processado"
     )
 
-    st.dataframe(tabela, use_container_width=True)
+    # -------------------------------------------------
+    # 🎯 Filtros individuais por coluna
+    # -------------------------------------------------
+    st.markdown("### 🎯 Filtros avançados")
+    col_filtros = st.columns(len(tabela.columns))
+
+    filtros = {}
+    for i, c in enumerate(tabela.columns):
+        with col_filtros[i]:
+            filtros[c] = st.text_input(f"🔍 {c}", "", key=f"filter_{c}")
+
+    # Aplica filtros sem quebrar linhas
+    tabela_filtrada = tabela.copy()
+    for c, termo in filtros.items():
+        if termo.strip():
+            termo_lower = termo.strip().lower()
+            tabela_filtrada = tabela_filtrada[
+                tabela_filtrada[c].astype(str).str.lower().str.contains(termo_lower, na=False)
+            ]
 
     # -------------------------------------------------
-    # 🚚 Processamento de pedidos
+    # 📊 Exibição final
     # -------------------------------------------------
-    st.subheader("🚚 Processar pedidos manualmente")
-
-    pendentes = df[df["fulfillment_status"].isin(["unfulfilled", None, "null"])]
-    if not pendentes.empty:
-        if st.button("🚀 Processar TODOS os pedidos pendentes"):
-            progress = st.progress(0)
-            total = len(pendentes)
-            for i, row in enumerate(pendentes.itertuples(), start=1):
-                try:
-                    create_fulfillment(row.order_id)
-                except Exception as e:
-                    st.warning(f"Erro no pedido {row.order_id}: {e}")
-                progress.progress(i / total)
-            st.success("✅ Todos os pedidos pendentes foram processados com sucesso!")
-    else:
-        st.info("✅ Nenhum pedido pendente para processar.")
+    st.dataframe(
+        tabela_filtrada.sort_values(
+            by=[c for c in ["Nome do cliente", "Produto", "Frete"] if c in tabela_filtrada.columns],
+            ascending=[True, True, True]
+        ),
+        use_container_width=True
+    )
 
     # -------------------------------------------------
     # 📦 Processar individualmente (sem reload)
