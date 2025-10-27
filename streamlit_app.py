@@ -3171,11 +3171,32 @@ if menu == "📦 Dashboard – Logística":
         </style>
     """, unsafe_allow_html=True)
 
-    colunas = ["created_at", order_col, "customer_name", "quantity", "product_title",
-               "variant_title", "forma_entrega"]
+    colunas = ["created_at", order_col, "customer_name", "quantity",
+               "product_title", "variant_title", "forma_entrega"]
     colunas = [c for c in colunas if c in df.columns]
-    tabela = df[colunas].sort_values("created_at", ascending=False).copy()
+    tabela = df[colunas].copy()
 
+    # -------------------------------------------------
+    # 🔽 Filtros de ordenação dinâmicos
+    # -------------------------------------------------
+    st.markdown("#### 🔽 Ordenar tabela por:")
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        sort1 = st.selectbox("1️⃣ Primeiro critério", colunas, index=colunas.index("customer_name") if "customer_name" in colunas else 0)
+    with col2:
+        sort2 = st.selectbox("2️⃣ Segundo critério (opcional)", ["(Nenhum)"] + colunas)
+    with col3:
+        sort3 = st.selectbox("3️⃣ Terceiro critério (opcional)", ["(Nenhum)"] + colunas)
+
+    sort_columns = [c for c in [sort1, sort2, sort3] if c and c != "(Nenhum)"]
+    ascending = st.toggle("⬆️ Ordem crescente", value=True)
+
+    tabela = tabela.sort_values(by=sort_columns, ascending=ascending).copy()
+
+    # -------------------------------------------------
+    # 🏷️ Renomeia colunas e prepara exibição
+    # -------------------------------------------------
     tabela.rename(columns={
         order_col: "Pedido", "created_at": "Data do pedido", "customer_name": "Nome do cliente",
         "quantity": "Qtd", "product_title": "Produto", "variant_title": "Variante",
