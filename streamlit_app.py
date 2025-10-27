@@ -3154,7 +3154,7 @@ if menu == "📦 Dashboard – Logística":
     colD.metric("💸 Ticket médio", f"R$ {ticket_medio:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
 
     # -------------------------------------------------
-    # 📋 Tabela de pedidos (com filtros por coluna)
+    # 📋 Tabela de pedidos
     # -------------------------------------------------
     st.subheader("📋 Pedidos filtrados")
 
@@ -3174,52 +3174,77 @@ if menu == "📦 Dashboard – Logística":
     colunas = ["created_at", order_col, "customer_name", "quantity", "product_title",
                "variant_title", "forma_entrega"]
     colunas = [c for c in colunas if c in df.columns]
-    tabela = df[colunas].sort_values("created_at", ascending=False).copy()
 
+    # Base padrão (sem ordenação ainda)
+    tabela = df[colunas].copy()
+
+    # Renomeia para cabeçalhos amigáveis (usados nos selects também)
     tabela.rename(columns={
-        order_col: "Pedido", "created_at": "Data do pedido", "customer_name": "Nome do cliente",
-        "quantity": "Qtd", "product_title": "Produto", "variant_title": "Variante",
-        "price": "Preço", "fulfillment_status": "Status de processamento",
-        "forma_entrega": "Frete", "estado": "Estado"
+        order_col: "Pedido",
+        "created_at": "Data do pedido",
+        "customer_name": "Nome do cliente",
+        "quantity": "Qtd",
+        "product_title": "Produto",
+        "variant_title": "Variante",
+        "forma_entrega": "Frete",
     }, inplace=True)
 
+    # Normaliza Pedido como texto legível
     if "Pedido" in tabela.columns:
         tabela["Pedido"] = tabela["Pedido"].astype(str).str.replace(",", "").str.replace(".0", "", regex=False)
 
-    tabela["Status de processamento"] = df["fulfillment_status"].apply(
-        lambda x: "✅ Processado" if str(x).lower() in ["fulfilled", "shipped", "complete"] else "🟡 Não processado"
-    )
+    # (opcional) Status humanizado — se quiser exibir depois, basta adicionar a coluna no 'colunas' inicial
+    # tabela["Status de processamento"] = df["fulfillment_status"].apply(
+    #     lambda x: "✅ Processado" if str(x).lower() in ["fulfilled", "shipped", "complete"] else "🟡 Não processado"
+    # )
 
     # -------------------------------------------------
-    # 🎯 Filtros individuais por coluna
+    # ⚙️ Ordenação avançada (até 3 níveis, estável)
     # -------------------------------------------------
-    st.markdown("### 🎯 Filtros avançados")
-    col_filtros = st.columns(len(tabela.columns))
+    st.markdown("### ⚙️ Ordenação avançada")
 
-    filtros = {}
-    for i, c in enumerate(tabela.columns):
-        with col_filtros[i]:
-            filtros[c] = st.text_input(f"🔍 {c}", "", key=f"filter_{c}")
+    # Opções disponíveis com os nomes já renomeados acima
+    opcoes_ord = [c for c in ["Nome do cliente", "Produto", "Frete", "Data do pedido", "Pedido", "Variante", "Qtd"] if c in tabela.columns]
+    nenhum = "— (nenhum)"
 
-    # Aplica filtros sem quebrar linhas
-    tabela_filtrada = tabela.copy()
-    for c, termo in filtros.items():
-        if termo.strip():
-            termo_lower = termo.strip().lower()
-            tabela_filtrada = tabela_filtrada[
-                tabela_filtrada[c].astype(str).str.lower().str.contains(termo_lower, na=False)
-            ]
+    # Defaults inteligentes
+    def _default_if_exists(name, fallback=None):
+        return name if name in opcoes_ord else (fallback if fallback in opcoes_ord else (opcoes_ord[0] if opcoes_ord else nenhum))
+
+    colA, colB, colC = st.columns(3)
+    with colA:
+        sort1_col = st.selectbox("1º nível", opcoes_ord, index=opcoes_ord.index(_default_if_exists("Nome do cliente")))
+        asc1 = st.toggle("Crescente", value=True, key="asc1")
+    with colB:
+        sort2_col = st.selectbox("2º nível", [nenhum] + opcoes_ord, index=( [nenhum] + opcoes_ord ).index(_default_if_exists("Produto", nenhum)))
+        asc2 = st.toggle("Crescente ", value=True, key="asc2") if sort2_col != nenhum else True
+    with colC:
+        sort3_col = st.selectbox("3º nível", [nenhum] + opcoes_ord, index=( [nenhum] + opcoes_ord ).index(_default_if_exists("Frete", nenhum)))
+        asc3 = st.toggle("Crescente  ", value=True, key="asc3") if sort3_col != nenhum else True
+
+    # Monta listas de ordenação na ordem de prioridade escolhida
+    by_cols = [c for c in [sort1_col, sort2_col, sort3_col] if c != nenhum]
+
+    # Ascendentes correspondentes
+    asc_list = []
+    for c in [sort1_col, sort2_col, sort3_col]:
+        if c == nenhum:
+            continue
+        asc_list.append(asc1 if c == sort1_col else (asc2 if c == sort2_col else asc3))
+
+    # Tie-breaker por Data do pedido (desc) se existir e não tiver sido escolhida antes
+    if "Data do pedido" in tabela.columns and "Data do pedido" not in by_cols:
+        by_cols.append("Data do pedido")
+        asc_list.append(False)  # mais recente primeiro
+
+    # Aplica a ordenação estável
+    if by_cols:
+        tabela = tabela.sort_values(by=by_cols, ascending=asc_list, kind="mergesort")
 
     # -------------------------------------------------
     # 📊 Exibição final
     # -------------------------------------------------
-    st.dataframe(
-        tabela_filtrada.sort_values(
-            by=[c for c in ["Nome do cliente", "Produto", "Frete"] if c in tabela_filtrada.columns],
-            ascending=[True, True, True]
-        ),
-        use_container_width=True
-    )
+    st.dataframe(tabela, use_container_width=True)
 
     # -------------------------------------------------
     # 📦 Processar individualmente (sem reload)
