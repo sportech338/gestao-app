@@ -3190,11 +3190,12 @@ if menu == "📦 Dashboard – Logística":
         lambda x: "✅ Processado" if str(x).lower() in ["fulfilled", "shipped", "complete"] else "🟡 Não processado"
     )
 
-    # 🔝 Coloca todos os nomes repetidos no topo
+    # 🔝 Coloca todos os nomes repetidos no topo, mas mantém a coluna 'duplicado' oculta
     tabela["duplicado"] = tabela["Nome do cliente"].duplicated(keep=False)
-    tabela = tabela.sort_values(by=["duplicado", "Data do pedido"], ascending=[False, False]).drop(columns="duplicado")
+    tabela = tabela.sort_values(by=["duplicado", "Data do pedido"], ascending=[False, False])
 
-    st.dataframe(tabela, use_container_width=True)
+    # Mostra a tabela sem exibir a coluna auxiliar
+    st.dataframe(tabela.drop(columns=["duplicado"]), use_container_width=True)
 
     # -------------------------------------------------
     # 🚚 Processamento de pedidos
