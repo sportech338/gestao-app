@@ -148,21 +148,30 @@ def get_orders(start_date=None, end_date=None, only_paid=True, limit=250):
     return pd.DataFrame(all_rows)
 
 # =====================================================
-# Buscar clientes/pedidos na Shopify
+# Buscar clientes/pedidos na Shopify (nome, e-mail ou número do pedido)
 # =====================================================
 @st.cache_data(ttl=300)
 def search_orders_shopify(query: str, limit=100):
     """
     Busca pedidos diretamente na Shopify com base em nome, e-mail ou número do pedido.
-    Evita baixar todos os pedidos.
+    Ignora outros campos e evita baixar todos os pedidos.
     """
     if not query.strip():
         return pd.DataFrame()
 
-    # Formata a query para URL (Shopify aceita alguns parâmetros básicos)
-    search_q = query.strip().replace(" ", "+")
-    url = f"{BASE_URL}/orders.json?limit={limit}&status=any&query={search_q}"
-    
+    search_q = query.strip()
+
+    # 🔍 Caso pareça número (pedido ou ID)
+    if search_q.isdigit():
+        url = f"{BASE_URL}/orders.json?limit={limit}&status=any&name={search_q}"
+    else:
+        # 🔍 Caso seja e-mail ou nome (Shopify aceita filtro direto por e-mail)
+        if "@" in search_q:
+            url = f"{BASE_URL}/orders.json?limit={limit}&status=any&email={search_q}"
+        else:
+            # 🔍 Caso seja nome (fazemos busca genérica mas apenas pelo campo de cliente)
+            url = f"{BASE_URL}/orders.json?limit={limit}&status=any&query=customer_name:{search_q}"
+
     s = _get_session()
     r = s.get(url, headers=HEADERS, timeout=60)
     r.raise_for_status()
@@ -177,6 +186,14 @@ def search_orders_shopify(query: str, limit=100):
             f"{customer.get('first_name', '')} {customer.get('last_name', '')}".strip()
             or "(Cliente não informado)"
         )
+
+        # 🔎 Filtra novamente localmente, só para garantir correspondência precisa
+        if (
+            search_q.lower() not in nome_cliente.lower()
+            and search_q.lower() not in str(o.get("order_number", "")).lower()
+            and search_q.lower() not in str(customer.get("email", "")).lower()
+        ):
+            continue
 
         for it in o.get("line_items", []):
             preco = float(it.get("price") or 0)
@@ -200,6 +217,7 @@ def search_orders_shopify(query: str, limit=100):
                 "estado": shipping.get("province", "N/A"),
                 "cidade": shipping.get("city", "N/A"),
             })
+
     return pd.DataFrame(all_rows)
 
 
