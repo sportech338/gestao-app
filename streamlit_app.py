@@ -53,12 +53,14 @@ def get_orders(start_date=None, end_date=None, only_paid=True, limit=250):
     Baixa pedidos da Shopify com filtro dinâmico de período (start_date, end_date).
     Por padrão, busca apenas o dia atual.
     """
+    # ---- Garantir que as datas sejam datetime.date ----
     hoje = datetime.now(APP_TZ).date()
     if start_date is None:
         start_date = hoje
     if end_date is None:
         end_date = hoje
 
+    # ---- Converter para string ISO com timezone ----
     start_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=APP_TZ)
     end_dt = datetime.combine(end_date, datetime.max.time(), tzinfo=APP_TZ)
 
@@ -173,61 +175,6 @@ def create_fulfillment(order_id: int, tracking_number: str | None = None,
 
     resp = _post(f"{BASE_URL}/fulfillments.json", payload, idempotency_key=str(time.time()))
     return resp.get("fulfillment")
-
-# =====================================================
-# 🔍 RASTREAMENTO DE PEDIDOS (Shopify)
-# =====================================================
-def get_fulfillment_tracking(order_id: int):
-    """
-    Retorna o código de rastreamento e a transportadora do pedido, se disponível.
-    Caso o pedido ainda não tenha fulfillment, retorna 'Ainda não enviado'.
-    """
-    try:
-        url = f"{BASE_URL}/orders/{order_id}/fulfillments.json"
-        r = requests.get(url, headers=HEADERS, timeout=60)
-        r.raise_for_status()
-        fulfillments = r.json().get("fulfillments", [])
-
-        if not fulfillments:
-            return "Ainda não enviado"
-
-        f = fulfillments[-1]
-        tracking_info = f.get("tracking_info", {})
-        number = tracking_info.get("number") or "-"
-        company = tracking_info.get("company") or "-"
-        status = f.get("status", "-")
-
-        return f"{company} ({number}) — {status}"
-    except Exception as e:
-        print(f"Erro ao buscar rastreio do pedido {order_id}: {e}")
-        return "Erro ao buscar rastreio"
-
-# =====================================================
-# ⚙️ INTEGRAÇÃO COM DSERS (Automação AliExpress)
-# =====================================================
-def process_with_dsers(order_number: str):
-    """
-    Envia o pedido para processamento automático via DSers (AliExpress).
-    É necessário ter um token configurado em st.secrets["dsers"]["api_token"].
-    """
-    try:
-        dsers_url = "https://api.dserspro.com/api/order/process"
-        headers = {
-            "Authorization": f"Bearer {st.secrets['dsers']['api_token']}",
-            "Content-Type": "application/json"
-        }
-        payload = {"order_number": order_number}
-
-        r = requests.post(dsers_url, headers=headers, json=payload, timeout=60)
-        if not r.ok:
-            raise RuntimeError(f"Erro DSers: {r.status_code} - {r.text}")
-
-        resp = r.json()
-        return {"success": True, "response": resp}
-    except Exception as e:
-        print(f"Erro ao enviar pedido {order_number} para DSers: {e}")
-        return {"success": False, "error": str(e)}
-
 
 # =============== Config & Estilos ===============
 st.set_page_config(page_title="Meta Ads — Paridade + Funil", page_icon="📊", layout="wide")
@@ -2951,7 +2898,7 @@ if menu == "📊 Dashboard – Tráfego Pago":
 # =====================================================
 if menu == "📦 Dashboard – Logística":
     st.title("📦 Dashboard — Logística")
-    st.caption("Visualização dos pedidos, estoque e rastreamento vindos da Shopify.")
+    st.caption("Visualização dos pedidos e estoque vindos da Shopify.")
 
     # ---- Datas padrão ----
     hoje = datetime.now(APP_TZ).date()
@@ -2984,12 +2931,12 @@ if menu == "📦 Dashboard – Logística":
         produtos = st.session_state.get("produtos")
         pedidos = st.session_state.get("pedidos")
 
-    # ---- Garantir colunas obrigatórias ----
+    # ---- Garantir colunas obrigatórias (para evitar KeyError) ----
     for col in ["order_id", "order_number", "financial_status", "fulfillment_status"]:
         if col not in pedidos.columns:
             pedidos[col] = None
 
-    # ---- Merge produtos/pedidos ----
+    # ---- Juntar pedidos e produtos ----
     merge_cols = ["variant_id", "sku", "product_title", "variant_title"]
     merge_cols = [c for c in merge_cols if c in produtos.columns]
 
@@ -3003,6 +2950,7 @@ if menu == "📦 Dashboard – Logística":
     # ---- Ajustar nomes ----
     if "product_title_produto" in base.columns and "product_title" not in base.columns:
         base["product_title"] = base["product_title_produto"]
+
     if "variant_title_produto" in base.columns and "variant_title" not in base.columns:
         base["variant_title"] = base["variant_title_produto"]
 
@@ -3015,12 +2963,14 @@ if menu == "📦 Dashboard – Logística":
     base["quantity"] = pd.to_numeric(base.get("quantity"), errors="coerce").fillna(0)
     base["line_revenue"] = base["price"] * base["quantity"]
 
-    # ---- Filtros adicionais ----
+    # ---- Seletores de produto e variante ----
     st.subheader("🎛️ Filtros adicionais")
     col1, col2 = st.columns(2)
+
     with col1:
         produtos_lbl = ["(Todos os produtos)"] + sorted(base["product_title"].dropna().unique().tolist())
         escolha_prod = st.selectbox("Produto", produtos_lbl, index=0)
+
     with col2:
         variantes_lbl = ["(Todas as variantes)"] + sorted(base["variant_title"].dropna().unique().tolist())
         escolha_var = st.selectbox("Variante", variantes_lbl, index=0)
@@ -3061,12 +3011,14 @@ if menu == "📦 Dashboard – Logística":
 
     # ---- Tabela final ----
     st.subheader("📋 Pedidos filtrados")
+
     colunas_existentes = [c for c in [
         order_col, "created_at", "customer_name", "quantity", "product_title",
         "variant_title", "price", "fulfillment_status", "forma_entrega", "estado"
     ] if c in df.columns]
 
     tabela = df[colunas_existentes].sort_values("created_at", ascending=False).copy()
+
     tabela.rename(columns={
         order_col: "Pedido",
         "created_at": "Data do pedido",
@@ -3091,36 +3043,25 @@ if menu == "📦 Dashboard – Logística":
     else:
         tabela["Status de processamento"] = "🟡 Não processado"
 
-    # ---- Adicionar rastreamento Shopify ----
-    tabela["Rastreamento"] = tabela["Pedido"].apply(
-        lambda x: get_fulfillment_tracking(int(float(str(x).replace("#", "")))) if pd.notnull(x) else "-"
-    )
-
     # ---- Formatação visual ----
     if "Pedido" in tabela.columns:
-        tabela["Pedido"] = tabela["Pedido"].apply(lambda x: f"#{int(float(x))}" if pd.notnull(x) else "-")
-    if "Data do pedido" in tabela.columns:
-        tabela["Data do pedido"] = pd.to_datetime(tabela["Data do pedido"], errors="coerce").dt.strftime("%d/%m/%Y %H:%M")
-    if "Preço" in tabela.columns:
-        tabela["Preço"] = tabela["Preço"].apply(lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+        tabela["Pedido"] = tabela["Pedido"].apply(
+            lambda x: f"#{int(float(x))}" if pd.notnull(x) else "-"
+        )
 
-    # ---- Exibição da tabela ----
+    if "Data do pedido" in tabela.columns:
+        tabela["Data do pedido"] = pd.to_datetime(
+            tabela["Data do pedido"], errors="coerce"
+        ).dt.strftime("%d/%m/%Y %H:%M")
+
+    if "Preço" in tabela.columns:
+        tabela["Preço"] = tabela["Preço"].apply(
+            lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        )
+
     st.dataframe(tabela, use_container_width=True)
 
-    # ---- Ações de Processamento via DSers ----
-    st.subheader("⚙️ Ações de Processamento")
-    for idx, row in tabela.iterrows():
-        col1, col2 = st.columns([3, 1])
-        col1.write(f"**Pedido:** {row['Pedido']} | {row['Status de processamento']}")
-        if col2.button("🚀 Enviar via DSers", key=f"dsers_{idx}"):
-            resp = process_with_dsers(row['Pedido'].replace("#", ""))
-            if resp.get("success"):
-                st.success(f"✅ Pedido {row['Pedido']} enviado para o DSers!")
-            else:
-                st.error(f"Erro: {resp.get('error')}")
-
     # ---- Exportar CSV ----
-    st.subheader("📤 Exportar Dados")
     csv = tabela.to_csv(index=False).encode('utf-8-sig')
     st.download_button(
         label="📥 Exportar pedidos filtrados (CSV)",
