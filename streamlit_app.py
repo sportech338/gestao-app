@@ -1081,8 +1081,6 @@ if menu == "📊 Dashboard – Tráfego Pago":
 
     st.sidebar.markdown(f"**Desde:** {start_date}  \n**Até:** {end_date}")
 
-        ready = bool(act_id and token)
-
     # ================= VALIDAÇÃO E COLETA DE DADOS =================
     if not ready:
         st.info("Informe **Ad Account ID** e **Access Token** para iniciar.")
