@@ -2838,13 +2838,29 @@ if menu == "📦 Dashboard – Logística":
     produtos = st.session_state.get("produtos")
     pedidos = st.session_state.get("pedidos")
 
+    # ---- Filtros ----
+    st.subheader("🎛️ Filtros")
+    col1, col2, col3 = st.columns(3)
+
+    hoje = datetime.now(APP_TZ).date()
+    periodo = st.date_input(
+        "📅 Período",
+        (hoje, hoje),  # padrão: dia atual
+        format="DD/MM/YYYY"
+    )
+
+    # ---- Atualizar dados da Shopify conforme o período selecionado ----
     if st.button("🔄 Atualizar dados da Shopify"):
+        start_date, end_date = periodo
         produtos = get_products_with_variants()
-        pedidos = get_orders()
+        pedidos = get_orders(start_date=start_date, end_date=end_date)
         st.session_state["produtos"] = produtos
         st.session_state["pedidos"] = pedidos
-        st.success("✅ Dados atualizados com sucesso!")
+        st.success(
+            f"✅ Dados carregados de {start_date.strftime('%d/%m/%Y')} até {end_date.strftime('%d/%m/%Y')}"
+        )
 
+    # ---- Verificações ----
     if produtos is None or pedidos is None or produtos.empty or pedidos.empty:
         st.info("Carregue os dados da Shopify para iniciar (botão acima).")
         st.stop()
@@ -2870,7 +2886,7 @@ if menu == "📦 Dashboard – Logística":
         if col not in pedidos.columns:
             pedidos[col] = None
 
-    # ---- Juntar pedidos e produtos (corrigido) ----
+    # ---- Juntar pedidos e produtos ----
     merge_cols = ["variant_id", "sku", "product_title", "variant_title"]
     merge_cols = [c for c in merge_cols if c in produtos.columns]
 
@@ -2891,21 +2907,13 @@ if menu == "📦 Dashboard – Logística":
     base["product_title"].fillna("(Produto desconhecido)", inplace=True)
     base["variant_title"].fillna("(Variante desconhecida)", inplace=True)
 
-
     # ---- Tipos e métricas ----
     base["created_at"] = pd.to_datetime(base.get("created_at"), errors="coerce")
     base["price"] = pd.to_numeric(base.get("price"), errors="coerce").fillna(0)
     base["quantity"] = pd.to_numeric(base.get("quantity"), errors="coerce").fillna(0)
     base["line_revenue"] = base["price"] * base["quantity"]
 
-    # ---- Fallbacks ----
-    base["product_title"].fillna("(Produto desconhecido)", inplace=True)
-    base["variant_title"].fillna("(Variante desconhecida)", inplace=True)
-
-    # ---- Filtros ----
-    st.subheader("🎛️ Filtros")
-    col1, col2, col3 = st.columns(3)
-
+    # ---- Seletores de produto e variante ----
     with col1:
         produtos_lbl = ["(Todos os produtos)"] + sorted(base["product_title"].dropna().unique().tolist())
         escolha_prod = st.selectbox("Produto", produtos_lbl, index=0)
@@ -2913,38 +2921,6 @@ if menu == "📦 Dashboard – Logística":
     with col2:
         variantes_lbl = ["(Todas as variantes)"] + sorted(base["variant_title"].dropna().unique().tolist())
         escolha_var = st.selectbox("Variante", variantes_lbl, index=0)
-
-    with col3:
-        if not base["created_at"].isnull().all():
-            min_date = base["created_at"].min().date()
-            max_date = base["created_at"].max().date()
-        else:
-            today = pd.Timestamp.today().date()
-            min_date = max_date = today
-
-        # Campo nativo com formato BR (DD/MM/YYYY)
-        periodo = st.date_input(
-            "📅 Período",
-            (min_date, max_date),
-            format="DD/MM/YYYY"
-        )
-
-
-    # ---- Aplicar filtros ----
-    df = base[
-        (base["created_at"].dt.date >= periodo[0]) &
-        (base["created_at"].dt.date <= periodo[1])
-    ].copy()
-
-    if escolha_prod != "(Todos os produtos)":
-        df = df[df["product_title"] == escolha_prod]
-    if escolha_var != "(Todas as variantes)":
-        df = df[df["variant_title"] == escolha_var]
-
-    if df.empty:
-        st.warning("Nenhum pedido encontrado com os filtros selecionados.")
-        st.stop()
-
 
     # ---- Aplicar filtros ----
     start_date, end_date = periodo
@@ -2964,7 +2940,6 @@ if menu == "📦 Dashboard – Logística":
         st.stop()
 
     # ---- Resumo ----
-    # Usa order_number se existir, senão order_id
     order_col = "order_number" if "order_number" in df.columns and df["order_number"].notna().any() else "order_id"
     total_pedidos = df[order_col].nunique()
     total_unidades = df["quantity"].sum()
@@ -2974,15 +2949,21 @@ if menu == "📦 Dashboard – Logística":
     colA, colB, colC, colD = st.columns(4)
     colA.metric("🧾 Pedidos", total_pedidos)
     colB.metric("📦 Unidades vendidas", int(total_unidades))
-    colC.metric("💰 Receita total", f"R$ {total_receita:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
-    colD.metric("💸 Ticket médio", f"R$ {ticket_medio:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+    colC.metric(
+        "💰 Receita total",
+        f"R$ {total_receita:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    )
+    colD.metric(
+        "💸 Ticket médio",
+        f"R$ {ticket_medio:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    )
 
     # ---- Tabela final ----
     st.subheader("📋 Pedidos filtrados")
 
     colunas_existentes = [c for c in [
         order_col, "created_at", "customer_name", "quantity",
-        "variant_title", "price", "forma_entrega", "estado","fulfillment_status"
+        "variant_title", "price", "forma_entrega", "estado", "fulfillment_status"
     ] if c in df.columns]
 
     tabela = df[colunas_existentes].sort_values("created_at", ascending=False).copy()
@@ -2999,7 +2980,7 @@ if menu == "📦 Dashboard – Logística":
         "fulfillment_status": "Status de processamento"
     }, inplace=True)
 
-        # ---- Adicionar coluna de Status de Processamento ----
+    # ---- Adicionar coluna de Status de Processamento ----
     if "fulfillment_status" in df.columns:
         tabela["Status de processamento"] = df["fulfillment_status"].apply(
             lambda x: (
@@ -3009,7 +2990,6 @@ if menu == "📦 Dashboard – Logística":
         )
     else:
         tabela["Status de processamento"] = "🟡 Não processado"
-
 
     # ---- Formatação visual ----
     if "Pedido" in tabela.columns:
@@ -3022,11 +3002,10 @@ if menu == "📦 Dashboard – Logística":
             tabela["Data do pedido"], errors="coerce"
         ).dt.strftime("%d/%m/%Y %H:%M")
 
-    if "Preço unitário" in tabela.columns:
-        tabela["Preço unitário"] = tabela["Preço unitário"].apply(
+    if "Preço" in tabela.columns:
+        tabela["Preço"] = tabela["Preço"].apply(
             lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
         )
-
 
     st.dataframe(tabela, use_container_width=True)
 
