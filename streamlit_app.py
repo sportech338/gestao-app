@@ -3237,31 +3237,7 @@ if menu == "📦 Dashboard – Logística":
                     except Exception as e:
                         st.session_state[status_key] = f"❌ Erro ao processar pedido #{order_display}: {e}"
 
-            msg = st.session_state[status_key]
-            if msg:
-                if msg.startswith("✅"):
-                    st.success(msg)
-                elif msg.startswith("❌"):
-                    st.error(msg)
-                else:
-                    st.info(msg)
-
-
-                if submitted:
-                    try:
-                        with st.spinner(f"Processando pedido #{order_display}..."):
-                            result = create_fulfillment(
-                                row.order_id,
-                                tracking_number=tracking_number or None,
-                                tracking_company="Correios"
-                            )
-                            log_fulfillment(row.order_id)
-                        st.session_state[status_key] = f"✅ Pedido #{order_display} processado com sucesso!"
-                        if tracking_number:
-                            st.session_state[status_key] += f"\n📬 Código de rastreio: `{tracking_number}`"
-                    except Exception as e:
-                        st.session_state[status_key] = f"❌ Erro ao processar pedido #{order_display}: {e}"
-
+            # 🧾 Exibe o status após o processamento
             msg = st.session_state[status_key]
             if msg:
                 if msg.startswith("✅"):
