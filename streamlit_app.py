@@ -3007,6 +3007,21 @@ if menu == "📦 Dashboard – Logística":
         st.stop()
 
     # -------------------------------------------------
+    # 🔍 Campo de busca rápida
+    # -------------------------------------------------
+    st.subheader("🔍 Busca rápida")
+    busca = st.text_input("Digite parte do nome do cliente ou número do pedido:", "")
+
+    if busca:
+        busca_lower = busca.strip().lower()
+        df = df[
+            df["customer_name"].str.lower().str.contains(busca_lower, na=False)
+            | df["order_number"].astype(str).str.contains(busca_lower, na=False)
+            | df["order_id"].astype(str).str.contains(busca_lower, na=False)
+        ]
+        st.info(f"🔎 {len(df)} resultado(s) encontrado(s) para '{busca}'.")
+
+    # -------------------------------------------------
     # 📊 Métricas de resumo
     # -------------------------------------------------
     order_col = "order_number" if df["order_number"].notna().any() else "order_id"
@@ -3031,6 +3046,11 @@ if menu == "📦 Dashboard – Logística":
         <style>
         thead tr th:first-child, tbody tr td:first-child {
             text-align: right !important;
+        }
+        input[type="text"] {
+            border-radius: 10px;
+            border: 1px solid #444;
+            padding: 8px 12px;
         }
         </style>
     """, unsafe_allow_html=True)
