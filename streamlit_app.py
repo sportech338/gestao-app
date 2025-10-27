@@ -2849,14 +2849,16 @@ if menu == "📦 Dashboard – Logística":
     hoje = datetime.now(APP_TZ).date()
     periodo = st.date_input(
         "📅 Período",
-        (hoje, hoje),  # padrão: dia atual
+        (hoje, hoje),
         format="DD/MM/YYYY"
     )
 
+    # ---- Controle de período ----
+    if isinstance(periodo, tuple) and len(periodo) == 2:
+        start_date, end_date = periodo
     else:
-        st.error("⚠️ Selecione um intervalo de datas (início e fim) para visualizar os pedidos.")
+        st.info("🟡 Selecione o fim do período para carregar os pedidos.")
         st.stop()
-    # =========================================================
 
     # ---- Atualiza dados automaticamente quando o período muda ----
     periodo_atual = st.session_state.get("periodo_atual")
@@ -2873,26 +2875,6 @@ if menu == "📦 Dashboard – Logística":
     else:
         produtos = st.session_state.get("produtos")
         pedidos = st.session_state.get("pedidos")
-    # ---- Verificações ----
-    if produtos is None or pedidos is None or produtos.empty or pedidos.empty:
-        st.info("Nenhum pedido encontrado para o período selecionado.")
-        st.stop()
-
-    # ---- Normalizar nomes ----
-    def normalizar(df):
-        df.columns = [c.strip().lower() for c in df.columns]
-        ren = {
-            "title": "product_title",
-            "product_name": "product_title",
-            "variant": "variant_title",
-            "variant_name": "variant_title",
-            "id": "variant_id",
-            "variantid": "variant_id"
-        }
-        return df.rename(columns=ren)
-
-    produtos = normalizar(produtos)
-    pedidos = normalizar(pedidos)
 
     # ---- Garantir colunas obrigatórias (para evitar KeyError) ----
     for col in ["order_id", "order_number", "financial_status", "fulfillment_status"]:
