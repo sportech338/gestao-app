@@ -3016,8 +3016,8 @@ if menu == "📦 Dashboard – Logística":
     # -------------------------------------------------
     st.sidebar.header("📅 Período rápido")
 
-    hoje = datetime.now(APP_TZ).date()
-
+    hoje = datetime.now(APP_TZ).date()  
+    
     opcoes_periodo = [
         "Hoje", "Ontem", "Últimos 7 dias", "Últimos 14 dias",
         "Últimos 30 dias", "Últimos 90 dias", "Esta semana",
@@ -3031,13 +3031,13 @@ if menu == "📦 Dashboard – Logística":
     elif escolha_periodo == "Ontem":
         start_date, end_date = hoje - timedelta(days=1), hoje - timedelta(days=1)
     elif escolha_periodo == "Últimos 7 dias":
-        start_date, end_date = hoje - timedelta(days=7), hoje
+        start_date, end_date = hoje - timedelta(days=7), hoje - timedelta(days=1)
     elif escolha_periodo == "Últimos 14 dias":
-        start_date, end_date = hoje - timedelta(days=14), hoje
+        start_date, end_date = hoje - timedelta(days=14), hoje - timedelta(days=1)
     elif escolha_periodo == "Últimos 30 dias":
-        start_date, end_date = hoje - timedelta(days=30), hoje
+        start_date, end_date = hoje - timedelta(days=30), hoje - timedelta(days=1)
     elif escolha_periodo == "Últimos 90 dias":
-        start_date, end_date = hoje - timedelta(days=90), hoje
+        start_date, end_date = hoje - timedelta(days=90), hoje - timedelta(days=1)
     elif escolha_periodo == "Esta semana":
         start_date, end_date = hoje - timedelta(days=hoje.weekday()), hoje
     elif escolha_periodo == "Este mês":
