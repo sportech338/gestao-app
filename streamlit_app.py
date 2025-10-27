@@ -148,6 +148,62 @@ def get_orders(start_date=None, end_date=None, only_paid=True, limit=250):
     return pd.DataFrame(all_rows)
 
 # =====================================================
+# Buscar clientes/pedidos na Shopify
+# =====================================================
+@st.cache_data(ttl=300)
+def search_orders_shopify(query: str, limit=100):
+    """
+    Busca pedidos diretamente na Shopify com base em nome, e-mail ou número do pedido.
+    Evita baixar todos os pedidos.
+    """
+    if not query.strip():
+        return pd.DataFrame()
+
+    # Formata a query para URL (Shopify aceita alguns parâmetros básicos)
+    search_q = query.strip().replace(" ", "+")
+    url = f"{BASE_URL}/orders.json?limit={limit}&status=any&query={search_q}"
+    
+    s = _get_session()
+    r = s.get(url, headers=HEADERS, timeout=60)
+    r.raise_for_status()
+    data = r.json().get("orders", [])
+
+    all_rows = []
+    for o in data:
+        customer = o.get("customer") or {}
+        shipping = o.get("shipping_address") or {}
+        shipping_lines = o.get("shipping_lines") or [{}]
+        nome_cliente = (
+            f"{customer.get('first_name', '')} {customer.get('last_name', '')}".strip()
+            or "(Cliente não informado)"
+        )
+
+        for it in o.get("line_items", []):
+            preco = float(it.get("price") or 0)
+            qtd = int(it.get("quantity", 0))
+            all_rows.append({
+                "order_id": o.get("id"),
+                "order_number": o.get("order_number"),
+                "created_at": o.get("created_at"),
+                "financial_status": o.get("financial_status"),
+                "fulfillment_status": o.get("fulfillment_status"),
+                "customer_name": nome_cliente,
+                "customer_email": customer.get("email", ""),
+                "product_title": it.get("title"),
+                "variant_title": it.get("variant_title"),
+                "variant_id": it.get("variant_id"),
+                "sku": it.get("sku"),
+                "quantity": qtd,
+                "price": preco,
+                "line_revenue": preco * qtd,
+                "forma_entrega": shipping_lines[0].get("title", "N/A"),
+                "estado": shipping.get("province", "N/A"),
+                "cidade": shipping.get("city", "N/A"),
+            })
+    return pd.DataFrame(all_rows)
+
+
+# =====================================================
 # Fulfillment (processar pedido)
 # =====================================================
 def _get(url, **kwargs):
@@ -2973,7 +3029,6 @@ if menu == "📦 Dashboard – Logística":
         start_date = date(2020, 1, 1)
         end_date = hoje
     else:
-        # Personalizado: exibe o seletor normal de datas
         periodo = st.sidebar.date_input("📆 Selecione o intervalo:", (hoje, hoje), format="DD/MM/YYYY")
         if isinstance(periodo, tuple) and len(periodo) == 2:
             start_date, end_date = periodo
@@ -2984,10 +3039,27 @@ if menu == "📦 Dashboard – Logística":
     st.sidebar.markdown(f"**Desde:** {start_date}  \n**Até:** {end_date}")
 
     # -------------------------------------------------
-    # 🔄 Carregamento de dados (cache leve)
+    # 🔍 Busca rápida (no topo)
+    # -------------------------------------------------
+    st.subheader("🔍 Busca rápida")
+    busca = st.text_input("Digite parte do nome do cliente ou número do pedido:")
+
+    # -------------------------------------------------
+    # 🔄 Carregamento de dados (cache leve + busca direta na Shopify)
     # -------------------------------------------------
     periodo_atual = st.session_state.get("periodo_atual")
-    if periodo_atual != (start_date, end_date):
+
+    if busca.strip():
+        # Caso tenha texto na busca, ignora o período e faz consulta direta
+        with st.spinner(f"🔍 Buscando '{busca}' diretamente na Shopify..."):
+            produtos = get_products_with_variants()
+            pedidos = search_orders_shopify(busca)
+        st.success(f"✅ {len(pedidos)} pedido(s) encontrados para '{busca}'. (busca direta na Shopify)")
+        st.session_state["produtos"] = produtos
+        st.session_state["pedidos"] = pedidos
+
+    elif periodo_atual != (start_date, end_date):
+        # Caso não haja busca, segue fluxo normal baseado no período filtrado
         with st.spinner("🔄 Carregando dados da Shopify..."):
             produtos = get_products_with_variants()
             pedidos = get_orders(start_date=start_date, end_date=end_date)
@@ -2996,16 +3068,13 @@ if menu == "📦 Dashboard – Logística":
             st.session_state["periodo_atual"] = (start_date, end_date)
         st.success(f"✅ Dados carregados de {start_date.strftime('%d/%m/%Y')} até {end_date.strftime('%d/%m/%Y')}")
     else:
+        # Usa o cache existente
         produtos = st.session_state["produtos"]
         pedidos = st.session_state["pedidos"]
 
     # -------------------------------------------------
-    # 🔍 Busca rápida (no topo)
+    # 🧩 Preparação dos dados
     # -------------------------------------------------
-    st.subheader("🔍 Busca rápida")
-    busca = st.text_input("Digite parte do nome do cliente ou número do pedido:")
-
-    # Preparação
     for col in ["order_id", "order_number", "financial_status", "fulfillment_status"]:
         if col not in pedidos.columns:
             pedidos[col] = None
@@ -3023,23 +3092,14 @@ if menu == "📦 Dashboard – Logística":
     base["quantity"] = pd.to_numeric(base.get("quantity"), errors="coerce").fillna(0)
     base["line_revenue"] = base["price"] * base["quantity"]
 
-    # Aplica período
-    df = base[(base["created_at"].dt.date >= start_date) & (base["created_at"].dt.date <= end_date)].copy()
-
-    # Aplica busca
-    if busca:
-        busca_lower = busca.strip().lower()
-        resultados = base[
-            base["customer_name"].str.lower().str.contains(busca_lower, na=False)
-            | base["order_number"].astype(str).str.contains(busca_lower, na=False)
-            | base["order_id"].astype(str).str.contains(busca_lower, na=False)
-        ]
-        if not resultados.empty:
-            st.success(f"🔎 {len(resultados)} resultado(s) encontrado(s) para '{busca}'.")
-            df = resultados.copy()
-        else:
-            st.warning(f"❌ Nenhum resultado encontrado para '{busca}'.")
-            st.stop()
+    # -------------------------------------------------
+    # 🧠 Aplicação de filtros (período e busca)
+    # -------------------------------------------------
+    if busca.strip():
+        # Resultados diretos da Shopify já são a base
+        df = base.copy()
+    else:
+        df = base[(base["created_at"].dt.date >= start_date) & (base["created_at"].dt.date <= end_date)].copy()
 
     # -------------------------------------------------
     # 🎛️ Filtros adicionais
@@ -3055,7 +3115,11 @@ if menu == "📦 Dashboard – Logística":
         df = df[df["product_title"] == escolha_prod]
     if escolha_var != "(Todas)":
         df = df[df["variant_title"] == escolha_var]
-        
+
+    if df.empty:
+        st.warning("⚠️ Nenhum pedido encontrado com os filtros selecionados.")
+        st.stop()
+
     # -------------------------------------------------
     # 📊 Métricas de resumo
     # -------------------------------------------------
@@ -3097,7 +3161,8 @@ if menu == "📦 Dashboard – Logística":
     tabela.rename(columns={
         order_col: "Pedido", "created_at": "Data do pedido", "customer_name": "Nome do cliente",
         "quantity": "Qtd", "product_title": "Produto", "variant_title": "Variante",
-        "price": "Preço", "fulfillment_status": "Status de processamento", "forma_entrega": "Frete", "estado": "Estado"
+        "price": "Preço", "fulfillment_status": "Status de processamento",
+        "forma_entrega": "Frete", "estado": "Estado"
     }, inplace=True)
 
     if "Pedido" in tabela.columns:
