@@ -18,7 +18,7 @@ st.set_page_config(page_title="Meta Ads — Paridade + Funil", page_icon="📊",
 st.sidebar.markdown("## SELECIONE O DASHBOARD:")
 menu = st.sidebar.radio(
     "",
-    ["📊 Dashboard – Tráfego Pago", "📦 Dashboard – Logística"],
+    ["📊 Tráfego Pago", "📦 Logística"],
     index=0
 )
 
