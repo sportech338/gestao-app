@@ -1792,7 +1792,7 @@ if menu == "📊 Dashboard – Tráfego Pago":
 
         # ========= 📦 FUNIL POR CAMPANHA =========
         st.divider()
-        st.header("📦 Funil por campanha (somatório — inclui acompanhamento em tempo real se o filtro abranger hoje)")
+        st.header("📦 Funil por campanha")
 
         if level == "campaign":
             # 🔹 Filtra o período selecionado (inclui hoje se estiver dentro do range)
