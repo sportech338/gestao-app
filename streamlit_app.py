@@ -3341,7 +3341,7 @@ if menu == "📦 Dashboard – Logística":
         if row["duplicado"]:
             return ['background-color: rgba(0, 123, 255, 0.15)'] * len(row)
         elif row["similar_alto"]:
-            return ['background-color: rgba(155, 89, 182, 0.18)'] * len(row)
+            return ['background-color: rgba(30, 144, 255, 0.12)'] * len(row)
         elif row["is_sedex"]:
             return ['background-color: rgba(255, 215, 0, 0.15)'] * len(row)
         else:
