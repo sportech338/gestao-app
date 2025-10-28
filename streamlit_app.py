@@ -3158,7 +3158,13 @@ if menu == "📦 Dashboard – Logística":
     for c in ["product_title", "variant_title"]:
         if f"{c}_produto" in base.columns and c not in base.columns:
             base[c] = base[f"{c}_produto"]
-        base[c].fillna(f"({c} desconhecido)", inplace=True)
+        elif c not in base.columns:
+            # Garante que a coluna exista mesmo que não tenha vindo da API
+            base[c] = np.nan
+
+        if c in base.columns:
+            base[c] = base[c].fillna(f"({c} desconhecido)")
+
 
     base["created_at"] = pd.to_datetime(base.get("created_at"), errors="coerce")
     base["price"] = pd.to_numeric(base.get("price"), errors="coerce").fillna(0)
