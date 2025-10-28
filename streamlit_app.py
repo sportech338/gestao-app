@@ -3415,11 +3415,14 @@ if menu == "📦 Dashboard – Logística":
     # 📦 ABA 2 — ESTOQUE
     # =====================================================
     with aba2:
+        st.info("📊 Em breve: acompanhamento de níveis de estoque por SKU e variação.")
     # =====================================================
     # 🚚 ABA 3 — ENTREGAS
     # =====================================================
     with aba3:
+        st.info("📍 Em breve: status de fretes, prazos e devoluções.")
     # =====================================================
     # 📊 ABA 4 — INDICADORES
     # =====================================================
     with aba4:
+        st.info("📈 Em breve: métricas de performance logística e eficiência operacional.")
