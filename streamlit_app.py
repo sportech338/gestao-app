@@ -3312,8 +3312,8 @@ if menu == "📦 Dashboard – Logística":
 
             ratio = SequenceMatcher(None, nome_norm, outro_norm).ratio()
 
-            # Exige correspondência forte de estrutura
-            if (0.85 <= ratio <= 0.94) and token_set_subset(nome, outro):
+            if (0.85 <= ratio <= 0.94) or token_set_subset(nome, outro):
+                # (Opcional) se email bater também, melhor ainda, mas não é obrigatório para "similar_alto"
                 similar_alto = True
                 break
 
