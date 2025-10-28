@@ -1098,65 +1098,35 @@ if menu == "📊 Dashboard – Tráfego Pago":
         st.warning("⚠️ Preencha o Ad Account ID e o Access Token para continuar.")
         st.stop()
 
-    # -------------------------------------------------
-    # 🧭 SIDEBAR — Filtro lateral de período
-    # -------------------------------------------------
-    st.sidebar.header("📅 Período rápido")
-
-    hoje = datetime.now(APP_TZ).date()
-    opcoes_periodo = [
-        "Hoje", "Ontem", "Últimos 7 dias", "Últimos 14 dias",
-        "Últimos 30 dias", "Últimos 90 dias", "Este mês", "Máximo", "Personalizado"
-    ]
-
-    escolha_periodo = st.sidebar.radio("Selecione:", opcoes_periodo, index=2)
-
-    if escolha_periodo == "Hoje":
-        start_date, end_date = hoje, hoje
-    elif escolha_periodo == "Ontem":
-        start_date, end_date = hoje - timedelta(days=1), hoje - timedelta(days=1)
-    elif escolha_periodo == "Últimos 7 dias":
-        start_date, end_date = hoje - timedelta(days=7), hoje
-    elif escolha_periodo == "Últimos 14 dias":
-        start_date, end_date = hoje - timedelta(days=14), hoje
-    elif escolha_periodo == "Últimos 30 dias":
-        start_date, end_date = hoje - timedelta(days=30), hoje
-    elif escolha_periodo == "Últimos 90 dias":
-        start_date, end_date = hoje - timedelta(days=90), hoje
-    elif escolha_periodo == "Este mês":
-        start_date = hoje.replace(day=1)
-        end_date = hoje
-    elif escolha_periodo == "Máximo":
-        start_date = date(2020, 1, 1)
-        end_date = hoje
-    else:
-        periodo = st.sidebar.date_input("📆 Selecione o intervalo:", (hoje - timedelta(days=7), hoje), format="DD/MM/YYYY")
-        if isinstance(periodo, tuple) and len(periodo) == 2:
-            start_date, end_date = periodo
-        else:
-            st.sidebar.warning("🟡 Selecione o fim do período.")
-            st.stop()
-
-    st.sidebar.markdown(f"**Desde:** {start_date}  \n**Até:** {end_date}")
-    since = start_date
-    until = end_date
-
-    # =====================================================
-    # 🗂️ ABAS PRINCIPAIS — TRÁFEGO PAGO
-    # =====================================================
-    tab_daily, tab_daypart, tab_detail = st.tabs([
-        "📅 Visão diária",
-        "⏱️ Horários (principal)",
-        "📊 Detalhamento"
-    ])
-
     # -------------------- ABA 1: VISÃO DIÁRIA --------------------
     with tab_daily:
+        # -------------------------------------------------
+        # 🧭 Cabeçalho
+        # -------------------------------------------------
         st.subheader("📅 Visão Diária — Campanhas e Funil")
         st.caption("KPIs consolidados e tendências do período selecionado.")
-        # === Moeda detectada e override opcional ===
-        currency_detected = (df_daily["currency"].dropna().iloc[0]
-                             if "currency" in df_daily.columns and not df_daily["currency"].dropna().empty else "BRL")
+
+        # -------------------------------------------------
+        # 🧠 Garante que df_daily existe antes de usar
+        # -------------------------------------------------
+        if "df_daily" not in st.session_state or st.session_state["df_daily"] is None:
+            st.warning("⚠️ Nenhum dado carregado ainda. Execute o carregamento primeiro.")
+            st.stop()
+
+        df_daily = st.session_state["df_daily"]
+        if df_daily.empty:
+            st.warning("⚠️ Nenhum dado encontrado no período selecionado.")
+            st.stop()
+
+        # -------------------------------------------------
+        # 💱 Moeda detectada e override opcional
+        # -------------------------------------------------
+        currency_detected = (
+            df_daily["currency"].dropna().iloc[0]
+            if "currency" in df_daily.columns and not df_daily["currency"].dropna().empty
+            else "BRL"
+        )
+
         col_curA, col_curB = st.columns([1, 2])
         with col_curA:
             use_brl_display = st.checkbox("Fixar exibição em BRL (símbolo R$)", value=True)
@@ -1165,8 +1135,10 @@ if menu == "📊 Dashboard – Tráfego Pago":
 
         with col_curB:
             if use_brl_display and currency_detected != "BRL":
-                st.caption("⚠️ Exibindo com símbolo **R$** apenas para **formatação visual**. "
-                           "Os valores permanecem na moeda da conta.")
+                st.caption(
+                    "⚠️ Exibindo com símbolo **R$** apenas para **formatação visual**. "
+                    "Os valores permanecem na moeda da conta."
+                )
 
         st.caption(f"Moeda da conta detectada: **{currency_detected}** — Exibindo como: **{currency_label}**")
 
