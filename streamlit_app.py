@@ -3282,7 +3282,7 @@ if menu == "📦 Dashboard – Logística":
 
     tabela["Status de processamento"] = df["fulfillment_status"].apply(
         lambda x: "✅ Processado" if str(x).lower() in ["fulfilled", "shipped", "complete"] else "🟡 Não processado"
-    
+    )
 
     # -------------------------------------------------
     # 🚚 Processamento de pedidos
