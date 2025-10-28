@@ -1071,8 +1071,8 @@ def _range_from_preset(p):
 # =====================================================
 # ================== DASHBOARD TRÁFEGO PAGO ============
 # =====================================================
-if menu == "📊 Dashboard – Tráfego Pago":
-    st.title("📈 Dashboard — Tráfego Pago")
+if menu == "📊 Tráfego Pago":
+    st.title("📈 Tráfego Pago")
     st.caption("Análise completa de campanhas e funil de conversão.")
 
     # ================= CONFIGURAÇÃO LOCAL DO DASHBOARD =================
@@ -3093,12 +3093,12 @@ if menu == "📊 Dashboard – Tráfego Pago":
 # =====================================================
 # 📦 DASHBOARD – LOGÍSTICA
 # =====================================================
-if menu == "📦 Dashboard – Logística":
+if menu == "📦 Logística":
 
     # =====================================================
     # 🧭 Cabeçalho fixo principal
     # =====================================================
-    st.title("📦 DASHBOARD — LOGÍSTICA")
+    st.title("📦 LOGÍSTICA")
     st.caption("Visualização completa de pedidos, estoque, entregas e indicadores.")
 
     # =====================================================
