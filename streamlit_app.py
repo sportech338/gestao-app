@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -3226,6 +3225,34 @@ if menu == "📦 Dashboard – Logística":
         base["line_revenue"] = base["price"] * base["quantity"]
 
         # -------------------------------------------------
+        # 🧠 Aplicação de filtros
+        # -------------------------------------------------
+        if busca.strip():
+            df = base.copy()
+        else:
+            df = base.dropna(subset=["created_at"])
+            df = df[(df["created_at"].dt.date >= start_date) & (df["created_at"].dt.date <= end_date)].copy()
+
+        # -------------------------------------------------
+        # 🎛️ Filtros adicionais
+        # -------------------------------------------------
+        st.subheader("🎛️ Filtros adicionais")
+        col1, col2 = st.columns(2)
+        with col1:
+            escolha_prod = st.selectbox("Produto", ["(Todos)"] + sorted(base["product_title"].dropna().unique().tolist()))
+        with col2:
+            escolha_var = st.selectbox("Variante", ["(Todas)"] + sorted(base["variant_title"].dropna().unique().tolist()))
+
+        if escolha_prod != "(Todos)":
+            df = df[df["product_title"] == escolha_prod]
+        if escolha_var != "(Todas)":
+            df = df[df["variant_title"] == escolha_var]
+
+        if df.empty:
+            st.warning("⚠️ Nenhum pedido encontrado com os filtros selecionados.")
+            st.stop()
+
+        # -------------------------------------------------
         # 📊 Métricas de resumo
         # -------------------------------------------------
         order_col = "order_number" if df["order_number"].notna().any() else "order_id"
@@ -3321,34 +3348,6 @@ if menu == "📦 Dashboard – Logística":
         styled_tabela = tabela[colunas_visiveis + ["duplicado", "is_sedex"]].style.apply(highlight_prioridades, axis=1)
         styled_tabela = styled_tabela.hide(["duplicado", "is_sedex"], axis=1)
         st.dataframe(styled_tabela, use_container_width=True)
-
-        # -------------------------------------------------
-        # 🧠 Aplicação de filtros
-        # -------------------------------------------------
-        if busca.strip():
-            df = base.copy()
-        else:
-            df = base.dropna(subset=["created_at"])
-            df = df[(df["created_at"].dt.date >= start_date) & (df["created_at"].dt.date <= end_date)].copy()
-
-        # -------------------------------------------------
-        # 🎛️ Filtros adicionais
-        # -------------------------------------------------
-        st.subheader("🎛️ Filtros adicionais")
-        col1, col2 = st.columns(2)
-        with col1:
-            escolha_prod = st.selectbox("Produto", ["(Todos)"] + sorted(base["product_title"].dropna().unique().tolist()))
-        with col2:
-            escolha_var = st.selectbox("Variante", ["(Todas)"] + sorted(base["variant_title"].dropna().unique().tolist()))
-
-        if escolha_prod != "(Todos)":
-            df = df[df["product_title"] == escolha_prod]
-        if escolha_var != "(Todas)":
-            df = df[df["variant_title"] == escolha_var]
-
-        if df.empty:
-            st.warning("⚠️ Nenhum pedido encontrado com os filtros selecionados.")
-            st.stop()
 
         # -------------------------------------------------
         # 🚚 Processamento de pedidos
