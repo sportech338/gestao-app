@@ -3265,107 +3265,69 @@ if menu == "📦 Dashboard – Logística":
         </style>
     """, unsafe_allow_html=True)
 
-    # 🗂️ Legenda visual
-    st.markdown("""
-        <div style='padding: 10px; border-radius: 8px; background-color: #f9f9f9; border: 1px solid #ddd; margin-bottom:10px;'>
-            <b>🔹 Legenda de cores:</b><br>
-            <span style='background-color: rgba(0, 123, 255, 0.15); padding: 3px 10px; border-radius: 4px;'>Cliente com mais de um pedido (agrupados juntos)</span><br>
-            <span style='background-color: rgba(255, 215, 0, 0.15); padding: 3px 10px; border-radius: 4px;'>Pedido com frete SEDEX</span>
-        </div>
-    """, unsafe_allow_html=True)
-
-    colunas = [
-        "created_at", order_col, "customer_name", "customer_email",
-        "customer_phone", "customer_cpf", "product_title", "quantity",
-        "variant_title", "forma_entrega", "endereco", "bairro", "cep",
-        "estado", "cidade"
-    ]
+    colunas = ["created_at", order_col, "customer_name", "customer_email", "customer_phone", "customer_cpf", "product_title", "quantity",
+               "variant_title", "forma_entrega", "endereco", "bairro", "cep", "estado", "cidade"]
     colunas = [c for c in colunas if c in df.columns]
     tabela = df[colunas].sort_values("created_at", ascending=False).copy()
 
     tabela.rename(columns={
-        order_col: "Pedido",
-        "created_at": "Data do pedido",
-        "customer_name": "Cliente",
-        "customer_email": "E-mail",
-        "customer_phone": "Telefone",
-        "customer_cpf": "CPF",
-        "endereco": "Endereço",
-        "bairro": "Bairro",
-        "cep": "CEP",
-        "quantity": "Qtd",
-        "product_title": "Produto",
-        "variant_title": "Variante",
-        "price": "Preço",
-        "fulfillment_status": "Status de processamento",
-        "forma_entrega": "Frete",
-        "estado": "Estado"
+        order_col: "Pedido", "created_at": "Data do pedido", "customer_name": "Cliente", "customer_email": "E-mail", "customer_phone": "Telefone", "customer_cpf": "CPF",
+        "endereco": "Endereço", "bairro": "Bairro", "cep": "CEP", "quantity": "Qtd", "product_title": "Produto", "variant_title": "Variante", 
+        "price": "Preço", "fulfillment_status": "Status de processamento",
+        "forma_entrega": "Frete", "estado": "Estado"
     }, inplace=True)
 
     if "Pedido" in tabela.columns:
-        tabela["Pedido"] = (
-            tabela["Pedido"]
-            .astype(str)
-            .str.replace(",", "")
-            .str.replace(".0", "", regex=False)
-        )
+        tabela["Pedido"] = tabela["Pedido"].astype(str).str.replace(",", "").str.replace(".0", "", regex=False)
 
-    # 🔹 Status de processamento limpo
     tabela["Status de processamento"] = df["fulfillment_status"].apply(
-        lambda x: "✅ Processado"
-        if str(x).lower() in ["fulfilled", "shipped", "complete"]
-        else "🟡 Não processado"
+        lambda x: "✅ Processado" if str(x).lower() in ["fulfilled", "shipped", "complete"] else "🟡 Não processado"
     )
 
-    # 🔎 Normaliza identificadores para agrupar clientes
-    tabela["E-mail"] = tabela["E-mail"].astype(str).str.lower().fillna("")
-    tabela["CPF"] = tabela["CPF"].astype(str).fillna("")
-    tabela["Telefone"] = tabela["Telefone"].astype(str).fillna("")
+    # 🔝 1️⃣ Identifica duplicados (apenas nome e e-mail idênticos)
+    def identificar_duplicado(row, df_ref):
+        nome = str(row.get("Cliente", "")).strip().lower()
+        email = str(row.get("E-mail", "")).strip().lower()
 
-    # 🔑 Cria chave única (prioridade: e-mail > CPF > telefone)
-    tabela["chave_cliente"] = tabela.apply(
-        lambda row: row["E-mail"] or row["CPF"] or row["Telefone"], axis=1
-    ).fillna("(sem identificação)")
+        if not nome:
+            return False
 
-    # 🔁 Identifica duplicados
-    duplicados = tabela[tabela.duplicated(subset=["chave_cliente"], keep=False)]
+        # Duplicado por e-mail
+        if email and email not in ["", "(sem email)", "none"]:
+            if df_ref["E-mail"].str.lower().eq(email).sum() > 1:
+                return True
 
-    # 🚚 Flag SEDEX
-    tabela["is_sedex"] = tabela["Frete"].astype(str).str.contains("SEDEX", case=False, na=False)
+        # Duplicado por nome
+        if df_ref["Cliente"].str.lower().eq(nome).sum() > 1:
+            return True
 
-    # 🧭 Ordena (1️⃣ duplicados, 2️⃣ normais, 3️⃣ SEDEX)
-    def prioridade(row):
-        if row["chave_cliente"] in duplicados["chave_cliente"].values:
-            return (1, row["chave_cliente"], -pd.Timestamp(row["Data do pedido"]).timestamp())
+        return False
+
+    # 🧩 Aplica a regra de duplicados
+    tabela["duplicado"] = tabela.apply(lambda row: identificar_duplicado(row, tabela), axis=1)
+
+    # 🚚 2️⃣ Cria flag para SEDEX
+    tabela["is_sedex"] = tabela["Frete"].str.contains("SEDEX", case=False, na=False)
+
+    # 📦 Ordena: duplicados primeiro, SEDEX por último, mais recentes no topo
+    tabela = tabela.sort_values(
+        by=["duplicado", "is_sedex", "Data do pedido"],
+        ascending=[False, True, False]
+    )
+
+    # 🎨 Mantém estilo visual (azul para duplicado, amarelo para SEDEX)
+    def highlight_prioridades(row):
+        if row["duplicado"]:
+            return ['background-color: rgba(0, 123, 255, 0.15)'] * len(row)
         elif row["is_sedex"]:
-            return (3, row["chave_cliente"], -pd.Timestamp(row["Data do pedido"]).timestamp())
+            return ['background-color: rgba(255, 215, 0, 0.15)'] * len(row)
         else:
-            return (2, row["chave_cliente"], -pd.Timestamp(row["Data do pedido"]).timestamp())
+            return [''] * len(row)
 
-    tabela["ordem_sort"] = tabela.apply(prioridade, axis=1)
-    tabela = tabela.sort_values("ordem_sort", ascending=True).drop(columns=["ordem_sort"])
+    colunas_visiveis = [c for c in tabela.columns if c not in ["duplicado", "is_sedex"]]
+    styled_tabela = tabela[colunas_visiveis + ["duplicado", "is_sedex"]].style.apply(highlight_prioridades, axis=1)
 
-    # 🎨 Destaques visuais
-    def highlight_linhas(row):
-        # Garante que a coluna exista em qualquer execução
-        if "chave_cliente" not in row or "is_sedex" not in row:
-            return ['background-color: transparent'] * len(row)
-
-        chave = row["chave_cliente"]
-        if chave in duplicados["chave_cliente"].values:
-            return ['background-color: rgba(0, 123, 255, 0.15)'] * len(row)  # Azul
-        elif row["is_sedex"]:
-            return ['background-color: rgba(255, 215, 0, 0.15)'] * len(row)  # Amarelo
-        else:
-            return ['background-color: transparent'] * len(row)  # Padrão
-
-    # Remove colunas técnicas antes de exibir
-    tabela_exibir = tabela.drop(columns=["is_sedex", "chave_cliente"], errors="ignore")
-
-    styled_tabela = tabela_exibir.style.apply(highlight_linhas, axis=1)
-
-    # 📊 Exibe tabela final
-    st.dataframe(styled_tabela, use_container_width=True)
+    st.dataframe(styled_tabela.hide(["duplicado", "is_sedex"], axis=1), use_container_width=True)
 
     # -------------------------------------------------
     # 🚚 Processamento de pedidos
