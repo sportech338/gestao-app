@@ -3284,6 +3284,51 @@ if menu == "📦 Dashboard – Logística":
         lambda x: "✅ Processado" if str(x).lower() in ["fulfilled", "shipped", "complete"] else "🟡 Não processado"
     )
 
+    # 🔝 1️⃣ Identifica duplicados (apenas nome e e-mail idênticos)
+    def identificar_duplicado(row, df_ref):
+        nome = str(row.get("Cliente", "")).strip().lower()
+        email = str(row.get("E-mail", "")).strip().lower()
+
+        if not nome:
+            return False
+
+        # Duplicado por e-mail
+        if email and email not in ["", "(sem email)", "none"]:
+            if df_ref["E-mail"].str.lower().eq(email).sum() > 1:
+                return True
+
+        # Duplicado por nome
+        if df_ref["Cliente"].str.lower().eq(nome).sum() > 1:
+            return True
+
+        return False
+
+    # 🧩 Aplica a regra de duplicados
+    tabela["duplicado"] = tabela.apply(lambda row: identificar_duplicado(row, tabela), axis=1)
+
+    # 🚚 2️⃣ Cria flag para SEDEX
+    tabela["is_sedex"] = tabela["Frete"].str.contains("SEDEX", case=False, na=False)
+
+    # 📦 Ordena: duplicados primeiro, SEDEX por último, mais recentes no topo
+    tabela = tabela.sort_values(
+        by=["duplicado", "is_sedex", "Data do pedido"],
+        ascending=[False, True, False]
+    )
+
+    # 🎨 Mantém estilo visual (azul para duplicado, amarelo para SEDEX)
+    def highlight_prioridades(row):
+        if row["duplicado"]:
+            return ['background-color: rgba(0, 123, 255, 0.15)'] * len(row)
+        elif row["is_sedex"]:
+            return ['background-color: rgba(255, 215, 0, 0.15)'] * len(row)
+        else:
+            return [''] * len(row)
+
+    colunas_visiveis = [c for c in tabela.columns if c not in ["duplicado", "is_sedex"]]
+    styled_tabela = tabela[colunas_visiveis + ["duplicado", "is_sedex"]].style.apply(highlight_prioridades, axis=1)
+
+    st.dataframe(styled_tabela.hide(["duplicado", "is_sedex"], axis=1), use_container_width=True)
+
     # -------------------------------------------------
     # 🚚 Processamento de pedidos
     # -------------------------------------------------
