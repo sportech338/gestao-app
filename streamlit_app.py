@@ -3171,9 +3171,14 @@ if menu == "📦 Dashboard – Logística":
             base[c].fillna(f"({c} desconhecido)", inplace=True)
 
     base["created_at"] = pd.to_datetime(base.get("created_at"), errors="coerce")
-    base["price"] = pd.to_numeric(base["price"]) if "price" in base.columns else 0
-    base["price"] = pd.to_numeric(base["price"], errors="coerce").fillna(0)
-    base["quantity"] = pd.to_numeric(base.get("quantity"), errors="coerce").fillna(0)
+
+    # 🔒 Garante que colunas numéricas existam e possam ser convertidas
+    for col in ["price", "quantity"]:
+        if col not in base.columns:
+            base[col] = 0
+        base[col] = pd.to_numeric(base[col], errors="coerce").fillna(0)
+
+    # 🔢 Calcula a receita da linha de forma segura
     base["line_revenue"] = base["price"] * base["quantity"]
 
     # -------------------------------------------------
