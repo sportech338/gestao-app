@@ -3273,12 +3273,20 @@ if menu == "📦 Dashboard – Logística":
         tb = set(_norm(b).split())
         if not ta or not tb:
             return False
-        # garante comparar menor vs maior
         if len(ta) <= len(tb):
             small, big = ta, tb
         else:
             small, big = tb, ta
         return small.issubset(big)
+
+    def jaccard_tokens(a: str, b: str) -> float:
+        ta = set(_norm(a).split())
+        tb = set(_norm(b).split())
+        if not ta or not tb:
+            return 0.0
+        inter = ta & tb
+        uni = ta | tb
+        return len(inter) / len(uni)
 
     def identificar_duplicado(row, df_ref):
         nome = str(row.get("Cliente", "")).strip()
@@ -3292,7 +3300,7 @@ if menu == "📦 Dashboard – Logística":
         duplicado_exato = False
         similar_alto = False
 
-        # 1️⃣ Duplicado por e-mail idêntico
+        # 1️⃣ Duplicado por e-mail idêntico (prioritário)
         if email and email not in ["", "(sem email)", "none"]:
             if df_ref["E-mail"].str.lower().eq(email).sum() > 1:
                 duplicado_exato = True
@@ -3301,21 +3309,34 @@ if menu == "📦 Dashboard – Logística":
         if df_ref["Cliente"].apply(lambda x: _norm(str(x))).eq(nome_norm).sum() > 1:
             duplicado_exato = True
 
-        # 3️⃣ Alta probabilidade:
-        #    a) razão 0.85–0.94 (SequenceMatcher) OU
-        #    b) conjunto de tokens do menor contido no maior (captura sobrenome extra)
-        nomes_unicos = df_ref["Cliente"].dropna().unique().tolist()
-        for outro in nomes_unicos:
-            outro_norm = _norm(outro)
-            if not outro_norm or outro_norm == nome_norm:
-                continue
+        # 3️⃣ Alta probabilidade (nomes realmente parecidos)
+        #    Critério: ratio 0.85–0.94 E (subset de tokens OU Jaccard ≥ 0.50)
+        #    Se existir e-mail no registro atual, exigimos e-mail igual em algum homônimo para confirmar.
+        if not duplicado_exato:
+            nomes_unicos = df_ref["Cliente"].dropna().unique().tolist()
+            for outro in nomes_unicos:
+                outro_norm = _norm(outro)
+                if not outro_norm or outro_norm == nome_norm:
+                    continue
 
-            ratio = SequenceMatcher(None, nome_norm, outro_norm).ratio()
+                ratio = SequenceMatcher(None, nome_norm, outro_norm).ratio()
+                if 0.85 <= ratio <= 0.94:
+                    cond_tokens = token_set_subset(nome, outro)
+                    cond_jaccard = jaccard_tokens(nome, outro) >= 0.50
+                    if cond_tokens or cond_jaccard:
+                        # checa e-mail do(s) registros com esse 'outro' nome
+                        subset = df_ref[df_ref["Cliente"].apply(lambda x: _norm(str(x))) == outro_norm]
+                        emails_subset = subset["E-mail"].astype(str).str.lower().fillna("")
+                        emails_iguais = False
+                        if email and email not in ["", "(sem email)", "none"]:
+                            emails_iguais = (emails_subset == email).any()
+                        else:
+                            # sem e-mail no registro atual: aceita pela força do nome
+                            emails_iguais = True
 
-            # Exige correspondência forte de estrutura
-            if (0.85 <= ratio <= 0.94) and token_set_subset(nome, outro):
-                similar_alto = True
-                break
+                        if emails_iguais:
+                            similar_alto = True
+                            break
 
         return duplicado_exato, similar_alto
 
@@ -3323,6 +3344,7 @@ if menu == "📦 Dashboard – Logística":
     resultados = tabela.apply(lambda row: identificar_duplicado(row, tabela), axis=1)
     tabela["duplicado"] = resultados.apply(lambda x: x[0])
     tabela["similar_alto"] = resultados.apply(lambda x: x[1])
+
 
     # 🚚 2️⃣ Cria flag para SEDEX
     tabela["is_sedex"] = tabela["Frete"].str.contains("SEDEX", case=False, na=False)
