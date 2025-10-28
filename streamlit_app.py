@@ -85,7 +85,6 @@ def get_products_with_variants(limit=250):
 # Pedidos
 # =====================================================
 @st.cache_data(ttl=600)
-@st.cache_data(ttl=600)
 def get_orders(start_date=None, end_date=None, only_paid=True, limit=250):
     """Baixa pedidos da Shopify com filtro dinâmico de período, garantindo o e-mail do cliente."""
     hoje = datetime.now(APP_TZ).date()
