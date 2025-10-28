@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -1105,29 +1104,25 @@ if menu == "📊 Dashboard – Tráfego Pago":
     st.sidebar.header("📅 Período rápido")
 
     hoje = datetime.now(APP_TZ).date()
-
     opcoes_periodo = [
         "Hoje", "Ontem", "Últimos 7 dias", "Últimos 14 dias",
-        "Últimos 30 dias", "Últimos 90 dias", "Esta semana",
-        "Este mês", "Máximo", "Personalizado"
+        "Últimos 30 dias", "Últimos 90 dias", "Este mês", "Máximo", "Personalizado"
     ]
 
-    escolha_periodo = st.sidebar.radio("Selecione:", opcoes_periodo, index=0)
+    escolha_periodo = st.sidebar.radio("Selecione:", opcoes_periodo, index=2)
 
     if escolha_periodo == "Hoje":
         start_date, end_date = hoje, hoje
     elif escolha_periodo == "Ontem":
         start_date, end_date = hoje - timedelta(days=1), hoje - timedelta(days=1)
     elif escolha_periodo == "Últimos 7 dias":
-        start_date, end_date = hoje - timedelta(days=7), hoje - timedelta(days=1)
+        start_date, end_date = hoje - timedelta(days=7), hoje
     elif escolha_periodo == "Últimos 14 dias":
-        start_date, end_date = hoje - timedelta(days=14), hoje - timedelta(days=1)
+        start_date, end_date = hoje - timedelta(days=14), hoje
     elif escolha_periodo == "Últimos 30 dias":
-        start_date, end_date = hoje - timedelta(days=30), hoje - timedelta(days=1)
+        start_date, end_date = hoje - timedelta(days=30), hoje
     elif escolha_periodo == "Últimos 90 dias":
-        start_date, end_date = hoje - timedelta(days=90), hoje - timedelta(days=1)
-    elif escolha_periodo == "Esta semana":
-        start_date, end_date = hoje - timedelta(days=hoje.weekday()), hoje
+        start_date, end_date = hoje - timedelta(days=90), hoje
     elif escolha_periodo == "Este mês":
         start_date = hoje.replace(day=1)
         end_date = hoje
@@ -1135,7 +1130,7 @@ if menu == "📊 Dashboard – Tráfego Pago":
         start_date = date(2020, 1, 1)
         end_date = hoje
     else:
-        periodo = st.sidebar.date_input("📆 Selecione o intervalo:", (hoje, hoje), format="DD/MM/YYYY")
+        periodo = st.sidebar.date_input("📆 Selecione o intervalo:", (hoje - timedelta(days=7), hoje), format="DD/MM/YYYY")
         if isinstance(periodo, tuple) and len(periodo) == 2:
             start_date, end_date = periodo
         else:
@@ -1143,34 +1138,12 @@ if menu == "📊 Dashboard – Tráfego Pago":
             st.stop()
 
     st.sidebar.markdown(f"**Desde:** {start_date}  \n**Até:** {end_date}")
-
-    # 🔁 Compatibilidade com variáveis antigas (evita NameError no restante do código)
     since = start_date
     until = end_date
 
-    # ================= VALIDAÇÃO E COLETA DE DADOS =================
-    if not ready:
-        st.info("Informe **Ad Account ID** e **Access Token** para iniciar.")
-        st.stop()
-
-    with st.spinner("Buscando dados da Meta…"):
-        df_daily = fetch_insights_daily(
-            act_id=act_id,
-            token=token,
-            api_version=api_version,
-            since_str=str(since),
-            until_str=str(until),
-            level=level,
-            product_name=st.session_state.get("daily_produto")
-        )
-
-    df_hourly = None
-
-    if df_daily.empty and (df_hourly is None or df_hourly.empty):
-        st.warning("Sem dados para o período. Verifique permissões, conta e se há eventos de Purchase (value/currency).")
-        st.stop()
-
-
+    # =====================================================
+    # 🗂️ ABAS PRINCIPAIS — TRÁFEGO PAGO
+    # =====================================================
     tab_daily, tab_daypart, tab_detail = st.tabs([
         "📅 Visão diária",
         "⏱️ Horários (principal)",
@@ -1179,6 +1152,8 @@ if menu == "📊 Dashboard – Tráfego Pago":
 
     # -------------------- ABA 1: VISÃO DIÁRIA --------------------
     with tab_daily:
+        st.subheader("📅 Visão Diária — Campanhas e Funil")
+        st.caption("KPIs consolidados e tendências do período selecionado.")
         # === Moeda detectada e override opcional ===
         currency_detected = (df_daily["currency"].dropna().iloc[0]
                              if "currency" in df_daily.columns and not df_daily["currency"].dropna().empty else "BRL")
@@ -1952,8 +1927,15 @@ if menu == "📊 Dashboard – Tráfego Pago":
 
     # -------------------- ABA 2: HORÁRIOS (PRINCIPAL) --------------------
     with tab_daypart:
+        # -------------------------------------------------
+        # 🧭 Cabeçalho
+        # -------------------------------------------------
+        st.subheader("⏱️ Horários — Performance por hora e dia da semana")
+        st.caption("Visualize padrões de desempenho por hora do dia e descubra os melhores horários para investimento.")
 
-        # =================== CONTROLES INICIAIS ===================
+        # -------------------------------------------------
+        # 🎛️ Controles iniciais
+        # -------------------------------------------------
         min_spend = st.number_input(
             "💰 Gasto mínimo por hora (R$)",
             min_value=0.0,
@@ -1964,10 +1946,13 @@ if menu == "📊 Dashboard – Tráfego Pago":
 
         safe_div = _safe_div
 
+        # -------------------------------------------------
+        # 🔄 Carregamento de dados horários
+        # -------------------------------------------------
         if "df_hourly" in st.session_state and not st.session_state["df_hourly"].empty:
             d = st.session_state["df_hourly"].copy()
         else:
-            with st.spinner("Carregando dados horários..."):
+            with st.spinner("🔄 Carregando dados horários da Meta..."):
                 d = fetch_insights_hourly(
                     act_id=act_id,
                     token=token,
@@ -1979,8 +1964,14 @@ if menu == "📊 Dashboard – Tráfego Pago":
                 st.session_state["df_hourly"] = d
 
         if d is None or d.empty:
-            st.warning("Sem dados horários disponíveis para o período selecionado.")
+            st.warning("⚠️ Sem dados horários disponíveis para o período selecionado.")
             st.stop()
+
+        # -------------------------------------------------
+        # 📊 Pré-visualização e lógica a seguir
+        # -------------------------------------------------
+        st.success("✅ Dados horários carregados com sucesso.")
+        st.divider()
 
         # =================== FILTRO DE PRODUTO/CAMPANHA ===================
         if "campaign_name" in d.columns:
@@ -2483,28 +2474,37 @@ if menu == "📊 Dashboard – Tráfego Pago":
 
         # -------------------- ABA 3: 📊 DETALHAMENTO --------------------
         with tab_detail:
+            # -------------------------------------------------
+            # 🧭 Cabeçalho
+            # -------------------------------------------------
+            st.subheader("📊 Detalhamento — Análise por Dimensão")
             st.caption(
-                "Explore por dimensão: Idade, Gênero, Idade+Gênero, País, Plataforma, "
-                "Posicionamento, Dia e Hora. Há um modo 'Populares' com os TOP 5."
+                "Explore a performance detalhada por dimensão: Idade, Gênero, Região, Plataforma, "
+                "Posicionamento, Dia da Semana e muito mais. O modo **'Populares'** destaca os TOP 5 resultados."
             )
 
-            # ===== Filtros =====
+            # -------------------------------------------------
+            # 🎛️ Filtros principais
+            # -------------------------------------------------
             colf1, colf2 = st.columns([2, 1])
             with colf1:
                 produto_sel_det = st.selectbox(
-                    "Filtrar por produto (opcional)",
+                    "🎯 Filtrar por produto (opcional)",
                     ["(Todos)"] + PRODUTOS,
                     key="det_produto",
                 )
             with colf2:
                 min_spend_det = st.slider(
-                    "Gasto mínimo para considerar (R$)",
+                    "💰 Gasto mínimo para considerar (R$)",
                     0.0, 2000.0, 0.0, 10.0,
                     key="det_min_spend",
                 )
 
+            # -------------------------------------------------
+            # 🧩 Seleção da dimensão de análise
+            # -------------------------------------------------
             dimensao = st.radio(
-                "Dimensão",
+                "📈 Dimensão de análise",
                 [
                     "Populares", "Idade", "Gênero", "Idade + Gênero",
                     "Região", "País", "Plataforma", "Posicionamento", "Dia da Semana",
