@@ -3252,8 +3252,11 @@ if menu == "📦 Dashboard – Logística":
     colA, colB, colC, colD = st.columns(4)
     colA.metric("🧾 Pedidos", total_pedidos)
     colB.metric("📦 Unidades vendidas", int(total_unidades))
-    import locale
-    locale.setlocale(locale.LC_ALL, 'pt_BR.UTF-8')
+    import locale  # ⬅️ modificado
+    try:
+        locale.setlocale(locale.LC_ALL, 'pt_BR.UTF-8')
+    except locale.Error:
+        locale.setlocale(locale.LC_ALL, '')
 
     colC.metric("💰 Receita total", locale.currency(total_receita, grouping=True))
     colD.metric("💸 Ticket médio", locale.currency(ticket_medio, grouping=True))
