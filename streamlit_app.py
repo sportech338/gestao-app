@@ -3115,9 +3115,6 @@ if menu == "📦 Dashboard – Logística":
     # 📋 ABA 1 — CONTROLE OPERACIONAL
     # =====================================================
     with aba1:
-        st.markdown("### 📋 Controle Operacional")
-        st.caption("Visualização dos pedidos e processamento.")
-
         # -------------------------------------------------
         # 🧭 SIDEBAR — Filtro lateral de período
         # -------------------------------------------------
@@ -3418,19 +3415,11 @@ if menu == "📦 Dashboard – Logística":
     # 📦 ABA 2 — ESTOQUE
     # =====================================================
     with aba2:
-        st.markdown("### 📦 Estoque")
-        st.info("📊 Em breve: acompanhamento de níveis de estoque por SKU e variação.")
-
     # =====================================================
     # 🚚 ABA 3 — ENTREGAS
     # =====================================================
     with aba3:
-        st.markdown("### 🚚 Entregas")
-        st.info("📍 Em breve: status de fretes, prazos e devoluções.")
-
     # =====================================================
     # 📊 ABA 4 — INDICADORES
     # =====================================================
     with aba4:
-        st.markdown("### 📊 Indicadores de Desempenho")
-        st.info("📈 Em breve: métricas de performance logística e eficiência operacional.")
