@@ -3171,7 +3171,8 @@ if menu == "📦 Dashboard – Logística":
             base[c].fillna(f"({c} desconhecido)", inplace=True)
 
     base["created_at"] = pd.to_datetime(base.get("created_at"), errors="coerce")
-    base["price"] = pd.to_numeric(base.get("price"), errors="coerce").fillna(0)
+    base["price"] = pd.to_numeric(base["price"]) if "price" in base.columns else 0
+    base["price"] = pd.to_numeric(base["price"], errors="coerce").fillna(0)
     base["quantity"] = pd.to_numeric(base.get("quantity"), errors="coerce").fillna(0)
     base["line_revenue"] = base["price"] * base["quantity"]
 
