@@ -3318,7 +3318,7 @@ if menu == "📦 Dashboard – Logística":
             email_similar = False
             for e in outro_email:
                 ratio_email = SequenceMatcher(None, email, e.lower()).ratio()
-                if ratio_email >= 0.7:
+                if ratio_email >= 0.8:
                     email_similar = True
                     break
 
