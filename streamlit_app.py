@@ -3322,22 +3322,18 @@ if menu == "📦 Dashboard – Logística":
     tabela["CPF"] = tabela["CPF"].astype(str).fillna("")
     tabela["Telefone"] = tabela["Telefone"].astype(str).fillna("")
 
-    # Cria chave única (prioridade: e-mail > CPF > telefone)
+    # 🔑 Cria chave única (prioridade: e-mail > CPF > telefone)
     tabela["chave_cliente"] = tabela.apply(
-        lambda row: row["E-mail"] or row["CPF"] or row["Telefone"],
-        axis=1
-    )
+        lambda row: row["E-mail"] or row["CPF"] or row["Telefone"], axis=1
+    ).fillna("(sem identificação)")
 
-    # Identifica duplicados (clientes com +1 pedido)
+    # 🔁 Identifica duplicados
     duplicados = tabela[tabela.duplicated(subset=["chave_cliente"], keep=False)]
 
     # 🚚 Flag SEDEX
-    tabela["is_sedex"] = tabela["Frete"].str.contains("SEDEX", case=False, na=False)
+    tabela["is_sedex"] = tabela["Frete"].astype(str).str.contains("SEDEX", case=False, na=False)
 
-    # 🧭 Ordena:
-    # 1️⃣ Clientes duplicados (agrupados por chave_cliente)
-    # 2️⃣ Pedidos comuns
-    # 3️⃣ Pedidos SEDEX no fim
+    # 🧭 Ordena (1️⃣ duplicados, 2️⃣ normais, 3️⃣ SEDEX)
     def prioridade(row):
         if row["chave_cliente"] in duplicados["chave_cliente"].values:
             return (1, row["chave_cliente"], -pd.Timestamp(row["Data do pedido"]).timestamp())
@@ -3349,16 +3345,23 @@ if menu == "📦 Dashboard – Logística":
     tabela["ordem_sort"] = tabela.apply(prioridade, axis=1)
     tabela = tabela.sort_values("ordem_sort", ascending=True).drop(columns=["ordem_sort"])
 
-    # 🎨 Cores por tipo
+    # 🎨 Destaques visuais
     def highlight_linhas(row):
-        if row["chave_cliente"] in duplicados["chave_cliente"].values:
-            return ['background-color: rgba(0, 123, 255, 0.15)'] * len(row)  # azul
-        elif row["is_sedex"]:
-            return ['background-color: rgba(255, 215, 0, 0.15)'] * len(row)  # amarelo
-        else:
+        # Garante que a coluna exista em qualquer execução
+        if "chave_cliente" not in row or "is_sedex" not in row:
             return ['background-color: transparent'] * len(row)
 
+        chave = row["chave_cliente"]
+        if chave in duplicados["chave_cliente"].values:
+            return ['background-color: rgba(0, 123, 255, 0.15)'] * len(row)  # Azul
+        elif row["is_sedex"]:
+            return ['background-color: rgba(255, 215, 0, 0.15)'] * len(row)  # Amarelo
+        else:
+            return ['background-color: transparent'] * len(row)  # Padrão
+
+    # Remove colunas técnicas antes de exibir
     tabela_exibir = tabela.drop(columns=["is_sedex", "chave_cliente"], errors="ignore")
+
     styled_tabela = tabela_exibir.style.apply(highlight_linhas, axis=1)
 
     # 📊 Exibe tabela final
