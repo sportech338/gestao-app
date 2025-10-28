@@ -3153,14 +3153,7 @@ if menu == "📦 Dashboard – Logística":
             pedidos[col] = None
 
     merge_cols = [c for c in ["variant_id", "sku", "product_title", "variant_title"] if c in produtos.columns]
-
-    if "variant_id" in pedidos.columns and "variant_id" in produtos.columns and merge_cols:
-        base = pedidos.merge(produtos[merge_cols], on="variant_id", how="left", suffixes=("", "_produto"))
-    else:
-        # ⚠️ Caso não tenha dados de variantes, apenas copia pedidos
-        st.warning("⚠️ Produtos sem 'variant_id' disponíveis — carregando apenas pedidos.")
-        base = pedidos.copy()
-
+    base = pedidos.merge(produtos[merge_cols], on="variant_id", how="left", suffixes=("", "_produto"))
 
     for c in ["product_title", "variant_title"]:
         if f"{c}_produto" in base.columns and c not in base.columns:
@@ -3254,110 +3247,61 @@ if menu == "📦 Dashboard – Logística":
 
     # 🔝 1️⃣ Identifica duplicados com base em nome e e-mail (com similaridade inteligente)
     from difflib import SequenceMatcher
-    import re
-    import unicodedata
 
-    def _norm(s: str) -> str:
-        if not s:
-            return ""
-        s = unicodedata.normalize("NFKD", s)
-        s = "".join(ch for ch in s if not unicodedata.combining(ch))  # remove acentos
-        s = s.lower()
-        s = re.sub(r"[^a-z0-9\s]", " ", s)  # tira pontuação
-        s = re.sub(r"\s+", " ", s).strip()
-        return s
-
-    def token_set_subset(a: str, b: str) -> bool:
-        """True se todos os tokens do menor estão contidos no maior (ex.: 'rita de cassia coelho' ⊂ 'rita de cassia rodrigues coelho')."""
-        ta = set(_norm(a).split())
-        tb = set(_norm(b).split())
-        if not ta or not tb:
+    def nomes_parecidos(a, b, threshold=0.85):
+        """Retorna True se dois nomes forem semelhantes o suficiente."""
+        if not a or not b:
             return False
-        # garante comparar menor vs maior
-        if len(ta) <= len(tb):
-            small, big = ta, tb
-        else:
-            small, big = tb, ta
-        return small.issubset(big)
+        return SequenceMatcher(None, a.lower().strip(), b.lower().strip()).ratio() >= threshold
 
     def identificar_duplicado(row, df_ref):
-        nome = str(row.get("Cliente", "")).strip()
+        nome = str(row.get("Cliente", "")).strip().lower()
         email = str(row.get("E-mail", "")).strip().lower()
 
         if not nome:
-            return False, False  # (duplicado_exato, similar_alto)
-
-        nome_norm = _norm(nome)
-
-        duplicado_exato = False
-        similar_alto = False
+            return False
 
         # 1️⃣ Duplicado por e-mail idêntico
         if email and email not in ["", "(sem email)", "none"]:
             if df_ref["E-mail"].str.lower().eq(email).sum() > 1:
-                duplicado_exato = True
+                return True
 
-        # 2️⃣ Duplicado por nome idêntico (normalizado)
-        if df_ref["Cliente"].apply(lambda x: _norm(str(x))).eq(nome_norm).sum() > 1:
-            duplicado_exato = True
+        # 2️⃣ Duplicado por nome exato
+        if df_ref["Cliente"].str.lower().eq(nome).sum() > 1:
+            return True
 
-        # 3️⃣ Alta probabilidade:
-        #    a) razão 0.85–0.94 (SequenceMatcher) OU
-        #    b) conjunto de tokens do menor contido no maior (captura sobrenome extra)
-        #    + c) e-mails com similaridade razoável (>0.7)
-        nomes_unicos = df_ref["Cliente"].dropna().unique().tolist()
-        for outro in nomes_unicos:
-            outro_norm = _norm(outro)
-            if not outro_norm or outro_norm == nome_norm:
+        # 3️⃣ Duplicado por similaridade de nome (ex: "Maria Lima" ≈ "Maria L.")
+        nomes_similares = df_ref["Cliente"].dropna().unique().tolist()
+        for outro_nome in nomes_similares:
+            if outro_nome.lower() == nome:
                 continue
+            if nomes_parecidos(nome, outro_nome):
+                subset = df_ref[df_ref["Cliente"].str.lower() == outro_nome.lower()]
+                # Se há e-mails iguais ou ambos sem e-mail, considera duplicado
+                if any((subset["E-mail"].str.lower() == email) | (subset["E-mail"] == "(sem email)")):
+                    return True
+        return False
 
-            ratio_nome = SequenceMatcher(None, nome_norm, outro_norm).ratio()
-
-            # pega email correspondente da outra linha
-            outro_email = df_ref.loc[df_ref["Cliente"] == outro, "E-mail"].dropna().astype(str).unique()
-            email_similar = False
-            for e in outro_email:
-                ratio_email = SequenceMatcher(None, email, e.lower()).ratio()
-                if ratio_email >= 0.8:
-                    email_similar = True
-                    break
-
-            # define similar_alto só se nome e email forem próximos
-            if ((0.85 <= ratio_nome <= 0.94) or token_set_subset(nome, outro)) and email_similar:
-                similar_alto = True
-                break
-
-        return duplicado_exato, similar_alto
-
-
-    # 🧩 Aplica as regras de duplicação e similaridade
-    resultados = tabela.apply(lambda row: identificar_duplicado(row, tabela), axis=1)
-    tabela["duplicado"] = resultados.apply(lambda x: x[0])
-    tabela["similar_alto"] = resultados.apply(lambda x: x[1])
+    # 🧩 Aplica a regra de duplicados
+    tabela["duplicado"] = tabela.apply(lambda row: identificar_duplicado(row, tabela), axis=1)
 
     # 🚚 2️⃣ Cria flag para SEDEX
     tabela["is_sedex"] = tabela["Frete"].str.contains("SEDEX", case=False, na=False)
 
-    # 📦 Ordena: duplicados e similares primeiro, SEDEX por último, mais recentes no topo
+    # 📦 Ordena: duplicados primeiro, SEDEX por último, mais recentes no topo
     tabela = tabela.sort_values(
-        by=["duplicado", "similar_alto", "is_sedex", "Data do pedido"],
-        ascending=[False, False, True, False]
+        by=["duplicado", "is_sedex", "Data do pedido"],
+        ascending=[False, True, False]
     )
 
-    # 🎨 Cores:
-    # Azul → nome/e-mail exatamente igual
-    # Roxo → alta similaridade (mesmo e-mail)
-    # Amarelo → SEDEX
+    # 🎨 Mantém o mesmo estilo visual (azul translúcido e amarelo suave)
     def highlight_prioridades(row):
         if row["duplicado"]:
             return ['background-color: rgba(0, 123, 255, 0.15)'] * len(row)
-        elif row["similar_alto"]:
-            return ['background-color: rgba(100, 149, 237, 0.12)'] * len(row)
         elif row["is_sedex"]:
             return ['background-color: rgba(255, 215, 0, 0.15)'] * len(row)
         else:
             return [''] * len(row)
-
 
     colunas_visiveis = [c for c in tabela.columns if c not in ["duplicado", "is_sedex"]]
     styled_tabela = tabela[colunas_visiveis + ["duplicado", "is_sedex"]].style.apply(highlight_prioridades, axis=1)
