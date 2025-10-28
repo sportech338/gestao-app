@@ -3215,33 +3215,24 @@ if menu == "📦 Dashboard – Logística":
     colD.metric("💸 Ticket médio", f"R$ {ticket_medio:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
 
     # -------------------------------------------------
-    # 📋 Tabela de pedidos
+    # 📋 Pedidos filtrados — Cards interativos
     # -------------------------------------------------
     st.subheader("📋 Pedidos filtrados")
 
-    st.markdown("""
-        <style>
-        thead tr th:first-child, tbody tr td:first-child {
-            text-align: right !important;
-        }
-        input[type="text"] {
-            border-radius: 10px;
-            border: 1px solid #444;
-            padding: 8px 12px;
-        }
-        </style>
-    """, unsafe_allow_html=True)
-
-    colunas = ["created_at", order_col, "customer_name", "customer_email", "product_title", "quantity",
-               "variant_title", "forma_entrega"]
+    # 🔍 Cria colunas principais
+    colunas = [
+        "created_at", order_col, "customer_name", "customer_email",
+        "product_title", "variant_title", "quantity",
+        "forma_entrega", "fulfillment_status"
+    ]
     colunas = [c for c in colunas if c in df.columns]
     tabela = df[colunas].sort_values("created_at", ascending=False).copy()
 
     tabela.rename(columns={
-        order_col: "Pedido", "created_at": "Data do pedido", "customer_name": "Cliente", "customer_email": "E-mail",
-        "quantity": "Qtd", "product_title": "Produto", "variant_title": "Variante",
-        "price": "Preço", "fulfillment_status": "Status de processamento",
-        "forma_entrega": "Frete", "estado": "Estado"
+        order_col: "Pedido", "created_at": "Data do pedido",
+        "customer_name": "Cliente", "customer_email": "E-mail",
+        "quantity": "Qtd", "product_title": "Produto",
+        "variant_title": "Variante", "forma_entrega": "Frete"
     }, inplace=True)
 
     if "Pedido" in tabela.columns:
@@ -3251,11 +3242,10 @@ if menu == "📦 Dashboard – Logística":
         lambda x: "✅ Processado" if str(x).lower() in ["fulfilled", "shipped", "complete"] else "🟡 Não processado"
     )
 
-    # 🔝 1️⃣ Identifica duplicados com base em nome e e-mail (com similaridade inteligente)
+    # 🚩 Flags de prioridade
     from difflib import SequenceMatcher
 
     def nomes_parecidos(a, b, threshold=0.85):
-        """Retorna True se dois nomes forem semelhantes o suficiente."""
         if not a or not b:
             return False
         return SequenceMatcher(None, a.lower().strip(), b.lower().strip()).ratio() >= threshold
@@ -3266,123 +3256,119 @@ if menu == "📦 Dashboard – Logística":
 
         if not nome:
             return False
-
-        # 1️⃣ Duplicado por e-mail idêntico
         if email and email not in ["", "(sem email)", "none"]:
             if df_ref["E-mail"].str.lower().eq(email).sum() > 1:
                 return True
-
-        # 2️⃣ Duplicado por nome exato
         if df_ref["Cliente"].str.lower().eq(nome).sum() > 1:
             return True
-
-        # 3️⃣ Duplicado por similaridade de nome (ex: "Maria Lima" ≈ "Maria L.")
         nomes_similares = df_ref["Cliente"].dropna().unique().tolist()
         for outro_nome in nomes_similares:
             if outro_nome.lower() == nome:
                 continue
             if nomes_parecidos(nome, outro_nome):
                 subset = df_ref[df_ref["Cliente"].str.lower() == outro_nome.lower()]
-                # Se há e-mails iguais ou ambos sem e-mail, considera duplicado
                 if any((subset["E-mail"].str.lower() == email) | (subset["E-mail"] == "(sem email)")):
                     return True
         return False
 
-    # 🧩 Aplica a regra de duplicados
     tabela["duplicado"] = tabela.apply(lambda row: identificar_duplicado(row, tabela), axis=1)
-
-    # 🚚 2️⃣ Cria flag para SEDEX
     tabela["is_sedex"] = tabela["Frete"].str.contains("SEDEX", case=False, na=False)
+    tabela = tabela.sort_values(by=["duplicado", "is_sedex", "Data do pedido"], ascending=[False, True, False])
 
-    # 📦 Ordena: duplicados primeiro, SEDEX por último, mais recentes no topo
-    tabela = tabela.sort_values(
-        by=["duplicado", "is_sedex", "Data do pedido"],
-        ascending=[False, True, False]
-    )
+    # 🎨 Estilo dos cards
+    st.markdown("""
+        <style>
+        .pedido-card {
+            background-color: #ffffff;
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 12px;
+            border: 1px solid #ddd;
+            box-shadow: 0px 1px 3px rgba(0,0,0,0.05);
+        }
+        .pedido-card-duplicado {
+            background-color: rgba(0,123,255,0.08);
+        }
+        .pedido-card-sedex {
+            background-color: rgba(255,215,0,0.1);
+        }
+        .pedido-header {
+            font-size: 16px;
+            font-weight: 600;
+            color: #222;
+        }
+        .pedido-meta {
+            font-size: 13px;
+            color: #666;
+            margin-bottom: 8px;
+        }
+        </style>
+    """, unsafe_allow_html=True)
 
-    # 🎨 Mantém o mesmo estilo visual (azul translúcido e amarelo suave)
-    def highlight_prioridades(row):
+    # 🔁 Exibe cada pedido como um card expansível
+    for idx, row in tabela.iterrows():
+        bg_class = ""
         if row["duplicado"]:
-            return ['background-color: rgba(0, 123, 255, 0.15)'] * len(row)
+            bg_class = "pedido-card-duplicado"
         elif row["is_sedex"]:
-            return ['background-color: rgba(255, 215, 0, 0.15)'] * len(row)
-        else:
-            return [''] * len(row)
+            bg_class = "pedido-card-sedex"
 
-    colunas_visiveis = [c for c in tabela.columns if c not in ["duplicado", "is_sedex"]]
-    styled_tabela = tabela[colunas_visiveis + ["duplicado", "is_sedex"]].style.apply(highlight_prioridades, axis=1)
+        with st.container():
+            st.markdown(f"""
+                <div class="pedido-card {bg_class}">
+                    <div class="pedido-header">📦 Pedido #{row['Pedido']} — {row['Cliente']}</div>
+                    <div class="pedido-meta">
+                        {row['Data do pedido']}<br>
+                        <b>E-mail:</b> {row['E-mail']}<br>
+                        <b>Produto:</b> {row['Produto']} — {row['Variante']}<br>
+                        <b>Qtd:</b> {row['Qtd']} | <b>Frete:</b> {row['Frete']}<br>
+                        <b>Status:</b> {row['Status de processamento']}
+                    </div>
+                </div>
+            """, unsafe_allow_html=True)
 
-    st.dataframe(styled_tabela.hide(["duplicado", "is_sedex"], axis=1), use_container_width=True)
+            # 🔽 Expansor com detalhes adicionais
+            with st.expander("🔎 Detalhes do cliente e processamento"):
+                st.write(f"**Nome:** {row['Cliente']}")
+                st.write(f"**E-mail:** {row['E-mail']}")
+                st.write(f"**Produto:** {row['Produto']}")
+                st.write(f"**Variante:** {row['Variante']}")
+                st.write(f"**Quantidade:** {row['Qtd']}")
+                st.write(f"**Frete:** {row['Frete']}")
+                st.write(f"**Status:** {row['Status de processamento']}")
 
-    # -------------------------------------------------
-    # 🚚 Processamento de pedidos
-    # -------------------------------------------------
-    st.subheader("🚚 Processar pedidos manualmente")
+                # ⚙️ Processamento individual direto no card
+                if str(row["Status de processamento"]).startswith("🟡"):
+                    order_display = int(float(row["Pedido"])) if row["Pedido"].isdigit() else row["Pedido"]
+                    status_key = f"status_{order_display}_{idx}"
+                    form_key = f"form_{order_display}_{idx}"
+                    track_key = f"track_{order_display}_{idx}"
+                    if status_key not in st.session_state:
+                        st.session_state[status_key] = ""
 
-    pendentes = df[df["fulfillment_status"].isin(["unfulfilled", None, "null"])]
-    if not pendentes.empty:
-        if st.button("🚀 Processar TODOS os pedidos pendentes"):
-            progress = st.progress(0)
-            total = len(pendentes)
-            for i, row in enumerate(pendentes.itertuples(), start=1):
-                try:
-                    create_fulfillment(row.order_id)
-                except Exception as e:
-                    st.warning(f"Erro no pedido {row.order_id}: {e}")
-                progress.progress(i / total)
-            st.success("✅ Todos os pedidos pendentes foram processados com sucesso!")
-    else:
-        st.info("✅ Nenhum pedido pendente para processar.")
+                    with st.form(key=form_key, clear_on_submit=True):
+                        tracking_number = st.text_input("📦 Código de rastreio (opcional)", key=track_key)
+                        submitted = st.form_submit_button("✅ Processar pedido")
+                        if submitted:
+                            try:
+                                with st.spinner(f"Processando pedido #{order_display}..."):
+                                    create_fulfillment(
+                                        int(order_display),
+                                        tracking_number=tracking_number or None,
+                                        tracking_company="Correios"
+                                    )
+                                    log_fulfillment(order_display)
+                                st.session_state[status_key] = f"✅ Pedido #{order_display} processado com sucesso!"
+                                if tracking_number:
+                                    st.session_state[status_key] += f"\n📬 Código: `{tracking_number}`"
+                            except Exception as e:
+                                st.session_state[status_key] = f"❌ Erro ao processar pedido #{order_display}: {e}"
 
-    # -------------------------------------------------
-    # 📦 Processar individualmente (sem reload)
-    # -------------------------------------------------
-    st.markdown("### 📦 Processar individualmente")
-
-    for idx, row in df.iterrows():
-        if str(row["fulfillment_status"]).lower() in ["fulfilled", "shipped", "complete"]:
-            continue
-
-        order_display = int(float(row[order_col])) if pd.notna(row[order_col]) else row["order_id"]
-
-        # 🔑 Cria chaves únicas baseadas no índice da linha
-        status_key = f"status_{row.order_id}_{idx}"
-        form_key = f"form_{row.order_id}_{idx}"
-        track_key = f"track_{row.order_id}_{idx}"
-
-        if status_key not in st.session_state:
-            st.session_state[status_key] = ""
-
-        with st.container(border=True):
-            st.markdown(f"#### Pedido #{order_display} — {row['customer_name']}")
-            st.caption(f"Produto: {row['product_title']} — Variante: {row['variant_title']}")
-
-            # ✅ Usa chave única no form
-            with st.form(key=form_key, clear_on_submit=True):
-                tracking_number = st.text_input("📦 Código de rastreio (opcional)", key=track_key)
-                submitted = st.form_submit_button("✅ Processar pedido")
-
-                if submitted:
-                    try:
-                        with st.spinner(f"Processando pedido #{order_display}..."):
-                            result = create_fulfillment(
-                                row.order_id,
-                                tracking_number=tracking_number or None,
-                                tracking_company="Correios"
-                            )
-                            log_fulfillment(row.order_id)
-                        st.session_state[status_key] = f"✅ Pedido #{order_display} processado com sucesso!"
-                        if tracking_number:
-                            st.session_state[status_key] += f"\n📬 Código de rastreio: `{tracking_number}`"
-                    except Exception as e:
-                        st.session_state[status_key] = f"❌ Erro ao processar pedido #{order_display}: {e}"
-
-            # 🧾 Exibe o status após o processamento
-            msg = st.session_state[status_key]
-            if msg:
-                if msg.startswith("✅"):
-                    st.success(msg)
-                elif msg.startswith("❌"):
-                    st.error(msg)
-                else:
-                    st.info(msg)
+                    msg = st.session_state[status_key]
+                    if msg:
+                        if msg.startswith("✅"):
+                            st.success(msg)
+                        elif msg.startswith("❌"):
+                            st.error(msg)
+                        else:
+                            st.info(msg)
