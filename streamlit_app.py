@@ -3259,49 +3259,61 @@ if menu == "📦 Dashboard – Logística":
         email = str(row.get("E-mail", "")).strip().lower()
 
         if not nome:
-            return False
+            return False, False  # (duplicado_exato, similar_alto)
+
+        duplicado_exato = False
+        similar_alto = False
 
         # 1️⃣ Duplicado por e-mail idêntico
         if email and email not in ["", "(sem email)", "none"]:
             if df_ref["E-mail"].str.lower().eq(email).sum() > 1:
-                return True
+                duplicado_exato = True
 
         # 2️⃣ Duplicado por nome exato
         if df_ref["Cliente"].str.lower().eq(nome).sum() > 1:
-            return True
+            duplicado_exato = True
 
-        # 3️⃣ Duplicado por similaridade de nome (ex: "Maria Lima" ≈ "Maria L.")
+        # 3️⃣ Nome muito parecido + e-mail igual → roxo (alta probabilidade)
         nomes_similares = df_ref["Cliente"].dropna().unique().tolist()
         for outro_nome in nomes_similares:
             if outro_nome.lower() == nome:
                 continue
             if nomes_parecidos(nome, outro_nome):
                 subset = df_ref[df_ref["Cliente"].str.lower() == outro_nome.lower()]
-                # Se há e-mails iguais ou ambos sem e-mail, considera duplicado
                 if any((subset["E-mail"].str.lower() == email) | (subset["E-mail"] == "(sem email)")):
-                    return True
-        return False
+                    similar_alto = True
+                    break
 
-    # 🧩 Aplica a regra de duplicados
-    tabela["duplicado"] = tabela.apply(lambda row: identificar_duplicado(row, tabela), axis=1)
+        return duplicado_exato, similar_alto
+
+    # 🧩 Aplica as regras de duplicação e similaridade
+    resultados = tabela.apply(lambda row: identificar_duplicado(row, tabela), axis=1)
+    tabela["duplicado"] = resultados.apply(lambda x: x[0])
+    tabela["similar_alto"] = resultados.apply(lambda x: x[1])
 
     # 🚚 2️⃣ Cria flag para SEDEX
     tabela["is_sedex"] = tabela["Frete"].str.contains("SEDEX", case=False, na=False)
 
-    # 📦 Ordena: duplicados primeiro, SEDEX por último, mais recentes no topo
+    # 📦 Ordena: duplicados e similares primeiro, SEDEX por último, mais recentes no topo
     tabela = tabela.sort_values(
-        by=["duplicado", "is_sedex", "Data do pedido"],
-        ascending=[False, True, False]
+        by=["duplicado", "similar_alto", "is_sedex", "Data do pedido"],
+        ascending=[False, False, True, False]
     )
 
-    # 🎨 Mantém o mesmo estilo visual (azul translúcido e amarelo suave)
+    # 🎨 Cores:
+    # Azul → nome/e-mail exatamente igual
+    # Roxo → alta similaridade (mesmo e-mail)
+    # Amarelo → SEDEX
     def highlight_prioridades(row):
         if row["duplicado"]:
             return ['background-color: rgba(0, 123, 255, 0.15)'] * len(row)
+        elif row["similar_alto"]:
+            return ['background-color: rgba(155, 89, 182, 0.18)'] * len(row)
         elif row["is_sedex"]:
             return ['background-color: rgba(255, 215, 0, 0.15)'] * len(row)
         else:
             return [''] * len(row)
+
 
     colunas_visiveis = [c for c in tabela.columns if c not in ["duplicado", "is_sedex"]]
     styled_tabela = tabela[colunas_visiveis + ["duplicado", "is_sedex"]].style.apply(highlight_prioridades, axis=1)
