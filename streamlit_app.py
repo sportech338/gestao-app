@@ -3089,15 +3089,22 @@ if menu == "📊 Dashboard – Tráfego Pago":
                     f"Período B: **{_fmt_range_br(since_B, until_B)}**"
                 )
 
+
 # =====================================================
 # 📦 DASHBOARD – LOGÍSTICA
 # =====================================================
 if menu == "📦 Dashboard – Logística":
 
     # =====================================================
+    # 🧭 Cabeçalho fixo principal
+    # =====================================================
+    st.title("📦 DASHBOARD — LOGÍSTICA")
+    st.caption("Visualização completa de pedidos, estoque, entregas e indicadores.")
+
+    # =====================================================
     # 🗂️ Abas principais da Logística
     # =====================================================
-    aba = st.tabs([
+    aba1, aba2, aba3, aba4 = st.tabs([
         "📋 Controle Operacional",
         "📦 Estoque",
         "🚚 Entregas",
@@ -3107,11 +3114,8 @@ if menu == "📦 Dashboard – Logística":
     # =====================================================
     # 📋 ABA 1 — CONTROLE OPERACIONAL
     # =====================================================
-    with aba[0]:
-        # -------------------------------------------------
-        # 🧭 Cabeçalho
-        # -------------------------------------------------
-        st.title("📋 Controle Operacional")
+    with aba1:
+        st.markdown("### 📋 Controle Operacional")
         st.caption("Visualização dos pedidos e processamento.")
 
         # -------------------------------------------------
@@ -3408,24 +3412,24 @@ if menu == "📦 Dashboard – Logística":
                         st.error(msg)
                     else:
                         st.info(msg)
-
+    
     # =====================================================
     # 📦 ABA 2 — ESTOQUE
     # =====================================================
-    with aba[1]:
-        st.title("📦 Estoque")
+    with aba2:
+        st.markdown("### 📦 Estoque")
         st.info("📊 Em breve: acompanhamento de níveis de estoque por SKU e variação.")
 
     # =====================================================
     # 🚚 ABA 3 — ENTREGAS
     # =====================================================
-    with aba[2]:
-        st.title("🚚 Entregas")
+    with aba3:
+        st.markdown("### 🚚 Entregas")
         st.info("📍 Em breve: status de fretes, prazos e devoluções.")
 
     # =====================================================
     # 📊 ABA 4 — INDICADORES
     # =====================================================
-    with aba[3]:
-        st.title("📊 Indicadores de Desempenho")
+    with aba4:
+        st.markdown("### 📊 Indicadores de Desempenho")
         st.info("📈 Em breve: métricas de performance logística e eficiência operacional.")
