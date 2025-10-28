@@ -3282,70 +3282,7 @@ if menu == "📦 Dashboard – Logística":
 
     tabela["Status de processamento"] = df["fulfillment_status"].apply(
         lambda x: "✅ Processado" if str(x).lower() in ["fulfilled", "shipped", "complete"] else "🟡 Não processado"
-    )
-
-    # 🔝 1️⃣ Identifica duplicados com base em nome e e-mail (com similaridade inteligente)
-    from difflib import SequenceMatcher
-
-    def nomes_parecidos(a, b, threshold=0.85):
-        """Retorna True se dois nomes forem semelhantes o suficiente."""
-        if not a or not b:
-            return False
-        return SequenceMatcher(None, a.lower().strip(), b.lower().strip()).ratio() >= threshold
-
-    def identificar_duplicado(row, df_ref):
-        nome = str(row.get("Cliente", "")).strip().lower()
-        email = str(row.get("E-mail", "")).strip().lower()
-
-        if not nome:
-            return False
-
-        # 1️⃣ Duplicado por e-mail idêntico
-        if email and email not in ["", "(sem email)", "none"]:
-            if df_ref["E-mail"].str.lower().eq(email).sum() > 1:
-                return True
-
-        # 2️⃣ Duplicado por nome exato
-        if df_ref["Cliente"].str.lower().eq(nome).sum() > 1:
-            return True
-
-        # 3️⃣ Duplicado por similaridade de nome (ex: "Maria Lima" ≈ "Maria L.")
-        nomes_similares = df_ref["Cliente"].dropna().unique().tolist()
-        for outro_nome in nomes_similares:
-            if outro_nome.lower() == nome:
-                continue
-            if nomes_parecidos(nome, outro_nome):
-                subset = df_ref[df_ref["Cliente"].str.lower() == outro_nome.lower()]
-                # Se há e-mails iguais ou ambos sem e-mail, considera duplicado
-                if any((subset["E-mail"].str.lower() == email) | (subset["E-mail"] == "(sem email)")):
-                    return True
-        return False
-
-    # 🧩 Aplica a regra de duplicados
-    tabela["duplicado"] = tabela.apply(lambda row: identificar_duplicado(row, tabela), axis=1)
-
-    # 🚚 2️⃣ Cria flag para SEDEX
-    tabela["is_sedex"] = tabela["Frete"].str.contains("SEDEX", case=False, na=False)
-
-    # 📦 Ordena: duplicados primeiro, SEDEX por último, mais recentes no topo
-    tabela = tabela.sort_values(
-        by=["duplicado", "is_sedex", "Data do pedido"],
-        ascending=[False, True, False]
-    )
-
-    # 🎨 Mantém o mesmo estilo visual (azul translúcido e amarelo suave)
-    def highlight_prioridades(row):
-        if row["duplicado"]:
-            return ['background-color: rgba(0, 123, 255, 0.15)'] * len(row)
-        elif row["is_sedex"]:
-            return ['background-color: rgba(255, 215, 0, 0.15)'] * len(row)
-        else:
-            return [''] * len(row)
-
-    colunas_visiveis = [c for c in tabela.columns if c not in ["duplicado", "is_sedex"]]
-    styled_tabela = tabela[colunas_visiveis + ["duplicado", "is_sedex"]].style.apply(highlight_prioridades, axis=1)
-
-    st.dataframe(styled_tabela.hide(["duplicado", "is_sedex"], axis=1), use_container_width=True)
+    
 
     # -------------------------------------------------
     # 🚚 Processamento de pedidos
