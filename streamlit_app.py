@@ -3265,6 +3265,15 @@ if menu == "📦 Dashboard – Logística":
         </style>
     """, unsafe_allow_html=True)
 
+    # 🗂️ Legenda visual
+    st.markdown("""
+        <div style='padding: 10px; border-radius: 8px; background-color: #f9f9f9; border: 1px solid #ddd; margin-bottom:10px;'>
+            <b>🔹 Legenda de cores:</b><br>
+            <span style='background-color: rgba(0, 123, 255, 0.15); padding: 3px 10px; border-radius: 4px;'>Cliente com mais de um pedido</span><br>
+            <span style='background-color: rgba(255, 215, 0, 0.15); padding: 3px 10px; border-radius: 4px;'>Pedido com frete SEDEX</span>
+        </div>
+    """, unsafe_allow_html=True)
+
     colunas = [
         "created_at", order_col, "customer_name", "customer_email",
         "customer_phone", "customer_cpf", "product_title", "quantity",
@@ -3308,8 +3317,56 @@ if menu == "📦 Dashboard – Logística":
         else "🟡 Não processado"
     )
 
-    # 📊 Exibe a tabela final, sem colunas técnicas
-    st.dataframe(tabela, use_container_width=True)
+    # 🔎 Detecta clientes com múltiplos pedidos
+    tabela["E-mail"] = tabela["E-mail"].astype(str).str.lower().fillna("")
+    tabela["CPF"] = tabela["CPF"].astype(str).fillna("")
+    tabela["Telefone"] = tabela["Telefone"].astype(str).fillna("")
+
+    duplicados = tabela[
+        tabela.duplicated(subset=["E-mail"], keep=False)
+        | tabela.duplicated(subset=["CPF"], keep=False)
+        | tabela.duplicated(subset=["Telefone"], keep=False)
+    ]
+
+    # 🚚 Marca pedidos SEDEX
+    tabela["is_sedex"] = tabela["Frete"].str.contains("SEDEX", case=False, na=False)
+
+    # 🧭 Ordena: duplicados juntos, depois normais, SEDEX por último
+    def prioridade(row):
+        if (
+            row["E-mail"] in duplicados["E-mail"].values
+            or row["CPF"] in duplicados["CPF"].values
+            or row["Telefone"] in duplicados["Telefone"].values
+        ):
+            return (1, row["E-mail"], -pd.Timestamp(row["Data do pedido"]).timestamp())
+        elif row["is_sedex"]:
+            return (3, row["E-mail"], -pd.Timestamp(row["Data do pedido"]).timestamp())
+        else:
+            return (2, row["E-mail"], -pd.Timestamp(row["Data do pedido"]).timestamp())
+
+    tabela["ordem_sort"] = tabela.apply(prioridade, axis=1)
+    tabela = tabela.sort_values("ordem_sort", ascending=True).drop(columns=["ordem_sort"])
+
+    # 🎨 Destaques visuais
+    def highlight_linhas(row):
+        email, cpf, tel = row["E-mail"], row["CPF"], row["Telefone"]
+        if (
+            email in duplicados["E-mail"].values
+            or cpf in duplicados["CPF"].values
+            or tel in duplicados["Telefone"].values
+        ):
+            return ['background-color: rgba(0, 123, 255, 0.15)'] * len(row)  # azul
+        elif row["is_sedex"]:
+            return ['background-color: rgba(255, 215, 0, 0.15)'] * len(row)  # amarelo
+        else:
+            return ['background-color: transparent'] * len(row)  # sem cor
+
+    tabela_exibir = tabela.drop(columns=["is_sedex"], errors="ignore")
+
+    styled_tabela = tabela_exibir.style.apply(highlight_linhas, axis=1)
+
+    # 📊 Exibe a tabela final
+    st.dataframe(styled_tabela, use_container_width=True)
 
     # -------------------------------------------------
     # 🚚 Processamento de pedidos
