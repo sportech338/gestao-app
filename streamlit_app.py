@@ -3324,10 +3324,16 @@ if menu == "📦 Dashboard – Logística":
         else:
             return [''] * len(row)
 
-    colunas_visiveis = [c for c in tabela.columns if c not in ["duplicado", "is_sedex"]]
-    styled_tabela = tabela[colunas_visiveis + ["duplicado", "is_sedex"]].style.apply(highlight_prioridades, axis=1)
+    # 🔍 Aplica o estilo e remove colunas técnicas da exibição
+    tabela_exibir = tabela.drop(columns=["duplicado", "is_sedex"], errors="ignore")
+    styled_tabela = tabela_exibir.style.apply(
+        lambda row: highlight_prioridades(
+            tabela.loc[row.name] if row.name in tabela.index else row
+        ),
+        axis=1
+    )
 
-    st.dataframe(styled_tabela.hide(["duplicado", "is_sedex"], axis=1), use_container_width=True)
+    st.dataframe(styled_tabela, use_container_width=True)
 
     # -------------------------------------------------
     # 🚚 Processamento de pedidos
