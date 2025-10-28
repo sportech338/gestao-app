@@ -3188,7 +3188,18 @@ if menu == "📦 Dashboard – Logística":
         # Resultados diretos da Shopify já são a base
         df = base.copy()
     else:
-        df = base[(base["created_at"].dt.date >= start_date) & (base["created_at"].dt.date <= end_date)].copy()
+            # 🔧 Garante que "created_at" seja datetime de verdade
+    if not pd.api.types.is_datetime64_any_dtype(base["created_at"]):
+        base["created_at"] = pd.to_datetime(base["created_at"], errors="coerce")
+
+    # 🔍 Remove linhas sem data válida antes de filtrar
+    base = base.dropna(subset=["created_at"])
+
+    # 📅 Agora o filtro funciona sem erro
+    df = base[
+        (base["created_at"].dt.date >= start_date)
+        & (base["created_at"].dt.date <= end_date)
+    ].copy()
 
     # -------------------------------------------------
     # 🎛️ Filtros adicionais
