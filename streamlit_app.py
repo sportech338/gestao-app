@@ -3253,7 +3253,7 @@ if menu == "📦 Dashboard – Logística":
     )
 
     # 🔝 1️⃣ Identifica duplicados com base em nome e e-mail (com similaridade inteligente)
-    from difflib import SequenceMatcher
+        from difflib import SequenceMatcher
     import re
     import unicodedata
 
@@ -3312,8 +3312,8 @@ if menu == "📦 Dashboard – Logística":
 
             ratio = SequenceMatcher(None, nome_norm, outro_norm).ratio()
 
-            if (0.85 <= ratio <= 0.94) or token_set_subset(nome, outro):
-                # (Opcional) se email bater também, melhor ainda, mas não é obrigatório para "similar_alto"
+            # Exige correspondência forte de estrutura
+            if (0.85 <= ratio <= 0.94) and token_set_subset(nome, outro):
                 similar_alto = True
                 break
 
