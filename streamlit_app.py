@@ -3254,19 +3254,40 @@ if menu == "📦 Dashboard – Logística":
 
     # 🔝 1️⃣ Identifica duplicados com base em nome e e-mail (com similaridade inteligente)
     from difflib import SequenceMatcher
+    import re
+    import unicodedata
 
-    def nomes_parecidos(a, b, threshold=0.85):
-        """Retorna True se dois nomes forem semelhantes o suficiente."""
-        if not a or not b:
+    def _norm(s: str) -> str:
+        if not s:
+            return ""
+        s = unicodedata.normalize("NFKD", s)
+        s = "".join(ch for ch in s if not unicodedata.combining(ch))  # remove acentos
+        s = s.lower()
+        s = re.sub(r"[^a-z0-9\s]", " ", s)  # tira pontuação
+        s = re.sub(r"\s+", " ", s).strip()
+        return s
+
+    def token_set_subset(a: str, b: str) -> bool:
+        """True se todos os tokens do menor estão contidos no maior (ex.: 'rita de cassia coelho' ⊂ 'rita de cassia rodrigues coelho')."""
+        ta = set(_norm(a).split())
+        tb = set(_norm(b).split())
+        if not ta or not tb:
             return False
-        return SequenceMatcher(None, a.lower().strip(), b.lower().strip()).ratio() >= threshold
+        # garante comparar menor vs maior
+        if len(ta) <= len(tb):
+            small, big = ta, tb
+        else:
+            small, big = tb, ta
+        return small.issubset(big)
 
     def identificar_duplicado(row, df_ref):
-        nome = str(row.get("Cliente", "")).strip().lower()
+        nome = str(row.get("Cliente", "")).strip()
         email = str(row.get("E-mail", "")).strip().lower()
 
         if not nome:
             return False, False  # (duplicado_exato, similar_alto)
+
+        nome_norm = _norm(nome)
 
         duplicado_exato = False
         similar_alto = False
@@ -3276,17 +3297,23 @@ if menu == "📦 Dashboard – Logística":
             if df_ref["E-mail"].str.lower().eq(email).sum() > 1:
                 duplicado_exato = True
 
-        # 2️⃣ Duplicado por nome idêntico
-        if df_ref["Cliente"].str.lower().eq(nome).sum() > 1:
+        # 2️⃣ Duplicado por nome idêntico (normalizado)
+        if df_ref["Cliente"].apply(lambda x: _norm(str(x))).eq(nome_norm).sum() > 1:
             duplicado_exato = True
 
-        # 3️⃣ Nome muito parecido (0.85–0.94) → roxo
-        nomes_similares = df_ref["Cliente"].dropna().unique().tolist()
-        for outro_nome in nomes_similares:
-            if outro_nome.lower() == nome:
+        # 3️⃣ Alta probabilidade:
+        #    a) razão 0.85–0.94 (SequenceMatcher) OU
+        #    b) conjunto de tokens do menor contido no maior (captura sobrenome extra)
+        nomes_unicos = df_ref["Cliente"].dropna().unique().tolist()
+        for outro in nomes_unicos:
+            outro_norm = _norm(outro)
+            if not outro_norm or outro_norm == nome_norm:
                 continue
-            ratio = SequenceMatcher(None, nome, outro_nome.lower()).ratio()
-            if 0.85 <= ratio <= 0.94:
+
+            ratio = SequenceMatcher(None, nome_norm, outro_norm).ratio()
+
+            if (0.85 <= ratio <= 0.94) or token_set_subset(nome, outro):
+                # (Opcional) se email bater também, melhor ainda, mas não é obrigatório para "similar_alto"
                 similar_alto = True
                 break
 
