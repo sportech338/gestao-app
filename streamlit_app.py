@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -3324,13 +3325,10 @@ if menu == "📦 Dashboard – Logística":
         else:
             return [''] * len(row)
 
-    # 🔍 Remove colunas técnicas antes de exibir
-    tabela_exibir = tabela.drop(columns=["duplicado", "is_sedex"], errors="ignore")
+    colunas_visiveis = [c for c in tabela.columns if c not in ["duplicado", "is_sedex"]]
+    styled_tabela = tabela[colunas_visiveis + ["duplicado", "is_sedex"]].style.apply(highlight_prioridades, axis=1)
 
-    # ✅ Aplica o estilo direto sobre tabela_exibir
-    styled_tabela = tabela_exibir.style.apply(highlight_prioridades, axis=1)
-
-    st.dataframe(styled_tabela, use_container_width=True)
+    st.dataframe(styled_tabela.hide(["duplicado", "is_sedex"], axis=1), use_container_width=True)
 
     # -------------------------------------------------
     # 🚚 Processamento de pedidos
