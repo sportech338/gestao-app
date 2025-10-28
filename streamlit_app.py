@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -1071,8 +1072,8 @@ def _range_from_preset(p):
 # =====================================================
 # ================== DASHBOARD TRÁFEGO PAGO ============
 # =====================================================
-if menu == "📊 Tráfego Pago":
-    st.title("📈 Tráfego Pago")
+if menu == "📊 Dashboard – Tráfego Pago":
+    st.title("📈 Dashboard — Tráfego Pago")
     st.caption("Análise completa de campanhas e funil de conversão.")
 
     # ================= CONFIGURAÇÃO LOCAL DO DASHBOARD =================
@@ -3093,12 +3094,12 @@ if menu == "📊 Tráfego Pago":
 # =====================================================
 # 📦 DASHBOARD – LOGÍSTICA
 # =====================================================
-if menu == "📦 Logística":
+if menu == "📦 Dashboard – Logística":
 
     # =====================================================
     # 🧭 Cabeçalho fixo principal
     # =====================================================
-    st.title("📦 LOGÍSTICA")
+    st.title("📦 DASHBOARD — LOGÍSTICA")
     st.caption("Visualização completa de pedidos, estoque, entregas e indicadores.")
 
     # =====================================================
