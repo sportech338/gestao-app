@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -3277,20 +3276,19 @@ if menu == "📦 Dashboard – Logística":
             if df_ref["E-mail"].str.lower().eq(email).sum() > 1:
                 duplicado_exato = True
 
-        # 2️⃣ Duplicado por nome exato
+        # 2️⃣ Duplicado por nome idêntico
         if df_ref["Cliente"].str.lower().eq(nome).sum() > 1:
             duplicado_exato = True
 
-        # 3️⃣ Nome muito parecido + e-mail igual → roxo (alta probabilidade)
+        # 3️⃣ Nome muito parecido (0.85–0.94) → roxo
         nomes_similares = df_ref["Cliente"].dropna().unique().tolist()
         for outro_nome in nomes_similares:
             if outro_nome.lower() == nome:
                 continue
-            if nomes_parecidos(nome, outro_nome):
-                subset = df_ref[df_ref["Cliente"].str.lower() == outro_nome.lower()]
-                if any((subset["E-mail"].str.lower() == email) | (subset["E-mail"] == "(sem email)")):
-                    similar_alto = True
-                    break
+            ratio = SequenceMatcher(None, nome, outro_nome.lower()).ratio()
+            if 0.85 <= ratio <= 0.94:
+                similar_alto = True
+                break
 
         return duplicado_exato, similar_alto
 
