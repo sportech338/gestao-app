@@ -1078,7 +1078,7 @@ if menu == "📊 Dashboard – Tráfego Pago":
         "Este mês", "Máximo", "Personalizado"
     ]
 
-    escolha_periodo = st.sidebar.radio("Selecione:", opcoes_periodo, index=2)
+    escolha_periodo = st.sidebar.radio("Selecione:", opcoes_periodo, index=0)
 
     if escolha_periodo == "Hoje":
         start_date, end_date = hoje, hoje
@@ -3079,7 +3079,7 @@ if menu == "📦 Dashboard – Logística":
         "Este mês", "Máximo", "Personalizado"
     ]
 
-    escolha_periodo = st.sidebar.radio("Selecione:", opcoes_periodo, index=2)
+    escolha_periodo = st.sidebar.radio("Selecione:", opcoes_periodo, index=0)
 
     if escolha_periodo == "Hoje":
         start_date, end_date = hoje, hoje
