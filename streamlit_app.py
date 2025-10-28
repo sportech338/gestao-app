@@ -3093,343 +3093,339 @@ if menu == "📊 Dashboard – Tráfego Pago":
 # 📦 DASHBOARD – LOGÍSTICA
 # =====================================================
 if menu == "📦 Dashboard – Logística":
-    # -------------------------------------------------
-    # 🧭 Cabeçalho
-    # -------------------------------------------------
-    st.title("📦 Dashboard — Logística")
-    st.caption("Visualização dos pedidos, estoque e processamento manual via Shopify API.")
 
-    # -------------------------------------------------
-    # 🧭 SIDEBAR — Filtro lateral de período
-    # -------------------------------------------------
-    st.sidebar.header("📅 Período rápido")
+    # =====================================================
+    # 🗂️ Abas principais da Logística
+    # =====================================================
+    aba = st.tabs([
+        "📋 Controle Operacional",
+        "📦 Estoque",
+        "🚚 Entregas",
+        "📊 Indicadores"
+    ])
 
-    hoje = datetime.now(APP_TZ).date()  
-    
-    opcoes_periodo = [
-        "Hoje", "Ontem", "Últimos 7 dias", "Últimos 14 dias",
-        "Últimos 30 dias", "Últimos 90 dias", "Esta semana",
-        "Este mês", "Máximo", "Personalizado"
-    ]
+    # =====================================================
+    # 📋 ABA 1 — CONTROLE OPERACIONAL
+    # =====================================================
+    with aba[0]:
+        # -------------------------------------------------
+        # 🧭 Cabeçalho
+        # -------------------------------------------------
+        st.title("📋 Controle Operacional")
+        st.caption("Visualização dos pedidos e processamento.")
 
-    escolha_periodo = st.sidebar.radio("Selecione:", opcoes_periodo, index=0)
+        # -------------------------------------------------
+        # 🧭 SIDEBAR — Filtro lateral de período
+        # -------------------------------------------------
+        st.sidebar.header("📅 Período rápido")
 
-    if escolha_periodo == "Hoje":
-        start_date, end_date = hoje, hoje
-    elif escolha_periodo == "Ontem":
-        start_date, end_date = hoje - timedelta(days=1), hoje - timedelta(days=1)
-    elif escolha_periodo == "Últimos 7 dias":
-        start_date, end_date = hoje - timedelta(days=7), hoje - timedelta(days=1)
-    elif escolha_periodo == "Últimos 14 dias":
-        start_date, end_date = hoje - timedelta(days=14), hoje - timedelta(days=1)
-    elif escolha_periodo == "Últimos 30 dias":
-        start_date, end_date = hoje - timedelta(days=30), hoje - timedelta(days=1)
-    elif escolha_periodo == "Últimos 90 dias":
-        start_date, end_date = hoje - timedelta(days=90), hoje - timedelta(days=1)
-    elif escolha_periodo == "Esta semana":
-        start_date, end_date = hoje - timedelta(days=hoje.weekday()), hoje
-    elif escolha_periodo == "Este mês":
-        start_date = hoje.replace(day=1)
-        end_date = hoje
-    elif escolha_periodo == "Máximo":
-        start_date = date(2020, 1, 1)
-        end_date = hoje
-    else:
-        periodo = st.sidebar.date_input("📆 Selecione o intervalo:", (hoje, hoje), format="DD/MM/YYYY")
-        if isinstance(periodo, tuple) and len(periodo) == 2:
-            start_date, end_date = periodo
+        hoje = datetime.now(APP_TZ).date()  
+
+        opcoes_periodo = [
+            "Hoje", "Ontem", "Últimos 7 dias", "Últimos 14 dias",
+            "Últimos 30 dias", "Últimos 90 dias", "Esta semana",
+            "Este mês", "Máximo", "Personalizado"
+        ]
+
+        escolha_periodo = st.sidebar.radio("Selecione:", opcoes_periodo, index=0)
+
+        if escolha_periodo == "Hoje":
+            start_date, end_date = hoje, hoje
+        elif escolha_periodo == "Ontem":
+            start_date, end_date = hoje - timedelta(days=1), hoje - timedelta(days=1)
+        elif escolha_periodo == "Últimos 7 dias":
+            start_date, end_date = hoje - timedelta(days=7), hoje - timedelta(days=1)
+        elif escolha_periodo == "Últimos 14 dias":
+            start_date, end_date = hoje - timedelta(days=14), hoje - timedelta(days=1)
+        elif escolha_periodo == "Últimos 30 dias":
+            start_date, end_date = hoje - timedelta(days=30), hoje - timedelta(days=1)
+        elif escolha_periodo == "Últimos 90 dias":
+            start_date, end_date = hoje - timedelta(days=90), hoje - timedelta(days=1)
+        elif escolha_periodo == "Esta semana":
+            start_date, end_date = hoje - timedelta(days=hoje.weekday()), hoje
+        elif escolha_periodo == "Este mês":
+            start_date = hoje.replace(day=1)
+            end_date = hoje
+        elif escolha_periodo == "Máximo":
+            start_date = date(2020, 1, 1)
+            end_date = hoje
         else:
-            st.sidebar.warning("🟡 Selecione o fim do período.")
-            st.stop()
+            periodo = st.sidebar.date_input("📆 Selecione o intervalo:", (hoje, hoje), format="DD/MM/YYYY")
+            if isinstance(periodo, tuple) and len(periodo) == 2:
+                start_date, end_date = periodo
+            else:
+                st.sidebar.warning("🟡 Selecione o fim do período.")
+                st.stop()
 
-    st.sidebar.markdown(f"**Desde:** {start_date}  \n**Até:** {end_date}")
+        st.sidebar.markdown(f"**Desde:** {start_date}  \n**Até:** {end_date}")
 
-    # -------------------------------------------------
-    # 🔍 Busca rápida (no topo)
-    # -------------------------------------------------
-    st.subheader("🔍 Busca rápida")
-    busca = st.text_input("Digite parte do nome do cliente, email ou número do pedido:")
+        # -------------------------------------------------
+        # 🔍 Busca rápida (no topo)
+        # -------------------------------------------------
+        st.subheader("🔍 Busca rápida")
+        busca = st.text_input("Digite parte do nome do cliente, email ou número do pedido:")
 
-    # -------------------------------------------------
-    # 🔄 Carregamento de dados (cache leve + busca direta na Shopify)
-    # -------------------------------------------------
-    periodo_atual = st.session_state.get("periodo_atual")
+        # -------------------------------------------------
+        # 🔄 Carregamento de dados
+        # -------------------------------------------------
+        periodo_atual = st.session_state.get("periodo_atual")
 
-    if busca.strip():
-        # Caso tenha texto na busca, ignora o período e faz consulta direta
-        with st.spinner(f"🔍 Buscando '{busca}' diretamente na Shopify..."):
-            produtos = get_products_with_variants()
-            pedidos = search_orders_shopify(busca)
-        st.success(f"✅ {len(pedidos)} pedido(s) encontrados para '{busca}'. (busca direta na Shopify)")
-        st.session_state["produtos"] = produtos
-        st.session_state["pedidos"] = pedidos
-
-    elif periodo_atual != (start_date, end_date):
-        # Caso não haja busca, segue fluxo normal baseado no período filtrado
-        with st.spinner("🔄 Carregando dados da Shopify..."):
-            produtos = get_products_with_variants()
-            pedidos = get_orders(start_date=start_date, end_date=end_date)
+        if busca.strip():
+            with st.spinner(f"🔍 Buscando '{busca}' diretamente na Shopify..."):
+                produtos = get_products_with_variants()
+                pedidos = search_orders_shopify(busca)
+            st.success(f"✅ {len(pedidos)} pedido(s) encontrados para '{busca}'. (busca direta na Shopify)")
             st.session_state["produtos"] = produtos
             st.session_state["pedidos"] = pedidos
-            st.session_state["periodo_atual"] = (start_date, end_date)
-        st.success(f"✅ Dados carregados de {start_date.strftime('%d/%m/%Y')} até {end_date.strftime('%d/%m/%Y')}")
-    else:
-        produtos = st.session_state.get("produtos", pd.DataFrame())
-        pedidos = st.session_state.get("pedidos", pd.DataFrame())
 
-        if pedidos.empty:
-            st.warning("Nenhum dado carregado. Escolha um período ou realize uma busca.")
+        elif periodo_atual != (start_date, end_date):
+            with st.spinner("🔄 Carregando dados da Shopify..."):
+                produtos = get_products_with_variants()
+                pedidos = get_orders(start_date=start_date, end_date=end_date)
+                st.session_state["produtos"] = produtos
+                st.session_state["pedidos"] = pedidos
+                st.session_state["periodo_atual"] = (start_date, end_date)
+            st.success(f"✅ Dados carregados de {start_date.strftime('%d/%m/%Y')} até {end_date.strftime('%d/%m/%Y')}")
+        else:
+            produtos = st.session_state.get("produtos", pd.DataFrame())
+            pedidos = st.session_state.get("pedidos", pd.DataFrame())
+
+            if pedidos.empty:
+                st.warning("Nenhum dado carregado. Escolha um período ou realize uma busca.")
+                st.stop()
+
+        # -------------------------------------------------
+        # 🧩 Preparação dos dados
+        # -------------------------------------------------
+        for col in ["order_id", "order_number", "financial_status", "fulfillment_status"]:
+            if col not in pedidos.columns:
+                pedidos[col] = None
+
+        merge_cols = [c for c in ["variant_id", "sku", "product_title", "variant_title"] if c in produtos.columns]
+        if "variant_id" in pedidos.columns and "variant_id" in produtos.columns:
+            base = pedidos.merge(produtos[merge_cols], on="variant_id", how="left", suffixes=("", "_produto"))
+        else:
+            base = pedidos.copy()
+
+        for c in ["product_title", "variant_title"]:
+            if f"{c}_produto" in base.columns and c not in base.columns:
+                base[c] = base[f"{c}_produto"]
+            elif c not in base.columns:
+                base[c] = np.nan
+            if c in base.columns:
+                base[c] = base[c].fillna(f"({c} desconhecido)")
+
+        base["created_at"] = pd.to_datetime(base.get("created_at"), errors="coerce").dt.tz_localize(None)
+        base["price"] = pd.to_numeric(base.get("price"), errors="coerce").fillna(0)
+        base["quantity"] = pd.to_numeric(base.get("quantity"), errors="coerce").fillna(0)
+        base["line_revenue"] = base["price"] * base["quantity"]
+
+        # -------------------------------------------------
+        # 🧠 Aplicação de filtros
+        # -------------------------------------------------
+        if busca.strip():
+            df = base.copy()
+        else:
+            df = base.dropna(subset=["created_at"])
+            df = df[(df["created_at"].dt.date >= start_date) & (df["created_at"].dt.date <= end_date)].copy()
+
+        # -------------------------------------------------
+        # 🎛️ Filtros adicionais
+        # -------------------------------------------------
+        st.subheader("🎛️ Filtros adicionais")
+        col1, col2 = st.columns(2)
+        with col1:
+            escolha_prod = st.selectbox("Produto", ["(Todos)"] + sorted(base["product_title"].dropna().unique().tolist()))
+        with col2:
+            escolha_var = st.selectbox("Variante", ["(Todas)"] + sorted(base["variant_title"].dropna().unique().tolist()))
+
+        if escolha_prod != "(Todos)":
+            df = df[df["product_title"] == escolha_prod]
+        if escolha_var != "(Todas)":
+            df = df[df["variant_title"] == escolha_var]
+
+        if df.empty:
+            st.warning("⚠️ Nenhum pedido encontrado com os filtros selecionados.")
             st.stop()
 
-    # -------------------------------------------------
-    # 🧩 Preparação dos dados
-    # -------------------------------------------------
-    for col in ["order_id", "order_number", "financial_status", "fulfillment_status"]:
-        if col not in pedidos.columns:
-            pedidos[col] = None
+        # -------------------------------------------------
+        # 📊 Métricas de resumo
+        # -------------------------------------------------
+        order_col = "order_number" if df["order_number"].notna().any() else "order_id"
+        total_pedidos = df[order_col].nunique()
+        total_unidades = df["quantity"].sum()
+        total_receita = df["line_revenue"].sum()
+        ticket_medio = total_receita / total_pedidos if total_pedidos > 0 else 0
 
-    merge_cols = [c for c in ["variant_id", "sku", "product_title", "variant_title"] if c in produtos.columns]
-    if "variant_id" in pedidos.columns and "variant_id" in produtos.columns:
-        base = pedidos.merge(produtos[merge_cols], on="variant_id", how="left", suffixes=("", "_produto"))
-    else:
-        base = pedidos.copy()
+        colA, colB, colC, colD = st.columns(4)
+        colA.metric("🧾 Pedidos", total_pedidos)
+        colB.metric("📦 Unidades vendidas", int(total_unidades))
+        def formatar_moeda(valor):
+            try:
+                return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            except Exception:
+                return f"R$ {valor:.2f}"
 
+        colC.metric("💰 Receita total", formatar_moeda(total_receita))
+        colD.metric("💸 Ticket médio", formatar_moeda(ticket_medio))
 
-    for c in ["product_title", "variant_title"]:
-        if f"{c}_produto" in base.columns and c not in base.columns:
-            base[c] = base[f"{c}_produto"]
-        elif c not in base.columns:
-            # Garante que a coluna exista mesmo que não tenha vindo da API
-            base[c] = np.nan
+        # -------------------------------------------------
+        # 📋 Tabela de pedidos
+        # -------------------------------------------------
+        st.subheader("📋 Pedidos filtrados")
 
-        if c in base.columns:
-            base[c] = base[c].fillna(f"({c} desconhecido)")
+        st.markdown("""
+            <style>
+            thead tr th:first-child, tbody tr td:first-child {
+                text-align: right !important;
+            }
+            input[type="text"] {
+                border-radius: 10px;
+                border: 1px solid #444;
+                padding: 8px 12px;
+            }
+            </style>
+        """, unsafe_allow_html=True)
 
+        colunas = [order_col, "fulfillment_status", "customer_name", "product_title", "variant_title", "quantity", "created_at", 
+                   "forma_entrega", "customer_email", "customer_phone", "customer_cpf", "endereco", "bairro", "cep", "estado", "cidade"]
+        colunas = [c for c in colunas if c in df.columns]
+        tabela = df[colunas].sort_values("created_at", ascending=False).copy()
 
-    base["created_at"] = pd.to_datetime(base.get("created_at"), errors="coerce").dt.tz_localize(None)
-    base["price"] = pd.to_numeric(base.get("price"), errors="coerce").fillna(0)
-    base["quantity"] = pd.to_numeric(base.get("quantity"), errors="coerce").fillna(0)
-    base["line_revenue"] = base["price"] * base["quantity"]
+        tabela.rename(columns={
+            order_col: "Pedido", "created_at": "Data do pedido", "customer_name": "Cliente", "customer_email": "E-mail", "customer_phone": "Telefone", "customer_cpf": "CPF",
+            "endereco": "Endereço", "bairro": "Bairro", "cep": "CEP", "quantity": "Qtd", "product_title": "Produto", "variant_title": "Variante", 
+            "price": "Preço", "fulfillment_status": "Status de processamento",
+            "forma_entrega": "Frete", "estado": "Estado"
+        }, inplace=True)
 
-    # -------------------------------------------------
-    # 🧠 Aplicação de filtros (período e busca)
-    # -------------------------------------------------
-    if busca.strip():
-        # Resultados diretos da Shopify já são a base
-        df = base.copy()
-    else:
-        df = base.dropna(subset=["created_at"])
-        df = df[(df["created_at"].dt.date >= start_date) & (df["created_at"].dt.date <= end_date)].copy()
+        if "Pedido" in tabela.columns:
+            tabela["Pedido"] = tabela["Pedido"].astype(str).str.replace(",", "").str.replace(".0", "", regex=False)
 
-    # -------------------------------------------------
-    # 🎛️ Filtros adicionais
-    # -------------------------------------------------
-    st.subheader("🎛️ Filtros adicionais")
-    col1, col2 = st.columns(2)
-    with col1:
-        escolha_prod = st.selectbox("Produto", ["(Todos)"] + sorted(base["product_title"].dropna().unique().tolist()))
-    with col2:
-        escolha_var = st.selectbox("Variante", ["(Todas)"] + sorted(base["variant_title"].dropna().unique().tolist()))
+        tabela["Status de processamento"] = df["fulfillment_status"].apply(
+            lambda x: "✅ Processado" if str(x).lower() in ["fulfilled", "shipped", "complete"] else "🟡 Não processado"
+        )
 
-    if escolha_prod != "(Todos)":
-        df = df[df["product_title"] == escolha_prod]
-    if escolha_var != "(Todas)":
-        df = df[df["variant_title"] == escolha_var]
+        # 🔝 Identificação de duplicados
+        def identificar_duplicado(row, df_ref):
+            nome = str(row.get("Cliente", "")).strip().lower()
+            email = str(row.get("E-mail", "")).strip().lower()
+            cpf = str(row.get("CPF", "")).strip()
+            tel = str(row.get("Telefone", "")).strip()
+            end = str(row.get("Endereço", "")).strip().lower()
 
-    if df.empty:
-        st.warning("⚠️ Nenhum pedido encontrado com os filtros selecionados.")
-        st.stop()
+            ignorar = ["(sem cpf)", "(sem email)", "(sem telefone)", "(sem endereço)", "(sem bairro)"]
 
-    # -------------------------------------------------
-    # 📊 Métricas de resumo
-    # -------------------------------------------------
-    order_col = "order_number" if df["order_number"].notna().any() else "order_id"
-    total_pedidos = df[order_col].nunique()
-    total_unidades = df["quantity"].sum()
-    total_receita = df["line_revenue"].sum()
-    ticket_medio = total_receita / total_pedidos if total_pedidos > 0 else 0
+            if cpf and cpf not in ignorar and df_ref["CPF"].eq(cpf).sum() > 1:
+                return True
+            if email and email not in ignorar and df_ref["E-mail"].str.lower().eq(email).sum() > 1:
+                return True
+            if nome and df_ref["Cliente"].str.lower().eq(nome).sum() > 1:
+                return True
+            if tel and tel not in ignorar and df_ref["Telefone"].eq(tel).sum() > 1:
+                return True
+            if end and end not in ignorar and df_ref["Endereço"].str.lower().eq(end).sum() > 1:
+                return True
+            return False
 
-    colA, colB, colC, colD = st.columns(4)
-    colA.metric("🧾 Pedidos", total_pedidos)
-    colB.metric("📦 Unidades vendidas", int(total_unidades))
-    def formatar_moeda(valor):
-        try:
-            return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-        except Exception:
-            return f"R$ {valor:.2f}"
+        tabela["duplicado"] = tabela.apply(lambda row: identificar_duplicado(row, tabela), axis=1)
+        tabela["is_sedex"] = tabela["Frete"].str.contains("SEDEX", case=False, na=False)
+        tabela = tabela.sort_values(by=["duplicado", "is_sedex", "Data do pedido"], ascending=[False, True, False])
 
-    colC.metric("💰 Receita total", formatar_moeda(total_receita))
-    colD.metric("💸 Ticket médio", formatar_moeda(ticket_medio))
+        def highlight_prioridades(row):
+            if row["duplicado"]:
+                return ['background-color: rgba(0, 123, 255, 0.15)'] * len(row)
+            elif row["is_sedex"]:
+                return ['background-color: rgba(255, 215, 0, 0.15)'] * len(row)
+            else:
+                return [''] * len(row)
 
+        colunas_visiveis = [c for c in tabela.columns if c not in ["duplicado", "is_sedex"]]
+        styled_tabela = tabela[colunas_visiveis + ["duplicado", "is_sedex"]].style.apply(highlight_prioridades, axis=1)
+        styled_tabela = styled_tabela.hide(["duplicado", "is_sedex"], axis=1)
+        st.dataframe(styled_tabela, use_container_width=True)
 
-    # -------------------------------------------------
-    # 📋 Tabela de pedidos
-    # -------------------------------------------------
-    st.subheader("📋 Pedidos filtrados")
-
-    st.markdown("""
-        <style>
-        thead tr th:first-child, tbody tr td:first-child {
-            text-align: right !important;
-        }
-        input[type="text"] {
-            border-radius: 10px;
-            border: 1px solid #444;
-            padding: 8px 12px;
-        }
-        </style>
-    """, unsafe_allow_html=True)
-
-    colunas = [order_col, "fulfillment_status", "customer_name", "product_title", "variant_title", "quantity", "created_at", 
-               "forma_entrega", "customer_email", "customer_phone", "customer_cpf", "endereco", "bairro", "cep", "estado", "cidade"]
-    colunas = [c for c in colunas if c in df.columns]
-    tabela = df[colunas].sort_values("created_at", ascending=False).copy()
-
-    tabela.rename(columns={
-        order_col: "Pedido", "created_at": "Data do pedido", "customer_name": "Cliente", "customer_email": "E-mail", "customer_phone": "Telefone", "customer_cpf": "CPF",
-        "endereco": "Endereço", "bairro": "Bairro", "cep": "CEP", "quantity": "Qtd", "product_title": "Produto", "variant_title": "Variante", 
-        "price": "Preço", "fulfillment_status": "Status de processamento",
-        "forma_entrega": "Frete", "estado": "Estado"
-    }, inplace=True)
-
-    if "Pedido" in tabela.columns:
-        tabela["Pedido"] = tabela["Pedido"].astype(str).str.replace(",", "").str.replace(".0", "", regex=False)
-
-    tabela["Status de processamento"] = df["fulfillment_status"].apply(
-        lambda x: "✅ Processado" if str(x).lower() in ["fulfilled", "shipped", "complete"] else "🟡 Não processado"
-    )
-
-    # 🔝 1️⃣ Identifica duplicados (versão aprimorada — Nome e Telefone separados)
-    def identificar_duplicado(row, df_ref):
-        nome = str(row.get("Cliente", "")).strip().lower()
-        email = str(row.get("E-mail", "")).strip().lower()
-        cpf = str(row.get("CPF", "")).strip()
-        tel = str(row.get("Telefone", "")).strip()
-        end = str(row.get("Endereço", "")).strip().lower()
-
-        # 🧩 Lista de valores padrão que devem ser ignorados
-        ignorar = ["(sem cpf)", "(sem email)", "(sem telefone)", "(sem endereço)", "(sem bairro)"]
-
-        # 🧩 1️⃣ Mesmo CPF
-        if cpf and cpf not in ignorar and df_ref["CPF"].eq(cpf).sum() > 1:
-            return True
-
-        # 🧩 2️⃣ Mesmo e-mail
-        if email and email not in ignorar and df_ref["E-mail"].str.lower().eq(email).sum() > 1:
-            return True
-
-        # 🧩 3️⃣ Mesmo nome (independente do telefone)
-        if nome and df_ref["Cliente"].str.lower().eq(nome).sum() > 1:
-            return True
-
-        # 🧩 4️⃣ Mesmo telefone (independente do nome)
-        if tel and tel not in ignorar and df_ref["Telefone"].eq(tel).sum() > 1:
-            return True
-
-        # 🧩 5️⃣ Mesmo endereço
-        if end and end not in ignorar and df_ref["Endereço"].str.lower().eq(end).sum() > 1:
-            return True
-
-        return False
-
-    # 🧩 Aplica a regra de duplicados
-    tabela["duplicado"] = tabela.apply(lambda row: identificar_duplicado(row, tabela), axis=1)
-
-    # 🚚 2️⃣ Cria flag para SEDEX
-    tabela["is_sedex"] = tabela["Frete"].str.contains("SEDEX", case=False, na=False)
-
-    # 📦 Ordena: duplicados primeiro, SEDEX por último, mais recentes no topo
-    tabela = tabela.sort_values(
-        by=["duplicado", "is_sedex", "Data do pedido"],
-        ascending=[False, True, False]
-    )
-
-    # 🎨 Mantém estilo visual (azul para duplicado, amarelo para SEDEX)
-    def highlight_prioridades(row):
-        if row["duplicado"]:
-            return ['background-color: rgba(0, 123, 255, 0.15)'] * len(row)
-        elif row["is_sedex"]:
-            return ['background-color: rgba(255, 215, 0, 0.15)'] * len(row)
-        else:
-            return [''] * len(row)
-
-    colunas_visiveis = [c for c in tabela.columns if c not in ["duplicado", "is_sedex"]]
-    styled_tabela = tabela[colunas_visiveis + ["duplicado", "is_sedex"]].style.apply(highlight_prioridades, axis=1)
-
-    styled_tabela = styled_tabela.hide(["duplicado", "is_sedex"], axis=1)  # ⬅️ modificado
-    st.dataframe(styled_tabela, use_container_width=True)
-
-
-    # -------------------------------------------------
-    # 🚚 Processamento de pedidos
-    # -------------------------------------------------
-    st.subheader("🚚 Processar pedidos manualmente")
-
-    pendentes = df[df["fulfillment_status"].isin(["unfulfilled", None, "null"])]
-    if not pendentes.empty:
-        if st.button("🚀 Processar TODOS os pedidos pendentes"):
-            progress = st.progress(0)
-            total = len(pendentes)
-            for i, row in enumerate(pendentes.itertuples(), start=1):
-                try:
-                    create_fulfillment(row.order_id)
-                except Exception as e:  # ⬅️ modificado
-                    st.error(f"❌ Erro ao processar pedido {row.order_id}: {str(e)}")
-                    continue
-                progress.progress(i / total)
-            st.success("✅ Todos os pedidos pendentes foram processados com sucesso!")
-    else:
-        st.info("✅ Nenhum pedido pendente para processar.")
-
-    # -------------------------------------------------
-    # 📦 Processar individualmente (sem reload)
-    # -------------------------------------------------
-    st.markdown("### 📦 Processar individualmente")
-
-    for idx, row in df.iterrows():
-        if str(row["fulfillment_status"]).lower() in ["fulfilled", "shipped", "complete"]:
-            continue
-
-        order_display = int(float(row[order_col])) if pd.notna(row[order_col]) else row["order_id"]
-
-        # 🔑 Cria chaves únicas baseadas no índice da linha
-        status_key = f"status_{row.order_id}_{idx}"
-        form_key = f"form_{row.order_id}_{idx}"
-        track_key = f"track_{row.order_id}_{idx}"
-
-        if status_key not in st.session_state:
-            st.session_state[status_key] = ""
-
-        with st.container(border=True):
-            st.markdown(f"#### Pedido #{order_display} — {row['customer_name']}")
-            st.caption(f"Produto: {row['product_title']} — Variante: {row['variant_title']}")
-
-            # ✅ Usa chave única no form
-            with st.form(key=form_key, clear_on_submit=True):
-                tracking_number = st.text_input("📦 Código de rastreio (opcional)", key=track_key)
-                submitted = st.form_submit_button("✅ Processar pedido")
-
-                if submitted:
+        # -------------------------------------------------
+        # 🚚 Processamento de pedidos
+        # -------------------------------------------------
+        st.subheader("🚚 Processar pedidos manualmente")
+        pendentes = df[df["fulfillment_status"].isin(["unfulfilled", None, "null"])]
+        if not pendentes.empty:
+            if st.button("🚀 Processar TODOS os pedidos pendentes"):
+                progress = st.progress(0)
+                total = len(pendentes)
+                for i, row in enumerate(pendentes.itertuples(), start=1):
                     try:
-                        with st.spinner(f"Processando pedido #{order_display}..."):
-                            result = create_fulfillment(
-                                row.order_id,
-                                tracking_number=tracking_number or None,
-                                tracking_company="Correios"
-                            )
-                            log_fulfillment(row.order_id)
-                        st.session_state[status_key] = f"✅ Pedido #{order_display} processado com sucesso!"
-                        if tracking_number:
-                            st.session_state[status_key] += f"\n📬 Código de rastreio: `{tracking_number}`"
+                        create_fulfillment(row.order_id)
                     except Exception as e:
-                        st.session_state[status_key] = f"❌ Erro ao processar pedido #{order_display}: {e}"
+                        st.error(f"❌ Erro ao processar pedido {row.order_id}: {str(e)}")
+                        continue
+                    progress.progress(i / total)
+                st.success("✅ Todos os pedidos pendentes foram processados com sucesso!")
+        else:
+            st.info("✅ Nenhum pedido pendente para processar.")
 
-            # 🧾 Exibe o status após o processamento
-            msg = st.session_state[status_key]
-            if msg:
-                if msg.startswith("✅"):
-                    st.success(msg)
-                elif msg.startswith("❌"):
-                    st.error(msg)
-                else:
-                    st.info(msg)
+        # -------------------------------------------------
+        # 📦 Processar individualmente
+        # -------------------------------------------------
+        st.markdown("### 📦 Processar individualmente")
+        for idx, row in df.iterrows():
+            if str(row["fulfillment_status"]).lower() in ["fulfilled", "shipped", "complete"]:
+                continue
+            order_display = int(float(row[order_col])) if pd.notna(row[order_col]) else row["order_id"]
+            status_key = f"status_{row.order_id}_{idx}"
+            form_key = f"form_{row.order_id}_{idx}"
+            track_key = f"track_{row.order_id}_{idx}"
+            if status_key not in st.session_state:
+                st.session_state[status_key] = ""
+
+            with st.container(border=True):
+                st.markdown(f"#### Pedido #{order_display} — {row['customer_name']}")
+                st.caption(f"Produto: {row['product_title']} — Variante: {row['variant_title']}")
+                with st.form(key=form_key, clear_on_submit=True):
+                    tracking_number = st.text_input("📦 Código de rastreio (opcional)", key=track_key)
+                    submitted = st.form_submit_button("✅ Processar pedido")
+                    if submitted:
+                        try:
+                            with st.spinner(f"Processando pedido #{order_display}..."):
+                                result = create_fulfillment(
+                                    row.order_id,
+                                    tracking_number=tracking_number or None,
+                                    tracking_company="Correios"
+                                )
+                                log_fulfillment(row.order_id)
+                            st.session_state[status_key] = f"✅ Pedido #{order_display} processado com sucesso!"
+                            if tracking_number:
+                                st.session_state[status_key] += f"\n📬 Código de rastreio: `{tracking_number}`"
+                        except Exception as e:
+                            st.session_state[status_key] = f"❌ Erro ao processar pedido #{order_display}: {e}"
+
+                msg = st.session_state[status_key]
+                if msg:
+                    if msg.startswith("✅"):
+                        st.success(msg)
+                    elif msg.startswith("❌"):
+                        st.error(msg)
+                    else:
+                        st.info(msg)
+
+    # =====================================================
+    # 📦 ABA 2 — ESTOQUE
+    # =====================================================
+    with aba[1]:
+        st.title("📦 Estoque")
+        st.info("📊 Em breve: acompanhamento de níveis de estoque por SKU e variação.")
+
+    # =====================================================
+    # 🚚 ABA 3 — ENTREGAS
+    # =====================================================
+    with aba[2]:
+        st.title("🚚 Entregas")
+        st.info("📍 Em breve: status de fretes, prazos e devoluções.")
+
+    # =====================================================
+    # 📊 ABA 4 — INDICADORES
+    # =====================================================
+    with aba[3]:
+        st.title("📊 Indicadores de Desempenho")
+        st.info("📈 Em breve: métricas de performance logística e eficiência operacional.")
