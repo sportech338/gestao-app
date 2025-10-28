@@ -3163,22 +3163,13 @@ if menu == "📦 Dashboard – Logística":
 
 
     for c in ["product_title", "variant_title"]:
-        if f"{c}_produto" in base.columns:
-            base[c] = base.get(c, base[f"{c}_produto"])
-        elif c not in base.columns:
-            base[c] = f"({c} desconhecido)"
-        else:
-            base[c].fillna(f"({c} desconhecido)", inplace=True)
+        if f"{c}_produto" in base.columns and c not in base.columns:
+            base[c] = base[f"{c}_produto"]
+        base[c].fillna(f"({c} desconhecido)", inplace=True)
 
     base["created_at"] = pd.to_datetime(base.get("created_at"), errors="coerce")
-
-    # 🔒 Garante que colunas numéricas existam e possam ser convertidas
-    for col in ["price", "quantity"]:
-        if col not in base.columns:
-            base[col] = 0
-        base[col] = pd.to_numeric(base[col], errors="coerce").fillna(0)
-
-    # 🔢 Calcula a receita da linha de forma segura
+    base["price"] = pd.to_numeric(base.get("price"), errors="coerce").fillna(0)
+    base["quantity"] = pd.to_numeric(base.get("quantity"), errors="coerce").fillna(0)
     base["line_revenue"] = base["price"] * base["quantity"]
 
     # -------------------------------------------------
@@ -3188,18 +3179,7 @@ if menu == "📦 Dashboard – Logística":
         # Resultados diretos da Shopify já são a base
         df = base.copy()
     else:
-            # 🔧 Garante que "created_at" seja datetime de verdade
-    if not pd.api.types.is_datetime64_any_dtype(base["created_at"]):
-        base["created_at"] = pd.to_datetime(base["created_at"], errors="coerce")
-
-    # 🔍 Remove linhas sem data válida antes de filtrar
-    base = base.dropna(subset=["created_at"])
-
-    # 📅 Agora o filtro funciona sem erro
-    df = base[
-        (base["created_at"].dt.date >= start_date)
-        & (base["created_at"].dt.date <= end_date)
-    ].copy()
+        df = base[(base["created_at"].dt.date >= start_date) & (base["created_at"].dt.date <= end_date)].copy()
 
     # -------------------------------------------------
     # 🎛️ Filtros adicionais
@@ -3283,17 +3263,22 @@ if menu == "📦 Dashboard – Logística":
         s = unicodedata.normalize("NFKD", s)
         s = "".join(ch for ch in s if not unicodedata.combining(ch))  # remove acentos
         s = s.lower()
-        s = re.sub(r"[^a-z0-9\s]", " ", s)  # remove pontuação
+        s = re.sub(r"[^a-z0-9\s]", " ", s)  # tira pontuação
         s = re.sub(r"\s+", " ", s).strip()
         return s
 
-    def token_overlap(a: str, b: str) -> float:
-        """Calcula proporção de palavras em comum (Jaccard)."""
+    def token_set_subset(a: str, b: str) -> bool:
+        """True se todos os tokens do menor estão contidos no maior (ex.: 'rita de cassia coelho' ⊂ 'rita de cassia rodrigues coelho')."""
         ta = set(_norm(a).split())
         tb = set(_norm(b).split())
         if not ta or not tb:
-            return 0.0
-        return len(ta & tb) / len(ta | tb)
+            return False
+        # garante comparar menor vs maior
+        if len(ta) <= len(tb):
+            small, big = ta, tb
+        else:
+            small, big = tb, ta
+        return small.issubset(big)
 
     def identificar_duplicado(row, df_ref):
         nome = str(row.get("Cliente", "")).strip()
@@ -3303,6 +3288,7 @@ if menu == "📦 Dashboard – Logística":
             return False, False  # (duplicado_exato, similar_alto)
 
         nome_norm = _norm(nome)
+
         duplicado_exato = False
         similar_alto = False
 
@@ -3315,7 +3301,9 @@ if menu == "📦 Dashboard – Logística":
         if df_ref["Cliente"].apply(lambda x: _norm(str(x))).eq(nome_norm).sum() > 1:
             duplicado_exato = True
 
-        # 3️⃣ Alta probabilidade (nomes realmente parecidos)
+        # 3️⃣ Alta probabilidade:
+        #    a) razão 0.85–0.94 (SequenceMatcher) OU
+        #    b) conjunto de tokens do menor contido no maior (captura sobrenome extra)
         nomes_unicos = df_ref["Cliente"].dropna().unique().tolist()
         for outro in nomes_unicos:
             outro_norm = _norm(outro)
@@ -3323,15 +3311,11 @@ if menu == "📦 Dashboard – Logística":
                 continue
 
             ratio = SequenceMatcher(None, nome_norm, outro_norm).ratio()
-            overlap = token_overlap(nome, outro)
 
-            # Critério: razão entre 0.83 e 0.96 + pelo menos 40% das palavras iguais
-            if (0.83 <= ratio <= 0.96) and (overlap >= 0.4):
-                # Se e-mail for igual, reforça o peso da correspondência
-                subset = df_ref[df_ref["Cliente"].apply(lambda x: _norm(str(x))) == outro_norm]
-                if not email or (subset["E-mail"].str.lower() == email).any():
-                    similar_alto = True
-                    break
+            # Exige correspondência forte de estrutura
+            if (0.85 <= ratio <= 0.94) and token_set_subset(nome, outro):
+                similar_alto = True
+                break
 
         return duplicado_exato, similar_alto
 
@@ -3339,7 +3323,6 @@ if menu == "📦 Dashboard – Logística":
     resultados = tabela.apply(lambda row: identificar_duplicado(row, tabela), axis=1)
     tabela["duplicado"] = resultados.apply(lambda x: x[0])
     tabela["similar_alto"] = resultados.apply(lambda x: x[1])
-
 
     # 🚚 2️⃣ Cria flag para SEDEX
     tabela["is_sedex"] = tabela["Frete"].str.contains("SEDEX", case=False, na=False)
