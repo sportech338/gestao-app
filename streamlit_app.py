@@ -85,8 +85,9 @@ def get_products_with_variants(limit=250):
 # Pedidos
 # =====================================================
 @st.cache_data(ttl=600)
+@st.cache_data(ttl=600)
 def get_orders(start_date=None, end_date=None, only_paid=True, limit=250):
-    """Baixa pedidos da Shopify com filtro dinâmico de período."""
+    """Baixa pedidos da Shopify com filtro dinâmico de período, garantindo o e-mail do cliente."""
     hoje = datetime.now(APP_TZ).date()
     if start_date is None:
         start_date = hoje
@@ -116,9 +117,17 @@ def get_orders(start_date=None, end_date=None, only_paid=True, limit=250):
             customer = o.get("customer") or {}
             shipping = o.get("shipping_address") or {}
             shipping_lines = o.get("shipping_lines") or [{}]
+
             nome_cliente = (
                 f"{customer.get('first_name', '')} {customer.get('last_name', '')}".strip()
                 or "(Cliente não informado)"
+            )
+
+            email_cliente = (
+                customer.get("email")
+                or o.get("email")
+                or o.get("contact_email")
+                or "(sem email)"
             )
 
             for it in o.get("line_items", []):
@@ -131,7 +140,7 @@ def get_orders(start_date=None, end_date=None, only_paid=True, limit=250):
                     "financial_status": o.get("financial_status"),
                     "fulfillment_status": o.get("fulfillment_status"),
                     "customer_name": nome_cliente,
-                    "customer_email": customer.get("email", ""),
+                    "customer_email": email_cliente,
                     "product_title": it.get("title"),
                     "variant_title": it.get("variant_title"),
                     "variant_id": it.get("variant_id"),
@@ -143,9 +152,11 @@ def get_orders(start_date=None, end_date=None, only_paid=True, limit=250):
                     "estado": shipping.get("province", "N/A"),
                     "cidade": shipping.get("city", "N/A"),
                 })
+
         url = r.links.get("next", {}).get("url")
 
     return pd.DataFrame(all_rows)
+
 
 # =====================================================
 # Buscar clientes/pedidos na Shopify (nome, e-mail ou número do pedido)
@@ -195,6 +206,14 @@ def search_orders_shopify(query: str, limit=100):
         ):
             continue
 
+        # ✅ Captura de e-mail mais robusta
+        email_cliente = (
+            customer.get("email")
+            or o.get("email")
+            or o.get("contact_email")
+            or "(sem email)"
+        )
+
         for it in o.get("line_items", []):
             preco = float(it.get("price") or 0)
             qtd = int(it.get("quantity", 0))
@@ -205,7 +224,7 @@ def search_orders_shopify(query: str, limit=100):
                 "financial_status": o.get("financial_status"),
                 "fulfillment_status": o.get("fulfillment_status"),
                 "customer_name": nome_cliente,
-                "customer_email": customer.get("email", ""),
+                "customer_email": email_cliente,
                 "product_title": it.get("title"),
                 "variant_title": it.get("variant_title"),
                 "variant_id": it.get("variant_id"),
@@ -3208,13 +3227,13 @@ if menu == "📦 Dashboard – Logística":
         </style>
     """, unsafe_allow_html=True)
 
-    colunas = ["created_at", order_col, "customer_name", "product_title", "quantity",
+    colunas = ["created_at", order_col, "customer_name", "customer_email", "product_title", "quantity",
                "variant_title", "forma_entrega"]
     colunas = [c for c in colunas if c in df.columns]
     tabela = df[colunas].sort_values("created_at", ascending=False).copy()
 
     tabela.rename(columns={
-        order_col: "Pedido", "created_at": "Data do pedido", "customer_name": "Cliente",
+        order_col: "Pedido", "created_at": "Data do pedido", "customer_name": "Cliente", "customer_email": "E-mail",
         "quantity": "Qtd", "product_title": "Produto", "variant_title": "Variante",
         "price": "Preço", "fulfillment_status": "Status de processamento",
         "forma_entrega": "Frete", "estado": "Estado"
