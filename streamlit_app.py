@@ -87,7 +87,7 @@ def get_products_with_variants(limit=250):
 # =====================================================
 @st.cache_data(ttl=600)
 def get_orders(start_date=None, end_date=None, only_paid=True, limit=250):
-    """Baixa pedidos da Shopify com filtro dinâmico de período, garantindo o e-mail do cliente."""
+    """Baixa pedidos da Shopify com filtro dinâmico de período, garantindo o e-mail do cliente e puxando CPF, telefone e endereço."""
     hoje = datetime.now(APP_TZ).date()
     if start_date is None:
         start_date = hoje
@@ -130,6 +130,33 @@ def get_orders(start_date=None, end_date=None, only_paid=True, limit=250):
                 or "(sem email)"
             )
 
+            # 📞 Telefone e CPF
+            telefone = (
+                shipping.get("phone")
+                or customer.get("phone")
+                or o.get("phone")
+                or "(sem telefone)"
+            )
+
+            # 🧾 CPF pode vir de vários lugares
+            cpf = None
+            # 1️⃣ Em note_attributes (checkout customizado)
+            for attr in o.get("note_attributes", []):
+                if "cpf" in str(attr.get("name", "")).lower():
+                    cpf = attr.get("value")
+                    break
+            # 2️⃣ Às vezes vem no campo company (Shopify padrão)
+            if not cpf:
+                cpf = shipping.get("company") or "(sem cpf)"
+
+            # 🏠 Endereço completo
+            endereco = shipping.get("address1", "(sem endereço)")
+            bairro = shipping.get("address2", "(sem bairro)")
+            cidade = shipping.get("city", "(sem cidade)")
+            estado = shipping.get("province", "(sem estado)")
+            cep = shipping.get("zip", "(sem cep)")
+            pais = shipping.get("country", "(sem país)")
+
             for it in o.get("line_items", []):
                 preco = float(it.get("price") or 0)
                 qtd = int(it.get("quantity", 0))
@@ -141,6 +168,8 @@ def get_orders(start_date=None, end_date=None, only_paid=True, limit=250):
                     "fulfillment_status": o.get("fulfillment_status"),
                     "customer_name": nome_cliente,
                     "customer_email": email_cliente,
+                    "customer_phone": telefone,
+                    "customer_cpf": cpf,
                     "product_title": it.get("title"),
                     "variant_title": it.get("variant_title"),
                     "variant_id": it.get("variant_id"),
@@ -149,8 +178,12 @@ def get_orders(start_date=None, end_date=None, only_paid=True, limit=250):
                     "price": preco,
                     "line_revenue": preco * qtd,
                     "forma_entrega": shipping_lines[0].get("title", "N/A"),
-                    "estado": shipping.get("province", "N/A"),
-                    "cidade": shipping.get("city", "N/A"),
+                    "endereco": endereco,
+                    "bairro": bairro,
+                    "cidade": cidade,
+                    "estado": estado,
+                    "cep": cep,
+                    "pais": pais,
                 })
 
         url = r.links.get("next", {}).get("url")
@@ -3233,14 +3266,14 @@ if menu == "📦 Dashboard – Logística":
         </style>
     """, unsafe_allow_html=True)
 
-    colunas = ["created_at", order_col, "customer_name", "customer_email", "product_title", "quantity",
-               "variant_title", "forma_entrega", "estado", "cidade"]
+    colunas = ["created_at", order_col, "customer_name", "customer_email", "customer_phone", "customer_cpf" "product_title", "quantity",
+               "variant_title", "forma_entrega", "endereco", "bairro", "cep", "estado", "cidade"]
     colunas = [c for c in colunas if c in df.columns]
     tabela = df[colunas].sort_values("created_at", ascending=False).copy()
 
     tabela.rename(columns={
-        order_col: "Pedido", "created_at": "Data do pedido", "customer_name": "Cliente", "customer_email": "E-mail",
-        "quantity": "Qtd", "product_title": "Produto", "variant_title": "Variante",
+        order_col: "Pedido", "created_at": "Data do pedido", "customer_name": "Cliente", "customer_email": "E-mail", "customer_phone": "Telefone", "customer_cpf": "CPF",
+        "endereco": "Endereço", "bairro": "Bairro", "cep": "CEP", "quantity": "Qtd", "product_title": "Produto", "variant_title": "Variante", 
         "price": "Preço", "fulfillment_status": "Status de processamento",
         "forma_entrega": "Frete", "estado": "Estado"
     }, inplace=True)
