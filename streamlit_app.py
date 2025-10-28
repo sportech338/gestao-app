@@ -3299,7 +3299,7 @@ if menu == "📦 Dashboard – Logística":
         lambda x: "✅ Processado" if str(x).lower() in ["fulfilled", "shipped", "complete"] else "🟡 Não processado"
     )
 
-    # 🔝 1️⃣ Identifica duplicados (versão aprimorada)
+    # 🔝 1️⃣ Identifica duplicados (versão aprimorada — Nome e Telefone separados)
     def identificar_duplicado(row, df_ref):
         nome = str(row.get("Cliente", "")).strip().lower()
         email = str(row.get("E-mail", "")).strip().lower()
@@ -3307,16 +3307,27 @@ if menu == "📦 Dashboard – Logística":
         tel = str(row.get("Telefone", "")).strip()
         end = str(row.get("Endereço", "")).strip().lower()
 
+        # 🧩 1️⃣ Mesmo CPF
         if cpf and df_ref["CPF"].eq(cpf).sum() > 1:
             return True
+
+        # 🧩 2️⃣ Mesmo e-mail
         if email and df_ref["E-mail"].str.lower().eq(email).sum() > 1:
             return True
-        if nome and tel and (df_ref["Cliente"].str.lower().eq(nome) & df_ref["Telefone"].eq(tel)).sum() > 1:
+
+        # 🧩 3️⃣ Mesmo nome (independente do telefone)
+        if nome and df_ref["Cliente"].str.lower().eq(nome).sum() > 1:
             return True
+
+        # 🧩 4️⃣ Mesmo telefone (independente do nome)
+        if tel and df_ref["Telefone"].eq(tel).sum() > 1:
+            return True
+
+        # 🧩 5️⃣ Mesmo endereço
         if end and df_ref["Endereço"].str.lower().eq(end).sum() > 1:
             return True
-        return False
 
+        return False
 
     # 🧩 Aplica a regra de duplicados
     tabela["duplicado"] = tabela.apply(lambda row: identificar_duplicado(row, tabela), axis=1)
