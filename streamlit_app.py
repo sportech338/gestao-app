@@ -3252,14 +3252,14 @@ if menu == "📦 Dashboard – Logística":
     colA, colB, colC, colD = st.columns(4)
     colA.metric("🧾 Pedidos", total_pedidos)
     colB.metric("📦 Unidades vendidas", int(total_unidades))
-    import locale  # ⬅️ modificado
-    try:
-        locale.setlocale(locale.LC_ALL, 'pt_BR.UTF-8')
-    except locale.Error:
-        locale.setlocale(locale.LC_ALL, '')
+    def formatar_moeda(valor):
+        try:
+            return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        except Exception:
+            return f"R$ {valor:.2f}"
 
-    colC.metric("💰 Receita total", locale.currency(total_receita, grouping=True))
-    colD.metric("💸 Ticket médio", locale.currency(ticket_medio, grouping=True))
+    colC.metric("💰 Receita total", formatar_moeda(total_receita))
+    colD.metric("💸 Ticket médio", formatar_moeda(ticket_medio))
 
 
     # -------------------------------------------------
