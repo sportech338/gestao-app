@@ -3324,11 +3324,11 @@ if menu == "📦 Dashboard – Logística":
         else:
             return [''] * len(row)
 
-    # 🔍 Aplica o estilo, mas remove colunas técnicas da visualização
+    # 🔍 Remove colunas técnicas antes de exibir
     tabela_exibir = tabela.drop(columns=["duplicado", "is_sedex"], errors="ignore")
-    styled_tabela = tabela_exibir.style.apply(
-        lambda row: highlight_prioridades(tabela.loc[row.name]), axis=1
-    )
+
+    # ✅ Aplica o estilo direto sobre tabela_exibir
+    styled_tabela = tabela_exibir.style.apply(highlight_prioridades, axis=1)
 
     st.dataframe(styled_tabela, use_container_width=True)
 
