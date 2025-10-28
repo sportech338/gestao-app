@@ -3304,20 +3304,31 @@ if menu == "📦 Dashboard – Logística":
         # 3️⃣ Alta probabilidade:
         #    a) razão 0.85–0.94 (SequenceMatcher) OU
         #    b) conjunto de tokens do menor contido no maior (captura sobrenome extra)
+        #    + c) e-mails com similaridade razoável (>0.7)
         nomes_unicos = df_ref["Cliente"].dropna().unique().tolist()
         for outro in nomes_unicos:
             outro_norm = _norm(outro)
             if not outro_norm or outro_norm == nome_norm:
                 continue
 
-            ratio = SequenceMatcher(None, nome_norm, outro_norm).ratio()
+            ratio_nome = SequenceMatcher(None, nome_norm, outro_norm).ratio()
 
-            if (0.85 <= ratio <= 0.94) or token_set_subset(nome, outro):
-                # (Opcional) se email bater também, melhor ainda, mas não é obrigatório para "similar_alto"
+            # pega email correspondente da outra linha
+            outro_email = df_ref.loc[df_ref["Cliente"] == outro, "E-mail"].dropna().astype(str).unique()
+            email_similar = False
+            for e in outro_email:
+                ratio_email = SequenceMatcher(None, email, e.lower()).ratio()
+                if ratio_email >= 0.7:
+                    email_similar = True
+                    break
+
+            # define similar_alto só se nome e email forem próximos
+            if ((0.85 <= ratio_nome <= 0.94) or token_set_subset(nome, outro)) and email_similar:
                 similar_alto = True
                 break
 
         return duplicado_exato, similar_alto
+
 
     # 🧩 Aplica as regras de duplicação e similaridade
     resultados = tabela.apply(lambda row: identificar_duplicado(row, tabela), axis=1)
