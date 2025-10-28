@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -3266,7 +3265,7 @@ if menu == "📦 Dashboard – Logística":
         </style>
     """, unsafe_allow_html=True)
 
-    colunas = ["created_at", order_col, "customer_name", "customer_email", "customer_phone", "customer_cpf" "product_title", "quantity",
+    colunas = ["created_at", order_col, "customer_name", "customer_email", "customer_phone", "customer_cpf", "product_title", "quantity",
                "variant_title", "forma_entrega", "endereco", "bairro", "cep", "estado", "cidade"]
     colunas = [c for c in colunas if c in df.columns]
     tabela = df[colunas].sort_values("created_at", ascending=False).copy()
