@@ -3301,41 +3301,44 @@ if menu == "📦 Dashboard – Logística":
             .str.replace(".0", "", regex=False)
         )
 
-    # 🔹 Status de processamento limpo
+    # 🔹 Status de processamento
     tabela["Status de processamento"] = df["fulfillment_status"].apply(
         lambda x: "✅ Processado"
         if str(x).lower() in ["fulfilled", "shipped", "complete"]
         else "🟡 Não processado"
     )
 
-    # 🔍 Normaliza chaves de cliente
+    # 🔎 Normaliza identificadores
     tabela["E-mail"] = tabela["E-mail"].astype(str).str.lower().fillna("")
     tabela["CPF"] = tabela["CPF"].astype(str).fillna("")
     tabela["Telefone"] = tabela["Telefone"].astype(str).fillna("")
 
-    # 🔑 Cria chave única do cliente (email > cpf > telefone)
+    # 🔑 Chave de cliente (prioridade: email > cpf > telefone)
     tabela["chave_cliente"] = tabela.apply(
         lambda r: r["E-mail"] or r["CPF"] or r["Telefone"], axis=1
     )
 
-    # 🧩 Identifica duplicados (clientes com mais de 1 pedido)
+    # 🔁 Identifica duplicados (clientes com mais de 1 pedido)
     tabela["duplicado"] = tabela.duplicated(subset=["chave_cliente"], keep=False)
 
-    # 🚚 Identifica pedidos SEDEX
+    # 🚚 Flag SEDEX
     tabela["is_sedex"] = tabela["Frete"].astype(str).str.contains("SEDEX", case=False, na=False)
 
-    # 📦 Ordena: duplicados juntos, SEDEX no fim, recentes no topo
+    # 🧭 Ordena (duplicados → comuns → SEDEX)
     tabela = tabela.sort_values(
         by=["duplicado", "is_sedex", "chave_cliente", "Data do pedido"],
         ascending=[False, True, True, False]
     )
 
-    # 🎨 Cores: azul = duplicado, amarelo = SEDEX
+    # 🎨 Cores
     def highlight_prioridades(row):
-        if row["duplicado"]:
-            return ['background-color: rgba(0, 123, 255, 0.15)'] * len(row)
-        elif row["is_sedex"]:
-            return ['background-color: rgba(255, 215, 0, 0.15)'] * len(row)
+        if "duplicado" not in row or "is_sedex" not in row:
+            return ['background-color: transparent'] * len(row)
+
+        if bool(row["duplicado"]):
+            return ['background-color: rgba(0, 123, 255, 0.15)'] * len(row)  # Azul
+        elif bool(row["is_sedex"]):
+            return ['background-color: rgba(255, 215, 0, 0.15)'] * len(row)  # Amarelo
         else:
             return ['background-color: transparent'] * len(row)
 
@@ -3344,7 +3347,6 @@ if menu == "📦 Dashboard – Logística":
 
     styled_tabela = tabela_exibir.style.apply(highlight_prioridades, axis=1)
 
-    # 📊 Exibe tabela final
     st.dataframe(styled_tabela, use_container_width=True)
 
     # -------------------------------------------------
