@@ -3253,7 +3253,7 @@ if menu == "📦 Dashboard – Logística":
     )
 
     # 🔝 1️⃣ Identifica duplicados com base em nome e e-mail (com similaridade inteligente)
-        from difflib import SequenceMatcher
+    from difflib import SequenceMatcher
     import re
     import unicodedata
 
