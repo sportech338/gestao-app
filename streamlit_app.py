@@ -3153,7 +3153,14 @@ if menu == "📦 Dashboard – Logística":
             pedidos[col] = None
 
     merge_cols = [c for c in ["variant_id", "sku", "product_title", "variant_title"] if c in produtos.columns]
-    base = pedidos.merge(produtos[merge_cols], on="variant_id", how="left", suffixes=("", "_produto"))
+
+    if "variant_id" in pedidos.columns and "variant_id" in produtos.columns and merge_cols:
+        base = pedidos.merge(produtos[merge_cols], on="variant_id", how="left", suffixes=("", "_produto"))
+    else:
+        # ⚠️ Caso não tenha dados de variantes, apenas copia pedidos
+        st.warning("⚠️ Produtos sem 'variant_id' disponíveis — carregando apenas pedidos.")
+        base = pedidos.copy()
+
 
     for c in ["product_title", "variant_title"]:
         if f"{c}_produto" in base.columns and c not in base.columns:
