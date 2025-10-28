@@ -3252,60 +3252,88 @@ if menu == "📦 Dashboard – Logística":
         lambda x: "✅ Processado" if str(x).lower() in ["fulfilled", "shipped", "complete"] else "🟡 Não processado"
     )
 
-    # 🔝 1️⃣ Identifica duplicados com base em nome e e-mail (versão otimizada)
+    # 🔝 1️⃣ Identifica duplicados com base em nome e e-mail (com similaridade inteligente)
     from difflib import SequenceMatcher
-    import re, unicodedata
+    import re
+    import unicodedata
 
-    @st.cache_data(show_spinner=False)
-    def preparar_normalizados(df_ref):
-        """Normaliza nomes e e-mails apenas uma vez (remove acentos, espaços e pontuação)."""
-        df_ref = df_ref.copy()
+    def _norm(s: str) -> str:
+        if not s:
+            return ""
+        s = unicodedata.normalize("NFKD", s)
+        s = "".join(ch for ch in s if not unicodedata.combining(ch))  # remove acentos
+        s = s.lower()
+        s = re.sub(r"[^a-z0-9\s]", " ", s)  # tira pontuação
+        s = re.sub(r"\s+", " ", s).strip()
+        return s
 
-        def _norm(s: str) -> str:
-            if not s:
-                return ""
-            s = unicodedata.normalize("NFKD", s)
-            s = "".join(ch for ch in s if not unicodedata.combining(ch))
-            s = s.lower()
-            s = re.sub(r"[^a-z0-9\s]", " ", s)
-            return re.sub(r"\s+", " ", s).strip()
+    def token_set_subset(a: str, b: str) -> bool:
+        """True se todos os tokens do menor estão contidos no maior (ex.: 'rita de cassia coelho' ⊂ 'rita de cassia rodrigues coelho')."""
+        ta = set(_norm(a).split())
+        tb = set(_norm(b).split())
+        if not ta or not tb:
+            return False
+        # garante comparar menor vs maior
+        if len(ta) <= len(tb):
+            small, big = ta, tb
+        else:
+            small, big = tb, ta
+        return small.issubset(big)
 
-        df_ref["_nome_norm"] = df_ref["Cliente"].astype(str).map(_norm)
-        df_ref["_email_norm"] = df_ref["E-mail"].astype(str).str.lower().fillna("")
-        return df_ref
+    def identificar_duplicado(row, df_ref):
+        nome = str(row.get("Cliente", "")).strip()
+        email = str(row.get("E-mail", "")).strip().lower()
 
-    @st.cache_data(show_spinner=False)
-    def detectar_duplicados(df_ref):
-        """Detecta duplicados e similares de forma rápida (sem loops aninhados lentos)."""
-        df_ref = preparar_normalizados(df_ref)
+        if not nome:
+            return False, False  # (duplicado_exato, similar_alto)
 
-        # 🔹 Duplicado exato: mesmo e-mail ou mesmo nome normalizado
-        df_ref["duplicado"] = (
-            df_ref.duplicated("_email_norm", keep=False)
-            | df_ref.duplicated("_nome_norm", keep=False)
-        )
+        nome_norm = _norm(nome)
 
-        # 🔹 Similar alto: nome 85–94% parecido + e-mail ≥ 0.8
-        similares = set()
-        nomes = df_ref[["_nome_norm", "_email_norm"]].drop_duplicates().to_numpy()
+        duplicado_exato = False
+        similar_alto = False
 
-        for i in range(len(nomes)):
-            nome_i, email_i = nomes[i]
-            for j in range(i + 1, len(nomes)):
-                nome_j, email_j = nomes[j]
-                ratio_nome = SequenceMatcher(None, nome_i, nome_j).ratio()
-                ratio_email = SequenceMatcher(None, email_i, email_j).ratio()
-                if 0.85 <= ratio_nome <= 0.94 and ratio_email >= 0.8:
-                    similares.add(nome_i)
-                    similares.add(nome_j)
+        # 1️⃣ Duplicado por e-mail idêntico
+        if email and email not in ["", "(sem email)", "none"]:
+            if df_ref["E-mail"].str.lower().eq(email).sum() > 1:
+                duplicado_exato = True
 
-        df_ref["similar_alto"] = df_ref["_nome_norm"].isin(similares)
-        return df_ref[["duplicado", "similar_alto"]]
+        # 2️⃣ Duplicado por nome idêntico (normalizado)
+        if df_ref["Cliente"].apply(lambda x: _norm(str(x))).eq(nome_norm).sum() > 1:
+            duplicado_exato = True
 
-    # 🧩 Aplica a detecção otimizada e junta na tabela principal
-    dup_flags = detectar_duplicados(tabela)
-    tabela = pd.concat([tabela.reset_index(drop=True), dup_flags.reset_index(drop=True)], axis=1)
+        # 3️⃣ Alta probabilidade:
+        #    a) razão 0.85–0.94 (SequenceMatcher) OU
+        #    b) conjunto de tokens do menor contido no maior (captura sobrenome extra)
+        #    + c) e-mails com similaridade razoável (>0.7)
+        nomes_unicos = df_ref["Cliente"].dropna().unique().tolist()
+        for outro in nomes_unicos:
+            outro_norm = _norm(outro)
+            if not outro_norm or outro_norm == nome_norm:
+                continue
 
+            ratio_nome = SequenceMatcher(None, nome_norm, outro_norm).ratio()
+
+            # pega email correspondente da outra linha
+            outro_email = df_ref.loc[df_ref["Cliente"] == outro, "E-mail"].dropna().astype(str).unique()
+            email_similar = False
+            for e in outro_email:
+                ratio_email = SequenceMatcher(None, email, e.lower()).ratio()
+                if ratio_email >= 0.8:
+                    email_similar = True
+                    break
+
+            # define similar_alto só se nome e email forem próximos
+            if ((0.85 <= ratio_nome <= 0.94) or token_set_subset(nome, outro)) and email_similar:
+                similar_alto = True
+                break
+
+        return duplicado_exato, similar_alto
+
+
+    # 🧩 Aplica as regras de duplicação e similaridade
+    resultados = tabela.apply(lambda row: identificar_duplicado(row, tabela), axis=1)
+    tabela["duplicado"] = resultados.apply(lambda x: x[0])
+    tabela["similar_alto"] = resultados.apply(lambda x: x[1])
 
     # 🚚 2️⃣ Cria flag para SEDEX
     tabela["is_sedex"] = tabela["Frete"].str.contains("SEDEX", case=False, na=False)
