@@ -3174,9 +3174,12 @@ if menu == "📦 Dashboard – Logística":
             st.session_state["periodo_atual"] = (start_date, end_date)
         st.success(f"✅ Dados carregados de {start_date.strftime('%d/%m/%Y')} até {end_date.strftime('%d/%m/%Y')}")
     else:
-        # Usa o cache existente
-        produtos = st.session_state["produtos"]
-        pedidos = st.session_state["pedidos"]
+        produtos = st.session_state.get("produtos", pd.DataFrame())
+        pedidos = st.session_state.get("pedidos", pd.DataFrame())
+
+        if pedidos.empty:
+            st.warning("Nenhum dado carregado. Escolha um período ou realize uma busca.")
+            st.stop()
 
     # -------------------------------------------------
     # 🧩 Preparação dos dados
@@ -3186,7 +3189,11 @@ if menu == "📦 Dashboard – Logística":
             pedidos[col] = None
 
     merge_cols = [c for c in ["variant_id", "sku", "product_title", "variant_title"] if c in produtos.columns]
-    base = pedidos.merge(produtos[merge_cols], on="variant_id", how="left", suffixes=("", "_produto"))
+    if "variant_id" in pedidos.columns and "variant_id" in produtos.columns:
+        base = pedidos.merge(produtos[merge_cols], on="variant_id", how="left", suffixes=("", "_produto"))
+    else:
+        base = pedidos.copy()
+
 
     for c in ["product_title", "variant_title"]:
         if f"{c}_produto" in base.columns and c not in base.columns:
@@ -3199,7 +3206,7 @@ if menu == "📦 Dashboard – Logística":
             base[c] = base[c].fillna(f"({c} desconhecido)")
 
 
-    base["created_at"] = pd.to_datetime(base.get("created_at"), errors="coerce")
+    base["created_at"] = pd.to_datetime(base.get("created_at"), errors="coerce").dt.tz_localize(None)
     base["price"] = pd.to_numeric(base.get("price"), errors="coerce").fillna(0)
     base["quantity"] = pd.to_numeric(base.get("quantity"), errors="coerce").fillna(0)
     base["line_revenue"] = base["price"] * base["quantity"]
@@ -3211,7 +3218,8 @@ if menu == "📦 Dashboard – Logística":
         # Resultados diretos da Shopify já são a base
         df = base.copy()
     else:
-        df = base[(base["created_at"].dt.date >= start_date) & (base["created_at"].dt.date <= end_date)].copy()
+        df = base.dropna(subset=["created_at"])
+        df = df[(df["created_at"].dt.date >= start_date) & (df["created_at"].dt.date <= end_date)].copy()
 
     # -------------------------------------------------
     # 🎛️ Filtros adicionais
@@ -3244,8 +3252,12 @@ if menu == "📦 Dashboard – Logística":
     colA, colB, colC, colD = st.columns(4)
     colA.metric("🧾 Pedidos", total_pedidos)
     colB.metric("📦 Unidades vendidas", int(total_unidades))
-    colC.metric("💰 Receita total", f"R$ {total_receita:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
-    colD.metric("💸 Ticket médio", f"R$ {ticket_medio:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+    import locale
+    locale.setlocale(locale.LC_ALL, 'pt_BR.UTF-8')
+
+    colC.metric("💰 Receita total", locale.currency(total_receita, grouping=True))
+    colD.metric("💸 Ticket médio", locale.currency(ticket_medio, grouping=True))
+
 
     # -------------------------------------------------
     # 📋 Tabela de pedidos
@@ -3284,24 +3296,24 @@ if menu == "📦 Dashboard – Logística":
         lambda x: "✅ Processado" if str(x).lower() in ["fulfilled", "shipped", "complete"] else "🟡 Não processado"
     )
 
-    # 🔝 1️⃣ Identifica duplicados (apenas nome e e-mail idênticos)
+    # 🔝 1️⃣ Identifica duplicados (versão aprimorada)
     def identificar_duplicado(row, df_ref):
         nome = str(row.get("Cliente", "")).strip().lower()
         email = str(row.get("E-mail", "")).strip().lower()
+        cpf = str(row.get("CPF", "")).strip()
+        tel = str(row.get("Telefone", "")).strip()
+        end = str(row.get("Endereço", "")).strip().lower()
 
-        if not nome:
-            return False
-
-        # Duplicado por e-mail
-        if email and email not in ["", "(sem email)", "none"]:
-            if df_ref["E-mail"].str.lower().eq(email).sum() > 1:
-                return True
-
-        # Duplicado por nome
-        if df_ref["Cliente"].str.lower().eq(nome).sum() > 1:
+        if cpf and df_ref["CPF"].eq(cpf).sum() > 1:
             return True
-
+        if email and df_ref["E-mail"].str.lower().eq(email).sum() > 1:
+            return True
+        if nome and tel and (df_ref["Cliente"].str.lower().eq(nome) & df_ref["Telefone"].eq(tel)).sum() > 1:
+            return True
+        if end and df_ref["Endereço"].str.lower().eq(end).sum() > 1:
+            return True
         return False
+
 
     # 🧩 Aplica a regra de duplicados
     tabela["duplicado"] = tabela.apply(lambda row: identificar_duplicado(row, tabela), axis=1)
@@ -3327,7 +3339,9 @@ if menu == "📦 Dashboard – Logística":
     colunas_visiveis = [c for c in tabela.columns if c not in ["duplicado", "is_sedex"]]
     styled_tabela = tabela[colunas_visiveis + ["duplicado", "is_sedex"]].style.apply(highlight_prioridades, axis=1)
 
-    st.dataframe(styled_tabela.hide(["duplicado", "is_sedex"], axis=1), use_container_width=True)
+    styled_tabela = styled_tabela.hide(["duplicado", "is_sedex"], axis=1)  # ⬅️ modificado
+    st.dataframe(styled_tabela, use_container_width=True)
+
 
     # -------------------------------------------------
     # 🚚 Processamento de pedidos
@@ -3342,8 +3356,9 @@ if menu == "📦 Dashboard – Logística":
             for i, row in enumerate(pendentes.itertuples(), start=1):
                 try:
                     create_fulfillment(row.order_id)
-                except Exception as e:
-                    st.warning(f"Erro no pedido {row.order_id}: {e}")
+                except Exception as e:  # ⬅️ modificado
+                    st.error(f"❌ Erro ao processar pedido {row.order_id}: {str(e)}")
+                    continue
                 progress.progress(i / total)
             st.success("✅ Todos os pedidos pendentes foram processados com sucesso!")
     else:
