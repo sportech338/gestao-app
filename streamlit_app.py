@@ -3307,12 +3307,15 @@ if menu == "📦 Dashboard – Logística":
         tel = str(row.get("Telefone", "")).strip()
         end = str(row.get("Endereço", "")).strip().lower()
 
+        # 🧩 Lista de valores padrão que devem ser ignorados
+        ignorar = ["(sem cpf)", "(sem email)", "(sem telefone)", "(sem endereço)", "(sem bairro)"]
+
         # 🧩 1️⃣ Mesmo CPF
-        if cpf and df_ref["CPF"].eq(cpf).sum() > 1:
+        if cpf and cpf not in ignorar and df_ref["CPF"].eq(cpf).sum() > 1:
             return True
 
         # 🧩 2️⃣ Mesmo e-mail
-        if email and df_ref["E-mail"].str.lower().eq(email).sum() > 1:
+        if email and email not in ignorar and df_ref["E-mail"].str.lower().eq(email).sum() > 1:
             return True
 
         # 🧩 3️⃣ Mesmo nome (independente do telefone)
@@ -3320,11 +3323,11 @@ if menu == "📦 Dashboard – Logística":
             return True
 
         # 🧩 4️⃣ Mesmo telefone (independente do nome)
-        if tel and df_ref["Telefone"].eq(tel).sum() > 1:
+        if tel and tel not in ignorar and df_ref["Telefone"].eq(tel).sum() > 1:
             return True
 
         # 🧩 5️⃣ Mesmo endereço
-        if end and df_ref["Endereço"].str.lower().eq(end).sum() > 1:
+        if end and end not in ignorar and df_ref["Endereço"].str.lower().eq(end).sum() > 1:
             return True
 
         return False
