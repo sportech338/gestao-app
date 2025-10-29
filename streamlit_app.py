@@ -3135,11 +3135,10 @@ if menu == "📦 Dashboard – Logística":
     # =====================================================
     # 🗂️ Abas principais da Logística
     # =====================================================
-    aba1, aba2, aba3, aba4 = st.tabs([
+    aba1, aba2, aba3 = st.tabs([
         "📋 Controle Operacional",
         "📦 Estoque",
-        "🚚 Entregas",
-        "📊 Análise de Saídas"
+        "🚚 Entregas"
     ])
 
     # =====================================================
@@ -3461,157 +3460,51 @@ if menu == "📦 Dashboard – Logística":
     # 📦 ABA 2 — ESTOQUE
     # =====================================================
     with aba2:
-        SHEET_URL = "https://docs.google.com/spreadsheets/d/1WTEiRnm1OFxzn6ag1MfI8VnlQCbL8xwxY3LeanCsdxk/export?format=csv"
-
-        @st.cache_data(ttl=600)
-        def carregar_planilha_custos():
-            df = pd.read_csv(SHEET_URL)
-            df.columns = df.columns.str.strip()
-
-            # Normaliza nomes de colunas (sem case-sensitive)
-            colunas = {c.lower().strip(): c for c in df.columns}
-
-            # Mapeamento dinâmico
-            mapa = {}
-            for nome in df.columns:
-                n = nome.lower().strip()
-                if "produto" in n:
-                    mapa[nome] = "Produto"
-                elif "variante" in n:
-                    mapa[nome] = "Variantes"
-                elif "aliexpress" in n:
-                    mapa[nome] = "Custo AliExpress (R$)"
-                elif "estoque" in n:
-                    mapa[nome] = "Custo Estoque (R$)"
-
-            df.rename(columns=mapa, inplace=True)
-
-            return df
-
-
-        try:
-            df_custos = carregar_planilha_custos()
-        except Exception as e:
-            st.error(f"❌ Erro ao carregar planilha: {e}")
-            st.stop()
+        st.title("📦 Análise de Estoque e Custos")
+        st.caption("Comparativo de vendas, desempenho e custos por produto e variante.")
 
         # =====================================================
-        # 📋 Visualização geral
+        # 🔄 Carregamento de produtos e pedidos
         # =====================================================
-        st.subheader("📋 Tabela de Custos")
-        st.dataframe(df_custos, use_container_width=True)
-
-        # Converter colunas numéricas
-        for col in ["Custo AliExpress (R$)", "Custo Estoque (R$)"]:
-            if col in df_custos.columns:
-                df_custos[col] = (
-                    df_custos[col]
-                    .astype(str)
-                    .str.replace("R$", "", regex=False)
-                    .str.replace(",", ".")
-                    .str.strip()
-                    .replace("inexistente", np.nan)
-                    .astype(float)
-                )
-
-        # =====================================================
-        # 🎛️ Filtro por produto
-        # =====================================================
-        produtos = df_custos["Produto"].dropna().unique().tolist()
-        produto_sel = st.selectbox("Selecione um produto:", ["(Todos)"] + produtos)
-
-        df_filtrado = df_custos.copy()
-        if produto_sel != "(Todos)":
-            df_filtrado = df_custos[df_custos["Produto"] == produto_sel]
-
-        # =====================================================
-        # 💸 Resumo e insights
-        # =====================================================
-        def formatar_moeda(v):
-            try:
-                return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-            except:
-                return "—"
-
-        media_aliexpress = pd.to_numeric(df_filtrado["Custo AliExpress (R$)"], errors="coerce").mean()
-        media_estoque = pd.to_numeric(df_filtrado["Custo Estoque (R$)"], errors="coerce").mean()
-
-        col1, col2, col3 = st.columns(3)
-        col1.metric("💰 Média AliExpress", formatar_moeda(media_aliexpress))
-        col2.metric("🏭 Média Estoque", formatar_moeda(media_estoque))
-
-        if not np.isnan(media_aliexpress) and not np.isnan(media_estoque) and media_aliexpress > 0:
-            diff_pct = ((media_estoque - media_aliexpress) / media_aliexpress) * 100
-            cor = "🟢" if diff_pct < 0 else "🔴"
-            col3.metric("📈 Diferença Média", f"{cor} {diff_pct:+.1f}%")
-        else:
-            col3.metric("📈 Diferença Média", "—")
-
-        # =====================================================
-        # 📦 Identificação de gaps
-        # =====================================================
-        st.subheader("🔎 Custos faltantes")
-        faltantes = df_custos[
-            df_custos["Custo Estoque (R$)"].isna() | df_custos["Custo AliExpress (R$)"].isna()
-        ]
-        if faltantes.empty:
-            st.success("✅ Todos os produtos possuem custos registrados.")
-        else:
-            st.dataframe(faltantes, use_container_width=True)
-
-    # =====================================================
-    # 🚚 ABA 3 — ENTREGAS
-    # =====================================================
-    with aba3:
-        st.info("📍 Em breve: status de fretes, prazos e devoluções.")
-    # =====================================================
-    # 📊 ABA 4 — Análise de Saídas
-    # =====================================================
-    with aba4:
         produtos = st.session_state.get("produtos", get_products_with_variants())
         if produtos.empty:
             st.warning("⚠️ Nenhum produto encontrado.")
             st.stop()
 
-        produtos_unicos = sorted(st.session_state.get("pedidos", pd.DataFrame())
-                                 .get("product_title", pd.Series(dtype=str))
-                                 .dropna().unique().tolist() or produtos["product_title"].dropna().unique().tolist())
-        produto_escolhido = st.selectbox("Selecione o produto:", produtos_unicos, index=0)
+        pedidos_cached = st.session_state.get("pedidos", pd.DataFrame())
+        produtos_unicos = sorted(
+            pedidos_cached.get("product_title", pd.Series(dtype=str)).dropna().unique().tolist()
+            or produtos["product_title"].dropna().unique().tolist()
+        )
 
+        produto_escolhido = st.selectbox("🧾 Selecione o produto:", produtos_unicos, index=0)
+
+        # =====================================================
+        # 🗓️ Seleção de períodos para comparação
+        # =====================================================
         hoje = datetime.now(APP_TZ).date()
         semana_atual_inicio = hoje - timedelta(days=hoje.weekday())
         semana_anterior_inicio = semana_atual_inicio - timedelta(days=7)
 
         col1, col2 = st.columns(2)
-
-        # 📅 Selecionar intervalo completo para período A e B (formato: dia/mês/ano)
         with col1:
-            periodo_a = st.date_input(
-                "📅 Período A (mais recente):",
-                (semana_atual_inicio, hoje),
-                format="DD/MM/YYYY"
-            )
+            periodo_a = st.date_input("📅 Período A (mais recente):", (semana_atual_inicio, hoje), format="DD/MM/YYYY")
         with col2:
-            periodo_b = st.date_input(
-                "📅 Período B (comparar):",
-                (semana_anterior_inicio, semana_anterior_inicio + timedelta(days=6)),
-                format="DD/MM/YYYY"
-            )
+            periodo_b = st.date_input("📅 Período B (comparar):", (semana_anterior_inicio, semana_anterior_inicio + timedelta(days=6)), format="DD/MM/YYYY")
 
-        # Garantir que ambos são tuplas válidas (início e fim)
-        if isinstance(periodo_a, tuple) and len(periodo_a) == 2:
-            inicio_a, fim_a = periodo_a
-        else:
+        if not (isinstance(periodo_a, tuple) and len(periodo_a) == 2):
             st.warning("⚠️ Selecione um intervalo completo para o Período A.")
             st.stop()
-
-        if isinstance(periodo_b, tuple) and len(periodo_b) == 2:
-            inicio_b, fim_b = periodo_b
-        else:
+        if not (isinstance(periodo_b, tuple) and len(periodo_b) == 2):
             st.warning("⚠️ Selecione um intervalo completo para o Período B.")
             st.stop()
 
-        # 3) Garanta que temos pedidos para TODO o intervalo combinado (independente da sidebar)
+        inicio_a, fim_a = periodo_a
+        inicio_b, fim_b = periodo_b
+
+        # =====================================================
+        # 📦 Garantir pedidos atualizados
+        # =====================================================
         def ensure_orders_for_range(start_date, end_date):
             loaded_range = st.session_state.get("periodo_atual")
             pedidos_cached = st.session_state.get("pedidos", pd.DataFrame())
@@ -3635,8 +3528,9 @@ if menu == "📦 Dashboard – Logística":
             st.warning("⚠️ Nenhum pedido encontrado no intervalo selecionado.")
             st.stop()
 
-        # 4) Conversão robusta de datas e filtragem por produto/intervalos
-        pedidos = pedidos.copy()
+        # =====================================================
+        # 🧮 Análise de saídas por produto
+        # =====================================================
         pedidos["created_at"] = pd.to_datetime(pedidos["created_at"], utc=True, errors="coerce")\
                                    .dt.tz_convert(APP_TZ).dt.tz_localize(None)
 
@@ -3648,7 +3542,6 @@ if menu == "📦 Dashboard – Logística":
         df_a = filtrar_periodo(base_prod, inicio_a, fim_a)
         df_b = filtrar_periodo(base_prod, inicio_b, fim_b)
 
-        # 5) Agregação por variante e comparativo
         resumo_a = df_a.groupby("variant_title")["quantity"].sum().reset_index(name="qtd_A")
         resumo_b = df_b.groupby("variant_title")["quantity"].sum().reset_index(name="qtd_B")
 
@@ -3669,31 +3562,21 @@ if menu == "📦 Dashboard – Logística":
             comparativo["qtd_B"] / comparativo["qtd_B"].sum() * 100,
             0
         )
-
-        # 🆕 Nova coluna: variação de participação em pontos percentuais
         comparativo["variação_participação_p.p."] = comparativo["participação_%_A"] - comparativo["participação_%_B"]
 
-        # Ordenar pelas vendas mais recentes
         comparativo = comparativo.sort_values("qtd_A", ascending=False).reset_index(drop=True)
 
-        # 🔢 Formatar números inteiros (quantidades e diferenças)
-        cols_int = ["qtd_A", "qtd_B", "diferença"]
-        for c in cols_int:
+        for c in ["qtd_A", "qtd_B", "diferença"]:
             if c in comparativo.columns:
                 comparativo[c] = comparativo[c].astype(int)
 
-        # 📊 Formatação de colunas numéricas em porcentagem
         def fmt_pct(x):
-            if pd.isna(x):
-                return "-"
-            return f"{x:.1f}%"
+            return "-" if pd.isna(x) else f"{x:.1f}%"
 
-        cols_pct = ["crescimento_%", "participação_%_A", "participação_%_B", "variação_participação_p.p."]
-        for c in cols_pct:
+        for c in ["crescimento_%", "participação_%_A", "participação_%_B", "variação_participação_p.p."]:
             if c in comparativo.columns:
                 comparativo[c] = comparativo[c].apply(fmt_pct)
 
-        # 🧾 Renomear colunas para nomes mais clean
         comparativo.rename(columns={
             "variant_title": "Variante",
             "qtd_A": "Qtd. Período A",
@@ -3705,7 +3588,6 @@ if menu == "📦 Dashboard – Logística":
             "variação_participação_p.p.": "Variação Part. (p.p.)"
         }, inplace=True)
 
-        # 🎨 Aplicar coloração condicional (verde/vermelho)
         def highlight_variacao(val):
             if isinstance(val, str) and val.endswith("%"):
                 try:
@@ -3716,11 +3598,107 @@ if menu == "📦 Dashboard – Logística":
                     return ""
             return ""
 
-        # Criar estilo de dataframe com coloração nas colunas de comparação
         styled_df = comparativo.style.applymap(
             highlight_variacao, subset=["Crescimento (%)", "Variação Part. (p.p.)"]
         )
 
-        # Exibir tabela
-        st.subheader(f"📦 {produto_escolhido} — Comparativo de Vendas por Variante")
+        st.subheader(f"📊 {produto_escolhido} — Comparativo de Vendas por Variante")
         st.dataframe(styled_df, use_container_width=True)
+
+        # =====================================================
+        # 💰 Tabela de custos — integração com Google Sheets
+        # =====================================================
+        SHEET_URL = "https://docs.google.com/spreadsheets/d/1WTEiRnm1OFxzn6ag1MfI8VnlQCbL8xwxY3LeanCsdxk/export?format=csv"
+
+        @st.cache_data(ttl=600)
+        def carregar_planilha_custos():
+            df = pd.read_csv(SHEET_URL)
+            df.columns = df.columns.str.strip().str.lower()
+
+            mapa = {}
+            for col in df.columns:
+                if "produto" in col:
+                    mapa[col] = "Produto"
+                elif "variante" in col:
+                    mapa[col] = "Variante"
+                elif "aliexpress" in col:
+                    mapa[col] = "Custo AliExpress (R$)"
+                elif "estoque" in col:
+                    mapa[col] = "Custo Estoque (R$)"
+
+            df.rename(columns=mapa, inplace=True)
+            return df
+
+        try:
+            df_custos = carregar_planilha_custos()
+        except Exception as e:
+            st.error(f"❌ Erro ao carregar planilha de custos: {e}")
+            st.stop()
+
+        # =====================================================
+        # 📋 Visualização de custos
+        # =====================================================
+        st.subheader("📋 Tabela de Custos (AliExpress vs Estoque)")
+        st.dataframe(df_custos, use_container_width=True)
+
+        for col in ["Custo AliExpress (R$)", "Custo Estoque (R$)"]:
+            if col in df_custos.columns:
+                df_custos[col] = (
+                    df_custos[col]
+                    .astype(str)
+                    .str.replace("R$", "", regex=False)
+                    .str.replace(",", ".")
+                    .str.strip()
+                    .replace("inexistente", np.nan)
+                    .astype(float)
+                )
+
+        produtos = df_custos["Produto"].dropna().unique().tolist()
+        produto_sel = st.selectbox("🧩 Selecione um produto para análise de custos:", ["(Todos)"] + produtos)
+
+        df_filtrado = df_custos.copy()
+        if produto_sel != "(Todos)":
+            df_filtrado = df_custos[df_custos["Produto"] == produto_sel]
+
+        # =====================================================
+        # 💸 Resumo de custos
+        # =====================================================
+        def formatar_moeda(v):
+            try:
+                return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            except:
+                return "—"
+
+        media_ali = pd.to_numeric(df_filtrado["Custo AliExpress (R$)"], errors="coerce").mean()
+        media_est = pd.to_numeric(df_filtrado["Custo Estoque (R$)"], errors="coerce").mean()
+
+        col1, col2, col3 = st.columns(3)
+        col1.metric("💰 Média AliExpress", formatar_moeda(media_ali))
+        col2.metric("🏭 Média Estoque", formatar_moeda(media_est))
+
+        if not np.isnan(media_ali) and not np.isnan(media_est) and media_ali > 0:
+            diff_pct = ((media_est - media_ali) / media_ali) * 100
+            cor = "🟢" if diff_pct < 0 else "🔴"
+            col3.metric("📈 Diferença Média", f"{cor} {diff_pct:+.1f}%")
+        else:
+            col3.metric("📈 Diferença Média", "—")
+
+        # =====================================================
+        # 🧾 Identificação de gaps de custo
+        # =====================================================
+        st.subheader("🔎 Custos Faltantes")
+        faltantes = df_custos[
+            df_custos["Custo Estoque (R$)"].isna() | df_custos["Custo AliExpress (R$)"].isna()
+        ]
+
+        if faltantes.empty:
+            st.success("✅ Todos os produtos possuem custos registrados.")
+        else:
+            st.warning(f"⚠️ {len(faltantes)} produto(s) com custo pendente.")
+            st.dataframe(faltantes, use_container_width=True)
+
+    # =====================================================
+    # 🚚 ABA 3 — ENTREGAS
+    # =====================================================
+    with aba3:
+        st.info("📍 Em breve: status de fretes, prazos e devoluções.")
