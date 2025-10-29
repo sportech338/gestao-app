@@ -3419,6 +3419,8 @@ if menu == "📦 Dashboard – Logística":
     # =====================================================
     # 🚚 ABA 3 — ENTREGAS
     # =====================================================
+    with aba3:
+        st.info("📍 Em breve: status de fretes, prazos e devoluções.")
     # =====================================================
     # 📊 ABA 4 — INDICADORES
     # =====================================================
@@ -3432,14 +3434,9 @@ if menu == "📦 Dashboard – Logística":
             st.stop()
 
         # 2) Seleção de produto e períodos
-        produtos_unicos = sorted(
-            st.session_state.get("pedidos", pd.DataFrame())
-            .get("product_title", pd.Series(dtype=str))
-            .dropna()
-            .unique()
-            .tolist()
-            or produtos["product_title"].dropna().unique().tolist()
-        )
+        produtos_unicos = sorted(st.session_state.get("pedidos", pd.DataFrame())
+                                 .get("product_title", pd.Series(dtype=str))
+                                 .dropna().unique().tolist() or produtos["product_title"].dropna().unique().tolist())
         produto_escolhido = st.selectbox("Selecione o produto:", produtos_unicos, index=0)
 
         hoje = datetime.now(APP_TZ).date()
@@ -3448,16 +3445,18 @@ if menu == "📦 Dashboard – Logística":
 
         col1, col2 = st.columns(2)
 
-        # 📅 Inverter ordem: primeiro Período B (comparativo)
+        # 📅 Selecionar intervalo completo para período A e B (formato: dia/mês/ano)
+
         with col1:
             periodo_b = st.date_input(
-                "📅 Período B (comparar com...)",
+                "📅 Período B (comparar):",
                 (semana_anterior_inicio, semana_anterior_inicio + timedelta(days=6)),
                 format="DD/MM/YYYY"
             )
+        
         with col2:
             periodo_a = st.date_input(
-                "📅 Período A (atual ou mais recente)",
+                "📅 Período A (mais recente):",
                 (semana_atual_inicio, hoje),
                 format="DD/MM/YYYY"
             )
@@ -3475,7 +3474,7 @@ if menu == "📦 Dashboard – Logística":
             st.warning("⚠️ Selecione um intervalo completo para o Período B.")
             st.stop()
 
-        # 3) Garantir pedidos
+        # 3) Garanta que temos pedidos para TODO o intervalo combinado (independente da sidebar)
         def ensure_orders_for_range(start_date, end_date):
             loaded_range = st.session_state.get("periodo_atual")
             pedidos_cached = st.session_state.get("pedidos", pd.DataFrame())
@@ -3499,10 +3498,10 @@ if menu == "📦 Dashboard – Logística":
             st.warning("⚠️ Nenhum pedido encontrado no intervalo selecionado.")
             st.stop()
 
-        # 4) Preparar base
+        # 4) Conversão robusta de datas e filtragem por produto/intervalos
         pedidos = pedidos.copy()
-        pedidos["created_at"] = pd.to_datetime(pedidos["created_at"], utc=True, errors="coerce") \
-            .dt.tz_convert(APP_TZ).dt.tz_localize(None)
+        pedidos["created_at"] = pd.to_datetime(pedidos["created_at"], utc=True, errors="coerce")\
+                                   .dt.tz_convert(APP_TZ).dt.tz_localize(None)
 
         base_prod = pedidos[pedidos["product_title"] == produto_escolhido].copy()
 
@@ -3512,59 +3511,64 @@ if menu == "📦 Dashboard – Logística":
         df_a = filtrar_periodo(base_prod, inicio_a, fim_a)
         df_b = filtrar_periodo(base_prod, inicio_b, fim_b)
 
-        # 5) Agregação invertida (B vem antes de A)
+        # 5) Agregação por variante e comparativo
         resumo_a = df_a.groupby("variant_title")["quantity"].sum().reset_index(name="qtd_A")
         resumo_b = df_b.groupby("variant_title")["quantity"].sum().reset_index(name="qtd_B")
 
-        comparativo = pd.merge(resumo_b, resumo_a, on="variant_title", how="outer").fillna(0)
+        comparativo = pd.merge(resumo_a, resumo_b, on="variant_title", how="outer").fillna(0)
         comparativo["diferença"] = comparativo["qtd_A"] - comparativo["qtd_B"]
         comparativo["crescimento_%"] = np.where(
             comparativo["qtd_B"] > 0,
             (comparativo["qtd_A"] - comparativo["qtd_B"]) / comparativo["qtd_B"] * 100,
             np.nan
         )
-        comparativo["participação_%_B"] = np.where(
-            comparativo["qtd_B"].sum() > 0,
-            comparativo["qtd_B"] / comparativo["qtd_B"].sum() * 100,
-            0
-        )
         comparativo["participação_%_A"] = np.where(
             comparativo["qtd_A"].sum() > 0,
             comparativo["qtd_A"] / comparativo["qtd_A"].sum() * 100,
             0
         )
+        comparativo["participação_%_B"] = np.where(
+            comparativo["qtd_B"].sum() > 0,
+            comparativo["qtd_B"] / comparativo["qtd_B"].sum() * 100,
+            0
+        )
+
+        # 🆕 Nova coluna: variação de participação em pontos percentuais
         comparativo["variação_participação_p.p."] = comparativo["participação_%_A"] - comparativo["participação_%_B"]
 
+        # Ordenar pelas vendas mais recentes
         comparativo = comparativo.sort_values("qtd_A", ascending=False).reset_index(drop=True)
 
-        # 🔢 Inteiros
-        for c in ["qtd_A", "qtd_B", "diferença"]:
+        # 🔢 Formatar números inteiros (quantidades e diferenças)
+        cols_int = ["qtd_A", "qtd_B", "diferença"]
+        for c in cols_int:
             if c in comparativo.columns:
                 comparativo[c] = comparativo[c].astype(int)
 
-        # 📊 Percentuais
+        # 📊 Formatação de colunas numéricas em porcentagem
         def fmt_pct(x):
             if pd.isna(x):
                 return "-"
             return f"{x:.1f}%"
 
-        for c in ["crescimento_%", "participação_%_A", "participação_%_B", "variação_participação_p.p."]:
+        cols_pct = ["crescimento_%", "participação_%_B", "participação_%_A", "variação_participação_p.p."]
+        for c in cols_pct:
             if c in comparativo.columns:
                 comparativo[c] = comparativo[c].apply(fmt_pct)
 
-        # 🧾 Nomes ajustados (B vem antes de A)
+        # 🧾 Renomear colunas para nomes mais clean
         comparativo.rename(columns={
             "variant_title": "Variante",
-            "qtd_B": "Qtd. Período B",
             "qtd_A": "Qtd. Período A",
+            "qtd_B": "Qtd. Período B",
             "diferença": "Diferença (unid.)",
             "crescimento_%": "Crescimento (%)",
-            "participação_%_B": "Participação B (%)",
             "participação_%_A": "Participação A (%)",
+            "participação_%_B": "Participação B (%)",
             "variação_participação_p.p.": "Variação Part. (p.p.)"
         }, inplace=True)
 
-        # 🎨 Cores (verde/vermelho)
+        # 🎨 Aplicar coloração condicional (verde/vermelho)
         def highlight_variacao(val):
             if isinstance(val, str) and val.endswith("%"):
                 try:
@@ -3575,11 +3579,11 @@ if menu == "📦 Dashboard – Logística":
                     return ""
             return ""
 
+        # Criar estilo de dataframe com coloração nas colunas de comparação
         styled_df = comparativo.style.applymap(
             highlight_variacao, subset=["Crescimento (%)", "Variação Part. (p.p.)"]
         )
 
-        # Exibir
+        # Exibir tabela
         st.subheader(f"📦 {produto_escolhido} — Comparativo de Vendas por Variante")
         st.dataframe(styled_df, use_container_width=True)
-
