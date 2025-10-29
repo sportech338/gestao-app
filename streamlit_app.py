@@ -3560,6 +3560,23 @@ if menu == "📦 Dashboard – Logística":
             "variação_participação_p.p.": "Variação Part. (p.p.)"
         }, inplace=True)
 
+        # 🎨 Aplicar coloração condicional (verde/vermelho)
+        def highlight_variacao(val):
+            if isinstance(val, str) and val.endswith("%"):
+                try:
+                    num = float(val.replace("%", "").replace(",", "."))
+                    color = "green" if num > 0 else "red" if num < 0 else "inherit"
+                    return f"color: {color}; font-weight: 600;"
+                except:
+                    return ""
+            return ""
+
+        # Criar estilo de dataframe com coloração nas colunas de comparação
+        styled_df = comparativo.style.applymap(
+            highlight_variacao, subset=["Crescimento (%)", "Variação Part. (p.p.)"]
+        )
+
         # Exibir tabela
         st.subheader(f"📦 {produto_escolhido} — Comparativo de Vendas por Variante")
-        st.dataframe(comparativo, use_container_width=True)
+        st.dataframe(styled_df, use_container_width=True)
+
