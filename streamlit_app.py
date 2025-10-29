@@ -61,6 +61,11 @@ def _get_session():
 # =====================================================
 @st.cache_data(ttl=600)
 def get_products_with_variants(limit=250):
+    """
+    Busca produtos e variantes com custo (cost).
+    1️⃣ Tenta puxar via REST (inventory_items.cost)
+    2️⃣ Se não vier, usa metafield custom.custo_interno (campo criado manualmente)
+    """
     s = _get_session()
     url = f"{BASE_URL}/products.json?limit={limit}"
     all_products = []
@@ -89,6 +94,7 @@ def get_products_with_variants(limit=250):
 
     df_variants = pd.DataFrame(rows)
 
+    # 1️⃣ PRIMEIRA FONTE — REST: custo via Inventory Item
     if not df_variants.empty and "inventory_item_id" in df_variants.columns:
         inventory_ids = df_variants["inventory_item_id"].dropna().unique().tolist()
         costs_rows = []
@@ -102,13 +108,47 @@ def get_products_with_variants(limit=250):
             for it in items:
                 costs_rows.append({
                     "inventory_item_id": it["id"],
-                    "cost": float(it.get("cost") or 0)
+                    "cost": float(it.get("cost") or np.nan)
                 })
 
         df_costs = pd.DataFrame(costs_rows)
         df_variants = df_variants.merge(df_costs, on="inventory_item_id", how="left")
     else:
         df_variants["cost"] = np.nan
+
+    # 2️⃣ SEGUNDA FONTE — GraphQL: metafield custom.custo_interno
+    if df_variants["cost"].isna().any():
+        gql_query = """
+        {
+          productVariants(first: 200) {
+            edges {
+              node {
+                id
+                sku
+                title
+                metafield(namespace: "custom", key: "custo_interno") {
+                  value
+                }
+              }
+            }
+          }
+        }
+        """
+        resp = requests.post(f"{BASE_URL}/graphql.json", headers=HEADERS, json={"query": gql_query})
+        if resp.status_code == 200:
+            data = resp.json().get("data", {}).get("productVariants", {}).get("edges", [])
+            for edge in data:
+                node = edge.get("node", {})
+                sku = node.get("sku")
+                meta = node.get("metafield")
+                if sku and meta and meta.get("value"):
+                    try:
+                        custo_val = float(meta["value"])
+                        df_variants.loc[df_variants["sku"] == sku, "cost"] = custo_val
+                    except:
+                        pass
+        else:
+            st.warning(f"⚠️ Erro ao buscar metafields GraphQL: {resp.status_code} - {resp.text}")
 
     return df_variants
 
@@ -3751,4 +3791,3 @@ if menu == "📦 Dashboard – Logística":
 - GraphQL: **`inventoryItem.unitCost { amount, currencyCode }`**.  
 - Desde 2024, vários campos migraram de **Variant** para **InventoryItem**, então consulte sempre a versão mais recente da API.
             """)
-
