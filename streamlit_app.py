@@ -3415,7 +3415,7 @@ if menu == "📦 Dashboard – Logística":
     # 📦 ABA 2 — ESTOQUE
     # =====================================================
     with aba2:
-        st.subheader("📈 Análise de Saídas")
+        st.subheader("📈 Análise de Saídas por Variante")
 
         # 1) Produtos podem vir do cache atual (não dependem de período)
         produtos = st.session_state.get("produtos", get_products_with_variants())
@@ -3521,17 +3521,26 @@ if menu == "📦 Dashboard – Logística":
             0
         )
 
-        st.subheader(f"📦 {produto_escolhido} — Comparativo de Variantes")
-        st.dataframe(comparativo.sort_values("qtd_A", ascending=False), use_container_width=True)
+        # 🆕 Nova coluna: variação de participação em pontos percentuais
+        comparativo["variação_participação_p.p."] = comparativo["participação_%_A"] - comparativo["participação_%_B"]
 
+        # Ordenar pelas vendas mais recentes
+        comparativo = comparativo.sort_values("qtd_A", ascending=False).reset_index(drop=True)
 
-        # 6) Gráfico
-        import plotly.graph_objects as go
-        fig = go.Figure()
-        fig.add_bar(x=comparativo["variant_title"], y=comparativo["qtd_A"], name="Período A")
-        fig.add_bar(x=comparativo["variant_title"], y=comparativo["qtd_B"], name="Período B")
-        fig.update_layout(barmode="group", title="Comparativo de unidades vendidas por variante")
-        st.plotly_chart(fig, use_container_width=True)
+        # 📊 Formatação de colunas numéricas em porcentagem
+        def fmt_pct(x):
+            if pd.isna(x):
+                return "-"
+            return f"{x:.1f}%"
+
+        cols_pct = ["crescimento_%", "participação_%_A", "participação_%_B", "variação_participação_p.p."]
+        for c in cols_pct:
+            if c in comparativo.columns:
+                comparativo[c] = comparativo[c].apply(fmt_pct)
+
+        # Exibir tabela
+        st.subheader(f"📦 {produto_escolhido} — Comparativo de Vendas por Variante")
+        st.dataframe(comparativo, use_container_width=True)
 
     # =====================================================
     # 🚚 ABA 3 — ENTREGAS
