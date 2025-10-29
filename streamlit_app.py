@@ -1112,7 +1112,7 @@ if menu == "📊 Dashboard – Tráfego Pago":
     token = None
 
     with st.sidebar:
-        st.markdown("## ⚙️ Configuração:")
+        st.markdown("## ⚙️ Configuração — Tráfego Pago")
 
         act_id_input = st.text_input("Ad Account ID", placeholder="ex.: 1234567890")
         if act_id_input and not act_id_input.isdigit():
@@ -3677,54 +3677,6 @@ if menu == "📦 Dashboard – Logística":
             use_container_width=True
         )
 
-        # =====================================================
-        # ✏️ Edição manual dos custos direto no app
-        # =====================================================
-        st.subheader("✏️ Atualizar Custos Manualmente (sincroniza com planilha Google)")
-
-        st.info("Você pode alterar os valores abaixo e clicar em **💾 Salvar alterações** para atualizar automaticamente a planilha de custos no Google Sheets.")
-
-        # Exibir editor interativo
-        custos_editaveis = df_custos[["Produto", "Variante", "Custo AliExpress (R$)", "Custo Estoque (R$)"]].copy()
-        custos_editaveis = custos_editaveis.fillna("")
-
-        custos_editados = st.data_editor(
-            custos_editaveis,
-            num_rows="dynamic",
-            use_container_width=True,
-            key="editor_custos"
-        )
-
-        # =====================================================
-        # 💾 Botão para salvar e sincronizar
-        # =====================================================
-        if st.button("💾 Salvar alterações na planilha"):
-            try:
-                # 🔐 Lê credenciais diretamente do secrets.toml (Streamlit Cloud)
-                gcp_info = st.secrets["gcp_service_account"]
-
-                # 🔑 Cria credencial e cliente
-                creds = Credentials.from_service_account_info(
-                    gcp_info,
-                    scopes=["https://www.googleapis.com/auth/spreadsheets"]
-                )
-                client = gspread.authorize(creds)
-
-                # 📄 Pega o ID da planilha (vem do [google_sheets] no secrets.toml)
-                SHEET_ID = st.secrets["google_sheets"]["sheet_id"]
-                sheet = client.open_by_key(SHEET_ID).sheet1
-
-                # ✏️ Atualiza os dados editados
-                sheet.update(
-                    [custos_editados.columns.values.tolist()] + custos_editados.values.tolist()
-                )
-
-                st.success("✅ Planilha atualizada com sucesso no Google Sheets!")
-
-            except Exception as e:
-                st.error(f"❌ Erro ao atualizar planilha: {e}")
-
-    
     # =====================================================
     # 🚚 ABA 3 — ENTREGAS
     # =====================================================
