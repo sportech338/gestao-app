@@ -3649,50 +3649,6 @@ if menu == "📦 Dashboard – Logística":
                     .astype(float)
                 )
 
-        produtos = df_custos["Produto"].dropna().unique().tolist()
-        produto_sel = st.selectbox("🧩 Selecione um produto para análise de custos:", ["(Todos)"] + produtos)
-
-        df_filtrado = df_custos.copy()
-        if produto_sel != "(Todos)":
-            df_filtrado = df_custos[df_custos["Produto"] == produto_sel]
-
-        # =====================================================
-        # 💸 Resumo de custos
-        # =====================================================
-        def formatar_moeda(v):
-            try:
-                return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-            except:
-                return "—"
-
-        media_ali = pd.to_numeric(df_filtrado["Custo AliExpress (R$)"], errors="coerce").mean()
-        media_est = pd.to_numeric(df_filtrado["Custo Estoque (R$)"], errors="coerce").mean()
-
-        col1, col2, col3 = st.columns(3)
-        col1.metric("💰 Média AliExpress", formatar_moeda(media_ali))
-        col2.metric("🏭 Média Estoque", formatar_moeda(media_est))
-
-        if not np.isnan(media_ali) and not np.isnan(media_est) and media_ali > 0:
-            diff_pct = ((media_est - media_ali) / media_ali) * 100
-            cor = "🟢" if diff_pct < 0 else "🔴"
-            col3.metric("📈 Diferença Média", f"{cor} {diff_pct:+.1f}%")
-        else:
-            col3.metric("📈 Diferença Média", "—")
-
-        # =====================================================
-        # 🧾 Identificação de gaps de custo
-        # =====================================================
-        st.subheader("🔎 Custos Faltantes")
-        faltantes = df_custos[
-            df_custos["Custo Estoque (R$)"].isna() | df_custos["Custo AliExpress (R$)"].isna()
-        ]
-
-        if faltantes.empty:
-            st.success("✅ Todos os produtos possuem custos registrados.")
-        else:
-            st.warning(f"⚠️ {len(faltantes)} produto(s) com custo pendente.")
-            st.dataframe(faltantes, use_container_width=True)
-
     # =====================================================
     # 🚚 ABA 3 — ENTREGAS
     # =====================================================
