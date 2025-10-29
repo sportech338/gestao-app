@@ -3616,10 +3616,11 @@ if menu == "📦 Dashboard – Logística":
             if isinstance(gcp_info.get("private_key"), str):
                 gcp_info["private_key"] = gcp_info["private_key"].replace("\\n", "\n")
 
-            # ✅ Usa from_service_account_info (aceita dicionário, não arquivo)
+            # ✅ Cria as credenciais direto do dicionário
             creds = Credentials.from_service_account_info(gcp_info, scopes=scopes)
-            client = gspread.Client(auth=creds)
-            client.session = gspread.auth.AuthorizedSession(creds)
+
+            # ✅ Autoriza o gspread com as credenciais
+            client = gspread.authorize(creds)
             return client
 
 
