@@ -3449,14 +3449,14 @@ if menu == "📦 Dashboard – Logística":
 
         with col1:
             periodo_b = st.date_input(
-                "📅 Período A (comparar):",
+                "📅 Período B (comparar):",
                 (semana_anterior_inicio, semana_anterior_inicio + timedelta(days=6)),
                 format="DD/MM/YYYY"
             )
         
         with col2:
             periodo_a = st.date_input(
-                "📅 Período B (mais recente):",
+                "📅 Período A (mais recente):",
                 (semana_atual_inicio, hoje),
                 format="DD/MM/YYYY"
             )
