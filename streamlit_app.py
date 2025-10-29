@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -3297,7 +3298,7 @@ if menu == "📦 Dashboard – Logística":
         colD.metric("💸 Ticket médio", formatar_moeda(ticket_medio))
 
         # -------------------------------------------------
-        # 📋 Tabela de pedidos (somente seleção)
+        # 📋 Tabela de pedidos
         # -------------------------------------------------
         
         st.markdown("""
@@ -3358,28 +3359,18 @@ if menu == "📦 Dashboard – Logística":
         tabela["is_sedex"] = tabela["Frete"].str.contains("SEDEX", case=False, na=False)
         tabela = tabela.sort_values(by=["duplicado", "is_sedex", "Data do pedido"], ascending=[False, True, False])
 
-        # ✅ Exibe tabela com seleção (sem edição)
+        def highlight_prioridades(row):
+            if row["duplicado"]:
+                return ['background-color: rgba(0, 123, 255, 0.15)'] * len(row)
+            elif row["is_sedex"]:
+                return ['background-color: rgba(255, 215, 0, 0.15)'] * len(row)
+            else:
+                return [''] * len(row)
+
         colunas_visiveis = [c for c in tabela.columns if c not in ["duplicado", "is_sedex"]]
-        st.subheader("📋 Tabela de pedidos (somente seleção)")
-
-        tabela_display = tabela[colunas_visiveis]
-        edit_pedidos = st.data_editor(
-            tabela_display,
-            num_rows="fixed",
-            use_container_width=True,
-            disabled=True,          # ❌ bloqueia edição
-            hide_index=False,       # ✅ mantém checkboxes
-            key="pedidos_selecao"
-        )
-
-        # 🎯 Captura linhas marcadas (sem erro se for vazio)
-        selected = []
-        if "pedidos_selecao" in st.session_state:
-            selected = st.session_state["pedidos_selecao"].get("selected_rows", [])
-
-        if selected:
-            st.info(f"🟢 {len(selected)} pedido(s) marcado(s).")
-
+        styled_tabela = tabela[colunas_visiveis + ["duplicado", "is_sedex"]].style.apply(highlight_prioridades, axis=1)
+        styled_tabela = styled_tabela.hide(["duplicado", "is_sedex"], axis=1)
+        st.dataframe(styled_tabela, use_container_width=True)
 
         # -------------------------------------------------
         # 🎛️ Filtros adicionais
