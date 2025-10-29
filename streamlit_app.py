@@ -3372,10 +3372,14 @@ if menu == "📦 Dashboard – Logística":
             key="pedidos_selecao"
         )
 
-        # 🎯 Captura linhas marcadas (opcional)
-        selected = st.session_state["pedidos_selecao"]["selected_rows"]
+        # 🎯 Captura linhas marcadas (sem erro se for vazio)
+        selected = []
+        if "pedidos_selecao" in st.session_state:
+            selected = st.session_state["pedidos_selecao"].get("selected_rows", [])
+
         if selected:
             st.info(f"🟢 {len(selected)} pedido(s) marcado(s).")
+
 
         # -------------------------------------------------
         # 🎛️ Filtros adicionais
