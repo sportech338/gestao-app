@@ -3139,7 +3139,7 @@ if menu == "📦 Dashboard – Logística":
         "📋 Controle Operacional",
         "📦 Estoque",
         "🚚 Entregas",
-        "📊 Análise de Saída"
+        "📊 Análise de Saídas"
     ])
 
     # =====================================================
@@ -3446,7 +3446,7 @@ if menu == "📦 Dashboard – Logística":
     with aba3:
         st.info("📍 Em breve: status de fretes, prazos e devoluções.")
     # =====================================================
-    # 📊 ABA 4 — INDICADORES
+    # 📊 ABA 4 — Análise de Saídas
     # =====================================================
     with aba4:
         produtos = st.session_state.get("produtos", get_products_with_variants())
