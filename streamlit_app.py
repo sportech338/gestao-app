@@ -61,12 +61,13 @@ def _get_session():
 # =====================================================
 @st.cache_data(ttl=600)
 def get_products_with_variants(limit=250):
-    url = f"{BASE_URL}/products.json?limit={limit}"
     s = _get_session()
+    url = f"{BASE_URL}/products.json?limit={limit}"
     r = s.get(url, headers=HEADERS, timeout=60)
     r.raise_for_status()
     data = r.json().get("products", [])
     rows = []
+
     for p in data:
         for v in p.get("variants", []):
             rows.append({
@@ -77,10 +78,34 @@ def get_products_with_variants(limit=250):
                 "sku": v.get("sku"),
                 "price": float(v.get("price") or 0),
                 "compare_at_price": float(v.get("compare_at_price") or 0),
-                "cost": float(v.get("cost") or 0), 
                 "inventory": v.get("inventory_quantity"),
+                "inventory_item_id": v.get("inventory_item_id"),
             })
-    return pd.DataFrame(rows)
+
+    df_variants = pd.DataFrame(rows)
+
+    if not df_variants.empty and "inventory_item_id" in df_variants.columns:
+        inventory_ids = df_variants["inventory_item_id"].dropna().unique().tolist()
+        costs_rows = []
+        for i in range(0, len(inventory_ids), 100):  # Shopify aceita até 100 IDs por chamada
+            batch = inventory_ids[i:i + 100]
+            ids_param = ",".join(str(x) for x in batch)
+            inv_url = f"{BASE_URL}/inventory_items.json?ids={ids_param}"
+            inv_resp = s.get(inv_url, headers=HEADERS, timeout=60)
+            inv_resp.raise_for_status()
+            items = inv_resp.json().get("inventory_items", [])
+            for it in items:
+                costs_rows.append({
+                    "inventory_item_id": it["id"],
+                    "cost": float(it.get("cost") or 0)
+                })
+
+        df_costs = pd.DataFrame(costs_rows)
+        df_variants = df_variants.merge(df_costs, on="inventory_item_id", how="left")
+    else:
+        df_variants["cost"] = np.nan
+
+    return df_variants
 
 # =====================================================
 # Pedidos
