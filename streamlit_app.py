@@ -3458,8 +3458,8 @@ if menu == "📦 Dashboard – Logística":
     # 📦 ABA 2 — ESTOQUE
     # =====================================================
     with aba2:
-        st.subheader("📋 Comparativo Completo — Saídas + Custos")
-
+        st.subheader("Comparativo de saídas por Variante:")
+        
         # =====================================================
         # 🔄 Carregamento de produtos e pedidos
         # =====================================================
@@ -3473,10 +3473,11 @@ if menu == "📦 Dashboard – Logística":
             pedidos_cached.get("product_title", pd.Series(dtype=str)).dropna().unique().tolist()
             or produtos["product_title"].dropna().unique().tolist()
         )
+
         produto_escolhido = st.selectbox("🧾 Selecione o produto:", produtos_unicos, index=0)
 
         # =====================================================
-        # 🗓️ Seleção de períodos
+        # 🗓️ Seleção de períodos para comparação
         # =====================================================
         hoje = datetime.now(APP_TZ).date()
         semana_atual_inicio = hoje - timedelta(days=hoje.weekday())
@@ -3484,55 +3485,62 @@ if menu == "📦 Dashboard – Logística":
 
         col1, col2 = st.columns(2)
         with col1:
-            periodo_a = st.date_input("📅 Período A:", (semana_atual_inicio, hoje), format="DD/MM/YYYY")
+            periodo_a = st.date_input("📅 Período A (mais recente):", (semana_atual_inicio, hoje), format="DD/MM/YYYY")
         with col2:
-            periodo_b = st.date_input("📅 Período B:", (semana_anterior_inicio, semana_anterior_inicio + timedelta(days=6)), format="DD/MM/YYYY")
+            periodo_b = st.date_input("📅 Período B (comparar):", (semana_anterior_inicio, semana_anterior_inicio + timedelta(days=6)), format="DD/MM/YYYY")
 
-        if not (isinstance(periodo_a, tuple) and len(periodo_a) == 2) or not (isinstance(periodo_b, tuple) and len(periodo_b) == 2):
-            st.warning("⚠️ Selecione intervalos válidos.")
+        if not (isinstance(periodo_a, tuple) and len(periodo_a) == 2):
+            st.warning("⚠️ Selecione um intervalo completo para o Período A.")
+            st.stop()
+        if not (isinstance(periodo_b, tuple) and len(periodo_b) == 2):
+            st.warning("⚠️ Selecione um intervalo completo para o Período B.")
             st.stop()
 
         inicio_a, fim_a = periodo_a
         inicio_b, fim_b = periodo_b
 
         # =====================================================
-        # 🧾 Carregar pedidos
+        # 📦 Garantir pedidos atualizados
         # =====================================================
         def ensure_orders_for_range(start_date, end_date):
-            cached = st.session_state.get("pedidos", pd.DataFrame())
             loaded_range = st.session_state.get("periodo_atual")
+            pedidos_cached = st.session_state.get("pedidos", pd.DataFrame())
 
             def range_covers(loaded, start_, end_):
                 return loaded and (loaded[0] <= start_ and loaded[1] >= end_)
 
-            if cached.empty or (not range_covers(loaded_range, start_date, end_date)):
-                with st.spinner(f"🔄 Carregando pedidos de {start_date:%d/%m} a {end_date:%d/%m}..."):
+            if pedidos_cached.empty or (not range_covers(loaded_range, start_date, end_date)):
+                with st.spinner(f"🔄 Carregando pedidos da Shopify de {start_date:%d/%m/%Y} a {end_date:%d/%m/%Y}..."):
                     pedidos_new = get_orders(start_date=start_date, end_date=end_date, only_paid=True)
                     st.session_state["pedidos"] = pedidos_new
                     st.session_state["periodo_atual"] = (start_date, end_date)
                     return pedidos_new
-            return cached
+            return pedidos_cached
 
-        pedidos = ensure_orders_for_range(min(inicio_a, inicio_b), max(fim_a, fim_b))
+        periodo_min = min(inicio_a, inicio_b)
+        periodo_max = max(fim_a, fim_b)
+        pedidos = ensure_orders_for_range(periodo_min, periodo_max)
+
         if pedidos.empty:
-            st.warning("⚠️ Nenhum pedido encontrado.")
+            st.warning("⚠️ Nenhum pedido encontrado no intervalo selecionado.")
             st.stop()
 
         # =====================================================
-        # 🧮 Preparar base de dados
+        # 🧮 Análise de saídas por produto
         # =====================================================
         pedidos["created_at"] = pd.to_datetime(pedidos["created_at"], utc=True, errors="coerce")\
                                    .dt.tz_convert(APP_TZ).dt.tz_localize(None)
+
         base_prod = pedidos[pedidos["product_title"] == produto_escolhido].copy()
 
         def filtrar_periodo(df, ini, fim):
-            return df[(df["created_at"].dt.date >= ini) & (df["created_at"].dt.date <= fim)]
+            return df[(df["created_at"].dt.date >= ini) & (df["created_at"].dt.date <= fim)].copy()
 
         df_a = filtrar_periodo(base_prod, inicio_a, fim_a)
         df_b = filtrar_periodo(base_prod, inicio_b, fim_b)
 
-        resumo_a = df_a.groupby("variant_title", dropna=False)["quantity"].sum().reset_index(name="qtd_A")
-        resumo_b = df_b.groupby("variant_title", dropna=False)["quantity"].sum().reset_index(name="qtd_B")
+        resumo_a = df_a.groupby("variant_title")["quantity"].sum().reset_index(name="qtd_A")
+        resumo_b = df_b.groupby("variant_title")["quantity"].sum().reset_index(name="qtd_B")
 
         comparativo = pd.merge(resumo_a, resumo_b, on="variant_title", how="outer").fillna(0)
         comparativo["diferença"] = comparativo["qtd_A"] - comparativo["qtd_B"]
@@ -3541,89 +3549,33 @@ if menu == "📦 Dashboard – Logística":
             (comparativo["qtd_A"] - comparativo["qtd_B"]) / comparativo["qtd_B"] * 100,
             np.nan
         )
-
-        total_A = comparativo["qtd_A"].sum()
-        total_B = comparativo["qtd_B"].sum()
-
-        comparativo["participação_%_A"] = np.where(total_A > 0, comparativo["qtd_A"] / total_A * 100, 0)
-        comparativo["participação_%_B"] = np.where(total_B > 0, comparativo["qtd_B"] / total_B * 100, 0)
+        comparativo["participação_%_A"] = np.where(
+            comparativo["qtd_A"].sum() > 0,
+            comparativo["qtd_A"] / comparativo["qtd_A"].sum() * 100,
+            0
+        )
+        comparativo["participação_%_B"] = np.where(
+            comparativo["qtd_B"].sum() > 0,
+            comparativo["qtd_B"] / comparativo["qtd_B"].sum() * 100,
+            0
+        )
         comparativo["variação_participação_p.p."] = comparativo["participação_%_A"] - comparativo["participação_%_B"]
 
+        comparativo = comparativo.sort_values("qtd_A", ascending=False).reset_index(drop=True)
+
         for c in ["qtd_A", "qtd_B", "diferença"]:
-            comparativo[c] = pd.to_numeric(comparativo[c], errors="coerce").fillna(0).astype(int)
+            if c in comparativo.columns:
+                comparativo[c] = comparativo[c].astype(int)
 
-        # =====================================================
-        # 💰 Planilha de custos (Google Sheets)
-        # =====================================================
-        SHEET_URL = "https://docs.google.com/spreadsheets/d/1WTEiRnm1OFxzn6ag1MfI8VnlQCbL8xwxY3LeanCsdxk/export?format=csv"
+        def fmt_pct(x):
+            return "-" if pd.isna(x) else f"{x:.1f}%"
 
-        @st.cache_data(ttl=600)
-        def carregar_planilha_custos():
-            df = pd.read_csv(SHEET_URL)
-            df.columns = df.columns.str.strip().str.lower()
-            mapa = {}
-            for col in df.columns:
-                if "produto" in col: mapa[col] = "Produto"
-                elif "variante" in col: mapa[col] = "Variante"
-                elif "aliexpress" in col: mapa[col] = "Custo AliExpress (R$)"
-                elif "estoque" in col: mapa[col] = "Custo Estoque (R$)"
-            df.rename(columns=mapa, inplace=True)
-            df = df.loc[:, ~df.columns.duplicated()]
-            return df
+        for c in ["crescimento_%", "participação_%_A", "participação_%_B", "variação_participação_p.p."]:
+            if c in comparativo.columns:
+                comparativo[c] = comparativo[c].apply(fmt_pct)
 
-        df_custos = carregar_planilha_custos()
-
-        for col in ["Custo AliExpress (R$)", "Custo Estoque (R$)"]:
-            if col in df_custos.columns:
-                df_custos[col] = (
-                    df_custos[col].astype(str)
-                    .str.replace("R$", "", regex=False)
-                    .str.replace(",", ".")
-                    .str.strip()
-                )
-                df_custos[col] = pd.to_numeric(df_custos[col], errors="coerce")
-
-        # =====================================================
-        # 🔗 Merge seguro — Saídas + Custos
-        # =====================================================
-        comparativo = comparativo.rename(columns={"variant_title": "Variante"})
-        merged = comparativo.merge(df_custos, on="Variante", how="left")
-        merged = merged.loc[:, ~merged.columns.duplicated()]
-
-        # 💸 Calcular custo total do fornecedor
-        merged["💸 Custo Fornecedor Total (R$)"] = merged["Custo AliExpress (R$)"] * merged["qtd_A"]
-
-        def fmt_moeda(v):
-            try:
-                v = float(v)
-                return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-            except:
-                return "—"
-
-        for col in ["Custo AliExpress (R$)", "Custo Estoque (R$)", "💸 Custo Fornecedor Total (R$)"]:
-            if col in merged.columns:
-                merged[col] = merged[col].apply(fmt_moeda)
-
-        # =====================================================
-        # 📊 Exibir tabela final com checagem segura
-        # =====================================================
-        colunas_exibir = [
-            "Variante",
-            "Produto",
-            "qtd_A",
-            "qtd_B",
-            "diferença",
-            "crescimento_%",
-            "participação_%_A",
-            "participação_%_B",
-            "variação_participação_p.p.",
-            "Custo AliExpress (R$)",
-            "Custo Estoque (R$)",
-            "💸 Custo Fornecedor Total (R$)"
-        ]
-        colunas_existentes = [c for c in colunas_exibir if c in merged.columns]
-
-        merged.rename(columns={
+        comparativo.rename(columns={
+            "variant_title": "Variante",
             "qtd_A": "Qtd. Período A",
             "qtd_B": "Qtd. Período B",
             "diferença": "Diferença (unid.)",
@@ -3633,14 +3585,69 @@ if menu == "📦 Dashboard – Logística":
             "variação_participação_p.p.": "Variação Part. (p.p.)"
         }, inplace=True)
 
-        # 🧩 Verificação para evitar erro de exibição
-        if not colunas_existentes:
-            st.error("⚠️ Nenhuma das colunas esperadas foi encontrada no DataFrame.")
-            st.write("🔍 Colunas disponíveis:", list(merged.columns))
+        def highlight_variacao(val):
+            if isinstance(val, str) and val.endswith("%"):
+                try:
+                    num = float(val.replace("%", "").replace(",", "."))
+                    color = "#00ff2a" if num > 0 else "#f00000" if num < 0 else "inherit"
+                    return f"color: {color}; font-weight: 600;"
+                except:
+                    return ""
+            return ""
+
+        styled_df = comparativo.style.applymap(
+            highlight_variacao, subset=["Crescimento (%)", "Variação Part. (p.p.)"]
+        )
+        
+        st.dataframe(styled_df, use_container_width=True)
+
+        # =====================================================
+        # 💰 Tabela de custos — integração com Google Sheets
+        # =====================================================
+        SHEET_URL = "https://docs.google.com/spreadsheets/d/1WTEiRnm1OFxzn6ag1MfI8VnlQCbL8xwxY3LeanCsdxk/export?format=csv"
+
+        @st.cache_data(ttl=600)
+        def carregar_planilha_custos():
+            df = pd.read_csv(SHEET_URL)
+            df.columns = df.columns.str.strip().str.lower()
+
+            mapa = {}
+            for col in df.columns:
+                if "produto" in col:
+                    mapa[col] = "Produto"
+                elif "variante" in col:
+                    mapa[col] = "Variante"
+                elif "aliexpress" in col:
+                    mapa[col] = "Custo AliExpress (R$)"
+                elif "estoque" in col:
+                    mapa[col] = "Custo Estoque (R$)"
+
+            df.rename(columns=mapa, inplace=True)
+            return df
+
+        try:
+            df_custos = carregar_planilha_custos()
+        except Exception as e:
+            st.error(f"❌ Erro ao carregar planilha de custos: {e}")
             st.stop()
 
-        st.dataframe(merged[colunas_existentes], use_container_width=True)
-        st.info("💡 **💸 Custo Fornecedor Total (R$)** = (Custo AliExpress unitário × Saídas do Período A)")
+        # =====================================================
+        # 📋 Visualização de custos
+        # =====================================================
+        st.subheader("📋 Tabela de Custos (AliExpress vs Estoque)")
+        st.dataframe(df_custos, use_container_width=True)
+
+        for col in ["Custo AliExpress (R$)", "Custo Estoque (R$)"]:
+            if col in df_custos.columns:
+                df_custos[col] = (
+                    df_custos[col]
+                    .astype(str)
+                    .str.replace("R$", "", regex=False)
+                    .str.replace(",", ".")
+                    .str.strip()
+                    .replace("inexistente", np.nan)
+                    .astype(float)
+                )
 
     # =====================================================
     # 🚚 ABA 3 — ENTREGAS
