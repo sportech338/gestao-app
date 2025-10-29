@@ -3460,9 +3460,8 @@ if menu == "📦 Dashboard – Logística":
     # 📦 ABA 2 — ESTOQUE
     # =====================================================
     with aba2:
-        st.subheader("Análise de Estoque e Custos:")
-        st.caption("Comparativo de vendas, desempenho e custos por produto e variante.")
-
+        st.subheader("Comparativo de saídas por Variante:")
+        
         # =====================================================
         # 🔄 Carregamento de produtos e pedidos
         # =====================================================
@@ -3602,7 +3601,7 @@ if menu == "📦 Dashboard – Logística":
             highlight_variacao, subset=["Crescimento (%)", "Variação Part. (p.p.)"]
         )
 
-        st.subheader(f"📊 {produto_escolhido} — Comparativo de Vendas por Variante")
+        st.subheader(f"📊 {produto_escolhido}")
         st.dataframe(styled_df, use_container_width=True)
 
         # =====================================================
