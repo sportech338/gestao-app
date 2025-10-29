@@ -3538,6 +3538,18 @@ if menu == "📦 Dashboard – Logística":
             if c in comparativo.columns:
                 comparativo[c] = comparativo[c].apply(fmt_pct)
 
+        # 🧾 Renomear colunas para nomes mais clean
+        comparativo.rename(columns={
+            "variant_title": "Variante",
+            "qtd_A": "Qtd. Período A",
+            "qtd_B": "Qtd. Período B",
+            "diferença": "Diferença (unid.)",
+            "crescimento_%": "Crescimento (%)",
+            "participação_%_A": "Participação A (%)",
+            "participação_%_B": "Participação B (%)",
+            "variação_participação_p.p.": "Variação Part. (p.p.)"
+        }, inplace=True)
+
         # Exibir tabela
         st.subheader(f"📦 {produto_escolhido} — Comparativo de Vendas por Variante")
         st.dataframe(comparativo, use_container_width=True)
