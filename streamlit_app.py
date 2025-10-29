@@ -3602,17 +3602,19 @@ if menu == "📦 Dashboard – Logística":
         # =====================================================
         import gspread
         from google.oauth2.service_account import Credentials
+        import json
 
         def get_gsheet_client():
             scopes = [
                 "https://www.googleapis.com/auth/spreadsheets",
                 "https://www.googleapis.com/auth/drive"
             ]
-            creds = Credentials.from_service_account_info(
-                st.secrets["gcp_service_account"], scopes=scopes
-            )
+            # 🔧 Correção: converte secrets em dict JSON real (evita erro "Cannot convert str to bit stream")
+            creds_dict = json.loads(json.dumps(st.secrets["gcp_service_account"]))
+            creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
             client = gspread.authorize(creds)
             return client
+
 
         @st.cache_data(ttl=600)
         def carregar_planilha_custos():
