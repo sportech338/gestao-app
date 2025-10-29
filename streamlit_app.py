@@ -3693,6 +3693,18 @@ if menu == "📦 Dashboard – Logística":
 
 
         # =====================================================
+        # 💄 Formatação visual (exibir R$ 25,00 na tabela)
+        # =====================================================
+        df_display = df_custos.copy()
+        for col in ["Custo AliExpress (R$)", "Custo Estoque (R$)"]:
+            if col in df_display.columns:
+                df_display[col] = df_display[col].apply(
+                    lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                    if pd.notna(x) else ""
+                )
+
+
+        # =====================================================
         # 💰 Tabela 2 — Comparativo de Custos Totais (AliExpress)
         # =====================================================
         custos_ali = comparativo.merge(df_custos[["Variante", "Custo AliExpress (R$)"]], on="Variante", how="left")
@@ -3738,9 +3750,23 @@ if menu == "📦 Dashboard – Logística":
         # 📝 Edição direta da planilha no app
         # =====================================================
         st.subheader("📝 Custos por Variante")
-        edit_df = st.data_editor(df_custos, num_rows="dynamic", use_container_width=True)
+        edit_df = st.data_editor(df_display, num_rows="dynamic", use_container_width=True)
 
         if st.button("💾 Salvar alterações na planilha"):
+            # ⚙️ Converte R$ 25,00 → 25.00 antes de enviar
+            for col in ["Custo AliExpress (R$)", "Custo Estoque (R$)"]:
+                if col in edit_df.columns:
+                    edit_df[col] = (
+                        edit_df[col]
+                        .astype(str)
+                        .str.replace("R$", "", regex=False)
+                        .str.replace(".", "", regex=False)
+                        .str.replace(",", ".", regex=False)
+                        .str.strip()
+                        .replace("", np.nan)
+                        .astype(float)
+                    )
+
             atualizar_planilha_custos(edit_df)
             st.cache_data.clear()
             st.rerun()
