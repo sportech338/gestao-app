@@ -3135,11 +3135,12 @@ if menu == "📦 Dashboard – Logística":
     # =====================================================
     # 🗂️ Abas principais da Logística
     # =====================================================
-    aba1, aba2, aba3, aba4 = st.tabs([
+    aba1, aba2, aba3, aba4, aba5 = st.tabs([
         "📋 Controle Operacional",
         "📦 Estoque",
         "🚚 Entregas",
-        "📊 Análise de Saídas"
+        "📊 Análise de Saídas",
+        "💰 Controle de Custos"
     ])
 
     # =====================================================
@@ -3613,3 +3614,123 @@ if menu == "📦 Dashboard – Logística":
         # Exibir tabela
         st.subheader(f"📦 {produto_escolhido} — Comparativo de Vendas por Variante")
         st.dataframe(styled_df, use_container_width=True)
+
+    # =====================================================
+    # 💰 ABA 5 — CONTROLE DE CUSTOS
+    # =====================================================
+    with aba5:
+        st.title("💰 Controle de Custos")
+        st.caption("Comparativo de custos dos produtos entre AliExpress e Estoque interno.")
+
+        # =====================================================
+        # 🔗 Carregar dados direto do Google Sheets
+        # =====================================================
+        SHEET_URL = "https://docs.google.com/spreadsheets/d/1WTEiRnm1OFxzn6ag1MfI8VnlQCbL8xwxY3LeanCsdxk/export?format=csv"
+
+        @st.cache_data(ttl=600)
+        def carregar_planilha_custos():
+            df = pd.read_csv(SHEET_URL)
+            df.columns = df.columns.str.strip()
+            df.rename(columns={
+                "Controle de Custos": "Produto / Variante",
+                "Custo | Aliexpress": "Custo AliExpress (R$)",
+                "Custo | Estoque": "Custo Estoque (R$)"
+            }, inplace=True)
+            return df
+
+        try:
+            df_custos = carregar_planilha_custos()
+        except Exception as e:
+            st.error(f"❌ Erro ao carregar planilha: {e}")
+            st.stop()
+
+        # =====================================================
+        # 📋 Visualização geral
+        # =====================================================
+        st.subheader("📋 Tabela de Custos")
+        st.dataframe(df_custos, use_container_width=True)
+
+        # Converter colunas numéricas
+        for col in ["Custo AliExpress (R$)", "Custo Estoque (R$)"]:
+            df_custos[col] = (
+                df_custos[col]
+                .astype(str)
+                .str.replace("R$", "", regex=False)
+                .str.replace(",", ".")
+                .str.strip()
+                .replace("inexistente", np.nan)
+                .astype(float)
+            )
+
+        # =====================================================
+        # 🎛️ Filtro por produto
+        # =====================================================
+        produtos = df_custos["Produto / Variante"].dropna().unique().tolist()
+        produto_sel = st.selectbox("Selecione um produto/variante:", ["(Todos)"] + produtos)
+
+        df_filtrado = df_custos.copy()
+        if produto_sel != "(Todos)":
+            df_filtrado = df_custos[df_custos["Produto / Variante"] == produto_sel]
+
+        # =====================================================
+        # 📊 Gráfico comparativo
+        # =====================================================
+        df_plot = df_filtrado.dropna(subset=["Custo AliExpress (R$)", "Custo Estoque (R$)"])
+        if not df_plot.empty:
+            fig = go.Figure(data=[
+                go.Bar(
+                    name="AliExpress",
+                    x=df_plot["Produto / Variante"],
+                    y=df_plot["Custo AliExpress (R$)"]
+                ),
+                go.Bar(
+                    name="Estoque",
+                    x=df_plot["Produto / Variante"],
+                    y=df_plot["Custo Estoque (R$)"]
+                )
+            ])
+            fig.update_layout(
+                title="Comparativo de Custos (AliExpress vs Estoque)",
+                xaxis_title="Produto / Variante",
+                yaxis_title="Custo (R$)",
+                barmode="group",
+                template="plotly_white"
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.warning("⚠️ Nenhum dado numérico suficiente para gerar gráfico.")
+
+        # =====================================================
+        # 💸 Resumo e insights
+        # =====================================================
+        def formatar_moeda(v):
+            try:
+                return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            except:
+                return "—"
+
+        media_aliexpress = pd.to_numeric(df_filtrado["Custo AliExpress (R$)"], errors="coerce").mean()
+        media_estoque = pd.to_numeric(df_filtrado["Custo Estoque (R$)"], errors="coerce").mean()
+
+        col1, col2, col3 = st.columns(3)
+        col1.metric("💰 Média AliExpress", formatar_moeda(media_aliexpress))
+        col2.metric("🏭 Média Estoque", formatar_moeda(media_estoque))
+
+        if not np.isnan(media_aliexpress) and not np.isnan(media_estoque) and media_aliexpress > 0:
+            diff_pct = ((media_estoque - media_aliexpress) / media_aliexpress) * 100
+            cor = "🟢" if diff_pct < 0 else "🔴"
+            col3.metric("📈 Diferença Média", f"{cor} {diff_pct:+.1f}%")
+        else:
+            col3.metric("📈 Diferença Média", "—")
+
+        # =====================================================
+        # 📦 Identificação de gaps
+        # =====================================================
+        st.subheader("🔎 Custos faltantes")
+        faltantes = df_custos[
+            df_custos["Custo Estoque (R$)"].isna() | df_custos["Custo AliExpress (R$)"].isna()
+        ]
+        if faltantes.empty:
+            st.success("✅ Todos os produtos possuem custos registrados.")
+        else:
+            st.dataframe(faltantes, use_container_width=True)
