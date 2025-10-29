@@ -3415,20 +3415,20 @@ if menu == "📦 Dashboard – Logística":
     # 📦 ABA 2 — ESTOQUE
     # =====================================================
     with aba2:
-        st.title("📈 Análise de Saídas por Variante")
+        st.title("📈 Análise de Vendas por Variante")
 
+        # 1) Produtos podem vir do cache atual (não dependem de período)
         produtos = st.session_state.get("produtos", get_products_with_variants())
-        pedidos = st.session_state.get("pedidos", get_orders())
-
-        if pedidos.empty or produtos.empty:
-            st.warning("⚠️ É necessário carregar pedidos e produtos primeiro (na aba 1).")
+        if produtos.empty:
+            st.warning("⚠️ Nenhum produto encontrado.")
             st.stop()
 
-        # 🔽 Selecionar produto principal
-        produtos_unicos = sorted(pedidos["product_title"].dropna().unique().tolist())
+        # 2) Seleção de produto e períodos
+        produtos_unicos = sorted(st.session_state.get("pedidos", pd.DataFrame())
+                                 .get("product_title", pd.Series(dtype=str))
+                                 .dropna().unique().tolist() or produtos["product_title"].dropna().unique().tolist())
         produto_escolhido = st.selectbox("Selecione o produto:", produtos_unicos, index=0)
 
-        # 🔽 Selecionar períodos de comparação
         hoje = datetime.now(APP_TZ).date()
         semana_atual_inicio = hoje - timedelta(days=hoje.weekday())
         semana_anterior_inicio = semana_atual_inicio - timedelta(days=7)
@@ -3436,22 +3436,49 @@ if menu == "📦 Dashboard – Logística":
         col1, col2 = st.columns(2)
         with col1:
             inicio_a = st.date_input("📅 Início período A (ex: semana atual)", semana_atual_inicio)
-            fim_a = st.date_input("Fim período A", hoje)
+            fim_a    = st.date_input("Fim período A", hoje)
         with col2:
             inicio_b = st.date_input("📅 Início período B (comparar com...)", semana_anterior_inicio)
-            fim_b = st.date_input("Fim período B", semana_anterior_inicio + timedelta(days=6))
+            fim_b    = st.date_input("Fim período B", semana_anterior_inicio + timedelta(days=6))
+
+        # 3) Garanta que temos pedidos para TODO o intervalo combinado (independente da sidebar)
+        def ensure_orders_for_range(start_date, end_date):
+            loaded_range = st.session_state.get("periodo_atual")
+            pedidos_cached = st.session_state.get("pedidos", pd.DataFrame())
+
+            def range_covers(loaded, start_, end_):
+                return loaded and (loaded[0] <= start_ and loaded[1] >= end_)
+
+            if pedidos_cached.empty or (not range_covers(loaded_range, start_date, end_date)):
+                with st.spinner(f"🔄 Carregando pedidos da Shopify de {start_date:%d/%m/%Y} a {end_date:%d/%m/%Y}..."):
+                    pedidos_new = get_orders(start_date=start_date, end_date=end_date, only_paid=True)
+                    st.session_state["pedidos"] = pedidos_new
+                    st.session_state["periodo_atual"] = (start_date, end_date)
+                    return pedidos_new
+            return pedidos_cached
+
+        periodo_min = min(inicio_a, inicio_b)
+        periodo_max = max(fim_a, fim_b)
+        pedidos = ensure_orders_for_range(periodo_min, periodo_max)
+
+        if pedidos.empty:
+            st.warning("⚠️ Nenhum pedido encontrado no intervalo selecionado.")
+            st.stop()
+
+        # 4) Conversão robusta de datas e filtragem por produto/intervalos
+        pedidos = pedidos.copy()
+        pedidos["created_at"] = pd.to_datetime(pedidos["created_at"], utc=True, errors="coerce")\
+                                   .dt.tz_convert(APP_TZ).dt.tz_localize(None)
+
+        base_prod = pedidos[pedidos["product_title"] == produto_escolhido].copy()
 
         def filtrar_periodo(df, ini, fim):
-            return df[
-                (pd.to_datetime(df["created_at"]).dt.date >= ini) &
-                (pd.to_datetime(df["created_at"]).dt.date <= fim)
-            ].copy()
+            return df[(df["created_at"].dt.date >= ini) & (df["created_at"].dt.date <= fim)].copy()
 
-        base = pedidos[pedidos["product_title"] == produto_escolhido]
+        df_a = filtrar_periodo(base_prod, inicio_a, fim_a)
+        df_b = filtrar_periodo(base_prod, inicio_b, fim_b)
 
-        df_a = filtrar_periodo(base, inicio_a, fim_a)
-        df_b = filtrar_periodo(base, inicio_b, fim_b)
-
+        # 5) Agregação por variante e comparativo
         resumo_a = df_a.groupby("variant_title")["quantity"].sum().reset_index(name="qtd_A")
         resumo_b = df_b.groupby("variant_title")["quantity"].sum().reset_index(name="qtd_B")
 
@@ -3474,23 +3501,14 @@ if menu == "📦 Dashboard – Logística":
         )
 
         st.subheader(f"📦 {produto_escolhido} — Comparativo de Vendas")
-        st.dataframe(
-            comparativo.sort_values("qtd_A", ascending=False),
-            use_container_width=True
-        )
+        st.dataframe(comparativo.sort_values("qtd_A", ascending=False), use_container_width=True)
 
-        # 📊 Gráfico comparativo
+        # 6) Gráfico
         import plotly.graph_objects as go
         fig = go.Figure()
         fig.add_bar(x=comparativo["variant_title"], y=comparativo["qtd_A"], name="Período A")
         fig.add_bar(x=comparativo["variant_title"], y=comparativo["qtd_B"], name="Período B")
-        fig.update_layout(
-            barmode="group",
-            title="Comparativo de unidades vendidas por variante",
-            xaxis_title="Variante",
-            yaxis_title="Unidades vendidas",
-            legend_title="Período"
-        )
+        fig.update_layout(barmode="group", title="Comparativo de unidades vendidas por variante")
         st.plotly_chart(fig, use_container_width=True)
 
     # =====================================================
