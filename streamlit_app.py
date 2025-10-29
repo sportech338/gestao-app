@@ -3419,161 +3419,167 @@ if menu == "📦 Dashboard – Logística":
     # =====================================================
     # 🚚 ABA 3 — ENTREGAS
     # =====================================================
-        # =====================================================
-        # 📊 ABA 4 — INDICADORES
-        # =====================================================
-        with aba4:
-            st.subheader("📈 Análise de Saídas por Variante")
+    # =====================================================
+    # 📊 ABA 4 — INDICADORES
+    # =====================================================
+    with aba4:
+        st.subheader("📈 Análise de Saídas por Variante")
 
-            # 1) Produtos podem vir do cache atual (não dependem de período)
-            produtos = st.session_state.get("produtos", get_products_with_variants())
-            if produtos.empty:
-                st.warning("⚠️ Nenhum produto encontrado.")
-                st.stop()
+        # 1) Produtos podem vir do cache atual (não dependem de período)
+        produtos = st.session_state.get("produtos", get_products_with_variants())
+        if produtos.empty:
+            st.warning("⚠️ Nenhum produto encontrado.")
+            st.stop()
 
-            # 2) Seleção de produto e períodos
-            produtos_unicos = sorted(st.session_state.get("pedidos", pd.DataFrame())
-                                     .get("product_title", pd.Series(dtype=str))
-                                     .dropna().unique().tolist() or produtos["product_title"].dropna().unique().tolist())
-            produto_escolhido = st.selectbox("Selecione o produto:", produtos_unicos, index=0)
+        # 2) Seleção de produto e períodos
+        produtos_unicos = sorted(
+            st.session_state.get("pedidos", pd.DataFrame())
+            .get("product_title", pd.Series(dtype=str))
+            .dropna()
+            .unique()
+            .tolist()
+            or produtos["product_title"].dropna().unique().tolist()
+        )
+        produto_escolhido = st.selectbox("Selecione o produto:", produtos_unicos, index=0)
 
-            hoje = datetime.now(APP_TZ).date()
-            semana_atual_inicio = hoje - timedelta(days=hoje.weekday())
-            semana_anterior_inicio = semana_atual_inicio - timedelta(days=7)
+        hoje = datetime.now(APP_TZ).date()
+        semana_atual_inicio = hoje - timedelta(days=hoje.weekday())
+        semana_anterior_inicio = semana_atual_inicio - timedelta(days=7)
 
-            col1, col2 = st.columns(2)
+        col1, col2 = st.columns(2)
 
-            # 📅 Inverter ordem: primeiro Período B (comparativo)
-            with col1:
-                periodo_b = st.date_input(
-                    "📅 Período B (comparar com...)",  # vem primeiro
-                    (semana_anterior_inicio, semana_anterior_inicio + timedelta(days=6)),
-                    format="DD/MM/YYYY"
-                )
-            with col2:
-                periodo_a = st.date_input(
-                    "📅 Período A (atual ou mais recente)",  # vem depois
-                    (semana_atual_inicio, hoje),
-                    format="DD/MM/YYYY"
-                )
-
-            # Garantir que ambos são tuplas válidas (início e fim)
-            if isinstance(periodo_a, tuple) and len(periodo_a) == 2:
-                inicio_a, fim_a = periodo_a
-            else:
-                st.warning("⚠️ Selecione um intervalo completo para o Período A.")
-                st.stop()
-
-            if isinstance(periodo_b, tuple) and len(periodo_b) == 2:
-                inicio_b, fim_b = periodo_b
-            else:
-                st.warning("⚠️ Selecione um intervalo completo para o Período B.")
-                st.stop()
-
-            # 3) Garantir pedidos
-            def ensure_orders_for_range(start_date, end_date):
-                loaded_range = st.session_state.get("periodo_atual")
-                pedidos_cached = st.session_state.get("pedidos", pd.DataFrame())
-
-                def range_covers(loaded, start_, end_):
-                    return loaded and (loaded[0] <= start_ and loaded[1] >= end_)
-
-                if pedidos_cached.empty or (not range_covers(loaded_range, start_date, end_date)):
-                    with st.spinner(f"🔄 Carregando pedidos da Shopify de {start_date:%d/%m/%Y} a {end_date:%d/%m/%Y}..."):
-                        pedidos_new = get_orders(start_date=start_date, end_date=end_date, only_paid=True)
-                        st.session_state["pedidos"] = pedidos_new
-                        st.session_state["periodo_atual"] = (start_date, end_date)
-                        return pedidos_new
-                return pedidos_cached
-
-            periodo_min = min(inicio_a, inicio_b)
-            periodo_max = max(fim_a, fim_b)
-            pedidos = ensure_orders_for_range(periodo_min, periodo_max)
-
-            if pedidos.empty:
-                st.warning("⚠️ Nenhum pedido encontrado no intervalo selecionado.")
-                st.stop()
-
-            # 4) Preparar base
-            pedidos = pedidos.copy()
-            pedidos["created_at"] = pd.to_datetime(pedidos["created_at"], utc=True, errors="coerce") \
-                                       .dt.tz_convert(APP_TZ).dt.tz_localize(None)
-
-            base_prod = pedidos[pedidos["product_title"] == produto_escolhido].copy()
-
-            def filtrar_periodo(df, ini, fim):
-                return df[(df["created_at"].dt.date >= ini) & (df["created_at"].dt.date <= fim)].copy()
-
-            df_a = filtrar_periodo(base_prod, inicio_a, fim_a)
-            df_b = filtrar_periodo(base_prod, inicio_b, fim_b)
-
-            # 5) Agregação invertida (B vem antes de A)
-            resumo_a = df_a.groupby("variant_title")["quantity"].sum().reset_index(name="qtd_A")
-            resumo_b = df_b.groupby("variant_title")["quantity"].sum().reset_index(name="qtd_B")
-
-            comparativo = pd.merge(resumo_b, resumo_a, on="variant_title", how="outer").fillna(0)
-            comparativo["diferença"] = comparativo["qtd_A"] - comparativo["qtd_B"]
-            comparativo["crescimento_%"] = np.where(
-                comparativo["qtd_B"] > 0,
-                (comparativo["qtd_A"] - comparativo["qtd_B"]) / comparativo["qtd_B"] * 100,
-                np.nan
+        # 📅 Inverter ordem: primeiro Período B (comparativo)
+        with col1:
+            periodo_b = st.date_input(
+                "📅 Período B (comparar com...)",
+                (semana_anterior_inicio, semana_anterior_inicio + timedelta(days=6)),
+                format="DD/MM/YYYY"
             )
-            comparativo["participação_%_B"] = np.where(
-                comparativo["qtd_B"].sum() > 0,
-                comparativo["qtd_B"] / comparativo["qtd_B"].sum() * 100,
-                0
-            )
-            comparativo["participação_%_A"] = np.where(
-                comparativo["qtd_A"].sum() > 0,
-                comparativo["qtd_A"] / comparativo["qtd_A"].sum() * 100,
-                0
-            )
-            comparativo["variação_participação_p.p."] = comparativo["participação_%_A"] - comparativo["participação_%_B"]
-
-            comparativo = comparativo.sort_values("qtd_A", ascending=False).reset_index(drop=True)
-
-            # 🔢 Inteiros
-            for c in ["qtd_A", "qtd_B", "diferença"]:
-                if c in comparativo.columns:
-                    comparativo[c] = comparativo[c].astype(int)
-
-            # 📊 Percentuais
-            def fmt_pct(x):
-                if pd.isna(x):
-                    return "-"
-                return f"{x:.1f}%"
-
-            for c in ["crescimento_%", "participação_%_A", "participação_%_B", "variação_participação_p.p."]:
-                if c in comparativo.columns:
-                    comparativo[c] = comparativo[c].apply(fmt_pct)
-
-            # 🧾 Nomes ajustados (B vem antes de A)
-            comparativo.rename(columns={
-                "variant_title": "Variante",
-                "qtd_B": "Qtd. Período B",
-                "qtd_A": "Qtd. Período A",
-                "diferença": "Diferença (unid.)",
-                "crescimento_%": "Crescimento (%)",
-                "participação_%_B": "Participação B (%)",
-                "participação_%_A": "Participação A (%)",
-                "variação_participação_p.p.": "Variação Part. (p.p.)"
-            }, inplace=True)
-
-            # 🎨 Cores (verde/vermelho)
-            def highlight_variacao(val):
-                if isinstance(val, str) and val.endswith("%"):
-                    try:
-                        num = float(val.replace("%", "").replace(",", "."))
-                        color = "#00ff2a" if num > 0 else "#f00000" if num < 0 else "inherit"
-                        return f"color: {color}; font-weight: 600;"
-                    except:
-                        return ""
-                return ""
-
-            styled_df = comparativo.style.applymap(
-                highlight_variacao, subset=["Crescimento (%)", "Variação Part. (p.p.)"]
+        with col2:
+            periodo_a = st.date_input(
+                "📅 Período A (atual ou mais recente)",
+                (semana_atual_inicio, hoje),
+                format="DD/MM/YYYY"
             )
 
-            # Exibir
-            st.subheader(f"📦 {produto_escolhido} — Comparativo de Vendas por Variante")
-            st.dataframe(styled_df, use_container_width=True)
+        # Garantir que ambos são tuplas válidas (início e fim)
+        if isinstance(periodo_a, tuple) and len(periodo_a) == 2:
+            inicio_a, fim_a = periodo_a
+        else:
+            st.warning("⚠️ Selecione um intervalo completo para o Período A.")
+            st.stop()
+
+        if isinstance(periodo_b, tuple) and len(periodo_b) == 2:
+            inicio_b, fim_b = periodo_b
+        else:
+            st.warning("⚠️ Selecione um intervalo completo para o Período B.")
+            st.stop()
+
+        # 3) Garantir pedidos
+        def ensure_orders_for_range(start_date, end_date):
+            loaded_range = st.session_state.get("periodo_atual")
+            pedidos_cached = st.session_state.get("pedidos", pd.DataFrame())
+
+            def range_covers(loaded, start_, end_):
+                return loaded and (loaded[0] <= start_ and loaded[1] >= end_)
+
+            if pedidos_cached.empty or (not range_covers(loaded_range, start_date, end_date)):
+                with st.spinner(f"🔄 Carregando pedidos da Shopify de {start_date:%d/%m/%Y} a {end_date:%d/%m/%Y}..."):
+                    pedidos_new = get_orders(start_date=start_date, end_date=end_date, only_paid=True)
+                    st.session_state["pedidos"] = pedidos_new
+                    st.session_state["periodo_atual"] = (start_date, end_date)
+                    return pedidos_new
+            return pedidos_cached
+
+        periodo_min = min(inicio_a, inicio_b)
+        periodo_max = max(fim_a, fim_b)
+        pedidos = ensure_orders_for_range(periodo_min, periodo_max)
+
+        if pedidos.empty:
+            st.warning("⚠️ Nenhum pedido encontrado no intervalo selecionado.")
+            st.stop()
+
+        # 4) Preparar base
+        pedidos = pedidos.copy()
+        pedidos["created_at"] = pd.to_datetime(pedidos["created_at"], utc=True, errors="coerce") \
+            .dt.tz_convert(APP_TZ).dt.tz_localize(None)
+
+        base_prod = pedidos[pedidos["product_title"] == produto_escolhido].copy()
+
+        def filtrar_periodo(df, ini, fim):
+            return df[(df["created_at"].dt.date >= ini) & (df["created_at"].dt.date <= fim)].copy()
+
+        df_a = filtrar_periodo(base_prod, inicio_a, fim_a)
+        df_b = filtrar_periodo(base_prod, inicio_b, fim_b)
+
+        # 5) Agregação invertida (B vem antes de A)
+        resumo_a = df_a.groupby("variant_title")["quantity"].sum().reset_index(name="qtd_A")
+        resumo_b = df_b.groupby("variant_title")["quantity"].sum().reset_index(name="qtd_B")
+
+        comparativo = pd.merge(resumo_b, resumo_a, on="variant_title", how="outer").fillna(0)
+        comparativo["diferença"] = comparativo["qtd_A"] - comparativo["qtd_B"]
+        comparativo["crescimento_%"] = np.where(
+            comparativo["qtd_B"] > 0,
+            (comparativo["qtd_A"] - comparativo["qtd_B"]) / comparativo["qtd_B"] * 100,
+            np.nan
+        )
+        comparativo["participação_%_B"] = np.where(
+            comparativo["qtd_B"].sum() > 0,
+            comparativo["qtd_B"] / comparativo["qtd_B"].sum() * 100,
+            0
+        )
+        comparativo["participação_%_A"] = np.where(
+            comparativo["qtd_A"].sum() > 0,
+            comparativo["qtd_A"] / comparativo["qtd_A"].sum() * 100,
+            0
+        )
+        comparativo["variação_participação_p.p."] = comparativo["participação_%_A"] - comparativo["participação_%_B"]
+
+        comparativo = comparativo.sort_values("qtd_A", ascending=False).reset_index(drop=True)
+
+        # 🔢 Inteiros
+        for c in ["qtd_A", "qtd_B", "diferença"]:
+            if c in comparativo.columns:
+                comparativo[c] = comparativo[c].astype(int)
+
+        # 📊 Percentuais
+        def fmt_pct(x):
+            if pd.isna(x):
+                return "-"
+            return f"{x:.1f}%"
+
+        for c in ["crescimento_%", "participação_%_A", "participação_%_B", "variação_participação_p.p."]:
+            if c in comparativo.columns:
+                comparativo[c] = comparativo[c].apply(fmt_pct)
+
+        # 🧾 Nomes ajustados (B vem antes de A)
+        comparativo.rename(columns={
+            "variant_title": "Variante",
+            "qtd_B": "Qtd. Período B",
+            "qtd_A": "Qtd. Período A",
+            "diferença": "Diferença (unid.)",
+            "crescimento_%": "Crescimento (%)",
+            "participação_%_B": "Participação B (%)",
+            "participação_%_A": "Participação A (%)",
+            "variação_participação_p.p.": "Variação Part. (p.p.)"
+        }, inplace=True)
+
+        # 🎨 Cores (verde/vermelho)
+        def highlight_variacao(val):
+            if isinstance(val, str) and val.endswith("%"):
+                try:
+                    num = float(val.replace("%", "").replace(",", "."))
+                    color = "#00ff2a" if num > 0 else "#f00000" if num < 0 else "inherit"
+                    return f"color: {color}; font-weight: 600;"
+                except:
+                    return ""
+            return ""
+
+        styled_df = comparativo.style.applymap(
+            highlight_variacao, subset=["Crescimento (%)", "Variação Part. (p.p.)"]
+        )
+
+        # Exibir
+        st.subheader(f"📦 {produto_escolhido} — Comparativo de Vendas por Variante")
+        st.dataframe(styled_df, use_container_width=True)
+
