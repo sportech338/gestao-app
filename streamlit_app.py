@@ -3458,7 +3458,7 @@ if menu == "📦 Dashboard – Logística":
     # 📦 ABA 2 — ESTOQUE
     # =====================================================
     with aba2:
-        st.subheader("Comparativo de saídas por Variante:")
+        st.subheader("Comparativo de Saídas por Variante:")
 
         # =====================================================
         # 🔄 Carregamento de produtos e pedidos
@@ -3549,6 +3549,17 @@ if menu == "📦 Dashboard – Logística":
             (comparativo["qtd_A"] - comparativo["qtd_B"]) / comparativo["qtd_B"] * 100,
             np.nan
         )
+        comparativo["participação_%_A"] = np.where(
+            comparativo["qtd_A"].sum() > 0,
+            comparativo["qtd_A"] / comparativo["qtd_A"].sum() * 100,
+            0
+        )
+        comparativo["participação_%_B"] = np.where(
+            comparativo["qtd_B"].sum() > 0,
+            comparativo["qtd_B"] / comparativo["qtd_B"].sum() * 100,
+            0
+        )
+        comparativo["variação_participação_p.p."] = comparativo["participação_%_A"] - comparativo["participação_%_B"]
 
         comparativo = comparativo.sort_values("qtd_A", ascending=False).reset_index(drop=True)
 
@@ -3559,11 +3570,12 @@ if menu == "📦 Dashboard – Logística":
         def fmt_pct(x):
             return "-" if pd.isna(x) else f"{x:.1f}%"
 
-        if "crescimento_%" in comparativo.columns:
-            comparativo["crescimento_%"] = comparativo["crescimento_%"].apply(fmt_pct)
+        for c in ["crescimento_%", "participação_%_A", "participação_%_B", "variação_participação_p.p."]:
+            if c in comparativo.columns:
+                comparativo[c] = comparativo[c].apply(fmt_pct)
 
         # =====================================================
-        # 💰 Tabela de custos — integração com Google Sheets
+        # 💰 Carregar custos (Google Sheets)
         # =====================================================
         SHEET_URL = "https://docs.google.com/spreadsheets/d/1WTEiRnm1OFxzn6ag1MfI8VnlQCbL8xwxY3LeanCsdxk/export?format=csv"
 
@@ -3571,7 +3583,6 @@ if menu == "📦 Dashboard – Logística":
         def carregar_planilha_custos():
             df = pd.read_csv(SHEET_URL)
             df.columns = df.columns.str.strip().str.lower()
-
             mapa = {}
             for col in df.columns:
                 if "produto" in col:
@@ -3591,7 +3602,6 @@ if menu == "📦 Dashboard – Logística":
             st.error(f"❌ Erro ao carregar planilha de custos: {e}")
             st.stop()
 
-        # Converter custos para número
         for col in ["Custo AliExpress (R$)", "Custo Estoque (R$)"]:
             if col in df_custos.columns:
                 df_custos[col] = (
@@ -3605,9 +3615,8 @@ if menu == "📦 Dashboard – Logística":
                 )
 
         # =====================================================
-        # 📊 CRUZAMENTO — Saídas × Custos
+        # 🔗 CRUZAMENTO — Saídas x Custos
         # =====================================================
-        # Junta a tabela de saídas (comparativo) com custos (por variante)
         merged = comparativo.merge(
             df_custos,
             left_on="variant_title",
@@ -3615,39 +3624,52 @@ if menu == "📦 Dashboard – Logística":
             how="left"
         )
 
-        # Calcula custo total com fornecedor (com base no custo AliExpress e quantidade vendida no período A)
+        # 💸 Cálculo do custo total com o fornecedor
         merged["💸 Custo Fornecedor Total (R$)"] = merged["Custo AliExpress (R$)"] * merged["qtd_A"]
 
-        # Formata números
         def formatar_moeda(v):
             try:
                 return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
             except:
                 return "—"
 
-        if "💸 Custo Fornecedor Total (R$)" in merged.columns:
-            merged["💸 Custo Fornecedor Total (R$)"] = merged["💸 Custo Fornecedor Total (R$)"].apply(formatar_moeda)
-        if "Custo AliExpress (R$)" in merged.columns:
-            merged["Custo AliExpress (R$)"] = merged["Custo AliExpress (R$)"].apply(formatar_moeda)
+        for col in ["Custo AliExpress (R$)", "Custo Estoque (R$)", "💸 Custo Fornecedor Total (R$)"]:
+            if col in merged.columns:
+                merged[col] = merged[col].apply(formatar_moeda)
 
-        # Exibir tabela final
-        st.subheader("📋 Saídas + Custos do Fornecedor (AliExpress)")
+        # =====================================================
+        # 📋 Exibir tabela completa
+        # =====================================================
+        st.subheader("📋 Comparativo Completo — Saídas + Custos")
         st.dataframe(
-            merged[[
-                "variant_title",
-                "qtd_A",
-                "Custo AliExpress (R$)",
-                "💸 Custo Fornecedor Total (R$)",
-                "crescimento_%"
-            ]].rename(columns={
+            merged.rename(columns={
                 "variant_title": "Variante",
-                "qtd_A": "Qtd. Vendida (Período A)",
-                "crescimento_%": "Crescimento (%)"
-            }),
+                "qtd_A": "Qtd. Período A",
+                "qtd_B": "Qtd. Período B",
+                "diferença": "Diferença (unid.)",
+                "crescimento_%": "Crescimento (%)",
+                "participação_%_A": "Participação A (%)",
+                "participação_%_B": "Participação B (%)",
+                "variação_participação_p.p.": "Variação Part. (p.p.)"
+            })[
+                [
+                    "Variante",
+                    "Qtd. Período A",
+                    "Qtd. Período B",
+                    "Diferença (unid.)",
+                    "Crescimento (%)",
+                    "Participação A (%)",
+                    "Participação B (%)",
+                    "Variação Part. (p.p.)",
+                    "Custo AliExpress (R$)",
+                    "Custo Estoque (R$)",
+                    "💸 Custo Fornecedor Total (R$)"
+                ]
+            ],
             use_container_width=True
         )
 
-        st.info("💡 A coluna **Custo Fornecedor Total (R$)** representa o valor total estimado pago ao fornecedor, considerando as saídas do período A.")
+        st.info("💡 A coluna **💸 Custo Fornecedor Total (R$)** representa o valor total estimado pago ao fornecedor considerando as saídas do período A.")
 
     # =====================================================
     # 🚚 ABA 3 — ENTREGAS
