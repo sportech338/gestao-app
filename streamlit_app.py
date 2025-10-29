@@ -77,6 +77,7 @@ def get_products_with_variants(limit=250):
                 "sku": v.get("sku"),
                 "price": float(v.get("price") or 0),
                 "compare_at_price": float(v.get("compare_at_price") or 0),
+                "cost": float(v.get("cost") or 0), 
                 "inventory": v.get("inventory_quantity"),
             })
     return pd.DataFrame(rows)
@@ -3187,6 +3188,14 @@ if menu == "📦 Dashboard – Logística":
                 st.session_state["pedidos"] = pedidos
                 st.session_state["periodo_atual"] = (start_date, end_date)
             st.success(f"✅ Dados carregados de {start_date.strftime('%d/%m/%Y')} até {end_date.strftime('%d/%m/%Y')}")
+
+            # 🔍 TESTE: verificar se o campo "cost" está vindo da Shopify
+            if "cost" in produtos.columns:
+                st.subheader("🔍 Verificação de custos (teste)")
+                st.dataframe(produtos[["product_title", "variant_title", "price", "cost"]])
+            else:
+                st.warning("⚠️ O campo 'cost' não foi retornado pela Shopify. "
+                           "Verifique se o token tem permissão 'read_inventory'.")
         else:
             produtos = st.session_state.get("produtos", pd.DataFrame())
             pedidos = st.session_state.get("pedidos", pd.DataFrame())
@@ -3194,6 +3203,7 @@ if menu == "📦 Dashboard – Logística":
             if pedidos.empty:
                 st.warning("Nenhum dado carregado. Escolha um período ou realize uma busca.")
                 st.stop()
+
 
         # -------------------------------------------------
         # 🧩 Preparação dos dados
