@@ -3709,64 +3709,15 @@ if menu == "📦 Dashboard – Logística":
             use_container_width=True
         )
 
+
         # =====================================================
-        # 📝 Custos por Variante 
+        # 📝 Edição direta da planilha no app
         # =====================================================
         st.subheader("📝 Custos por Variante")
-
-        def fmt_moeda(valor):
-            """Formata valores numéricos como moeda brasileira (R$ xx,xx)."""
-            try:
-                if pd.isna(valor) or valor == "":
-                    return ""
-                return f"R$ {float(valor):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-            except:
-                return valor
-
-        # 🔄 Antes de exibir, garante que está numérico internamente
-        for col in ["Custo AliExpress (R$)", "Custo Estoque (R$)"]:
-            if col in df_custos.columns:
-                df_custos[col] = (
-                    df_custos[col]
-                    .astype(str)
-                    .str.replace("R$", "", regex=False)
-                    .str.replace(",", ".")
-                    .str.strip()
-                    .replace(["inexistente", ""], np.nan)
-                )
-                try:
-                    df_custos[col] = df_custos[col].astype(float)
-                except:
-                    pass
-
-        # 🔢 Mostra os valores formatados, mas mantém editável
-        df_editavel = df_custos.copy()
-        for col in ["Custo AliExpress (R$)", "Custo Estoque (R$)"]:
-            if col in df_editavel.columns:
-                df_editavel[col] = df_editavel[col].apply(fmt_moeda)
-
-        edit_df = st.data_editor(
-            df_editavel,
-            num_rows="dynamic",
-            use_container_width=True,
-            key="custos_edit",
-        )
+        edit_df = st.data_editor(df_custos, num_rows="dynamic", use_container_width=True)
 
         if st.button("💾 Salvar alterações na planilha"):
-            # 🔄 Remove o formato R$ antes de enviar
-            df_para_salvar = edit_df.copy()
-            for col in ["Custo AliExpress (R$)", "Custo Estoque (R$)"]:
-                if col in df_para_salvar.columns:
-                    df_para_salvar[col] = (
-                        df_para_salvar[col]
-                        .astype(str)
-                        .str.replace("R$", "", regex=False)
-                        .str.replace(".", "")
-                        .str.replace(",", ".")
-                        .str.strip()
-                        .replace(["inexistente", ""], np.nan)
-                    )
-            atualizar_planilha_custos(df_para_salvar)
+            atualizar_planilha_custos(edit_df)
 
     
     # =====================================================
