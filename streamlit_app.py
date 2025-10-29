@@ -3624,7 +3624,6 @@ if menu == "📦 Dashboard – Logística":
             return client
 
 
-
         @st.cache_data(ttl=600)
         def carregar_planilha_custos():
             client = get_gsheet_client()
@@ -3666,8 +3665,19 @@ if menu == "📦 Dashboard – Logística":
             except Exception as e:
                 st.error(f"❌ Erro ao atualizar planilha: {e}")
 
+
         # =====================================================
-        # 💸 Integração com o comparativo de custos
+        # 🔄 Carregar planilha de custos (antes de usar df_custos)
+        # =====================================================
+        try:
+            df_custos = carregar_planilha_custos()
+        except Exception as e:
+            st.error(f"❌ Erro ao carregar planilha de custos: {e}")
+            st.stop()
+
+
+        # =====================================================
+        # 💸 Normalização das colunas de custo
         # =====================================================
         for col in ["Custo AliExpress (R$)", "Custo Estoque (R$)"]:
             if col in df_custos.columns:
@@ -3677,9 +3687,10 @@ if menu == "📦 Dashboard – Logística":
                     .str.replace("R$", "", regex=False)
                     .str.replace(",", ".")
                     .str.strip()
-                    .replace("inexistente", np.nan)
+                    .replace(["inexistente", ""], np.nan)
                     .astype(float)
                 )
+
 
         # =====================================================
         # 💰 Tabela 2 — Comparativo de Custos Totais (AliExpress)
@@ -3703,6 +3714,7 @@ if menu == "📦 Dashboard – Logística":
             custos_ali[["Variante", "Custo Total A", "Custo Total B", "Diferença de Custo Total"]],
             use_container_width=True
         )
+
 
         # =====================================================
         # 🏷️ Tabela 3 — Comparativo de Custos Totais (Estoque)
