@@ -3551,7 +3551,7 @@ if menu == "📦 Dashboard – Logística":
                 return "-"
             return f"{x:.1f}%"
 
-        cols_pct = ["crescimento_%", "participação_%_A", "participação_%_B", "variação_participação_p.p."]
+        cols_pct = ["crescimento_%", "participação_%_B", "participação_%_A", "variação_participação_p.p."]
         for c in cols_pct:
             if c in comparativo.columns:
                 comparativo[c] = comparativo[c].apply(fmt_pct)
