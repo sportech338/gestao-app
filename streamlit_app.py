@@ -3609,9 +3609,9 @@ if menu == "📦 Dashboard – Logística":
                 "https://www.googleapis.com/auth/spreadsheets",
                 "https://www.googleapis.com/auth/drive"
             ]
-            # 🔧 Correção: converte secrets em dict JSON real (evita erro "Cannot convert str to bit stream")
-            creds_dict = json.loads(json.dumps(st.secrets["gcp_service_account"]))
-            creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
+            # 🔧 Correção final: converte AttrDict → dict antes de usar
+            gcp_info = dict(st.secrets["gcp_service_account"])
+            creds = Credentials.from_service_account_info(gcp_info, scopes=scopes)
             client = gspread.authorize(creds)
             return client
 
