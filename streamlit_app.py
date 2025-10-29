@@ -3458,7 +3458,7 @@ if menu == "📦 Dashboard – Logística":
     # 📦 ABA 2 — ESTOQUE
     # =====================================================
     with aba2:
-        st.subheader("📊 Comparativo de saídas por Variante + Custo Fornecedor")
+        st.subheader("Comparativo de saídas por Variante:")
 
         # =====================================================
         # 🔄 Carregamento de produtos e pedidos
