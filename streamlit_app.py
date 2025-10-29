@@ -3631,16 +3631,7 @@ if menu == "📦 Dashboard – Logística":
             sheet = client.open_by_key(st.secrets["sheets"]["spreadsheet_id"]).sheet1
             df = pd.DataFrame(sheet.get_all_records())
             df.columns = df.columns.str.strip()
-
-            mapa_colunas = {
-                "Produto": "Produto",
-                "Variantes": "Variante",
-                "Custo | Aliexpress": "Custo AliExpress (R$)",
-                "Custo | Estoque": "Custo Estoque (R$)",
-            }
-            df.rename(columns=mapa_colunas, inplace=True)
             return df
-
 
         def atualizar_planilha_custos(df):
             client = get_gsheet_client()
