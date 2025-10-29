@@ -3602,7 +3602,6 @@ if menu == "📦 Dashboard – Logística":
         # =====================================================
         import gspread
         from google.oauth2.service_account import Credentials
-        import json
 
         def get_gsheet_client():
             scopes = [
@@ -3610,17 +3609,19 @@ if menu == "📦 Dashboard – Logística":
                 "https://www.googleapis.com/auth/drive"
             ]
 
-            # 🔧 Converte AttrDict → dict
+            # 🔧 Corrige o formato da chave vinda do Streamlit secrets
             gcp_info = dict(st.secrets["gcp_service_account"])
 
-            # 🔧 Corrige as quebras de linha da chave privada
+            # Corrige as quebras de linha da private_key
             if isinstance(gcp_info.get("private_key"), str):
                 gcp_info["private_key"] = gcp_info["private_key"].replace("\\n", "\n")
 
-            # ✅ Usa from_service_account_info (não usa arquivo físico)
+            # ✅ Usa from_service_account_info (aceita dicionário, não arquivo)
             creds = Credentials.from_service_account_info(gcp_info, scopes=scopes)
-            client = gspread.authorize(creds)
+            client = gspread.Client(auth=creds)
+            client.session = gspread.auth.AuthorizedSession(creds)
             return client
+
 
 
         @st.cache_data(ttl=600)
