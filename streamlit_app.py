@@ -3521,7 +3521,7 @@ if menu == "📦 Dashboard – Logística":
             0
         )
 
-        st.subheader(f"📦 {produto_escolhido} — Comparativo de Vendas")
+        st.subheader(f"📦 {produto_escolhido} — Comparativo de Variantes")
         st.dataframe(comparativo.sort_values("qtd_A", ascending=False), use_container_width=True)
 
 
