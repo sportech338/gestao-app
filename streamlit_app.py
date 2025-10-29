@@ -3700,41 +3700,21 @@ if menu == "📦 Dashboard – Logística":
         # =====================================================
         if st.button("💾 Salvar alterações na planilha"):
             try:
-                import os
-                import gspread
-                import json
-                import base64
-                from google.oauth2.service_account import Credentials
+                # 🔐 Lê credenciais diretamente do secrets.toml (Streamlit Cloud)
+                gcp_info = st.secrets["gcp_service_account"]
 
-                # 🔐 Detecta ambiente: Streamlit Cloud ou GitHub
-                if "gcp_service_account" in st.secrets:
-                    # Ambiente Streamlit (usa secrets.toml)
-                    gcp_info = st.secrets["gcp_service_account"]
-                elif "GCP_SERVICE_ACCOUNT_B64" in os.environ:
-                    # Ambiente GitHub (usa variável Base64)
-                    gcp_json_str = base64.b64decode(os.environ["GCP_SERVICE_ACCOUNT_B64"]).decode("utf-8")
-                    gcp_info = json.loads(gcp_json_str)
-                else:
-                    st.error("❌ Nenhuma credencial GCP encontrada (verifique o secrets.toml ou o secret Base64 do GitHub).")
-                    st.stop()
-
-                # 🔑 Cria credencial do Google
+                # 🔑 Cria credencial e cliente
                 creds = Credentials.from_service_account_info(
                     gcp_info,
                     scopes=["https://www.googleapis.com/auth/spreadsheets"]
                 )
-
                 client = gspread.authorize(creds)
 
-                # ID da planilha
-                SHEET_ID = (
-                    st.secrets["google_sheets"]["sheet_id"]
-                    if "google_sheets" in st.secrets
-                    else "1WTEiRnm1OFxzn6ag1MfI8VnlQCbL8xwxY3LeanCsdxk"
-                )
+                # 📄 Pega o ID da planilha (vem do [google_sheets] no secrets.toml)
+                SHEET_ID = st.secrets["google_sheets"]["sheet_id"]
                 sheet = client.open_by_key(SHEET_ID).sheet1
 
-                # Atualizar dados
+                # ✏️ Atualiza os dados editados
                 sheet.update(
                     [custos_editados.columns.values.tolist()] + custos_editados.values.tolist()
                 )
