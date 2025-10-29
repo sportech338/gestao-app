@@ -61,11 +61,6 @@ def _get_session():
 # =====================================================
 @st.cache_data(ttl=600)
 def get_products_with_variants(limit=250):
-    """
-    Busca produtos e variantes com custo (cost).
-    1️⃣ Tenta via InventoryItem.unitCost (oficial)
-    2️⃣ Se não vier, busca metafield custom.custo_interno
-    """
     s = _get_session()
     url = f"{BASE_URL}/products.json?limit={limit}"
     all_products = []
@@ -87,69 +82,33 @@ def get_products_with_variants(limit=250):
                 "variant_title": v["title"],
                 "sku": v.get("sku"),
                 "price": float(v.get("price") or 0),
+                "compare_at_price": float(v.get("compare_at_price") or 0),
+                "inventory": v.get("inventory_quantity"),
                 "inventory_item_id": v.get("inventory_item_id"),
             })
 
     df_variants = pd.DataFrame(rows)
-    df_variants["cost"] = np.nan
 
-    # =========================
-    # 🔹 Tenta via GraphQL (unitCost + custom.custo_interno)
-    # =========================
-    gql_query = """
-    {
-      productVariants(first: 200) {
-        edges {
-          node {
-            id
-            sku
-            title
-            inventoryItem {
-              unitCost {
-                amount
-                currencyCode
-              }
-            }
-            metafield(namespace: "custom", key: "custo_interno") {
-              value
-            }
-          }
-        }
-      }
-    }
-    """
+    if not df_variants.empty and "inventory_item_id" in df_variants.columns:
+        inventory_ids = df_variants["inventory_item_id"].dropna().unique().tolist()
+        costs_rows = []
+        for i in range(0, len(inventory_ids), 100):
+            batch = inventory_ids[i:i + 100]
+            ids_param = ",".join(str(x) for x in batch)
+            inv_url = f"{BASE_URL}/inventory_items.json?ids={ids_param}"
+            inv_resp = s.get(inv_url, headers=HEADERS, timeout=60)
+            inv_resp.raise_for_status()
+            items = inv_resp.json().get("inventory_items", [])
+            for it in items:
+                costs_rows.append({
+                    "inventory_item_id": it["id"],
+                    "cost": float(it.get("cost") or 0)
+                })
 
-    resp = requests.post(f"{BASE_URL}/graphql.json", headers=HEADERS, json={"query": gql_query})
-    if resp.status_code == 200:
-        raw = resp.json()
-        st.write("🧩 Debug GraphQL:", raw)
-        data = raw.get("data", {}).get("productVariants", {}).get("edges", [])
-
-        for edge in data:
-            node = edge.get("node", {})
-            sku = node.get("sku")
-            custo = None
-
-            # 1️⃣ Metafield custom
-            meta = node.get("metafield")
-            if meta and meta.get("value"):
-                try:
-                    custo = float(meta["value"])
-                except:
-                    pass
-
-            # 2️⃣ Custo oficial do InventoryItem
-            inv = node.get("inventoryItem")
-            if not custo and inv and inv.get("unitCost"):
-                try:
-                    custo = float(inv["unitCost"]["amount"])
-                except:
-                    pass
-
-            if sku and custo is not None:
-                df_variants.loc[df_variants["sku"] == sku, "cost"] = custo
+        df_costs = pd.DataFrame(costs_rows)
+        df_variants = df_variants.merge(df_costs, on="inventory_item_id", how="left")
     else:
-        st.warning(f"⚠️ Erro ao buscar GraphQL: {resp.status_code} - {resp.text}")
+        df_variants["cost"] = np.nan
 
     return df_variants
 
@@ -3176,12 +3135,11 @@ if menu == "📦 Dashboard – Logística":
     # =====================================================
     # 🗂️ Abas principais da Logística
     # =====================================================
-    aba1, aba2, aba3, aba4, aba5 = st.tabs([
+    aba1, aba2, aba3, aba4 = st.tabs([
         "📋 Controle Operacional",
         "📦 Estoque",
         "🚚 Entregas",
-        "📊 Análise de Saídas",
-        "💸 Controle de Custos"
+        "📊 Análise de Saídas"
     ])
 
     # =====================================================
@@ -3262,17 +3220,12 @@ if menu == "📦 Dashboard – Logística":
             st.success(f"✅ Dados carregados de {start_date.strftime('%d/%m/%Y')} até {end_date.strftime('%d/%m/%Y')}")
 
         # -------------------------------------------------
-        # 🧩 Garantir que 'pedidos' e 'produtos' existam mesmo se ainda não foram carregados
+        # 🧩 Garantir que 'pedidos' existe mesmo se ainda não foi carregado
         # -------------------------------------------------
         if "pedidos" not in st.session_state or st.session_state["pedidos"].empty:
             pedidos = pd.DataFrame()
         else:
             pedidos = st.session_state["pedidos"]
-
-        if "produtos" not in st.session_state or st.session_state["produtos"].empty:
-            produtos = pd.DataFrame()
-        else:
-            produtos = st.session_state["produtos"]
 
         # -------------------------------------------------
         # 🧩 Preparação dos dados
@@ -3658,137 +3611,5 @@ if menu == "📦 Dashboard – Logística":
         )
 
         # Exibir tabela
-        st.subheader(f"📦 {produto_escolhido} — Comparativo de Saídas por Variante")
+        st.subheader(f"📦 {produto_escolhido} — Comparativo de Vendas por Variante")
         st.dataframe(styled_df, use_container_width=True)
-
-    # =====================================================
-    # 💸 ABA 5 — CONTROLE DE CUSTOS
-    # =====================================================
-    with aba5:
-        st.subheader("💸 Controle de Custos por Produto e Variante (Shopify)")
-        st.caption("Fonte: Shopify Admin API — Inventory Item Cost. Necessário escopo `read_inventory` e permissão de visualizar custos.")
-
-        # 1) Obter DF de variantes com custo; se não houver cache, busca agora
-        produtos_cost = st.session_state.get("produtos")
-        if produtos_cost is None or produtos_cost.empty or "cost" not in produtos_cost.columns:
-            with st.spinner("🔄 Carregando custos de variantes da Shopify..."):
-                produtos_cost = get_products_with_variants()
-                st.session_state["produtos"] = produtos_cost
-
-        if produtos_cost is None or produtos_cost.empty:
-            st.warning("⚠️ Não foi possível carregar variantes/custos.")
-            st.stop()
-
-        # 2) Higiene/garantias
-        dfp = produtos_cost.copy()
-        # Garantir colunas esperadas
-        for c in ["product_title", "variant_title", "sku", "price", "cost"]:
-            if c not in dfp.columns:
-                dfp[c] = np.nan
-
-        # Tipos numéricos
-        dfp["price"] = pd.to_numeric(dfp["price"], errors="coerce")
-        dfp["cost"]  = pd.to_numeric(dfp["cost"],  errors="coerce")
-
-        # 3) Métricas de custo por variante
-        dfp["margem_bruta"]   = dfp["price"] - dfp["cost"]
-        dfp["margem_%"]       = np.where(dfp["price"] > 0, (dfp["margem_bruta"] / dfp["price"]) * 100, np.nan)
-
-        # 4) Controles/filtragem no topo
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            prod_escolhido = st.selectbox("🧪 Filtrar por produto", ["(Todos)"] + sorted(dfp["product_title"].dropna().unique().tolist()))
-        with c2:
-            mostrar_apenas_com_custo = st.checkbox("Mostrar apenas variantes com custo preenchido", value=True)
-        with c3:
-            modo_ticket = st.selectbox(
-                "Cálculo de Ticket Médio (custo)",
-                ["Simples (média das variantes)","Ponderado por vendas (se disponível)"]
-            )
-
-        base_custos = dfp.copy()
-        if prod_escolhido != "(Todos)":
-            base_custos = base_custos[base_custos["product_title"] == prod_escolhido]
-        if mostrar_apenas_com_custo:
-            base_custos = base_custos[base_custos["cost"].notna() & (base_custos["cost"] > 0)]
-
-        if base_custos.empty:
-            st.info("Sem registros para os filtros.")
-            st.stop()
-
-        # 5) (Opcional) peso por vendas do período atual — usa pedidos já carregados na aba 1
-        pedidos_existentes = st.session_state.get("pedidos", pd.DataFrame())
-        vendas_por_variant = None
-        if modo_ticket.startswith("Ponderado") and not pedidos_existentes.empty:
-            # soma quantidade por variant_id (ou SKU se preferir)
-            tmp = pedidos_existentes.copy()
-            tmp["quantity"] = pd.to_numeric(tmp.get("quantity"), errors="coerce").fillna(0)
-            vendas_por_variant = tmp.groupby("variant_id")["quantity"].sum().rename("qtd_vendida")
-
-            base_custos = base_custos.merge(vendas_por_variant, how="left", left_on="variant_id", right_index=True)
-            base_custos["qtd_vendida"] = base_custos["qtd_vendida"].fillna(0)
-
-        # 6) Agrupar por produto e exibir com expanders (para “esconder” variantes)
-        produtos_unicos = base_custos["product_title"].dropna().unique().tolist()
-        produtos_unicos = sorted(produtos_unicos)
-
-        # Sumário geral
-        colA, colB, colC, colD = st.columns(4)
-        # Ticket médio geral (por custo)
-        if modo_ticket.startswith("Ponderado") and "qtd_vendida" in (base_custos.columns):
-            peso = base_custos["qtd_vendida"]
-            ticket_medio_geral = np.average(base_custos["cost"], weights=np.where(peso>0, peso, 1))
-        else:
-            ticket_medio_geral = base_custos["cost"].mean()
-
-        colA.metric("🧾 Produtos", len(produtos_unicos))
-        colB.metric("🔢 Variantes", len(base_custos))
-        colC.metric("💸 Ticket Médio (custo) — geral", f"R$ {ticket_medio_geral:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
-        colD.metric("📉 Menor custo (var.)", f"R$ {base_custos['cost'].min():,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
-
-        st.divider()
-
-        # 7) Loop por produto com expander + resumo e tabela de variantes
-        for produto in produtos_unicos:
-            bloco = base_custos[base_custos["product_title"] == produto].copy()
-
-            # Ticket médio por produto
-            if modo_ticket.startswith("Ponderado") and "qtd_vendida" in bloco.columns and bloco["qtd_vendida"].sum() > 0:
-                tm_prod = np.average(bloco["cost"], weights=bloco["qtd_vendida"])
-            else:
-                tm_prod = bloco["cost"].mean()
-
-            # KPIs do produto
-            k1 = f"R$ {tm_prod:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-            k2 = f"R$ {bloco['cost'].min():,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-            k3 = f"R$ {bloco['cost'].max():,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-            q_var = len(bloco)
-
-            with st.expander(f"🧷 {produto} — {q_var} variantes • Ticket Médio (custo): {k1} • Min: {k2} • Max: {k3}", expanded=False):
-                view = bloco[[
-                    "variant_title", "sku", "price", "cost", "margem_bruta", "margem_%"
-                ]].rename(columns={
-                    "variant_title":"Variante",
-                    "sku":"SKU",
-                    "price":"Preço",
-                    "cost":"Custo",
-                    "margem_bruta":"Margem (R$)",
-                    "margem_%":"Margem (%)"
-                }).sort_values("Custo", na_position="last")
-
-                # Formatação leve
-                view["Preço"]  = view["Preço"].apply(lambda v: f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") if pd.notna(v) else "—")
-                view["Custo"]  = view["Custo"].apply(lambda v: f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") if pd.notna(v) else "—")
-                view["Margem (R$)"] = view["Margem (R$)"].apply(lambda v: f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") if pd.notna(v) else "—")
-                view["Margem (%)"]  = view["Margem (%)"].apply(lambda v: f"{v:.1f}%" if pd.notna(v) else "—")
-
-                st.dataframe(view, use_container_width=True)
-
-        # 8) Nota sobre permissões/escopos (ajuda)
-        with st.expander("ℹ️ Ajuda sobre permissões e versões da API"):
-            st.markdown("""
-- Para ler o **custo** (COGS) por variante, garanta que o app tem o escopo **`read_inventory`** e que o usuário possui a permissão **View product costs**.  
-- REST: **InventoryItem** expõe o campo **`cost`**.  
-- GraphQL: **`inventoryItem.unitCost { amount, currencyCode }`**.  
-- Desde 2024, vários campos migraram de **Variant** para **InventoryItem**, então consulte sempre a versão mais recente da API.
-            """)
