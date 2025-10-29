@@ -3620,37 +3620,85 @@ if menu == "📦 Dashboard – Logística":
     # =====================================================
     with aba5:
         st.title("💰 Controle de Custos")
-        st.caption("Comparativo de custos dos produtos entre AliExpress e Estoque interno.")
+        st.caption("Planilha sincronizada com Google Sheets — alterações feitas aqui são salvas automaticamente.")
+
+        import gspread
+        from google.oauth2.service_account import Credentials
 
         # =====================================================
-        # 🔗 Carregar dados direto do Google Sheets
+        # 🔐 Autenticação via Service Account
         # =====================================================
-        SHEET_URL = "https://docs.google.com/spreadsheets/d/1WTEiRnm1OFxzn6ag1MfI8VnlQCbL8xwxY3LeanCsdxk/export?format=csv"
+        scope = ["https://www.googleapis.com/auth/spreadsheets"]
+        creds = Credentials.from_service_account_info(
+            st.secrets["gcp_service_account"],
+            scopes=scope
+        )
+        gc = gspread.authorize(creds)
 
-        @st.cache_data(ttl=600)
-        def carregar_planilha_custos():
-            df = pd.read_csv(SHEET_URL)
+        SHEET_ID = st.secrets["google_sheets"]["sheet_id"]
+        sheet = gc.open_by_key(SHEET_ID).sheet1
+
+        # =====================================================
+        # 📥 Ler dados da planilha
+        # =====================================================
+        @st.cache_data(ttl=300)
+        def carregar_planilha():
+            dados = sheet.get_all_records()
+            df = pd.DataFrame(dados)
             df.columns = df.columns.str.strip()
-            df.rename(columns={
-                "Controle de Custos": "Produto / Variante",
-                "Custo | Aliexpress": "Custo AliExpress (R$)",
-                "Custo | Estoque": "Custo Estoque (R$)"
-            }, inplace=True)
             return df
 
         try:
-            df_custos = carregar_planilha_custos()
+            df_custos = carregar_planilha()
         except Exception as e:
             st.error(f"❌ Erro ao carregar planilha: {e}")
             st.stop()
 
-        # =====================================================
-        # 📋 Visualização geral
-        # =====================================================
-        st.subheader("📋 Tabela de Custos")
-        st.dataframe(df_custos, use_container_width=True)
+        if df_custos.empty:
+            st.warning("⚠️ Nenhum dado encontrado na planilha.")
+            st.stop()
 
-        # Converter colunas numéricas
+        # Normalizar colunas esperadas
+        df_custos.rename(columns={
+            "Produto": "Produto",
+            "Variantes": "Variante",
+            "Custo | Aliexpress": "Custo AliExpress (R$)",
+            "Custo | Estoque": "Custo Estoque (R$)"
+        }, inplace=True)
+
+        st.subheader("📋 Controle de Custos")
+        st.caption("Edite diretamente na tabela abaixo. As alterações serão gravadas automaticamente no Google Sheets.")
+
+        # =====================================================
+        # 🧮 Editor de dados
+        # =====================================================
+        editado = st.data_editor(
+            df_custos,
+            use_container_width=True,
+            num_rows="dynamic",
+            key="controle_custos_editor"
+        )
+
+        # =====================================================
+        # 💾 Salvar alterações no Google Sheets
+        # =====================================================
+        if st.button("💾 Salvar alterações na planilha"):
+            try:
+                # Limpa conteúdo atual (mantendo cabeçalho)
+                sheet.clear()
+                sheet.update([editado.columns.values.tolist()] + editado.values.tolist())
+                st.success("✅ Alterações salvas com sucesso no Google Sheets!")
+                st.cache_data.clear()
+            except Exception as e:
+                st.error(f"❌ Erro ao salvar alterações: {e}")
+
+        # =====================================================
+        # 📊 Resumo e análises
+        # =====================================================
+        st.divider()
+        st.subheader("📈 Resumo de Custos")
+
+        # Converter custos para float
         for col in ["Custo AliExpress (R$)", "Custo Estoque (R$)"]:
             df_custos[col] = (
                 df_custos[col]
@@ -3662,75 +3710,28 @@ if menu == "📦 Dashboard – Logística":
                 .astype(float)
             )
 
-        # =====================================================
-        # 🎛️ Filtro por produto
-        # =====================================================
-        produtos = df_custos["Produto / Variante"].dropna().unique().tolist()
-        produto_sel = st.selectbox("Selecione um produto/variante:", ["(Todos)"] + produtos)
+        # Agrupar por produto
+        resumo = df_custos.groupby("Produto")[["Custo AliExpress (R$)", "Custo Estoque (R$)"]].mean().reset_index()
+        resumo["Diferença Média (%)"] = ((resumo["Custo Estoque (R$)"] - resumo["Custo AliExpress (R$)"]) / resumo["Custo AliExpress (R$)"] * 100).round(1)
 
-        df_filtrado = df_custos.copy()
-        if produto_sel != "(Todos)":
-            df_filtrado = df_custos[df_custos["Produto / Variante"] == produto_sel]
+        st.dataframe(resumo, use_container_width=True)
 
-        # =====================================================
         # 📊 Gráfico comparativo
-        # =====================================================
-        df_plot = df_filtrado.dropna(subset=["Custo AliExpress (R$)", "Custo Estoque (R$)"])
-        if not df_plot.empty:
-            fig = go.Figure(data=[
-                go.Bar(
-                    name="AliExpress",
-                    x=df_plot["Produto / Variante"],
-                    y=df_plot["Custo AliExpress (R$)"]
-                ),
-                go.Bar(
-                    name="Estoque",
-                    x=df_plot["Produto / Variante"],
-                    y=df_plot["Custo Estoque (R$)"]
-                )
-            ])
-            fig.update_layout(
-                title="Comparativo de Custos (AliExpress vs Estoque)",
-                xaxis_title="Produto / Variante",
-                yaxis_title="Custo (R$)",
-                barmode="group",
-                template="plotly_white"
-            )
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.warning("⚠️ Nenhum dado numérico suficiente para gerar gráfico.")
-
-        # =====================================================
-        # 💸 Resumo e insights
-        # =====================================================
-        def formatar_moeda(v):
-            try:
-                return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-            except:
-                return "—"
-
-        media_aliexpress = pd.to_numeric(df_filtrado["Custo AliExpress (R$)"], errors="coerce").mean()
-        media_estoque = pd.to_numeric(df_filtrado["Custo Estoque (R$)"], errors="coerce").mean()
-
-        col1, col2, col3 = st.columns(3)
-        col1.metric("💰 Média AliExpress", formatar_moeda(media_aliexpress))
-        col2.metric("🏭 Média Estoque", formatar_moeda(media_estoque))
-
-        if not np.isnan(media_aliexpress) and not np.isnan(media_estoque) and media_aliexpress > 0:
-            diff_pct = ((media_estoque - media_aliexpress) / media_aliexpress) * 100
-            cor = "🟢" if diff_pct < 0 else "🔴"
-            col3.metric("📈 Diferença Média", f"{cor} {diff_pct:+.1f}%")
-        else:
-            col3.metric("📈 Diferença Média", "—")
-
-        # =====================================================
-        # 📦 Identificação de gaps
-        # =====================================================
-        st.subheader("🔎 Custos faltantes")
-        faltantes = df_custos[
-            df_custos["Custo Estoque (R$)"].isna() | df_custos["Custo AliExpress (R$)"].isna()
-        ]
-        if faltantes.empty:
-            st.success("✅ Todos os produtos possuem custos registrados.")
-        else:
-            st.dataframe(faltantes, use_container_width=True)
+        fig = go.Figure()
+        fig.add_trace(go.Bar(
+            name="AliExpress",
+            x=resumo["Produto"],
+            y=resumo["Custo AliExpress (R$)"]
+        ))
+        fig.add_trace(go.Bar(
+            name="Estoque",
+            x=resumo["Produto"],
+            y=resumo["Custo Estoque (R$)"]
+        ))
+        fig.update_layout(
+            title="Comparativo de Custo Médio por Produto",
+            barmode="group",
+            template="plotly_white",
+            yaxis_title="Custo (R$)"
+        )
+        st.plotly_chart(fig, use_container_width=True)
