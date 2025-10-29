@@ -3537,6 +3537,12 @@ if menu == "📦 Dashboard – Logística":
         # Ordenar pelas vendas mais recentes
         comparativo = comparativo.sort_values("qtd_A", ascending=False).reset_index(drop=True)
 
+        # 🔢 Formatar números inteiros (quantidades e diferenças)
+        cols_int = ["qtd_A", "qtd_B", "diferença"]
+        for c in cols_int:
+            if c in comparativo.columns:
+                comparativo[c] = comparativo[c].astype(int)
+
         # 📊 Formatação de colunas numéricas em porcentagem
         def fmt_pct(x):
             if pd.isna(x):
