@@ -3419,8 +3419,6 @@ if menu == "📦 Dashboard – Logística":
     # =====================================================
     # 🚚 ABA 3 — ENTREGAS
     # =====================================================
-    with aba3:
-        st.info("📍 Em breve: status de fretes, prazos e devoluções.")
         # =====================================================
         # 📊 ABA 4 — INDICADORES
         # =====================================================
@@ -3579,4 +3577,3 @@ if menu == "📦 Dashboard – Logística":
             # Exibir
             st.subheader(f"📦 {produto_escolhido} — Comparativo de Vendas por Variante")
             st.dataframe(styled_df, use_container_width=True)
-
