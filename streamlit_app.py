@@ -3742,7 +3742,7 @@ if menu == "📦 Dashboard – Logística":
 
         if st.button("💾 Salvar alterações na planilha"):
             atualizar_planilha_custos(edit_df)
-            st.rerun()
+            st.cache_data.clear()
 
     # =====================================================
     # 🚚 ABA 3 — ENTREGAS
