@@ -3689,34 +3689,6 @@ if menu == "📦 Dashboard – Logística":
             df_filtrado = df_custos[df_custos["Produto"] == produto_sel]
 
         # =====================================================
-        # 📊 Gráfico comparativo
-        # =====================================================
-        df_plot = df_filtrado.dropna(subset=["Custo AliExpress (R$)", "Custo Estoque (R$)"])
-        if not df_plot.empty:
-            fig = go.Figure(data=[
-                go.Bar(
-                    name="AliExpress",
-                    x=df_plot["Produto / Variante"],
-                    y=df_plot["Custo AliExpress (R$)"]
-                ),
-                go.Bar(
-                    name="Estoque",
-                    x=df_plot["Produto / Variante"],
-                    y=df_plot["Custo Estoque (R$)"]
-                )
-            ])
-            fig.update_layout(
-                title="Comparativo de Custos (AliExpress vs Estoque)",
-                xaxis_title="Produto / Variante",
-                yaxis_title="Custo (R$)",
-                barmode="group",
-                template="plotly_white"
-            )
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.warning("⚠️ Nenhum dado numérico suficiente para gerar gráfico.")
-
-        # =====================================================
         # 💸 Resumo e insights
         # =====================================================
         def formatar_moeda(v):
