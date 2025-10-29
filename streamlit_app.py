@@ -3557,44 +3557,22 @@ if menu == "📦 Dashboard – Logística":
         # Ordenar pelas vendas mais recentes
         comparativo = comparativo.sort_values("qtd_A", ascending=False).reset_index(drop=True)
 
-        # 💰 Integração de custo por variante
-        produtos_variantes = st.session_state.get("produtos", get_products_with_variants())
-        comparativo = comparativo.merge(
-            produtos_variantes[["variant_title", "cost"]],
-            on="variant_title",
-            how="left"
-        )
-        comparativo["Custo Unitário (R$)"] = comparativo["cost"].fillna(0).round(2)
-        comparativo["Custo Total A (R$)"] = (comparativo["Custo Unitário (R$)"] * comparativo["qtd_A"]).round(2)
-        comparativo["Custo Total B (R$)"] = (comparativo["Custo Unitário (R$)"] * comparativo["qtd_B"]).round(2)
-        comparativo.drop(columns=["cost"], inplace=True)
-
         # 🔢 Formatar números inteiros (quantidades e diferenças)
         cols_int = ["qtd_A", "qtd_B", "diferença"]
         for c in cols_int:
             if c in comparativo.columns:
                 comparativo[c] = comparativo[c].astype(int)
 
-        # 📊 Formatação de colunas numéricas
+        # 📊 Formatação de colunas numéricas em porcentagem
         def fmt_pct(x):
             if pd.isna(x):
                 return "-"
             return f"{x:.1f}%"
 
-        def fmt_moeda(v):
-            if pd.isna(v) or v == 0:
-                return "-"
-            return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-
         cols_pct = ["crescimento_%", "participação_%_A", "participação_%_B", "variação_participação_p.p."]
-        cols_money = ["Custo Unitário (R$)", "Custo Total A (R$)", "Custo Total B (R$)"]
-
         for c in cols_pct:
             if c in comparativo.columns:
                 comparativo[c] = comparativo[c].apply(fmt_pct)
-        for c in cols_money:
-            if c in comparativo.columns:
-                comparativo[c] = comparativo[c].apply(fmt_moeda)
 
         # 🧾 Renomear colunas para nomes mais clean
         comparativo.rename(columns={
@@ -3619,25 +3597,11 @@ if menu == "📦 Dashboard – Logística":
                     return ""
             return ""
 
+        # Criar estilo de dataframe com coloração nas colunas de comparação
         styled_df = comparativo.style.applymap(
             highlight_variacao, subset=["Crescimento (%)", "Variação Part. (p.p.)"]
         )
 
         # Exibir tabela
-        st.subheader(f"📦 {produto_escolhido} — Comparativo de Vendas por Variante (com Custo)")
+        st.subheader(f"📦 {produto_escolhido} — Comparativo de Vendas por Variante")
         st.dataframe(styled_df, use_container_width=True)
-
-        # 💵 Totais gerais de custo
-        total_a = pd.to_numeric(
-            comparativo["Custo Total A (R$)"].str.replace("R$", "").str.replace(".", "").str.replace(",", ".").str.strip(),
-            errors="coerce"
-        ).sum()
-        total_b = pd.to_numeric(
-            comparativo["Custo Total B (R$)"].str.replace("R$", "").str.replace(".", "").str.replace(",", ".").str.strip(),
-            errors="coerce"
-        ).sum()
-
-        st.markdown(f"""
-        **💵 Total de custo no Período A:** R$ {total_a:,.2f}  
-        **💵 Total de custo no Período B:** R$ {total_b:,.2f}
-        """.replace(",", "X").replace(".", ",").replace("X", "."))
