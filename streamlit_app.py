@@ -3434,12 +3434,33 @@ if menu == "📦 Dashboard – Logística":
         semana_anterior_inicio = semana_atual_inicio - timedelta(days=7)
 
         col1, col2 = st.columns(2)
+
+        # 📅 Selecionar intervalo completo para período A e B
         with col1:
-            inicio_a = st.date_input("📅 Início período A (ex: semana atual)", semana_atual_inicio)
-            fim_a    = st.date_input("Fim período A", hoje)
+            periodo_a = st.date_input(
+                "📅 Período A (ex: semana atual)",
+                (semana_atual_inicio, hoje),
+                format="YYYY/MM/DD"
+            )
         with col2:
-            inicio_b = st.date_input("📅 Início período B (comparar com...)", semana_anterior_inicio)
-            fim_b    = st.date_input("Fim período B", semana_anterior_inicio + timedelta(days=6))
+            periodo_b = st.date_input(
+                "📅 Período B (comparar com...)",
+                (semana_anterior_inicio, semana_anterior_inicio + timedelta(days=6)),
+                format="YYYY/MM/DD"
+            )
+
+        # Garantir que ambos são tuplas válidas (início e fim)
+        if isinstance(periodo_a, tuple) and len(periodo_a) == 2:
+            inicio_a, fim_a = periodo_a
+        else:
+            st.warning("⚠️ Selecione um intervalo completo para o Período A.")
+            st.stop()
+
+        if isinstance(periodo_b, tuple) and len(periodo_b) == 2:
+            inicio_b, fim_b = periodo_b
+        else:
+            st.warning("⚠️ Selecione um intervalo completo para o Período B.")
+            st.stop()
 
         # 3) Garanta que temos pedidos para TODO o intervalo combinado (independente da sidebar)
         def ensure_orders_for_range(start_date, end_date):
