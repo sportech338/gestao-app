@@ -3598,26 +3598,35 @@ if menu == "📦 Dashboard – Logística":
         st.dataframe(styled_df, use_container_width=True)
 
         # =====================================================
-        # 💰 Tabelas de custo — integração com Google Sheets
+        # 💰 Tabelas de custo — integração com Google Sheets (edição direta)
         # =====================================================
-        SHEET_URL = "https://docs.google.com/spreadsheets/d/1WTEiRnm1OFxzn6ag1MfI8VnlQCbL8xwxY3LeanCsdxk/export?format=csv"
+        import gspread
+        from google.oauth2.service_account import Credentials
+
+        def get_gsheet_client():
+            scopes = [
+                "https://www.googleapis.com/auth/spreadsheets",
+                "https://www.googleapis.com/auth/drive"
+            ]
+            creds = Credentials.from_service_account_info(
+                st.secrets["gcp_service_account"], scopes=scopes
+            )
+            client = gspread.authorize(creds)
+            return client
 
         @st.cache_data(ttl=600)
         def carregar_planilha_custos():
-            df = pd.read_csv(SHEET_URL)
-            df.columns = df.columns.str.strip().str.lower()
-            mapa = {}
-            for col in df.columns:
-                if "produto" in col:
-                    mapa[col] = "Produto"
-                elif "variante" in col:
-                    mapa[col] = "Variante"
-                elif "aliexpress" in col:
-                    mapa[col] = "Custo AliExpress (R$)"
-                elif "estoque" in col:
-                    mapa[col] = "Custo Estoque (R$)"
-            df.rename(columns=mapa, inplace=True)
+            client = get_gsheet_client()
+            sheet = client.open_by_key(st.secrets["sheets"]["spreadsheet_id"]).sheet1
+            df = pd.DataFrame(sheet.get_all_records())
+            df.columns = df.columns.str.strip()
             return df
+
+        def atualizar_planilha_custos(df):
+            client = get_gsheet_client()
+            sheet = client.open_by_key(st.secrets["sheets"]["spreadsheet_id"]).sheet1
+            sheet.update([df.columns.values.tolist()] + df.values.tolist())
+            st.success("✅ Planilha atualizada com sucesso!")
 
         try:
             df_custos = carregar_planilha_custos()
@@ -3625,6 +3634,18 @@ if menu == "📦 Dashboard – Logística":
             st.error(f"❌ Erro ao carregar planilha de custos: {e}")
             st.stop()
 
+        # =====================================================
+        # 📝 Edição direta da planilha no app
+        # =====================================================
+        st.subheader("📝 Editar custos manualmente")
+        edit_df = st.data_editor(df_custos, num_rows="dynamic", use_container_width=True)
+
+        if st.button("💾 Salvar alterações na planilha"):
+            atualizar_planilha_custos(edit_df)
+
+        # =====================================================
+        # 💸 Integração com o comparativo de custos
+        # =====================================================
         for col in ["Custo AliExpress (R$)", "Custo Estoque (R$)"]:
             if col in df_custos.columns:
                 df_custos[col] = (
@@ -3638,7 +3659,7 @@ if menu == "📦 Dashboard – Logística":
                 )
 
         # =====================================================
-        # 💸 Tabela 2 — Custos Totais (AliExpress)
+        # 💰 Tabela 2 — Comparativo de Custos Totais (AliExpress)
         # =====================================================
         custos_ali = comparativo.merge(df_custos[["Variante", "Custo AliExpress (R$)"]], on="Variante", how="left")
         custos_ali["Custo Total A"] = custos_ali["Custo AliExpress (R$)"] * custos_ali["Qtd. Período A"]
@@ -3661,7 +3682,7 @@ if menu == "📦 Dashboard – Logística":
         )
 
         # =====================================================
-        # 🏷️ Tabela 3 — Custos Totais (Estoque)
+        # 🏷️ Tabela 3 — Comparativo de Custos Totais (Estoque)
         # =====================================================
         custos_est = comparativo.merge(df_custos[["Variante", "Custo Estoque (R$)"]], on="Variante", how="left")
         custos_est["Custo Total A"] = custos_est["Custo Estoque (R$)"] * custos_est["Qtd. Período A"]
