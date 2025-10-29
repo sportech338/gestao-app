@@ -8,7 +8,11 @@ openpyxl
 XlsxWriter==3.2.0
 facebook-business==19.0.0
 requests>=2.31.0
-gspread
-google-auth
-streamlit-date-picker==0.0.4
 
+gspread==6.1.4
+google-auth==2.35.0
+google-auth-oauthlib==1.2.1
+google-api-python-client==2.156.0
+
+streamlit-date-picker==0.0.4
+certifi
