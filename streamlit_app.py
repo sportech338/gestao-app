@@ -3446,18 +3446,16 @@ if menu == "📦 Dashboard – Logística":
         col1, col2 = st.columns(2)
 
         # 📅 Selecionar intervalo completo para período A e B (formato: dia/mês/ano)
-
         with col1:
-            periodo_b = st.date_input(
-                "📅 Período A (comparar):",
-                (semana_anterior_inicio, semana_anterior_inicio + timedelta(days=6)),
+            periodo_a = st.date_input(
+                "📅 Período A (mais recente):",
+                (semana_atual_inicio, hoje),
                 format="DD/MM/YYYY"
             )
-        
         with col2:
-            periodo_a = st.date_input(
-                "📅 Período B (mais recente):",
-                (semana_atual_inicio, hoje),
+            periodo_b = st.date_input(
+                "📅 Período B (comparar):",
+                (semana_anterior_inicio, semana_anterior_inicio + timedelta(days=6)),
                 format="DD/MM/YYYY"
             )
 
