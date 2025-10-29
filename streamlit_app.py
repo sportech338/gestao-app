@@ -133,10 +133,15 @@ def get_products_with_variants(limit=250):
             }
           }
         }
-        """
+        """.strip()
+
         resp = requests.post(f"{BASE_URL}/graphql.json", headers=HEADERS, json={"query": gql_query})
+
         if resp.status_code == 200:
-            data = resp.json().get("data", {}).get("productVariants", {}).get("edges", [])
+            raw = resp.json()
+            st.write("🧩 Debug GraphQL:", raw)  # 👈 Adiciona saída bruta para depuração
+            data = raw.get("data", {}).get("productVariants", {}).get("edges", [])
+
             for edge in data:
                 node = edge.get("node", {})
                 sku = node.get("sku")
@@ -145,8 +150,9 @@ def get_products_with_variants(limit=250):
                     try:
                         custo_val = float(meta["value"])
                         df_variants.loc[df_variants["sku"] == sku, "cost"] = custo_val
-                    except:
-                        pass
+                    except Exception as e:
+                        st.warning(f"⚠️ Erro ao converter custo da SKU {sku}: {e}")
+
         else:
             st.warning(f"⚠️ Erro ao buscar metafields GraphQL: {resp.status_code} - {resp.text}")
 
