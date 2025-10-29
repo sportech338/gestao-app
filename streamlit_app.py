@@ -3220,6 +3220,14 @@ if menu == "📦 Dashboard – Logística":
             st.success(f"✅ Dados carregados de {start_date.strftime('%d/%m/%Y')} até {end_date.strftime('%d/%m/%Y')}")
 
         # -------------------------------------------------
+        # 🧩 Garantir que 'pedidos' existe mesmo se ainda não foi carregado
+        # -------------------------------------------------
+        if "pedidos" not in st.session_state or st.session_state["pedidos"].empty:
+            pedidos = pd.DataFrame()
+        else:
+            pedidos = st.session_state["pedidos"]
+
+        # -------------------------------------------------
         # 🧩 Preparação dos dados
         # -------------------------------------------------
         for col in ["order_id", "order_number", "financial_status", "fulfillment_status"]:
