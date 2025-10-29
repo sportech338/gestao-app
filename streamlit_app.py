@@ -3610,10 +3610,14 @@ if menu == "📦 Dashboard – Logística":
                 "https://www.googleapis.com/auth/drive"
             ]
 
-            # 🔧 Converte AttrDict → dict e corrige as quebras de linha da chave privada
+            # 🔧 Converte AttrDict → dict
             gcp_info = dict(st.secrets["gcp_service_account"])
-            gcp_info["private_key"] = gcp_info["private_key"].replace("\\n", "\n")
 
+            # 🔧 Corrige as quebras de linha da chave privada
+            if isinstance(gcp_info.get("private_key"), str):
+                gcp_info["private_key"] = gcp_info["private_key"].replace("\\n", "\n")
+
+            # ✅ Usa from_service_account_info (não usa arquivo físico)
             creds = Credentials.from_service_account_info(gcp_info, scopes=scopes)
             client = gspread.authorize(creds)
             return client
