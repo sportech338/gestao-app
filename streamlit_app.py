@@ -3220,22 +3220,6 @@ if menu == "📦 Dashboard – Logística":
                 st.session_state["periodo_atual"] = (start_date, end_date)
             st.success(f"✅ Dados carregados de {start_date.strftime('%d/%m/%Y')} até {end_date.strftime('%d/%m/%Y')}")
 
-            # 🔍 TESTE: verificar se o campo "cost" está vindo da Shopify
-            if "cost" in produtos.columns:
-                st.subheader("🔍 Verificação de custos (teste)")
-                st.dataframe(produtos[["product_title", "variant_title", "price", "cost"]])
-            else:
-                st.warning("⚠️ O campo 'cost' não foi retornado pela Shopify. "
-                           "Verifique se o token tem permissão 'read_inventory'.")
-        else:
-            produtos = st.session_state.get("produtos", pd.DataFrame())
-            pedidos = st.session_state.get("pedidos", pd.DataFrame())
-
-            if pedidos.empty:
-                st.warning("Nenhum dado carregado. Escolha um período ou realize uma busca.")
-                st.stop()
-
-
         # -------------------------------------------------
         # 🧩 Preparação dos dados
         # -------------------------------------------------
