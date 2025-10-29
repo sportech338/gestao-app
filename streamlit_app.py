@@ -1112,7 +1112,7 @@ if menu == "📊 Dashboard – Tráfego Pago":
     token = None
 
     with st.sidebar:
-        st.markdown("## ⚙️ Configuração — Tráfego Pago")
+        st.markdown("## ⚙️ Configuração:")
 
         act_id_input = st.text_input("Ad Account ID", placeholder="ex.: 1234567890")
         if act_id_input and not act_id_input.isdigit():
