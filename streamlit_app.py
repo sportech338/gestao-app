@@ -3524,6 +3524,64 @@ if menu == "📦 Dashboard – Logística":
         st.subheader(f"📦 {produto_escolhido} — Comparativo de Vendas")
         st.dataframe(comparativo.sort_values("qtd_A", ascending=False), use_container_width=True)
 
+        # =====================================================
+        # 🔎 INTERPRETAÇÃO GERENCIAL AUTOMÁTICA
+        # =====================================================
+        st.markdown("### 🔎 INTERPRETAÇÃO GERENCIAL")
+
+        if comparativo.empty:
+            st.info("Nenhum dado para interpretar nos períodos selecionados.")
+        else:
+            # Vendas totais
+            total_a = comparativo["qtd_A"].sum()
+            total_b = comparativo["qtd_B"].sum()
+
+            # Crescimento geral
+            if total_b > 0:
+                crescimento_geral = ((total_a - total_b) / total_b) * 100
+            else:
+                crescimento_geral = 0
+
+            # Variante líder por participação no período A
+            variante_lider = comparativo.loc[comparativo["participação_%_A"].idxmax(), "variant_title"]
+            participacao_lider = comparativo["participação_%_A"].max()
+
+            # Desvio padrão entre variações individuais (para ver se a queda é homogênea)
+            variacoes = comparativo["crescimento_%"].dropna()
+            if not variacoes.empty:
+                desvio = variacoes.std()
+            else:
+                desvio = 0
+
+            # Interpretação automática
+            interpretacao = []
+
+            if crescimento_geral < 0:
+                interpretacao.append(f"Todas (ou a maioria das) variantes apresentaram queda na semana mais recente **({crescimento_geral:.1f}% abaixo do período anterior)**.")
+            elif crescimento_geral > 0:
+                interpretacao.append(f"O volume total aumentou **{crescimento_geral:.1f}%** em relação ao período anterior.")
+            else:
+                interpretacao.append("As vendas totais ficaram estáveis entre os períodos comparados.")
+
+            # Homogeneidade da queda
+            if desvio < 10:
+                interpretacao.append("A variação foi **proporcional entre as variantes**, indicando uma mudança geral de demanda (e não canibalização entre kits).")
+            else:
+                interpretacao.append("As variações foram **heterogêneas**, sugerindo que algumas variantes performaram melhor que outras.")
+
+            # Liderança de mix
+            interpretacao.append(f"A variante **{variante_lider}** manteve a liderança, representando **{participacao_lider:.1f}%** das vendas totais do período A.")
+
+            # Conclusão estratégica
+            if crescimento_geral < 0 and desvio < 10:
+                interpretacao.append("👉 **Indicativo:** o problema está provavelmente no volume total (tráfego ou conversão), e não na composição dos kits.")
+            elif crescimento_geral < 0 and desvio >= 10:
+                interpretacao.append("👉 **Indicativo:** revisar posicionamento de variantes com maiores quedas — pode haver deslocamento de preferência entre kits.")
+            else:
+                interpretacao.append("👉 **Indicativo:** manter estratégia atual e continuar monitorando as proporções de venda.")
+
+            st.markdown("\n".join(interpretacao))
+
         # 6) Gráfico
         import plotly.graph_objects as go
         fig = go.Figure()
