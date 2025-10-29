@@ -3139,8 +3139,7 @@ if menu == "📦 Dashboard – Logística":
         "📋 Controle Operacional",
         "📦 Estoque",
         "🚚 Entregas",
-        "📊 Análise de Saídas",
-        "💰 Controle de Custos"
+        "📊 Análise de Saídas"
     ])
 
     # =====================================================
@@ -3462,7 +3461,104 @@ if menu == "📦 Dashboard – Logística":
     # 📦 ABA 2 — ESTOQUE
     # =====================================================
     with aba2:
-         st.info("📈 Em breve: métricas de performance logística e eficiência operacional.")
+        SHEET_URL = "https://docs.google.com/spreadsheets/d/1WTEiRnm1OFxzn6ag1MfI8VnlQCbL8xwxY3LeanCsdxk/export?format=csv"
+
+        @st.cache_data(ttl=600)
+        def carregar_planilha_custos():
+            df = pd.read_csv(SHEET_URL)
+            df.columns = df.columns.str.strip()
+
+            # Normaliza nomes de colunas (sem case-sensitive)
+            colunas = {c.lower().strip(): c for c in df.columns}
+
+            # Mapeamento dinâmico
+            mapa = {}
+            for nome in df.columns:
+                n = nome.lower().strip()
+                if "produto" in n:
+                    mapa[nome] = "Produto"
+                elif "variante" in n:
+                    mapa[nome] = "Variantes"
+                elif "aliexpress" in n:
+                    mapa[nome] = "Custo AliExpress (R$)"
+                elif "estoque" in n:
+                    mapa[nome] = "Custo Estoque (R$)"
+
+            df.rename(columns=mapa, inplace=True)
+
+            return df
+
+
+        try:
+            df_custos = carregar_planilha_custos()
+        except Exception as e:
+            st.error(f"❌ Erro ao carregar planilha: {e}")
+            st.stop()
+
+        # =====================================================
+        # 📋 Visualização geral
+        # =====================================================
+        st.subheader("📋 Tabela de Custos")
+        st.dataframe(df_custos, use_container_width=True)
+
+        # Converter colunas numéricas
+        for col in ["Custo AliExpress (R$)", "Custo Estoque (R$)"]:
+            if col in df_custos.columns:
+                df_custos[col] = (
+                    df_custos[col]
+                    .astype(str)
+                    .str.replace("R$", "", regex=False)
+                    .str.replace(",", ".")
+                    .str.strip()
+                    .replace("inexistente", np.nan)
+                    .astype(float)
+                )
+
+        # =====================================================
+        # 🎛️ Filtro por produto
+        # =====================================================
+        produtos = df_custos["Produto"].dropna().unique().tolist()
+        produto_sel = st.selectbox("Selecione um produto:", ["(Todos)"] + produtos)
+
+        df_filtrado = df_custos.copy()
+        if produto_sel != "(Todos)":
+            df_filtrado = df_custos[df_custos["Produto"] == produto_sel]
+
+        # =====================================================
+        # 💸 Resumo e insights
+        # =====================================================
+        def formatar_moeda(v):
+            try:
+                return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            except:
+                return "—"
+
+        media_aliexpress = pd.to_numeric(df_filtrado["Custo AliExpress (R$)"], errors="coerce").mean()
+        media_estoque = pd.to_numeric(df_filtrado["Custo Estoque (R$)"], errors="coerce").mean()
+
+        col1, col2, col3 = st.columns(3)
+        col1.metric("💰 Média AliExpress", formatar_moeda(media_aliexpress))
+        col2.metric("🏭 Média Estoque", formatar_moeda(media_estoque))
+
+        if not np.isnan(media_aliexpress) and not np.isnan(media_estoque) and media_aliexpress > 0:
+            diff_pct = ((media_estoque - media_aliexpress) / media_aliexpress) * 100
+            cor = "🟢" if diff_pct < 0 else "🔴"
+            col3.metric("📈 Diferença Média", f"{cor} {diff_pct:+.1f}%")
+        else:
+            col3.metric("📈 Diferença Média", "—")
+
+        # =====================================================
+        # 📦 Identificação de gaps
+        # =====================================================
+        st.subheader("🔎 Custos faltantes")
+        faltantes = df_custos[
+            df_custos["Custo Estoque (R$)"].isna() | df_custos["Custo AliExpress (R$)"].isna()
+        ]
+        if faltantes.empty:
+            st.success("✅ Todos os produtos possuem custos registrados.")
+        else:
+            st.dataframe(faltantes, use_container_width=True)
+
     # =====================================================
     # 🚚 ABA 3 — ENTREGAS
     # =====================================================
@@ -3628,111 +3724,3 @@ if menu == "📦 Dashboard – Logística":
         # Exibir tabela
         st.subheader(f"📦 {produto_escolhido} — Comparativo de Vendas por Variante")
         st.dataframe(styled_df, use_container_width=True)
-
-    # =====================================================
-    # 💰 ABA 5 — CONTROLE DE CUSTOS
-    # =====================================================
-    with aba5:
-        st.title("💰 Controle de Custos")
-        st.caption("Comparativo de custos dos produtos entre AliExpress e Estoque interno.")
-
-        # =====================================================
-        # 🔗 Carregar dados direto do Google Sheets
-        # =====================================================
-        SHEET_URL = "https://docs.google.com/spreadsheets/d/1WTEiRnm1OFxzn6ag1MfI8VnlQCbL8xwxY3LeanCsdxk/export?format=csv"
-
-        @st.cache_data(ttl=600)
-        def carregar_planilha_custos():
-            df = pd.read_csv(SHEET_URL)
-            df.columns = df.columns.str.strip()
-
-            # Normaliza nomes de colunas (sem case-sensitive)
-            colunas = {c.lower().strip(): c for c in df.columns}
-
-            # Mapeamento dinâmico
-            mapa = {}
-            for nome in df.columns:
-                n = nome.lower().strip()
-                if "produto" in n:
-                    mapa[nome] = "Produto"
-                elif "variante" in n:
-                    mapa[nome] = "Variantes"
-                elif "aliexpress" in n:
-                    mapa[nome] = "Custo AliExpress (R$)"
-                elif "estoque" in n:
-                    mapa[nome] = "Custo Estoque (R$)"
-
-            df.rename(columns=mapa, inplace=True)
-
-            return df
-
-
-        try:
-            df_custos = carregar_planilha_custos()
-        except Exception as e:
-            st.error(f"❌ Erro ao carregar planilha: {e}")
-            st.stop()
-
-        # =====================================================
-        # 📋 Visualização geral
-        # =====================================================
-        st.subheader("📋 Tabela de Custos")
-        st.dataframe(df_custos, use_container_width=True)
-
-        # Converter colunas numéricas
-        for col in ["Custo AliExpress (R$)", "Custo Estoque (R$)"]:
-            if col in df_custos.columns:
-                df_custos[col] = (
-                    df_custos[col]
-                    .astype(str)
-                    .str.replace("R$", "", regex=False)
-                    .str.replace(",", ".")
-                    .str.strip()
-                    .replace("inexistente", np.nan)
-                    .astype(float)
-                )
-
-        # =====================================================
-        # 🎛️ Filtro por produto
-        # =====================================================
-        produtos = df_custos["Produto"].dropna().unique().tolist()
-        produto_sel = st.selectbox("Selecione um produto:", ["(Todos)"] + produtos)
-
-        df_filtrado = df_custos.copy()
-        if produto_sel != "(Todos)":
-            df_filtrado = df_custos[df_custos["Produto"] == produto_sel]
-
-        # =====================================================
-        # 💸 Resumo e insights
-        # =====================================================
-        def formatar_moeda(v):
-            try:
-                return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-            except:
-                return "—"
-
-        media_aliexpress = pd.to_numeric(df_filtrado["Custo AliExpress (R$)"], errors="coerce").mean()
-        media_estoque = pd.to_numeric(df_filtrado["Custo Estoque (R$)"], errors="coerce").mean()
-
-        col1, col2, col3 = st.columns(3)
-        col1.metric("💰 Média AliExpress", formatar_moeda(media_aliexpress))
-        col2.metric("🏭 Média Estoque", formatar_moeda(media_estoque))
-
-        if not np.isnan(media_aliexpress) and not np.isnan(media_estoque) and media_aliexpress > 0:
-            diff_pct = ((media_estoque - media_aliexpress) / media_aliexpress) * 100
-            cor = "🟢" if diff_pct < 0 else "🔴"
-            col3.metric("📈 Diferença Média", f"{cor} {diff_pct:+.1f}%")
-        else:
-            col3.metric("📈 Diferença Média", "—")
-
-        # =====================================================
-        # 📦 Identificação de gaps
-        # =====================================================
-        st.subheader("🔎 Custos faltantes")
-        faltantes = df_custos[
-            df_custos["Custo Estoque (R$)"].isna() | df_custos["Custo AliExpress (R$)"].isna()
-        ]
-        if faltantes.empty:
-            st.success("✅ Todos os produtos possuem custos registrados.")
-        else:
-            st.dataframe(faltantes, use_container_width=True)
