@@ -3632,19 +3632,30 @@ if menu == "📦 Dashboard – Logística":
             df = pd.read_csv(SHEET_URL)
             df.columns = df.columns.str.strip()
 
-            # Renomeia apenas se necessário
-            df.rename(columns={
-                "Produto": "Produto",
-                "Variantes": "Variantes",
-                "Custo AliExpress": "Custo AliExpress (R$)",
-                "Custo Estoque": "Custo Estoque (R$)"
-            }, inplace=True)
+            # Normaliza nomes de colunas (sem case-sensitive)
+            colunas = {c.lower().strip(): c for c in df.columns}
 
-            # Cria coluna combinada (Produto / Variante) para exibição
+            # Mapeamento dinâmico
+            mapa = {}
+            for nome in df.columns:
+                n = nome.lower().strip()
+                if "produto" in n:
+                    mapa[nome] = "Produto"
+                elif "variante" in n:
+                    mapa[nome] = "Variantes"
+                elif "aliexpress" in n:
+                    mapa[nome] = "Custo AliExpress (R$)"
+                elif "estoque" in n:
+                    mapa[nome] = "Custo Estoque (R$)"
+
+            df.rename(columns=mapa, inplace=True)
+
+            # Cria coluna combinada (Produto / Variante)
             if "Produto" in df.columns and "Variantes" in df.columns:
                 df["Produto / Variante"] = df["Produto"].astype(str) + " — " + df["Variantes"].astype(str)
 
             return df
+
 
         try:
             df_custos = carregar_planilha_custos()
