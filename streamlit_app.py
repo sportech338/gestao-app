@@ -3528,6 +3528,7 @@ if menu == "📦 Dashboard – Logística":
         # =====================================================
         # 🧮 Análise de saídas por produto
         # =====================================================
+        pedidos = pedidos.copy()
         pedidos["created_at"] = pd.to_datetime(pedidos["created_at"], utc=True, errors="coerce")\
                                    .dt.tz_convert(APP_TZ).dt.tz_localize(None)
 
@@ -3539,36 +3540,31 @@ if menu == "📦 Dashboard – Logística":
         df_a = filtrar_periodo(base_prod, inicio_a, fim_a)
         df_b = filtrar_periodo(base_prod, inicio_b, fim_b)
 
-        resumo_a = df_a.groupby("variant_title")["quantity"].sum().reset_index(name="qtd_A")
-        resumo_b = df_b.groupby("variant_title")["quantity"].sum().reset_index(name="qtd_B")
+        resumo_a = df_a.groupby("variant_title", dropna=False)["quantity"].sum().reset_index(name="qtd_A")
+        resumo_b = df_b.groupby("variant_title", dropna=False)["quantity"].sum().reset_index(name="qtd_B")
 
         comparativo = pd.merge(resumo_a, resumo_b, on="variant_title", how="outer").fillna(0)
         comparativo["diferença"] = comparativo["qtd_A"] - comparativo["qtd_B"]
         comparativo["crescimento_%"] = np.where(
             comparativo["qtd_B"] > 0,
-            (comparativo["qtd_A"] - comparativo["qtd_B"]) / comparativo["qtd_B"] * 100,
+            (comparativo["qtd_A"] - comparativo["qtd_B"]) / comparativo["qtd_B"] * 100.0,
             np.nan
         )
-        comparativo["participação_%_A"] = np.where(
-            comparativo["qtd_A"].sum() > 0,
-            comparativo["qtd_A"] / comparativo["qtd_A"].sum() * 100,
-            0
-        )
-        comparativo["participação_%_B"] = np.where(
-            comparativo["qtd_B"].sum() > 0,
-            comparativo["qtd_B"] / comparativo["qtd_B"].sum() * 100,
-            0
-        )
+        total_A = comparativo["qtd_A"].sum()
+        total_B = comparativo["qtd_B"].sum()
+        comparativo["participação_%_A"] = np.where(total_A > 0, comparativo["qtd_A"] / total_A * 100.0, 0.0)
+        comparativo["participação_%_B"] = np.where(total_B > 0, comparativo["qtd_B"] / total_B * 100.0, 0.0)
         comparativo["variação_participação_p.p."] = comparativo["participação_%_A"] - comparativo["participação_%_B"]
 
         comparativo = comparativo.sort_values("qtd_A", ascending=False).reset_index(drop=True)
 
         for c in ["qtd_A", "qtd_B", "diferença"]:
             if c in comparativo.columns:
-                comparativo[c] = comparativo[c].astype(int)
+                # garante inteiro seguro
+                comparativo[c] = pd.to_numeric(comparativo[c], errors="coerce").fillna(0).astype(int)
 
         def fmt_pct(x):
-            return "-" if pd.isna(x) else f"{x:.1f}%"
+            return "-" if pd.isna(x) else f"{float(x):.1f}%"
 
         for c in ["crescimento_%", "participação_%_A", "participação_%_B", "variação_participação_p.p."]:
             if c in comparativo.columns:
@@ -3583,6 +3579,8 @@ if menu == "📦 Dashboard – Logística":
         def carregar_planilha_custos():
             df = pd.read_csv(SHEET_URL)
             df.columns = df.columns.str.strip().str.lower()
+
+            # mapeamento flexível por conteúdo do nome da coluna
             mapa = {}
             for col in df.columns:
                 if "produto" in col:
@@ -3593,6 +3591,7 @@ if menu == "📦 Dashboard – Logística":
                     mapa[col] = "Custo AliExpress (R$)"
                 elif "estoque" in col:
                     mapa[col] = "Custo Estoque (R$)"
+
             df.rename(columns=mapa, inplace=True)
             return df
 
@@ -3602,17 +3601,19 @@ if menu == "📦 Dashboard – Logística":
             st.error(f"❌ Erro ao carregar planilha de custos: {e}")
             st.stop()
 
+        # normaliza custos para float
         for col in ["Custo AliExpress (R$)", "Custo Estoque (R$)"]:
             if col in df_custos.columns:
                 df_custos[col] = (
                     df_custos[col]
                     .astype(str)
                     .str.replace("R$", "", regex=False)
-                    .str.replace(",", ".")
+                    .str.replace(".", "", regex=False)  # remove separador milhar brasileiro, se houver
+                    .str.replace(",", ".", regex=False)  # vírgula -> ponto
                     .str.strip()
-                    .replace("inexistente", np.nan)
-                    .astype(float)
+                    .replace({"": np.nan, "inexistente": np.nan, "nan": np.nan})
                 )
+                df_custos[col] = pd.to_numeric(df_custos[col], errors="coerce")
 
         # =====================================================
         # 🔗 CRUZAMENTO — Saídas x Custos
@@ -3624,52 +3625,70 @@ if menu == "📦 Dashboard – Logística":
             how="left"
         )
 
-        # 💸 Cálculo do custo total com o fornecedor
-        merged["💸 Custo Fornecedor Total (R$)"] = merged["Custo AliExpress (R$)"] * merged["qtd_A"]
+        # remove colunas duplicadas (se algum merge gerar repetição)
+        merged = merged.loc[:, ~merged.columns.duplicated()]
+
+        # 💸 Cálculo do custo total com o fornecedor (considerando período A)
+        if "Custo AliExpress (R$)" in merged.columns:
+            merged["💸 Custo Fornecedor Total (R$)"] = (
+                pd.to_numeric(merged["Custo AliExpress (R$)"], errors="coerce").fillna(0.0)
+                * pd.to_numeric(merged["qtd_A"], errors="coerce").fillna(0.0)
+            )
+        else:
+            merged["💸 Custo Fornecedor Total (R$)"] = np.nan
 
         def formatar_moeda(v):
             try:
+                v = float(v)
                 return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-            except:
+            except Exception:
                 return "—"
 
+        # formata somente na hora de exibir (mantém base numérica nos dados)
+        merged_exibir = merged.copy()
         for col in ["Custo AliExpress (R$)", "Custo Estoque (R$)", "💸 Custo Fornecedor Total (R$)"]:
-            if col in merged.columns:
-                merged[col] = merged[col].apply(formatar_moeda)
+            if col in merged_exibir.columns:
+                merged_exibir[col] = merged_exibir[col].apply(formatar_moeda)
 
         # =====================================================
-        # 📋 Exibir tabela completa
+        # 📋 Exibir tabela completa (com segurança)
         # =====================================================
         st.subheader("📋 Comparativo Completo — Saídas + Custos")
-        st.dataframe(
-            merged.rename(columns={
-                "variant_title": "Variante",
-                "qtd_A": "Qtd. Período A",
-                "qtd_B": "Qtd. Período B",
-                "diferença": "Diferença (unid.)",
-                "crescimento_%": "Crescimento (%)",
-                "participação_%_A": "Participação A (%)",
-                "participação_%_B": "Participação B (%)",
-                "variação_participação_p.p.": "Variação Part. (p.p.)"
-            })[
-                [
-                    "Variante",
-                    "Qtd. Período A",
-                    "Qtd. Período B",
-                    "Diferença (unid.)",
-                    "Crescimento (%)",
-                    "Participação A (%)",
-                    "Participação B (%)",
-                    "Variação Part. (p.p.)",
-                    "Custo AliExpress (R$)",
-                    "Custo Estoque (R$)",
-                    "💸 Custo Fornecedor Total (R$)"
-                ]
-            ],
-            use_container_width=True
-        )
 
-        st.info("💡 A coluna **💸 Custo Fornecedor Total (R$)** representa o valor total estimado pago ao fornecedor considerando as saídas do período A.")
+        merged_exibir.rename(columns={
+            "variant_title": "Variante",
+            "qtd_A": "Qtd. Período A",
+            "qtd_B": "Qtd. Período B",
+            "diferença": "Diferença (unid.)",
+            "crescimento_%": "Crescimento (%)",
+            "participação_%_A": "Participação A (%)",
+            "participação_%_B": "Participação B (%)",
+            "variação_participação_p.p.": "Variação Part. (p.p.)"
+        }, inplace=True)
+
+        colunas_desejadas = [
+            "Variante",
+            "Produto",
+            "Qtd. Período A",
+            "Qtd. Período B",
+            "Diferença (unid.)",
+            "Crescimento (%)",
+            "Participação A (%)",
+            "Participação B (%)",
+            "Variação Part. (p.p.)",
+            "Custo AliExpress (R$)",
+            "Custo Estoque (R$)",
+            "💸 Custo Fornecedor Total (R$)"
+        ]
+        colunas_existentes = [c for c in colunas_desejadas if c in merged_exibir.columns]
+
+        try:
+            st.dataframe(merged_exibir[colunas_existentes], use_container_width=True)
+            st.info("💡 **💸 Custo Fornecedor Total (R$)** = (Custo AliExpress unitário) × (saídas no Período A).")
+        except Exception as e:
+            st.error(f"⚠️ Erro ao exibir tabela: {e}")
+            st.write("Prévia dos dados disponíveis (top 10):")
+            st.dataframe(merged_exibir.head(10), use_container_width=True)
 
     # =====================================================
     # 🚚 ABA 3 — ENTREGAS
