@@ -3650,10 +3650,6 @@ if menu == "📦 Dashboard – Logística":
 
             df.rename(columns=mapa, inplace=True)
 
-            # Cria coluna combinada (Produto / Variante)
-            if "Produto" in df.columns and "Variantes" in df.columns:
-                df["Produto / Variante"] = df["Produto"].astype(str) + " — " + df["Variantes"].astype(str)
-
             return df
 
 
