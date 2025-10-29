@@ -3655,15 +3655,6 @@ if menu == "📦 Dashboard – Logística":
             st.stop()
 
         # =====================================================
-        # 📝 Edição direta da planilha no app
-        # =====================================================
-        st.subheader("📝 Editar custos manualmente")
-        edit_df = st.data_editor(df_custos, num_rows="dynamic", use_container_width=True)
-
-        if st.button("💾 Salvar alterações na planilha"):
-            atualizar_planilha_custos(edit_df)
-
-        # =====================================================
         # 💸 Integração com o comparativo de custos
         # =====================================================
         for col in ["Custo AliExpress (R$)", "Custo Estoque (R$)"]:
@@ -3718,6 +3709,17 @@ if menu == "📦 Dashboard – Logística":
             use_container_width=True
         )
 
+
+        # =====================================================
+        # 📝 Edição direta da planilha no app
+        # =====================================================
+        st.subheader("📝 Custos por Variante")
+        edit_df = st.data_editor(df_custos, num_rows="dynamic", use_container_width=True)
+
+        if st.button("💾 Salvar alterações na planilha"):
+            atualizar_planilha_custos(edit_df)
+
+    
     # =====================================================
     # 🚚 ABA 3 — ENTREGAS
     # =====================================================
