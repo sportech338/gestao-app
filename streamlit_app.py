@@ -62,18 +62,21 @@ def _get_session():
 @st.cache_data(ttl=600)
 def get_products_with_variants(limit=250):
     s = _get_session()
-    url = f"{BASE_URL}/products.json?limit={limit}"
-    all_products = []
 
+    # 1️⃣ Buscar todos os produtos paginados
+    products = []
+    url = f"{BASE_URL}/products.json?limit={limit}"
     while url:
         r = s.get(url, headers=HEADERS, timeout=60)
         r.raise_for_status()
         data = r.json()
-        all_products.extend(data.get("products", []))
+        products.extend(data.get("products", []))
         url = r.links.get("next", {}).get("url")
 
     rows = []
-    for p in all_products:
+    inventory_item_ids = []
+
+    for p in products:
         for v in p.get("variants", []):
             rows.append({
                 "product_id": p["id"],
@@ -86,31 +89,53 @@ def get_products_with_variants(limit=250):
                 "inventory": v.get("inventory_quantity"),
                 "inventory_item_id": v.get("inventory_item_id"),
             })
+            if v.get("inventory_item_id"):
+                inventory_item_ids.append(str(v["inventory_item_id"]))
 
     df_variants = pd.DataFrame(rows)
 
-    if not df_variants.empty and "inventory_item_id" in df_variants.columns:
-        inventory_ids = df_variants["inventory_item_id"].dropna().unique().tolist()
-        costs_rows = []
-        for i in range(0, len(inventory_ids), 100):
-            batch = inventory_ids[i:i + 100]
-            ids_param = ",".join(str(x) for x in batch)
-            inv_url = f"{BASE_URL}/inventory_items.json?ids={ids_param}"
-            inv_resp = s.get(inv_url, headers=HEADERS, timeout=60)
-            inv_resp.raise_for_status()
-            items = inv_resp.json().get("inventory_items", [])
-            for it in items:
-                costs_rows.append({
-                    "inventory_item_id": it["id"],
-                    "cost": float(it.get("cost") or 0)
-                })
+    # 2️⃣ Buscar custos via GraphQL (unitCost)
+    # GraphQL é mais confiável que /inventory_items.json em algumas lojas
+    costs_rows = []
+    if inventory_item_ids:
+        for i in range(0, len(inventory_item_ids), 50):  # GraphQL suporta ~50 IDs por chamada
+            ids_chunk = inventory_item_ids[i:i+50]
+            gql_query = {
+                "query": """
+                {
+                  inventoryItems(first: 50, query: "id:%s") {
+                    edges {
+                      node {
+                        id
+                        unitCost {
+                          amount
+                        }
+                      }
+                    }
+                  }
+                }
+                """ % " OR id:".join(ids_chunk)
+            }
+            gql_url = f"https://{SHOP_NAME}/admin/api/{API_VERSION}/graphql.json"
+            gql_resp = s.post(gql_url, headers=HEADERS, json=gql_query, timeout=60)
+            gql_resp.raise_for_status()
+            gql_data = gql_resp.json()
 
+            for edge in gql_data.get("data", {}).get("inventoryItems", {}).get("edges", []):
+                node = edge.get("node", {})
+                _id = node.get("id", "").split("/")[-1]
+                _cost = node.get("unitCost", {}).get("amount")
+                if _cost is not None:
+                    costs_rows.append({"inventory_item_id": int(_id), "cost": float(_cost)})
+
+    if costs_rows:
         df_costs = pd.DataFrame(costs_rows)
         df_variants = df_variants.merge(df_costs, on="inventory_item_id", how="left")
     else:
         df_variants["cost"] = np.nan
 
     return df_variants
+
 
 # =====================================================
 # Pedidos
