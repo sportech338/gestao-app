@@ -3565,7 +3565,7 @@ if menu == "📦 Dashboard – Logística":
             if isinstance(val, str) and val.endswith("%"):
                 try:
                     num = float(val.replace("%", "").replace(",", "."))
-                    color = "#00ff2a" if num > 0 else "red" if num < 0 else "inherit"
+                    color = "#00ff2a" if num > 0 else "#ff0000" if num < 0 else "inherit"
                     return f"color: {color}; font-weight: 600;"
                 except:
                     return ""
