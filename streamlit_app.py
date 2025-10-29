@@ -3415,7 +3415,7 @@ if menu == "📦 Dashboard – Logística":
     # 📦 ABA 2 — ESTOQUE
     # =====================================================
     with aba2:
-        st.title("📈 Análise de Saídas por Variante")
+        st.title("📈 Análise de Saídas")
 
         # 1) Produtos podem vir do cache atual (não dependem de período)
         produtos = st.session_state.get("produtos", get_products_with_variants())
