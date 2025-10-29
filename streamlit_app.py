@@ -63,12 +63,17 @@ def _get_session():
 def get_products_with_variants(limit=250):
     s = _get_session()
     url = f"{BASE_URL}/products.json?limit={limit}"
-    r = s.get(url, headers=HEADERS, timeout=60)
-    r.raise_for_status()
-    data = r.json().get("products", [])
-    rows = []
+    all_products = []
 
-    for p in data:
+    while url:
+        r = s.get(url, headers=HEADERS, timeout=60)
+        r.raise_for_status()
+        data = r.json()
+        all_products.extend(data.get("products", []))
+        url = r.links.get("next", {}).get("url")
+
+    rows = []
+    for p in all_products:
         for v in p.get("variants", []):
             rows.append({
                 "product_id": p["id"],
@@ -87,7 +92,7 @@ def get_products_with_variants(limit=250):
     if not df_variants.empty and "inventory_item_id" in df_variants.columns:
         inventory_ids = df_variants["inventory_item_id"].dropna().unique().tolist()
         costs_rows = []
-        for i in range(0, len(inventory_ids), 100):  # Shopify aceita até 100 IDs por chamada
+        for i in range(0, len(inventory_ids), 100):
             batch = inventory_ids[i:i + 100]
             ids_param = ",".join(str(x) for x in batch)
             inv_url = f"{BASE_URL}/inventory_items.json?ids={ids_param}"
