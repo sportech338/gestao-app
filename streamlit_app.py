@@ -3600,8 +3600,7 @@ if menu == "📦 Dashboard – Logística":
         styled_df = comparativo.style.applymap(
             highlight_variacao, subset=["Crescimento (%)", "Variação Part. (p.p.)"]
         )
-
-        st.subheader(f"📊 {produto_escolhido}")
+        
         st.dataframe(styled_df, use_container_width=True)
 
         # =====================================================
