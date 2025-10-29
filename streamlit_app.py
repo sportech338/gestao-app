@@ -3415,7 +3415,84 @@ if menu == "📦 Dashboard – Logística":
     # 📦 ABA 2 — ESTOQUE
     # =====================================================
     with aba2:
-        st.info("📊 Em breve: acompanhamento de níveis de estoque por SKU e variação.")
+        st.title("📈 Análise de Saídas por Variante")
+
+        produtos = st.session_state.get("produtos", get_products_with_variants())
+        pedidos = st.session_state.get("pedidos", get_orders())
+
+        if pedidos.empty or produtos.empty:
+            st.warning("⚠️ É necessário carregar pedidos e produtos primeiro (na aba 1).")
+            st.stop()
+
+        # 🔽 Selecionar produto principal
+        produtos_unicos = sorted(pedidos["product_title"].dropna().unique().tolist())
+        produto_escolhido = st.selectbox("Selecione o produto:", produtos_unicos, index=0)
+
+        # 🔽 Selecionar períodos de comparação
+        hoje = datetime.now(APP_TZ).date()
+        semana_atual_inicio = hoje - timedelta(days=hoje.weekday())
+        semana_anterior_inicio = semana_atual_inicio - timedelta(days=7)
+
+        col1, col2 = st.columns(2)
+        with col1:
+            inicio_a = st.date_input("📅 Início período A (ex: semana atual)", semana_atual_inicio)
+            fim_a = st.date_input("Fim período A", hoje)
+        with col2:
+            inicio_b = st.date_input("📅 Início período B (comparar com...)", semana_anterior_inicio)
+            fim_b = st.date_input("Fim período B", semana_anterior_inicio + timedelta(days=6))
+
+        def filtrar_periodo(df, ini, fim):
+            return df[
+                (pd.to_datetime(df["created_at"]).dt.date >= ini) &
+                (pd.to_datetime(df["created_at"]).dt.date <= fim)
+            ].copy()
+
+        base = pedidos[pedidos["product_title"] == produto_escolhido]
+
+        df_a = filtrar_periodo(base, inicio_a, fim_a)
+        df_b = filtrar_periodo(base, inicio_b, fim_b)
+
+        resumo_a = df_a.groupby("variant_title")["quantity"].sum().reset_index(name="qtd_A")
+        resumo_b = df_b.groupby("variant_title")["quantity"].sum().reset_index(name="qtd_B")
+
+        comparativo = pd.merge(resumo_a, resumo_b, on="variant_title", how="outer").fillna(0)
+        comparativo["diferença"] = comparativo["qtd_A"] - comparativo["qtd_B"]
+        comparativo["crescimento_%"] = np.where(
+            comparativo["qtd_B"] > 0,
+            (comparativo["qtd_A"] - comparativo["qtd_B"]) / comparativo["qtd_B"] * 100,
+            np.nan
+        )
+        comparativo["participação_%_A"] = np.where(
+            comparativo["qtd_A"].sum() > 0,
+            comparativo["qtd_A"] / comparativo["qtd_A"].sum() * 100,
+            0
+        )
+        comparativo["participação_%_B"] = np.where(
+            comparativo["qtd_B"].sum() > 0,
+            comparativo["qtd_B"] / comparativo["qtd_B"].sum() * 100,
+            0
+        )
+
+        st.subheader(f"📦 {produto_escolhido} — Comparativo de Vendas")
+        st.dataframe(
+            comparativo.sort_values("qtd_A", ascending=False),
+            use_container_width=True
+        )
+
+        # 📊 Gráfico comparativo
+        import plotly.graph_objects as go
+        fig = go.Figure()
+        fig.add_bar(x=comparativo["variant_title"], y=comparativo["qtd_A"], name="Período A")
+        fig.add_bar(x=comparativo["variant_title"], y=comparativo["qtd_B"], name="Período B")
+        fig.update_layout(
+            barmode="group",
+            title="Comparativo de unidades vendidas por variante",
+            xaxis_title="Variante",
+            yaxis_title="Unidades vendidas",
+            legend_title="Período"
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
     # =====================================================
     # 🚚 ABA 3 — ENTREGAS
     # =====================================================
