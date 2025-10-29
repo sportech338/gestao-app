@@ -3578,7 +3578,7 @@ if menu == "📦 Dashboard – Logística":
         st.dataframe(styled_df, use_container_width=True)
 
         # =====================================================
-        # 💰 Tabela de custos — integração com Google Sheets
+        # 💰 Tabelas de custo — integração com Google Sheets
         # =====================================================
         SHEET_URL = "https://docs.google.com/spreadsheets/d/1WTEiRnm1OFxzn6ag1MfI8VnlQCbL8xwxY3LeanCsdxk/export?format=csv"
 
@@ -3594,6 +3594,8 @@ if menu == "📦 Dashboard – Logística":
                     mapa[col] = "Variante"
                 elif "aliexpress" in col:
                     mapa[col] = "Custo AliExpress (R$)"
+                elif "estoque" in col:
+                    mapa[col] = "Custo Estoque (R$)"
             df.rename(columns=mapa, inplace=True)
             return df
 
@@ -3603,22 +3605,25 @@ if menu == "📦 Dashboard – Logística":
             st.error(f"❌ Erro ao carregar planilha de custos: {e}")
             st.stop()
 
-        if "Custo AliExpress (R$)" in df_custos.columns:
-            df_custos["Custo AliExpress (R$)"] = (
-                df_custos["Custo AliExpress (R$)"]
-                .astype(str)
-                .str.replace("R$", "", regex=False)
-                .str.replace(",", ".")
-                .astype(float)
-            )
+        for col in ["Custo AliExpress (R$)", "Custo Estoque (R$)"]:
+            if col in df_custos.columns:
+                df_custos[col] = (
+                    df_custos[col]
+                    .astype(str)
+                    .str.replace("R$", "", regex=False)
+                    .str.replace(",", ".")
+                    .str.strip()
+                    .replace("inexistente", np.nan)
+                    .astype(float)
+                )
 
         # =====================================================
-        # 💸 Tabela de custo total (comparativo A vs B)
+        # 💸 Tabela 2 — Custos Totais (AliExpress)
         # =====================================================
-        custos = comparativo.merge(df_custos[["Variante", "Custo AliExpress (R$)"]], on="Variante", how="left")
-        custos["Custo Total A"] = custos["Custo AliExpress (R$)"] * custos["Qtd. Período A"]
-        custos["Custo Total B"] = custos["Custo AliExpress (R$)"] * custos["Qtd. Período B"]
-        custos["Diferença de Custo Total"] = custos["Custo Total A"] - custos["Custo Total B"]
+        custos_ali = comparativo.merge(df_custos[["Variante", "Custo AliExpress (R$)"]], on="Variante", how="left")
+        custos_ali["Custo Total A"] = custos_ali["Custo AliExpress (R$)"] * custos_ali["Qtd. Período A"]
+        custos_ali["Custo Total B"] = custos_ali["Custo AliExpress (R$)"] * custos_ali["Qtd. Período B"]
+        custos_ali["Diferença de Custo Total"] = custos_ali["Custo Total A"] - custos_ali["Custo Total B"]
 
         def fmt_moeda(v):
             try:
@@ -3627,11 +3632,28 @@ if menu == "📦 Dashboard – Logística":
                 return "—"
 
         for c in ["Custo Total A", "Custo Total B", "Diferença de Custo Total"]:
-            custos[c] = custos[c].apply(fmt_moeda)
+            custos_ali[c] = custos_ali[c].apply(fmt_moeda)
 
         st.subheader("💰 Tabela 2 — Comparativo de Custos Totais (AliExpress)")
         st.dataframe(
-            custos[["Variante", "Custo Total A", "Custo Total B", "Diferença de Custo Total"]],
+            custos_ali[["Variante", "Custo Total A", "Custo Total B", "Diferença de Custo Total"]],
+            use_container_width=True
+        )
+
+        # =====================================================
+        # 🏷️ Tabela 3 — Custos Totais (Estoque)
+        # =====================================================
+        custos_est = comparativo.merge(df_custos[["Variante", "Custo Estoque (R$)"]], on="Variante", how="left")
+        custos_est["Custo Total A"] = custos_est["Custo Estoque (R$)"] * custos_est["Qtd. Período A"]
+        custos_est["Custo Total B"] = custos_est["Custo Estoque (R$)"] * custos_est["Qtd. Período B"]
+        custos_est["Diferença de Custo Total"] = custos_est["Custo Total A"] - custos_est["Custo Total B"]
+
+        for c in ["Custo Total A", "Custo Total B", "Diferença de Custo Total"]:
+            custos_est[c] = custos_est[c].apply(fmt_moeda)
+
+        st.subheader("🏷️ Tabela 3 — Comparativo de Custos Totais (Estoque)")
+        st.dataframe(
+            custos_est[["Variante", "Custo Total A", "Custo Total B", "Diferença de Custo Total"]],
             use_container_width=True
         )
 
