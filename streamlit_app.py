@@ -3700,11 +3700,18 @@ if menu == "📦 Dashboard – Logística":
         # =====================================================
         if st.button("💾 Salvar alterações na planilha"):
             try:
+                import os
                 import gspread
+                import json
                 from google.oauth2.service_account import Credentials
 
-                # 🔐 Carregar credenciais direto do secrets.toml do Streamlit
-                gcp_info = st.secrets["gcp_service_account"]
+                # 🔐 Compatibilidade: usa st.secrets se estiver no Streamlit, 
+                # ou GitHub Secrets (GCP_SERVICE_ACCOUNT) se estiver no GitHub Actions
+                if "gcp_service_account" in st.secrets:
+                    gcp_info = st.secrets["gcp_service_account"]
+                else:
+                    gcp_info = json.loads(os.environ["GCP_SERVICE_ACCOUNT"])
+
                 creds = Credentials.from_service_account_info(
                     gcp_info,
                     scopes=["https://www.googleapis.com/auth/spreadsheets"]
@@ -3713,7 +3720,12 @@ if menu == "📦 Dashboard – Logística":
                 client = gspread.authorize(creds)
 
                 # ID da planilha (vem do [google_sheets] do secrets.toml)
-                SHEET_ID = st.secrets["google_sheets"]["sheet_id"]
+                SHEET_ID = (
+                    st.secrets["google_sheets"]["sheet_id"]
+                    if "google_sheets" in st.secrets
+                    else "1WTEiRnm1OFxzn6ag1MfI8VnlQCbL8xwxY3LeanCsdxk"
+                )
+
                 sheet = client.open_by_key(SHEET_ID).sheet1
 
                 # Atualizar todos os dados
@@ -3722,6 +3734,7 @@ if menu == "📦 Dashboard – Logística":
                 )
 
                 st.success("✅ Planilha atualizada com sucesso no Google Sheets!")
+
             except Exception as e:
                 st.error(f"❌ Erro ao atualizar planilha: {e}")
 
