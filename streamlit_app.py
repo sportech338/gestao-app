@@ -3655,6 +3655,21 @@ if menu == "📦 Dashboard – Logística":
             st.stop()
 
         # =====================================================
+        # 💸 Integração com o comparativo de custos
+        # =====================================================
+        for col in ["Custo AliExpress (R$)", "Custo Estoque (R$)"]:
+            if col in df_custos.columns:
+                df_custos[col] = (
+                    df_custos[col]
+                    .astype(str)
+                    .str.replace("R$", "", regex=False)
+                    .str.replace(",", ".")
+                    .str.strip()
+                    .replace("inexistente", np.nan)
+                    .astype(float)
+                )
+
+        # =====================================================
         # 💰 Tabela 2 — Comparativo de Custos Totais (AliExpress)
         # =====================================================
         custos_ali = comparativo.merge(df_custos[["Variante", "Custo AliExpress (R$)"]], on="Variante", how="left")
@@ -3703,21 +3718,6 @@ if menu == "📦 Dashboard – Logística":
 
         if st.button("💾 Salvar alterações na planilha"):
             atualizar_planilha_custos(edit_df)
-
-        # =====================================================
-        # 💸 Integração com o comparativo de custos
-        # =====================================================
-        for col in ["Custo AliExpress (R$)", "Custo Estoque (R$)"]:
-            if col in df_custos.columns:
-                df_custos[col] = (
-                    df_custos[col]
-                    .astype(str)
-                    .str.replace("R$", "", regex=False)
-                    .str.replace(",", ".")
-                    .str.strip()
-                    .replace("inexistente", np.nan)
-                    .astype(float)
-                )
 
     
     # =====================================================
