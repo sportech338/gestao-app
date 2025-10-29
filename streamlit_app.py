@@ -3449,15 +3449,11 @@ if menu == "📦 Dashboard – Logística":
     # 📊 ABA 4 — INDICADORES
     # =====================================================
     with aba4:
-        st.subheader("📈 Análise de Saída")
-
-        # 1) Produtos podem vir do cache atual (não dependem de período)
         produtos = st.session_state.get("produtos", get_products_with_variants())
         if produtos.empty:
             st.warning("⚠️ Nenhum produto encontrado.")
             st.stop()
 
-        # 2) Seleção de produto e períodos
         produtos_unicos = sorted(st.session_state.get("pedidos", pd.DataFrame())
                                  .get("product_title", pd.Series(dtype=str))
                                  .dropna().unique().tolist() or produtos["product_title"].dropna().unique().tolist())
