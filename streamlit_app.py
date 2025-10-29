@@ -3135,7 +3135,7 @@ if menu == "📦 Dashboard – Logística":
     # =====================================================
     # 🗂️ Abas principais da Logística
     # =====================================================
-    aba1, aba2, aba3, aba4, aba5 = st.tabs([
+    aba1, aba2, aba3, aba4 = st.tabs([
         "📋 Controle Operacional",
         "📦 Estoque",
         "🚚 Entregas",
