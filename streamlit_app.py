@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -3135,12 +3136,11 @@ if menu == "📦 Dashboard – Logística":
     # =====================================================
     # 🗂️ Abas principais da Logística
     # =====================================================
-    aba1, aba2, aba3, aba4, aba5 = st.tabs([
+    aba1, aba2, aba3, aba4 = st.tabs([
         "📋 Controle Operacional",
         "📦 Estoque",
         "🚚 Entregas",
-        "📊 Análise de Saídas",
-        "💰 Controle de Custos"
+        "📊 Análise de Saídas"
     ])
 
     # =====================================================
@@ -3614,124 +3614,3 @@ if menu == "📦 Dashboard – Logística":
         # Exibir tabela
         st.subheader(f"📦 {produto_escolhido} — Comparativo de Vendas por Variante")
         st.dataframe(styled_df, use_container_width=True)
-
-    # =====================================================
-    # 💰 ABA 5 — CONTROLE DE CUSTOS
-    # =====================================================
-    with aba5:
-        st.title("💰 Controle de Custos")
-        st.caption("Planilha sincronizada com Google Sheets — alterações feitas aqui são salvas automaticamente.")
-
-        import gspread
-        from google.oauth2.service_account import Credentials
-
-        # =====================================================
-        # 🔐 Autenticação via Service Account
-        # =====================================================
-        scope = ["https://www.googleapis.com/auth/spreadsheets"]
-        creds = Credentials.from_service_account_info(
-            st.secrets["gcp_service_account"],
-            scopes=scope
-        )
-        gc = gspread.authorize(creds)
-
-        SHEET_ID = st.secrets["google_sheets"]["sheet_id"]
-        sheet = gc.open_by_key(SHEET_ID).sheet1
-
-        # =====================================================
-        # 📥 Ler dados da planilha
-        # =====================================================
-        @st.cache_data(ttl=300)
-        def carregar_planilha():
-            dados = sheet.get_all_records()
-            df = pd.DataFrame(dados)
-            df.columns = df.columns.str.strip()
-            return df
-
-        try:
-            df_custos = carregar_planilha()
-        except Exception as e:
-            st.error(f"❌ Erro ao carregar planilha: {e}")
-            st.stop()
-
-        if df_custos.empty:
-            st.warning("⚠️ Nenhum dado encontrado na planilha.")
-            st.stop()
-
-        # Normalizar colunas esperadas
-        df_custos.rename(columns={
-            "Produto": "Produto",
-            "Variantes": "Variante",
-            "Custo | Aliexpress": "Custo AliExpress (R$)",
-            "Custo | Estoque": "Custo Estoque (R$)"
-        }, inplace=True)
-
-        st.subheader("📋 Controle de Custos")
-        st.caption("Edite diretamente na tabela abaixo. As alterações serão gravadas automaticamente no Google Sheets.")
-
-        # =====================================================
-        # 🧮 Editor de dados
-        # =====================================================
-        editado = st.data_editor(
-            df_custos,
-            use_container_width=True,
-            num_rows="dynamic",
-            key="controle_custos_editor"
-        )
-
-        # =====================================================
-        # 💾 Salvar alterações no Google Sheets
-        # =====================================================
-        if st.button("💾 Salvar alterações na planilha"):
-            try:
-                # Limpa conteúdo atual (mantendo cabeçalho)
-                sheet.clear()
-                sheet.update([editado.columns.values.tolist()] + editado.values.tolist())
-                st.success("✅ Alterações salvas com sucesso no Google Sheets!")
-                st.cache_data.clear()
-            except Exception as e:
-                st.error(f"❌ Erro ao salvar alterações: {e}")
-
-        # =====================================================
-        # 📊 Resumo e análises
-        # =====================================================
-        st.divider()
-        st.subheader("📈 Resumo de Custos")
-
-        # Converter custos para float
-        for col in ["Custo AliExpress (R$)", "Custo Estoque (R$)"]:
-            df_custos[col] = (
-                df_custos[col]
-                .astype(str)
-                .str.replace("R$", "", regex=False)
-                .str.replace(",", ".")
-                .str.strip()
-                .replace("inexistente", np.nan)
-                .astype(float)
-            )
-
-        # Agrupar por produto
-        resumo = df_custos.groupby("Produto")[["Custo AliExpress (R$)", "Custo Estoque (R$)"]].mean().reset_index()
-        resumo["Diferença Média (%)"] = ((resumo["Custo Estoque (R$)"] - resumo["Custo AliExpress (R$)"]) / resumo["Custo AliExpress (R$)"] * 100).round(1)
-
-        st.dataframe(resumo, use_container_width=True)
-
-        # 📊 Gráfico comparativo
-        fig = go.Figure()
-        fig.add_trace(go.Bar(
-            name="AliExpress",
-            x=resumo["Produto"],
-            y=resumo["Custo AliExpress (R$)"]
-        ))
-        fig.add_trace(go.Bar(
-            name="Estoque",
-            x=resumo["Produto"],
-            y=resumo["Custo Estoque (R$)"]
-        ))
-        fig.update_layout(
-            title="Comparativo de Custo Médio por Produto",
-            barmode="group",
-            template="plotly_white",
-            yaxis_title="Custo (R$)"
-        )
-        st.plotly_chart(fig, use_container_width=True)
