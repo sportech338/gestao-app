@@ -3714,11 +3714,32 @@ if menu == "📦 Dashboard – Logística":
         # 📝 Edição direta da planilha no app
         # =====================================================
         st.subheader("📝 Custos por Variante")
+
+        def fmt_moeda(valor):
+            """Formata valores numéricos como moeda brasileira (R$ xx,xx)."""
+            try:
+                if pd.isna(valor):
+                    return "—"
+                return f"R$ {float(valor):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            except:
+                return str(valor)
+
+        # Cria cópia apenas para exibição formatada
+        df_exibir = df_custos.copy()
+
+        for col in ["Custo AliExpress (R$)", "Custo Estoque (R$)"]:
+            if col in df_exibir.columns:
+                df_exibir[col] = df_exibir[col].apply(fmt_moeda)
+
+        # Mostra tabela formatada
+        st.dataframe(df_exibir, use_container_width=True)
+
+        # 🧩 Edição manual da planilha original
+        st.write("✏️ **Editar valores (sem formatação):**")
         edit_df = st.data_editor(df_custos, num_rows="dynamic", use_container_width=True)
 
         if st.button("💾 Salvar alterações na planilha"):
             atualizar_planilha_custos(edit_df)
-
     
     # =====================================================
     # 🚚 ABA 3 — ENTREGAS
