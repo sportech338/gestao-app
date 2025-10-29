@@ -3631,11 +3631,19 @@ if menu == "📦 Dashboard – Logística":
         def carregar_planilha_custos():
             df = pd.read_csv(SHEET_URL)
             df.columns = df.columns.str.strip()
+
+            # Renomeia apenas se necessário
             df.rename(columns={
-                "Controle de Custos": "Produto / Variante",
-                "Custo | Aliexpress": "Custo AliExpress (R$)",
-                "Custo | Estoque": "Custo Estoque (R$)"
+                "Produto": "Produto",
+                "Variantes": "Variantes",
+                "Custo AliExpress": "Custo AliExpress (R$)",
+                "Custo Estoque": "Custo Estoque (R$)"
             }, inplace=True)
+
+            # Cria coluna combinada (Produto / Variante) para exibição
+            if "Produto" in df.columns and "Variantes" in df.columns:
+                df["Produto / Variante"] = df["Produto"].astype(str) + " — " + df["Variantes"].astype(str)
+
             return df
 
         try:
@@ -3652,25 +3660,26 @@ if menu == "📦 Dashboard – Logística":
 
         # Converter colunas numéricas
         for col in ["Custo AliExpress (R$)", "Custo Estoque (R$)"]:
-            df_custos[col] = (
-                df_custos[col]
-                .astype(str)
-                .str.replace("R$", "", regex=False)
-                .str.replace(",", ".")
-                .str.strip()
-                .replace("inexistente", np.nan)
-                .astype(float)
-            )
+            if col in df_custos.columns:
+                df_custos[col] = (
+                    df_custos[col]
+                    .astype(str)
+                    .str.replace("R$", "", regex=False)
+                    .str.replace(",", ".")
+                    .str.strip()
+                    .replace("inexistente", np.nan)
+                    .astype(float)
+                )
 
         # =====================================================
         # 🎛️ Filtro por produto
         # =====================================================
-        produtos = df_custos["Produto / Variante"].dropna().unique().tolist()
-        produto_sel = st.selectbox("Selecione um produto/variante:", ["(Todos)"] + produtos)
+        produtos = df_custos["Produto"].dropna().unique().tolist()
+        produto_sel = st.selectbox("Selecione um produto:", ["(Todos)"] + produtos)
 
         df_filtrado = df_custos.copy()
         if produto_sel != "(Todos)":
-            df_filtrado = df_custos[df_custos["Produto / Variante"] == produto_sel]
+            df_filtrado = df_custos[df_custos["Produto"] == produto_sel]
 
         # =====================================================
         # 📊 Gráfico comparativo
