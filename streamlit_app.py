@@ -3460,7 +3460,7 @@ if menu == "📦 Dashboard – Logística":
     # 📦 ABA 2 — ESTOQUE
     # =====================================================
     with aba2:
-        st.title("📦 Análise de Estoque e Custos")
+        st.subheader("Análise de Estoque e Custos:")
         st.caption("Comparativo de vendas, desempenho e custos por produto e variante.")
 
         # =====================================================
