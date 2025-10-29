@@ -3139,7 +3139,7 @@ if menu == "📦 Dashboard – Logística":
         "📋 Controle Operacional",
         "📦 Estoque",
         "🚚 Entregas",
-        "📊 Análise de Saídas"
+        "📊 Análise de Saídas",
         "💸 Controle de Custos"
     ])
 
