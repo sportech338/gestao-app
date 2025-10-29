@@ -63,8 +63,8 @@ def _get_session():
 def get_products_with_variants(limit=250):
     """
     Busca produtos e variantes com custo (cost).
-    1️⃣ Tenta puxar via REST (inventory_items.cost)
-    2️⃣ Se não vier, usa metafield custom.custo_interno (campo criado manualmente)
+    1️⃣ Tenta via InventoryItem.unitCost (oficial)
+    2️⃣ Se não vier, busca metafield custom.custo_interno
     """
     s = _get_session()
     url = f"{BASE_URL}/products.json?limit={limit}"
@@ -87,74 +87,69 @@ def get_products_with_variants(limit=250):
                 "variant_title": v["title"],
                 "sku": v.get("sku"),
                 "price": float(v.get("price") or 0),
-                "compare_at_price": float(v.get("compare_at_price") or 0),
-                "inventory": v.get("inventory_quantity"),
                 "inventory_item_id": v.get("inventory_item_id"),
             })
 
     df_variants = pd.DataFrame(rows)
+    df_variants["cost"] = np.nan
 
-    # 1️⃣ PRIMEIRA FONTE — REST: custo via Inventory Item
-    if not df_variants.empty and "inventory_item_id" in df_variants.columns:
-        inventory_ids = df_variants["inventory_item_id"].dropna().unique().tolist()
-        costs_rows = []
-        for i in range(0, len(inventory_ids), 100):
-            batch = inventory_ids[i:i + 100]
-            ids_param = ",".join(str(x) for x in batch)
-            inv_url = f"{BASE_URL}/inventory_items.json?ids={ids_param}"
-            inv_resp = s.get(inv_url, headers=HEADERS, timeout=60)
-            inv_resp.raise_for_status()
-            items = inv_resp.json().get("inventory_items", [])
-            for it in items:
-                costs_rows.append({
-                    "inventory_item_id": it["id"],
-                    "cost": float(it.get("cost") or np.nan)
-                })
-
-        df_costs = pd.DataFrame(costs_rows)
-        df_variants = df_variants.merge(df_costs, on="inventory_item_id", how="left")
-    else:
-        df_variants["cost"] = np.nan
-
-    # 2️⃣ SEGUNDA FONTE — GraphQL: metafield custom.custo_interno
-    if df_variants["cost"].isna().any():
-        gql_query = """
-        {
-          productVariants(first: 200) {
-            edges {
-              node {
-                id
-                sku
-                title
-                metafield(namespace: "custom", key: "custo_interno") {
-                  value
-                }
+    # =========================
+    # 🔹 Tenta via GraphQL (unitCost + custom.custo_interno)
+    # =========================
+    gql_query = """
+    {
+      productVariants(first: 200) {
+        edges {
+          node {
+            id
+            sku
+            title
+            inventoryItem {
+              unitCost {
+                amount
+                currencyCode
               }
+            }
+            metafield(namespace: "custom", key: "custo_interno") {
+              value
             }
           }
         }
-        """.strip()
+      }
+    }
+    """
 
-        resp = requests.post(f"{BASE_URL}/graphql.json", headers=HEADERS, json={"query": gql_query})
+    resp = requests.post(f"{BASE_URL}/graphql.json", headers=HEADERS, json={"query": gql_query})
+    if resp.status_code == 200:
+        raw = resp.json()
+        st.write("🧩 Debug GraphQL:", raw)
+        data = raw.get("data", {}).get("productVariants", {}).get("edges", [])
 
-        if resp.status_code == 200:
-            raw = resp.json()
-            st.write("🧩 Debug GraphQL:", raw)  # 👈 Adiciona saída bruta para depuração
-            data = raw.get("data", {}).get("productVariants", {}).get("edges", [])
+        for edge in data:
+            node = edge.get("node", {})
+            sku = node.get("sku")
+            custo = None
 
-            for edge in data:
-                node = edge.get("node", {})
-                sku = node.get("sku")
-                meta = node.get("metafield")
-                if sku and meta and meta.get("value"):
-                    try:
-                        custo_val = float(meta["value"])
-                        df_variants.loc[df_variants["sku"] == sku, "cost"] = custo_val
-                    except Exception as e:
-                        st.warning(f"⚠️ Erro ao converter custo da SKU {sku}: {e}")
+            # 1️⃣ Metafield custom
+            meta = node.get("metafield")
+            if meta and meta.get("value"):
+                try:
+                    custo = float(meta["value"])
+                except:
+                    pass
 
-        else:
-            st.warning(f"⚠️ Erro ao buscar metafields GraphQL: {resp.status_code} - {resp.text}")
+            # 2️⃣ Custo oficial do InventoryItem
+            inv = node.get("inventoryItem")
+            if not custo and inv and inv.get("unitCost"):
+                try:
+                    custo = float(inv["unitCost"]["amount"])
+                except:
+                    pass
+
+            if sku and custo is not None:
+                df_variants.loc[df_variants["sku"] == sku, "cost"] = custo
+    else:
+        st.warning(f"⚠️ Erro ao buscar GraphQL: {resp.status_code} - {resp.text}")
 
     return df_variants
 
