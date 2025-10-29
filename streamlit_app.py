@@ -3299,8 +3299,7 @@ if menu == "📦 Dashboard – Logística":
         # -------------------------------------------------
         # 📋 Tabela de pedidos
         # -------------------------------------------------
-        st.subheader("📋 Pedidos filtrados")
-
+        
         st.markdown("""
             <style>
             thead tr th:first-child, tbody tr td:first-child {
