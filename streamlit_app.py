@@ -3703,15 +3703,22 @@ if menu == "📦 Dashboard – Logística":
                 import os
                 import gspread
                 import json
+                import base64
                 from google.oauth2.service_account import Credentials
 
-                # 🔐 Compatibilidade: usa st.secrets se estiver no Streamlit, 
-                # ou GitHub Secrets (GCP_SERVICE_ACCOUNT) se estiver no GitHub Actions
+                # 🔐 Detecta ambiente: Streamlit Cloud ou GitHub
                 if "gcp_service_account" in st.secrets:
+                    # Ambiente Streamlit (usa secrets.toml)
                     gcp_info = st.secrets["gcp_service_account"]
+                elif "GCP_SERVICE_ACCOUNT_B64" in os.environ:
+                    # Ambiente GitHub (usa variável Base64)
+                    gcp_json_str = base64.b64decode(os.environ["GCP_SERVICE_ACCOUNT_B64"]).decode("utf-8")
+                    gcp_info = json.loads(gcp_json_str)
                 else:
-                    gcp_info = json.loads(os.environ["GCP_SERVICE_ACCOUNT"])
+                    st.error("❌ Nenhuma credencial GCP encontrada (verifique o secrets.toml ou o secret Base64 do GitHub).")
+                    st.stop()
 
+                # 🔑 Cria credencial do Google
                 creds = Credentials.from_service_account_info(
                     gcp_info,
                     scopes=["https://www.googleapis.com/auth/spreadsheets"]
@@ -3719,16 +3726,15 @@ if menu == "📦 Dashboard – Logística":
 
                 client = gspread.authorize(creds)
 
-                # ID da planilha (vem do [google_sheets] do secrets.toml)
+                # ID da planilha
                 SHEET_ID = (
                     st.secrets["google_sheets"]["sheet_id"]
                     if "google_sheets" in st.secrets
                     else "1WTEiRnm1OFxzn6ag1MfI8VnlQCbL8xwxY3LeanCsdxk"
                 )
-
                 sheet = client.open_by_key(SHEET_ID).sheet1
 
-                # Atualizar todos os dados
+                # Atualizar dados
                 sheet.update(
                     [custos_editados.columns.values.tolist()] + custos_editados.values.tolist()
                 )
