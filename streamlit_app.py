@@ -3415,6 +3415,16 @@ if menu == "📦 Dashboard – Logística":
     # 📦 ABA 2 — ESTOQUE
     # =====================================================
     with aba2:
+         st.info("📈 Em breve: métricas de performance logística e eficiência operacional.")
+    # =====================================================
+    # 🚚 ABA 3 — ENTREGAS
+    # =====================================================
+    with aba3:
+        st.info("📍 Em breve: status de fretes, prazos e devoluções.")
+    # =====================================================
+    # 📊 ABA 4 — INDICADORES
+    # =====================================================
+    with aba4:
         st.subheader("📈 Análise de Saídas por Variante")
 
         # 1) Produtos podem vir do cache atual (não dependem de período)
@@ -3553,14 +3563,3 @@ if menu == "📦 Dashboard – Logística":
         # Exibir tabela
         st.subheader(f"📦 {produto_escolhido} — Comparativo de Vendas por Variante")
         st.dataframe(comparativo, use_container_width=True)
-
-    # =====================================================
-    # 🚚 ABA 3 — ENTREGAS
-    # =====================================================
-    with aba3:
-        st.info("📍 Em breve: status de fretes, prazos e devoluções.")
-    # =====================================================
-    # 📊 ABA 4 — INDICADORES
-    # =====================================================
-    with aba4:
-        st.info("📈 Em breve: métricas de performance logística e eficiência operacional.")
