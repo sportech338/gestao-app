@@ -3229,6 +3229,20 @@ if menu == "📦 Dashboard – Logística":
             pedidos = st.session_state["pedidos"]
 
         # -------------------------------------------------
+        # 🧩 Garantir que 'produtos' existe mesmo se ainda não foi carregado
+        # -------------------------------------------------
+        if "produtos" not in st.session_state or st.session_state["produtos"].empty:
+            try:
+                with st.spinner("🔄 Carregando lista de produtos da Shopify..."):
+                    produtos = get_products_with_variants()
+                    st.session_state["produtos"] = produtos
+            except Exception as e:
+                st.error(f"❌ Erro ao carregar produtos da Shopify: {e}")
+                produtos = pd.DataFrame()
+        else:
+            produtos = st.session_state["produtos"]
+
+        # -------------------------------------------------
         # 🧩 Preparação dos dados
         # -------------------------------------------------
         for col in ["order_id", "order_number", "financial_status", "fulfillment_status"]:
