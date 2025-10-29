@@ -3605,12 +3605,17 @@ if menu == "📦 Dashboard – Logística":
         import json
 
         def get_gsheet_client():
+            import json
             scopes = [
                 "https://www.googleapis.com/auth/spreadsheets",
                 "https://www.googleapis.com/auth/drive"
             ]
-            # 🔧 Correção final: converte AttrDict → dict antes de usar
+
+            # 🔧 Corrige AttrDict → dict e reconverte o campo private_key com quebras de linha reais
             gcp_info = dict(st.secrets["gcp_service_account"])
+            if isinstance(gcp_info.get("private_key"), str):
+                gcp_info["private_key"] = gcp_info["private_key"].replace("\\n", "\n")
+
             creds = Credentials.from_service_account_info(gcp_info, scopes=scopes)
             client = gspread.authorize(creds)
             return client
