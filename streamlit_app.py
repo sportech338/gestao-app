@@ -3394,7 +3394,6 @@ if menu == "📦 Dashboard – Logística":
         # -------------------------------------------------
         # 🚚 Processamento de pedidos
         # -------------------------------------------------
-        st.subheader("🚚 Processar pedidos manualmente")
         pendentes = df[df["fulfillment_status"].isin(["unfulfilled", None, "null"])]
         if not pendentes.empty:
             if st.button("🚀 Processar TODOS os pedidos pendentes"):
