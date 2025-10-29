@@ -3564,10 +3564,30 @@ if menu == "📦 Dashboard – Logística":
         comparativo.rename(columns={"variant_title": "Variante"}, inplace=True)
         comparativo = comparativo.sort_values("Qtd. Período A", ascending=False).reset_index(drop=True)
 
+        # 🔧 Formatação de números
+        comparativo["Qtd. Período A"] = comparativo["Qtd. Período A"].astype(int)
+        comparativo["Qtd. Período B"] = comparativo["Qtd. Período B"].astype(int)
+        comparativo["Diferença (unid.)"] = comparativo["Diferença (unid.)"].astype(int)
+
+        # 🔧 Formatação de percentuais
+        for col in ["Crescimento (%)", "Participação A (%)", "Participação B (%)"]:
+            comparativo[col] = comparativo[col].apply(
+                lambda x: f"{x:.1f}%" if pd.notna(x) else "-"
+            )
+
+        comparativo["Variação Part. (p.p.)"] = comparativo["Variação Part. (p.p.)"].apply(
+            lambda x: f"{x:+.1f}" if pd.notna(x) else "-"
+        )
+
+        # 🎨 Estilo visual: verde para positivo, vermelho para negativo
         def highlight_variacao(val):
-            if isinstance(val, (int, float)) and not pd.isna(val):
-                color = "#00ff2a" if val > 0 else "#f00000" if val < 0 else "inherit"
-                return f"color: {color}; font-weight: 600;"
+            if isinstance(val, str):
+                try:
+                    num = float(val.replace("%", "").replace("+", "").replace(",", "."))
+                    color = "#00ff2a" if "+" in val else "#f00000" if "-" in val else "inherit"
+                    return f"color: {color}; font-weight: 600;"
+                except:
+                    return ""
             return ""
 
         styled_df = comparativo.style.applymap(
