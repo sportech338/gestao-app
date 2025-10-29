@@ -3742,7 +3742,6 @@ if menu == "📦 Dashboard – Logística":
 
         if st.button("💾 Salvar alterações na planilha"):
             atualizar_planilha_custos(edit_df)
-            st.cache_data.clear()
             st.rerun()
 
     # =====================================================
