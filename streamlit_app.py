@@ -3645,14 +3645,26 @@ if menu == "📦 Dashboard – Logística":
         def atualizar_planilha_custos(df):
             client = get_gsheet_client()
             sheet = client.open_by_key(st.secrets["sheets"]["spreadsheet_id"]).sheet1
-            sheet.update([df.columns.values.tolist()] + df.values.tolist())
-            st.success("✅ Planilha atualizada com sucesso!")
 
-        try:
-            df_custos = carregar_planilha_custos()
-        except Exception as e:
-            st.error(f"❌ Erro ao carregar planilha de custos: {e}")
-            st.stop()
+            try:
+                # ✅ Converte tudo para texto antes de enviar
+                df_safe = (
+                    df.copy()
+                    .fillna("")                           # remove NaN
+                    .astype(str)                          # garante tudo como string
+                    .replace("nan", "", regex=False)       # remove "nan" literais
+                )
+
+                # ✅ Monta o corpo limpo para update
+                body = [df_safe.columns.values.tolist()] + df_safe.values.tolist()
+
+                # ✅ Envia de forma segura ao Sheets
+                sheet.batch_clear(["A:Z"])                # limpa o conteúdo antigo
+                sheet.update(body)
+                st.success("✅ Planilha atualizada com sucesso!")
+
+            except Exception as e:
+                st.error(f"❌ Erro ao atualizar planilha: {e}")
 
         # =====================================================
         # 💸 Integração com o comparativo de custos
