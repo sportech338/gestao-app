@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -3262,7 +3261,21 @@ if menu == "📦 Dashboard – Logística":
             if c in base.columns:
                 base[c] = base[c].fillna(f"({c} desconhecido)")
 
-        base["created_at"] = pd.to_datetime(base.get("created_at"), errors="coerce").dt.tz_localize(None)
+        # -------------------------------------------------
+        # 🔧 Conversão segura da coluna "created_at"
+        # -------------------------------------------------
+        if "created_at" in base.columns and not base["created_at"].dropna().empty:
+            try:
+                base["created_at"] = (
+                    pd.to_datetime(base["created_at"], errors="coerce")
+                    .dt.tz_localize(None)
+                )
+            except Exception as e:
+                st.warning(f"⚠️ Erro ao converter datas: {e}")
+                base["created_at"] = pd.NaT
+        else:
+            base["created_at"] = pd.NaT
+
         base["price"] = pd.to_numeric(base.get("price"), errors="coerce").fillna(0)
         base["quantity"] = pd.to_numeric(base.get("quantity"), errors="coerce").fillna(0)
         base["line_revenue"] = base["price"] * base["quantity"]
