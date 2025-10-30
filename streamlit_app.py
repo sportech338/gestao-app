@@ -3792,32 +3792,35 @@ if menu == "📦 Dashboard – Logística":
             )
 
         # -------------------------------------------------
-        # 📈 Comparativo geral entre períodos
+        # 📈 Comparativo geral entre períodos (por posição)
         # -------------------------------------------------
-        st.subheader("📈 Tabela 3 — Comparativo Entre Períodos")
+        st.subheader("📈 Tabela 3 — Comparativo Entre Períodos (por posição)")
 
-        comp = comparativo.merge(df_custos[["Variante", col_custo]], on="Variante", how="left")
-        comp.rename(columns={col_custo: "Custo Unitário"}, inplace=True)
-        comp["Custo Unitário"] = pd.to_numeric(comp["Custo Unitário"], errors="coerce").fillna(0)
+        # Garante que os DataFrames tenham o mesmo tamanho
+        max_linhas = max(len(df_a), len(df_b))
+        df_a = df_a.reindex(range(max_linhas)).fillna(0)
+        df_b = df_b.reindex(range(max_linhas)).fillna(0)
 
-        comp["Custo A"] = comp["Custo Unitário"] * comp["Qtd A"]
-        comp["Custo B"] = comp["Custo Unitário"] * comp["Qtd B"]
-        comp["Diferença Qtd."] = comp["Qtd A"] - comp["Qtd B"]
+        # Cria DataFrame de comparação lado a lado
+        comp = pd.DataFrame({
+            "Variante A": df_a["Variante"],
+            "Variante B": df_b["Variante"],
+            "Qtd. A": df_a["Qtd A"],
+            "Qtd. B": df_b["Qtd B"],
+            "Custo A": df_a["Custo A"],
+            "Custo B": df_b["Custo B"],
+            "Lucro A": df_a["Lucro A"],
+            "Lucro B": df_b["Lucro B"]
+        })
+
+        # Calcula diferenças e variações
+        comp["Diferença Qtd."] = comp["Qtd. A"] - comp["Qtd. B"]
         comp["Diferença Custo"] = comp["Custo A"] - comp["Custo B"]
+        comp["Diferença Lucro"] = comp["Lucro A"] - comp["Lucro B"]
 
-        # 💰 Lucro e variação (usando bases separadas)
-        precos_a = custos_base_A.set_index("Variante")["Preço Médio"] if "Preço Médio" in custos_base_A.columns else pd.Series(dtype=float)
-        precos_b = custos_base_B.set_index("Variante")["Preço Médio"] if "Preço Médio" in custos_base_B.columns else pd.Series(dtype=float)
-
-        comp["Lucro A"] = np.where(
-            comp["Variante"].isin(precos_a.index),
-            (comp["Qtd A"] * comp["Variante"].map(precos_a)) - comp["Custo A"],
-            np.nan
-        )
-
-        comp["Lucro B"] = np.where(
-            comp["Variante"].isin(precos_b.index),
-            (comp["Qtd B"] * comp["Variante"].map(precos_b)) - comp["Custo B"],
+        comp["Crescimento (%)"] = np.where(
+            comp["Qtd. B"] > 0,
+            (comp["Qtd. A"] - comp["Qtd. B"]) / comp["Qtd. B"] * 100,
             np.nan
         )
 
@@ -3827,46 +3830,32 @@ if menu == "📦 Dashboard – Logística":
             np.nan
         )
 
-        comp["Crescimento (%)"] = np.where(
-            comp["Qtd B"] > 0,
-            (comp["Qtd A"] - comp["Qtd B"]) / comp["Qtd B"] * 100,
-            np.nan
-        )
-
-        comp["Variação Part. (p.p.)"] = comparativo["Variação Part. (p.p.)"]
-
-        # 🧹 Corrige colunas percentuais antes do estilo
-        for col in ["Crescimento (%)", "Variação Part. (p.p.)", "Variação Lucro (%)"]:
-            if comp[col].dtype == "O":
-                comp[col] = (
-                    comp[col]
-                    .astype(str)
-                    .str.replace("%", "")
-                    .str.replace("+", "")
-                    .str.replace(",", ".")
-                    .replace("-", np.nan)
-                    .astype(float)
-                )
-
         # -------------------------------------------------
         # 📊 Exibir tabela comparativa formatada
         # -------------------------------------------------
         st.dataframe(
             comp[[
-                "Variante",
+                "Variante A",
+                "Variante B",
+                "Qtd. A",
+                "Qtd. B",
                 "Diferença Qtd.",
+                "Custo A",
+                "Custo B",
                 "Diferença Custo",
-                "Crescimento (%)",
-                "Variação Part. (p.p.)",
                 "Lucro A",
                 "Lucro B",
+                "Diferença Lucro",
+                "Crescimento (%)",
                 "Variação Lucro (%)"
             ]].style.format({
-                "Diferença Custo": fmt_moeda,
+                "Custo A": fmt_moeda,
+                "Custo B": fmt_moeda,
                 "Lucro A": fmt_moeda,
                 "Lucro B": fmt_moeda,
+                "Diferença Custo": fmt_moeda,
+                "Diferença Lucro": fmt_moeda,
                 "Crescimento (%)": "{:+.1f}%",
-                "Variação Part. (p.p.)": "{:+.1f}",
                 "Variação Lucro (%)": "{:+.1f}%"
             }),
             use_container_width=True
@@ -3919,7 +3908,6 @@ if menu == "📦 Dashboard – Logística":
             except Exception as e:
                 st.error(f"❌ Erro ao atualizar planilha: {e}")
 
-        
         # =====================================================
         # 📝 Edição direta da planilha no app
         # =====================================================
