@@ -2771,7 +2771,7 @@ if menu == "📊 Dashboard – Tráfego Pago":
                 fig.add_trace(go.Scatter(
                     x=g["Dia da Semana"],
                     y=g["spend"],
-                    name="Invest.(R$)",
+                    name="Invest. (R$)",
                     mode="lines+markers+text",
                     text=[fmt_real(v) for v in g["spend"]],
                     textposition="top center",
@@ -2791,7 +2791,7 @@ if menu == "📊 Dashboard – Tráfego Pago":
                     ),
                     xaxis=dict(title="Dia da Semana"),
                     yaxis=dict(title="Compras", side="left", showgrid=False, zeroline=False),
-                    yaxis2=dict(title="Invest.(R$)", overlaying="y", side="right", showgrid=False, zeroline=False),
+                    yaxis2=dict(title="Invest. (R$)", overlaying="y", side="right", showgrid=False, zeroline=False),
                     legend=dict(
                         orientation="h",
                         x=0.5, y=-0.2,
@@ -3816,9 +3816,9 @@ if menu == "📦 Dashboard – Logística":
             def distribuir_investimento(df, invest_total, qtd_col):
                 total_qtd = df[qtd_col].sum()
                 if total_qtd == 0:
-                    df["Invest.(R$)"] = 0
+                    df["Invest. (R$)"] = 0
                 else:
-                    df["Invest.(R$)"] = (df[qtd_col] / total_qtd) * invest_total
+                    df["Invest. (R$)"] = (df[qtd_col] / total_qtd) * invest_total
                 return df
 
             # Aplica para os dois períodos
@@ -3832,8 +3832,8 @@ if menu == "📦 Dashboard – Logística":
 
         except Exception as e:
             st.warning(f"⚠️ Não foi possível calcular investimento automático via Meta Ads. Detalhe: {e}")
-            df_a["Invest.(R$)"] = 0
-            df_b["Invest.(R$)"] = 0
+            df_a["Invest. (R$)"] = 0
+            df_b["Invest. (R$)"] = 0
         
         # -------------------------------------------------
         # 💲 Função auxiliar para formatar valores monetários
@@ -3853,11 +3853,11 @@ if menu == "📦 Dashboard – Logística":
         with col1:
             st.markdown("### 📆 Período A")
             st.dataframe(
-                df_a[["Variante", "Qtd A", "Lucro A", "Part.A (%)", "Invest.(R$)"]]
+                df_a[["Variante", "Qtd A", "Lucro A", "Part.A (%)", "Invest. (R$)"]]
                 .style.format({
                     "Qtd A": "{:.0f}",
                     "Lucro A": fmt_moeda,
-                    "Invest.(R$)": fmt_moeda,
+                    "Invest. (R$)": fmt_moeda,
                     "Part.A (%)": "{:.1f}%"
                 }),
                 use_container_width=True
@@ -3866,11 +3866,11 @@ if menu == "📦 Dashboard – Logística":
         with col2:
             st.markdown("### 📆 Período B")
             st.dataframe(
-                df_b[["Variante", "Qtd B", "Lucro B", "Part.B (%)", "Invest.(R$)"]]
+                df_b[["Variante", "Qtd B", "Lucro B", "Part.B (%)", "Invest. (R$)"]]
                 .style.format({
                     "Qtd B": "{:.0f}",
                     "Lucro B": fmt_moeda,
-                    "Invest.(R$)": fmt_moeda,
+                    "Invest. (R$)": fmt_moeda,
                     "Part.B (%)": "{:.1f}%"
                 }),
                 use_container_width=True
@@ -3883,21 +3883,21 @@ if menu == "📦 Dashboard – Logística":
         st.markdown("### 📈 ROI e ROAS por Variante")
 
         for df, periodo in [(df_a, "A"), (df_b, "B")]:
-            if "Invest.(R$)" in df.columns:
-                df[f"ROI {periodo}"] = np.where(df["Invest.(R$)"] > 0,
-                                                (df[f"Lucro {periodo}"] / df["Invest.(R$)"]) * 100,
+            if "Invest. (R$)" in df.columns:
+                df[f"ROI {periodo}"] = np.where(df["Invest. (R$)"] > 0,
+                                                (df[f"Lucro {periodo}"] / df["Invest. (R$)"]) * 100,
                                                 np.nan)
-                df[f"ROAS {periodo}"] = np.where(df["Invest.(R$)"] > 0,
-                                                 (df[f"Receita {periodo}"] / df["Invest.(R$)"]),
+                df[f"ROAS {periodo}"] = np.where(df["Invest. (R$)"] > 0,
+                                                 (df[f"Receita {periodo}"] / df["Invest. (R$)"]),
                                                  np.nan)
 
         col1, col2 = st.columns(2)
         with col1:
             st.dataframe(
-                df_a[["Variante", "Qtd A", "Lucro A", "Invest.(R$)", "ROI A", "ROAS A"]]
+                df_a[["Variante", "Qtd A", "Lucro A", "Invest. (R$)", "ROI A", "ROAS A"]]
                 .style.format({
                     "Lucro A": fmt_moeda,
-                    "Invest.(R$)": fmt_moeda,
+                    "Invest. (R$)": fmt_moeda,
                     "Qtd A": "{:.0f}",
                     "ROI A": "{:.1f}%",
                     "ROAS A": "{:.2f}x"
@@ -3907,10 +3907,10 @@ if menu == "📦 Dashboard – Logística":
 
         with col2:
             st.dataframe(
-                df_b[["Variante", "Qtd B", "Lucro B", "Invest.(R$)", "ROI B", "ROAS B"]]
+                df_b[["Variante", "Qtd B", "Lucro B", "Invest. (R$)", "ROI B", "ROAS B"]]
                 .style.format({
                     "Lucro B": fmt_moeda,
-                    "Invest.(R$)": fmt_moeda,
+                    "Invest. (R$)": fmt_moeda,
                     "Qtd B": "{:.0f}",
                     "ROI B": "{:.1f}%",
                     "ROAS B": "{:.2f}x"
