@@ -3804,11 +3804,19 @@ if menu == "📦 Dashboard – Logística":
                     .astype(float)
                 )
 
+        # -------------------------------------------------
+        # 📊 Exibir tabela comparativa formatada
+        # -------------------------------------------------
         st.dataframe(
             comp[[
-                "Variante", "Diferença Qtd.", "Diferença Custo Total",
-                "Crescimento (%)", "Variação Part. (p.p.)",
-                "Lucro A", "Lucro B", "Variação Lucro (%)"
+                "Variante",
+                "Diferença Qtd.",
+                "Diferença Custo Total",
+                "Crescimento (%)",
+                "Variação Part. (p.p.)",
+                "Lucro A",
+                "Lucro B",
+                "Variação Lucro (%)"
             ]].style.format({
                 "Diferença Custo Total": fmt_moeda,
                 "Lucro A": fmt_moeda,
@@ -3821,10 +3829,26 @@ if menu == "📦 Dashboard – Logística":
         )
 
         # =====================================================
+        # 🧾 Cria versão formatada da planilha para edição
+        # =====================================================
+        df_display = df_custos.copy()
+        for col in ["Custo AliExpress (R$)", "Custo Estoque (R$)"]:
+            if col in df_display.columns:
+                df_display[col] = df_display[col].apply(
+                    lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                    if pd.notna(x) else ""
+                )
+
+        # =====================================================
         # 📝 Edição direta da planilha no app
         # =====================================================
         st.subheader("📝 Custos por Variante")
-        edit_df = st.data_editor(df_display, num_rows="dynamic", use_container_width=True)
+
+        edit_df = st.data_editor(
+            df_display,
+            num_rows="dynamic",
+            use_container_width=True
+        )
 
         if st.button("💾 Salvar alterações na planilha"):
             # ⚙️ Converte R$ 25,00 → 25.00 antes de enviar
