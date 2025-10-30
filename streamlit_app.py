@@ -3805,11 +3805,26 @@ if menu == "📦 Dashboard – Logística":
         comp["Diferença Qtd."] = comp["Qtd. Período A"] - comp["Qtd. Período B"]
         comp["Diferença Custo Total"] = comp["Custo Total A"] - comp["Custo Total B"]
 
-        # 💰 Lucro e variação
-        comp["Lucro A"] = (comp["Qtd. Período A"] * custos_base["Preço Médio"]) - comp["Custo Total A"]
-        comp["Lucro B"] = (comp["Qtd. Período B"] * custos_base["Preço Médio"]) - comp["Custo Total B"]
+        # 💰 Lucro e variação (usando bases separadas)
+        precos_a = custos_base_A.set_index("Variante")["Preço Médio"] if "Preço Médio" in custos_base_A.columns else pd.Series(dtype=float)
+        precos_b = custos_base_B.set_index("Variante")["Preço Médio"] if "Preço Médio" in custos_base_B.columns else pd.Series(dtype=float)
+
+        comp["Lucro A"] = np.where(
+            comp["Variante"].isin(precos_a.index),
+            (comp["Qtd. Período A"] * comp["Variante"].map(precos_a)) - comp["Custo Total A"],
+            np.nan
+        )
+
+        comp["Lucro B"] = np.where(
+            comp["Variante"].isin(precos_b.index),
+            (comp["Qtd. Período B"] * comp["Variante"].map(precos_b)) - comp["Custo Total B"],
+            np.nan
+        )
+
         comp["Variação Lucro (%)"] = np.where(
-            comp["Lucro B"] > 0, (comp["Lucro A"] - comp["Lucro B"]) / comp["Lucro B"] * 100, np.nan
+            comp["Lucro B"] > 0,
+            (comp["Lucro A"] - comp["Lucro B"]) / comp["Lucro B"] * 100,
+            np.nan
         )
 
         comp["Crescimento (%)"] = np.where(
