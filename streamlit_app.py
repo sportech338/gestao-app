@@ -3593,8 +3593,18 @@ if menu == "📦 Dashboard – Logística":
         # =====================================================
         # 🧮 Processar dados do produto selecionado
         # =====================================================
-        pedidos["created_at"] = pd.to_datetime(pedidos["created_at"], utc=True, errors="coerce")\
-                                   .dt.tz_convert(APP_TZ).dt.tz_localize(None)
+        if "created_at" in pedidos.columns:
+            pedidos["created_at"] = pd.to_datetime(pedidos["created_at"], errors="coerce", utc=True)
+            # ⚙️ Ajusta o fuso horário apenas se existir informação de timezone
+            try:
+                if pedidos["created_at"].dt.tz is not None:
+                    pedidos["created_at"] = pedidos["created_at"].dt.tz_convert(APP_TZ).dt.tz_localize(None)
+            except Exception:
+                pedidos["created_at"] = pedidos["created_at"].dt.tz_localize(None)
+        else:
+            st.error("❌ A coluna 'created_at' não foi encontrada no dataframe de pedidos.")
+            st.stop()
+
         base_prod = pedidos[pedidos["product_title"] == produto_escolhido].copy()
 
         def filtrar_periodo(df, ini, fim):
@@ -3602,6 +3612,7 @@ if menu == "📦 Dashboard – Logística":
 
         df_a = filtrar_periodo(base_prod, inicio_a, fim_a)
         df_b = filtrar_periodo(base_prod, inicio_b, fim_b)
+
 
         # =====================================================
         # 🏷️ Escolher fornecedor base para custo
