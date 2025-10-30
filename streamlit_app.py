@@ -4037,6 +4037,147 @@ if menu == "📦 Dashboard – Logística":
         st.dataframe(styled_comp, use_container_width=True)
 
         # =====================================================
+        # 🧠 Análise automática completa baseada nos dados da Tabela 3
+        # =====================================================
+        def gerar_analise_automatica_completa(comp):
+            import re
+
+            def extrair_identificador(nome):
+                """Extrai o texto entre parênteses — ex: '( Mais Vendido )' → 'mais vendido'"""
+                if not isinstance(nome, str):
+                    return ""
+                nome = nome.strip()
+                match = re.search(r"\((.*?)\)", nome)
+                if match:
+                    return match.group(1).strip().lower()
+                return ""
+
+            texto = []
+            texto.append("📊 **Análise Automática — Interpretação por Camadas**\n")
+
+            # --- Cria identificadores
+            comp["funcao_A"] = comp["Variante A"].apply(extrair_identificador)
+            comp["funcao_B"] = comp["Variante B"].apply(extrair_identificador)
+
+            # Detecta funções presentes em A ou B
+            funcoes = set(comp["funcao_A"].dropna().unique()) | set(comp["funcao_B"].dropna().unique())
+
+            for func in funcoes:
+                bloco = comp[
+                    (comp["funcao_A"] == func) | (comp["funcao_B"] == func)
+                ].iloc[0]
+
+                # Extrai valores com fallback seguro
+                def val(col):
+                    return bloco[col] if col in bloco else np.nan
+
+                qtd_dif = val("A-B(Qtd.%)")
+                custo_dif = val("A-B(Custo)")
+                lucro_dif = val("A-B(Lucro)")
+                lucro_var = val("A-B(Lucro %)")
+                part_dif = val("A-B(Part. | p.p)")
+                invest_a = val("Invest. (R$)_A") if "Invest. (R$)_A" in bloco else np.nan
+                invest_b = val("Invest. (R$)_B") if "Invest. (R$)_B" in bloco else np.nan
+                roi_a = val("ROI A_A") if "ROI A_A" in bloco else np.nan
+                roi_b = val("ROI B_B") if "ROI B_B" in bloco else np.nan
+                roas_a = val("ROAS A_A") if "ROAS A_A" in bloco else np.nan
+                roas_b = val("ROAS B_B") if "ROAS B_B" in bloco else np.nan
+
+                texto.append(f"### 🔹 Função: {func.title()}")
+
+                # 1️⃣ Vendas & Desejo do consumidor
+                texto.append("**1. Vendas & Desejo do consumidor**")
+                texto.append(
+                    f"O volume vendido variou **{qtd_dif:+.1f}%**, e a participação no mix mudou em **{part_dif:+.1f} p.p.**."
+                )
+                if qtd_dif > 0:
+                    texto.append("➡️ O público mostrou **maior preferência** pela nova variante dessa função.")
+                else:
+                    texto.append("🔻 O público mostrou **menor interesse** nessa variante em relação ao período anterior.")
+
+                # 2️⃣ Custo e Investimento
+                texto.append("\n**2. Custo e Investimento**")
+                texto.append(
+                    f"O custo total variou em **{fmt_moeda(custo_dif)}**, enquanto o investimento em mídia mudou de "
+                    f"**{fmt_moeda(invest_b)} → {fmt_moeda(invest_a)}**."
+                )
+                if invest_a > invest_b:
+                    texto.append("💰 Houve **aumento de investimento publicitário**, possivelmente para reforçar a nova oferta.")
+                elif invest_a < invest_b:
+                    texto.append("💡 O investimento diminuiu, mas ainda manteve boa performance relativa.")
+                else:
+                    texto.append("📊 O investimento permaneceu praticamente estável entre os períodos.")
+
+                # 3️⃣ Eficiência Financeira
+                texto.append("\n**3. Eficiência Financeira (ROI e ROAS)**")
+                texto.append(
+                    f"O ROI evoluiu de **{roi_b:.1f}% → {roi_a:.1f}%**, e o ROAS passou de **{roas_b:.2f}x → {roas_a:.2f}x**."
+                )
+                if (roi_a > roi_b) and (roas_a > roas_b):
+                    texto.append("🚀 Ambos indicadores subiram, indicando **melhor retorno sobre investimento**.")
+                elif (roi_a < roi_b) and (roas_a < roas_b):
+                    texto.append("⚠️ Ambos caíram, sinalizando **menor eficiência na conversão de mídia em receita.**")
+                else:
+                    texto.append("📈 Um dos indicadores se manteve estável, mostrando performance mista entre volume e rentabilidade.")
+
+                # 4️⃣ Lucro e Margem
+                texto.append("\n**4. Lucro e Margem**")
+                texto.append(
+                    f"O lucro líquido variou em **{fmt_moeda(lucro_dif)} ({lucro_var:+.1f}%)**, "
+                    f"refletindo {'melhoria' if lucro_var > 0 else 'queda'} de margem."
+                )
+                if lucro_var > 0:
+                    texto.append("✅ A operação se tornou **mais rentável**, gerando ganho real de lucro líquido.")
+                else:
+                    texto.append("🔻 A margem encolheu, possivelmente por custo mais alto ou preço menos eficiente.")
+
+                # 5️⃣ Conclusão específica da função
+                texto.append("\n**Conclusão da Função**")
+                if (qtd_dif > 0 and lucro_var > 0 and roi_a > roi_b):
+                    texto.append(
+                        "🟢 Resultado **muito positivo**: mais vendas, maior margem e melhor retorno financeiro."
+                    )
+                elif (qtd_dif > 0 and lucro_var <= 0):
+                    texto.append(
+                        "🟡 Volume cresceu, mas **margem caiu** — bom engajamento, porém menos rentabilidade."
+                    )
+                elif (qtd_dif <= 0 and lucro_var > 0):
+                    texto.append(
+                        "🟡 Menor volume, mas **maior eficiência e lucro unitário** — bom sinal de qualificação de clientes."
+                    )
+                else:
+                    texto.append(
+                        "🔴 Queda geral — indica **perda de tração e eficiência**, requer revisão de posicionamento."
+                    )
+
+                texto.append("\n---")
+
+            # Conclusão geral
+            texto.append("## ✅ **Conclusão Estratégica Geral**")
+            lucro_total = comp["A-B(Lucro %)"].mean()
+            qtd_total = comp["A-B(Qtd.%)"].mean()
+            if lucro_total > 0 and qtd_total > 0:
+                texto.append(
+                    "💎 O conjunto das variantes apresentou **crescimento sólido** em volume e rentabilidade, "
+                    "mostrando boa resposta do mercado às alterações."
+                )
+            elif lucro_total < 0 and qtd_total < 0:
+                texto.append(
+                    "📉 As variantes tiveram **queda simultânea** de volume e lucro — provável sinal de saturação ou precificação alta."
+                )
+            else:
+                texto.append(
+                    "⚖️ O resultado foi **misto**, sugerindo que parte do portfólio ganhou eficiência, enquanto outras variantes perderam tração."
+                )
+
+            return "\n".join(texto)
+
+        # Exibir no app
+        analise_texto = gerar_analise_automatica_completa(comp)
+        st.markdown("---")
+        st.markdown(analise_texto)
+
+        # =====================================================
         # 🧾 Cria versão formatada da planilha para edição
         # =====================================================
         df_display = df_custos.copy()
