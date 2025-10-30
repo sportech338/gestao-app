@@ -3379,8 +3379,19 @@ if menu == "📦 Dashboard – Logística":
             return False
 
         tabela["duplicado"] = tabela.apply(lambda row: identificar_duplicado(row, tabela), axis=1)
-        tabela["is_sedex"] = tabela["Frete"].str.contains("SEDEX", case=False, na=False)
-        tabela = tabela.sort_values(by=["duplicado", "is_sedex", "Data do pedido"], ascending=[False, True, False])
+        # -------------------------------------------------
+        # 🚚 Identificação de SEDEX e ordenação
+        # -------------------------------------------------
+        if "Frete" in tabela.columns:
+            tabela["is_sedex"] = tabela["Frete"].astype(str).str.contains("SEDEX", case=False, na=False)
+        else:
+            tabela["is_sedex"] = False  # cria coluna padrão
+
+        # ✅ Garante que colunas de ordenação existem
+        colunas_ordem = [c for c in ["duplicado", "is_sedex", "Data do pedido"] if c in tabela.columns]
+        if colunas_ordem:
+            tabela = tabela.sort_values(by=colunas_ordem, ascending=[False, True, False][:len(colunas_ordem)])
+
 
         def highlight_prioridades(row):
             if row["duplicado"]:
