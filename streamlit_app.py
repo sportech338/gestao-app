@@ -3607,7 +3607,7 @@ if menu == "📦 Dashboard – Logística":
 
         comparativo = pd.merge(resumo_a, resumo_b, on="variant_title", how="outer").fillna(0)
         comparativo["Diferença (unid.)"] = comparativo["Qtd A"] - comparativo["Qtd B"]
-        comparativo["Crescimento (%)"] = np.where(
+        comparativo["A-B(Qtd.%)"] = np.where(
             comparativo["Qtd B"] > 0,
             (comparativo["Qtd A"] - comparativo["Qtd B"]) / comparativo["Qtd B"] * 100,
             np.nan
@@ -3622,7 +3622,7 @@ if menu == "📦 Dashboard – Logística":
             comparativo["Qtd B"] / comparativo["Qtd B"].sum() * 100,
             0
         )
-        comparativo["Variação Part. (p.p.)"] = comparativo["Participação A (%)"] - comparativo["Participação B (%)"]
+        comparativo["A-B(Part. | p.p)"] = comparativo["Participação A (%)"] - comparativo["Participação B (%)"]
 
         comparativo.rename(columns={"variant_title": "Variante"}, inplace=True)
         comparativo = comparativo.sort_values("Qtd A", ascending=False).reset_index(drop=True)
@@ -3819,13 +3819,13 @@ if menu == "📦 Dashboard – Logística":
         comp["A-B(Custo)"] = comp["Custo A"] - comp["Custo B"]
         comp["A-B(Lucro)"] = comp["Lucro A"] - comp["Lucro B"]
 
-        comp["Crescimento (%)"] = np.where(
+        comp["A-B(Qtd.%)"] = np.where(
             comp["Qtd. B"] > 0,
             (comp["Qtd. A"] - comp["Qtd. B"]) / comp["Qtd. B"] * 100,
             np.nan
         )
 
-        comp["Variação Lucro (%)"] = np.where(
+        comp["A-B(Lucro %)"] = np.where(
             comp["Lucro B"] > 0,
             (comp["Lucro A"] - comp["Lucro B"]) / comp["Lucro B"] * 100,
             np.nan
@@ -3846,7 +3846,7 @@ if menu == "📦 Dashboard – Logística":
             comp["Participação B (%)"] = np.nan
 
         # Delta em pontos percentuais (A - B)
-        comp["Variação Part. (p.p.)"] = comp["Participação A (%)"] - comp["Participação B (%)"]
+        comp["A-B(Part. | p.p)"] = comp["Participação A (%)"] - comp["Participação B (%)"]
 
         # -------------------------------------------------
         # 📊 Exibir tabela comparativa formatada (com cores)
@@ -3866,26 +3866,26 @@ if menu == "📦 Dashboard – Logística":
                 "Variante A",
                 "Variante B",
                 "A-B(Qtd.)",
-                "Crescimento (%)",
+                "A-B(Qtd.%)",
                 "A-B(Custo)",
                 "A-B(Lucro)",
-                "Variação Lucro (%)",
-                "Variação Part. (p.p.)"
+                "A-B(Lucro %)",
+                "A-B(Part. | p.p)"
             ]]
             .style
             .format({
                 "A-B(Qtd.)": "{:.0f}",
-                "Crescimento (%)": "{:+.1f}%",
-                "Variação Part. (p.p.)": "{:+.1f}",
+                "A-B(Qtd.%)": "{:+.1f}%",
+                "A-B(Part. | p.p)": "{:+.1f}",
                 "A-B(Custo)": fmt_moeda,
                 "A-B(Lucro)": fmt_moeda,
-                "Variação Lucro (%)": "{:+.1f}%"
+                "A-B(Lucro %)": "{:+.1f}%"
             })
             .applymap(highlight_diferencas, subset=[
                 "A-B(Qtd.)",
-                "Crescimento (%)",
-                "Variação Lucro (%)",
-                "Variação Part. (p.p.)"
+                "A-B(Qtd.%)",
+                "A-B(Lucro %)",
+                "A-B(Part. | p.p)"
             ])
         )
 
