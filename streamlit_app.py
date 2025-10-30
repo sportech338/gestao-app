@@ -3695,12 +3695,24 @@ if menu == "📦 Dashboard – Logística":
         variantes_a = base_prod[base_prod["created_at"].dt.date.between(inicio_a, fim_a)]["variant_title"].unique().tolist()
         variantes_b = base_prod[base_prod["created_at"].dt.date.between(inicio_b, fim_b)]["variant_title"].unique().tolist()
 
-        # 🔗 Mantém apenas variantes que existiam em pelo menos um dos períodos
-        variantes_validas = list(set(variantes_a + variantes_b))
+        # 🔧 Cria base de custos separada para cada período
+        custos_base_A = df_custos[df_custos["Variante"].isin(variantes_a)].copy()
+        custos_base_B = df_custos[df_custos["Variante"].isin(variantes_b)].copy()
 
-        # 🔧 Gera base de custos apenas com variantes válidas
-        custos_base = df_custos[df_custos["Variante"].isin(variantes_validas)].copy()
-        custos_base = custos_base.merge(comparativo, on="Variante", how="inner")
+        # 🔗 Adiciona colunas de quantidades do comparativo
+        custos_base_A = custos_base_A.merge(comparativo[["Variante", "Qtd. Período A"]], on="Variante", how="left")
+        custos_base_B = custos_base_B.merge(comparativo[["Variante", "Qtd. Período B"]], on="Variante", how="left")
+
+        # 🔢 Ajusta custos unitários
+        custos_base_A[col_custo] = df_custos.set_index("Variante").loc[custos_base_A["Variante"], col_custo].values
+        custos_base_B[col_custo] = df_custos.set_index("Variante").loc[custos_base_B["Variante"], col_custo].values
+
+        custos_base_A.rename(columns={col_custo: "Custo Unitário"}, inplace=True)
+        custos_base_B.rename(columns={col_custo: "Custo Unitário"}, inplace=True)
+
+        custos_base_A["Custo Unitário"] = pd.to_numeric(custos_base_A["Custo Unitário"], errors="coerce").fillna(0)
+        custos_base_B["Custo Unitário"] = pd.to_numeric(custos_base_B["Custo Unitário"], errors="coerce").fillna(0)
+
 
         # 🔢 Ajusta custos unitários
         custos_base[col_custo] = df_custos.set_index("Variante").loc[custos_base["Variante"], col_custo].values
@@ -3735,8 +3747,8 @@ if menu == "📦 Dashboard – Logística":
             return df[["Variante", qtd_col, f"Custo Total {periodo_label}", f"Receita {periodo_label}",
                        f"Lucro {periodo_label}", f"Participação {periodo_label} (%)"]]
 
-        df_a = calc_periodo(custos_base, "A", "Qtd. Período A")
-        df_b = calc_periodo(custos_base, "B", "Qtd. Período B")
+        df_a = calc_periodo(custos_base_A, "A", "Qtd. Período A")
+        df_b = calc_periodo(custos_base_B, "B", "Qtd. Período B")
 
         # -------------------------------------------------
         # 💲 Função auxiliar para formatar valores monetários
