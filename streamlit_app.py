@@ -1111,12 +1111,6 @@ if menu == "📊 Dashboard – Tráfego Pago":
     from zoneinfo import ZoneInfo
     APP_TZ = ZoneInfo("America/Sao_Paulo")
     
-    st.write("🔑 Chaves disponíveis no secrets:", list(st.secrets.keys()))
-
-    # 🔒 Pega credenciais com fallback seguro
-    facebook_secrets = st.secrets.get("facebook", {})
-    st.write("📘 Conteúdo da seção [facebook]:", dict(facebook_secrets))  # debug opcional
-
     act_id = (
         facebook_secrets.get("ad_account_id")
         or facebook_secrets.get("DEFAULT_ACT_ID")
