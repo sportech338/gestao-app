@@ -3914,21 +3914,20 @@ if menu == "📦 Dashboard – Logística":
             )
 
         # -------------------------------------------------
-        # 📈 Comparativo geral entre períodos (por posição)
+        # 📈 Comparativo geral entre períodos (por função da variante)
         # -------------------------------------------------
         st.subheader("📈 Tabela 3 — Comparativo Entre Períodos (por função da variante)")
+
+        import re
 
         # =====================================================
         # 🔍 Pareamento inteligente com base no complemento entre parênteses
         # =====================================================
-        import re
-
         def extrair_identificador(nome):
             """Extrai o texto entre parênteses — ou usa o nome completo se não houver."""
             if not isinstance(nome, str):
                 return ""
             nome = nome.strip()
-            # Busca texto dentro de parênteses
             match = re.search(r"\((.*?)\)", nome)
             if match:
                 return match.group(1).strip().lower()
@@ -3963,15 +3962,21 @@ if menu == "📦 Dashboard – Logística":
         # Monta DataFrame de correspondência
         corresp = pd.DataFrame(matches, columns=["Variante A", "Variante B"])
 
-        # Junta com dados A e B
+        # --- 🚧 Ajuste preventivo: renomeia colunas para evitar conflito no merge
+        df_a_pref = df_a.add_suffix(" A")
+        df_b_pref = df_b.add_suffix(" B")
+
+        # --- Faz merge seguro
         comp = (
             corresp
-            .merge(df_a, left_on="Variante A", right_on="Variante", how="left")
-            .merge(df_b, left_on="Variante B", right_on="Variante", how="left", suffixes=(" A", " B"))
+            .merge(df_a_pref, left_on="Variante A", right_on="Variante A", how="left")
+            .merge(df_b_pref, left_on="Variante B", right_on="Variante B", how="left")
             .fillna(0)
         )
 
-        # Calcula diferenças e variações
+        # =====================================================
+        # 📊 Cálculos de diferenças e variações
+        # =====================================================
         comp["A-B(Qtd.)"] = comp["Qtd A"] - comp["Qtd B"]
         comp["A-B(Custo)"] = comp["Custo A"] - comp["Custo B"]
         comp["A-B(Lucro)"] = comp["Lucro A"] - comp["Lucro B"]
@@ -3990,11 +3995,10 @@ if menu == "📦 Dashboard – Logística":
 
         comp["A-B(Part. | p.p)"] = comp["Participação A (%)"] - comp["Participação B (%)"]
 
-        # -------------------------------------------------
-        # 📊 Exibir tabela comparativa formatada (com cores)
-        # -------------------------------------------------
+        # =====================================================
+        # 🎨 Estilo visual (verde = positivo, vermelho = negativo)
+        # =====================================================
         def highlight_diferencas(val):
-            """Aplica cor verde para valores positivos e vermelho para negativos."""
             try:
                 if pd.isna(val):
                     return ""
@@ -4034,7 +4038,6 @@ if menu == "📦 Dashboard – Logística":
         )
 
         st.dataframe(styled_comp, use_container_width=True)
-
 
         # =====================================================
         # 🧾 Cria versão formatada da planilha para edição
