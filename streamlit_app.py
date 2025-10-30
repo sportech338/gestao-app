@@ -4069,7 +4069,6 @@ if menu == "📦 Dashboard – Logística":
 
         st.dataframe(styled_comp, use_container_width=True)
 
-
         # =====================================================
         # 🧭 Análise Estratégica — Efeito Real da Modificação
         # =====================================================
@@ -4085,10 +4084,9 @@ if menu == "📦 Dashboard – Logística":
                 match = re.search(r"\((.*?)\)", nome)
                 return match.group(1).strip().lower() if match else ""
 
-            texto = []
-            texto.append("## 📊 Interpretação Consolidada — Efeito Real da Mudança\n")
-
-            # Identifica função modificada (mesmo identificador, mas nome diferente)
+            # =====================================================
+            # Identifica a função modificada
+            # =====================================================
             mudanca = None
             for _, row in comp.iterrows():
                 id_a = extrair_identificador(row["Variante A"])
@@ -4098,98 +4096,141 @@ if menu == "📦 Dashboard – Logística":
                     break
 
             if mudanca is None:
-                texto.append("⚠️ Nenhuma modificação direta de variante detectada.")
-                return "\n".join(texto)
+                st.warning("⚠️ Nenhuma modificação direta de variante detectada.")
+                return
 
             funcao = extrair_identificador(mudanca["Variante A"])
             var_a = mudanca["Variante A"]
             var_b = mudanca["Variante B"]
 
-            # -------------------------------
-            # 🔹 Dados da função modificada
-            # -------------------------------
-            texto.append(f"### 🔹 Função Modificada: {funcao.title()}")
-            texto.append(f"Troca detectada: **{var_b} → {var_a}**")
-
+            # =====================================================
+            # Métricas
+            # =====================================================
             part_pp = mudanca["A-B(Part. | p.p)"]
             lucro_dif = mudanca["A-B(Lucro)"]
             receita_dif = mudanca["A-B(Receita)"]
             custo_dif = mudanca["A-B(Custo)"]
             invest_dif = mudanca["A-B(Invest.)"]
 
-            texto.append(
-                f"\n**Resultados diretos da função:**\n"
-                f"- Lucro: {fmt_moeda(lucro_dif)}\n"
-                f"- Receita: {fmt_moeda(receita_dif)}\n"
-                f"- Custo: {fmt_moeda(custo_dif)}\n"
-                f"- Investimento: {fmt_moeda(invest_dif)}\n"
-                f"- Participação: {part_pp:+.1f} p.p.\n"
-            )
-
-            # -------------------------------
-            # 🌍 Impacto global no portfólio
-            # -------------------------------
             lucro_total = comp["A-B(Lucro)"].sum()
             receita_total = comp["A-B(Receita)"].sum()
             custo_total = comp["A-B(Custo)"].sum()
             invest_total = comp["A-B(Invest.)"].sum()
             part_total = comp["A-B(Part. | p.p)"].sum()
 
-            texto.append("### 🌍 Impacto Global do Portfólio")
-            texto.append(
-                f"- Lucro total: {fmt_moeda(lucro_total)}\n"
-                f"- Receita total: {fmt_moeda(receita_total)}\n"
-                f"- Custo total: {fmt_moeda(custo_total)}\n"
-                f"- Investimento total: {fmt_moeda(invest_total)}\n"
-                f"- Δ Participação: {part_total:+.1f} p.p.\n"
-            )
-
-            # -------------------------------
-            # 💬 Diagnóstico Estratégico
-            # -------------------------------
-            texto.append("### 💬 Diagnóstico Estratégico")
-
+            # =====================================================
+            # Diagnóstico
+            # =====================================================
             if lucro_dif > 0 and lucro_total > 0 and invest_total <= 0:
-                texto.append("🟢 **Altamente favorável:** aumento de lucro individual e global, com investimento igual ou menor.")
-                status_color = "🟢"
-                status_text = "Altamente Favorável"
+                status_emoji, status_text = "🟢", "Altamente Favorável"
+                diagnostico = "Aumento de lucro individual e global, com investimento igual ou menor."
             elif lucro_dif > 0 and lucro_total > 0 and invest_total > 0:
-                texto.append("🟡 **Favorável com ressalvas:** crescimento geral, mas com maior investimento necessário.")
-                status_color = "🟡"
-                status_text = "Favorável com Ressalvas"
+                status_emoji, status_text = "🟡", "Favorável com Ressalvas"
+                diagnostico = "Crescimento geral, mas exigindo maior investimento."
             elif lucro_dif > 0 and lucro_total < 0:
-                texto.append("🟠 **Parcialmente favorável:** a variante melhorou, mas o portfólio perdeu lucro total — possível canibalização das demais.")
-                status_color = "🟠"
-                status_text = "Parcialmente Favorável"
+                status_emoji, status_text = "🟠", "Parcialmente Favorável"
+                diagnostico = "A variante melhorou, mas o portfólio perdeu lucro total — possível canibalização."
             elif lucro_dif < 0 and lucro_total > 0:
-                texto.append("🟢 **Mix mais eficiente:** o portfólio cresceu mesmo com queda da variante modificada.")
-                status_color = "🟢"
-                status_text = "Mix Eficiente"
+                status_emoji, status_text = "🟢", "Mix Eficiente"
+                diagnostico = "O portfólio cresceu mesmo com queda da variante modificada."
             elif lucro_dif < 0 and lucro_total < 0:
-                texto.append("🔴 **Desfavorável:** perda de lucro individual e global, indicando impacto negativo.")
-                status_color = "🔴"
-                status_text = "Desfavorável"
+                status_emoji, status_text = "🔴", "Desfavorável"
+                diagnostico = "Perda de lucro individual e global, indicando impacto negativo."
             else:
-                texto.append("⚖️ **Neutro:** variações pequenas, sem efeito relevante no desempenho total.")
-                status_color = "⚖️"
-                status_text = "Neutro"
+                status_emoji, status_text = "⚖️", "Neutro"
+                diagnostico = "Variações pequenas, sem efeito relevante no desempenho total."
 
-            # -------------------------------
-            # 📊 Painel visual (métricas rápidas nativas)
-            # -------------------------------
-            st.markdown("---")
+            # =====================================================
+            # Exibição em cards lado a lado
+            # =====================================================
             col1, col2, col3 = st.columns(3)
-            col1.metric("📦 Variante modificada", fmt_moeda(lucro_dif), "Lucro Δ")
-            col2.metric("💰 Lucro total", fmt_moeda(lucro_total), "Δ Global")
-            col3.metric("📈 Status Geral", f"{status_color} {status_text}")
 
-            return "\n".join(texto)
+            # --- CSS customizado para cards ---
+            card_style = """
+                <style>
+                    .card {
+                        background-color: #1e1e1e;
+                        border: 1px solid rgba(255,255,255,0.1);
+                        border-radius: 12px;
+                        padding: 20px;
+                        margin: 5px;
+                        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+                    }
+                    .card h4 {
+                        color: #fff;
+                        margin-bottom: 10px;
+                    }
+                    .metric {
+                        color: #d1d5db;
+                        font-size: 15px;
+                        margin-bottom: 4px;
+                    }
+                    .metric strong {
+                        color: #fff;
+                    }
+                </style>
+            """
+            st.markdown(card_style, unsafe_allow_html=True)
+
+            # =====================================================
+            # Card 1 — Função Modificada
+            # =====================================================
+            with col1:
+                st.markdown(
+                    f"""
+                    <div class="card">
+                        <h4>🔹 Função Modificada</h4>
+                        <div class="metric"><strong>Função:</strong> {funcao.title()}</div>
+                        <div class="metric"><strong>Troca:</strong> {var_b} → {var_a}</div>
+                        <hr>
+                        <div class="metric"><strong>Lucro:</strong> {fmt_moeda(lucro_dif)}</div>
+                        <div class="metric"><strong>Receita:</strong> {fmt_moeda(receita_dif)}</div>
+                        <div class="metric"><strong>Custo:</strong> {fmt_moeda(custo_dif)}</div>
+                        <div class="metric"><strong>Investimento:</strong> {fmt_moeda(invest_dif)}</div>
+                        <div class="metric"><strong>Participação:</strong> {part_pp:+.1f} p.p.</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+
+            # =====================================================
+            # Card 2 — Impacto Global
+            # =====================================================
+            with col2:
+                st.markdown(
+                    f"""
+                    <div class="card">
+                        <h4>🌍 Impacto Global do Portfólio</h4>
+                        <div class="metric"><strong>Lucro total:</strong> {fmt_moeda(lucro_total)}</div>
+                        <div class="metric"><strong>Receita total:</strong> {fmt_moeda(receita_total)}</div>
+                        <div class="metric"><strong>Custo total:</strong> {fmt_moeda(custo_total)}</div>
+                        <div class="metric"><strong>Investimento total:</strong> {fmt_moeda(invest_total)}</div>
+                        <div class="metric"><strong>Δ Participação:</strong> {part_total:+.1f} p.p.</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+
+            # =====================================================
+            # Card 3 — Diagnóstico Estratégico
+            # =====================================================
+            with col3:
+                st.markdown(
+                    f"""
+                    <div class="card">
+                        <h4>💬 Diagnóstico Estratégico</h4>
+                        <div class="metric">{status_emoji} <strong>{status_text}</strong></div>
+                        <hr>
+                        <div class="metric">{diagnostico}</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
 
         # -------------------------------------------------
         # Exibir a análise formatada no app
         # -------------------------------------------------
-        analise_texto = gerar_analise_modificacao(comp)
-        st.markdown(analise_texto)
+        gerar_analise_modificacao(comp)
 
 
         # =====================================================
