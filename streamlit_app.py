@@ -3846,7 +3846,7 @@ if menu == "📦 Dashboard – Logística":
                 return valor
 
         # -------------------------------------------------
-        # 💰 Exibir tabelas lado a lado (sem Receita e Custo)
+        # 💰 Exibir tabelas lado a lado (com formatação monetária)
         # -------------------------------------------------
         col1, col2 = st.columns(2)
 
@@ -3857,6 +3857,7 @@ if menu == "📦 Dashboard – Logística":
                 .style.format({
                     "Qtd A": "{:.0f}",
                     "Lucro A": fmt_moeda,
+                    "Investimento (R$)": fmt_moeda,
                     "Participação A (%)": "{:.1f}%"
                 }),
                 use_container_width=True
@@ -3869,10 +3870,12 @@ if menu == "📦 Dashboard – Logística":
                 .style.format({
                     "Qtd B": "{:.0f}",
                     "Lucro B": fmt_moeda,
+                    "Investimento (R$)": fmt_moeda,
                     "Participação B (%)": "{:.1f}%"
                 }),
                 use_container_width=True
             )
+
 
         # -------------------------------------------------
         # 📊 ROI e ROAS por variante
