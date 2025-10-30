@@ -3772,8 +3772,8 @@ if menu == "📦 Dashboard – Logística":
         try:
             # Busca investimento Meta por produto e período
             ads_a = fetch_insights_daily(
-                act_id=st.secrets["meta"]["ad_account_id"],
-                token=st.secrets["meta"]["access_token"],
+                act_id=st.secrets["facebook"]["ad_account_id"],
+                token=st.secrets["facebook"]["access_token"],
                 api_version="v21.0",
                 since_str=since_a,
                 until_str=until_a,
@@ -3782,8 +3782,8 @@ if menu == "📦 Dashboard – Logística":
             )
 
             ads_b = fetch_insights_daily(
-                act_id=st.secrets["meta"]["ad_account_id"],
-                token=st.secrets["meta"]["access_token"],
+                act_id=st.secrets["facebook"]["ad_account_id"],
+                token=st.secrets["facebook"]["access_token"],
                 api_version="v21.0",
                 since_str=since_b,
                 until_str=until_b,
