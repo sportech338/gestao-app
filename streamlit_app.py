@@ -3368,7 +3368,6 @@ if menu == "📦 Dashboard – Logística":
 
         # 🔢 Ajusta o índice antes de aplicar o estilo
         tabela.index = range(1, len(tabela) + 1)
-        tabela.index.name = "Nº"
 
         # Cria uma cópia apenas com as colunas visíveis + técnicas
         colunas_visiveis = [c for c in tabela.columns if c not in ["duplicado", "is_sedex"]]
