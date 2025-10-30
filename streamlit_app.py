@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -3722,8 +3723,8 @@ if menu == "📦 Dashboard – Logística":
         # =====================================================
         # 💰 Tabela 2 — Comparativo de Custos Totais (AliExpress)
         # =====================================================
-        receita_a = df_a.groupby("variant_title")["line_price"].sum().reset_index(name="Receita A")
-        receita_b = df_b.groupby("variant_title")["line_price"].sum().reset_index(name="Receita B")
+        receita_a = df_a.groupby("variant_title")["line_revenue"].sum().reset_index(name="Receita A")
+        receita_b = df_b.groupby("variant_title")["line_revenue"].sum().reset_index(name="Receita B")
 
         custos_ali = comparativo.merge(df_custos[["Variante", "Custo AliExpress (R$)"]], on="Variante", how="left")
         custos_ali = custos_ali.merge(receita_a, left_on="Variante", right_on="variant_title", how="left")
