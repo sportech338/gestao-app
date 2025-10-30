@@ -1112,28 +1112,41 @@ if menu == "📊 Dashboard – Tráfego Pago":
     APP_TZ = ZoneInfo("America/Sao_Paulo")
     
     st.write("🔑 Chaves disponíveis no secrets:", list(st.secrets.keys()))
-    # 🔒 Pega credenciais direto do st.secrets
-    act_id = st.secrets["facebook"]["ad_account_id"]
-    token = st.secrets["facebook"]["access_token"]
+    
+    # 🔒 Pega credenciais de forma segura, evitando KeyError
+    facebook_secrets = st.secrets.get("facebook", {})
+    st.write("📘 Conteúdo da seção [facebook]:", dict(facebook_secrets))  # debug opcional
+
+    act_id = facebook_secrets.get("ad_account_id") or facebook_secrets.get("ad_account_id ".strip())
+    token = facebook_secrets.get("access_token") or facebook_secrets.get("access_token ".strip())
 
     api_version = "v23.0"
     level = "campaign"  # pode deixar fixo ou colocar como selectbox se quiser mudar
 
-    # Mostra no sidebar só como info (não editável)
+    # Mostra no sidebar as infos (não editáveis)
     with st.sidebar:
         st.markdown("## ⚙️ Configuração — Tráfego Pago")
-        st.info(f"**Ad Account ID:** {act_id}")
+        st.info(f"**Ad Account ID:** {act_id or '❌ Não encontrado'}")
         st.markdown(f"**API Version:** `{api_version}`")
         st.markdown(f"**Nível:** `{level}`")
-        st.success("✅ Credenciais carregadas automaticamente via `st.secrets`")
+
+        if act_id and token:
+            st.success("✅ Credenciais do Facebook carregadas via `st.secrets`")
+        else:
+            st.error("⚠️ Falha ao carregar credenciais do Facebook.")
 
     # ================= VERIFICAÇÃO =================
-    if not (act_id and token):
-        st.error("❌ Credenciais do Facebook ausentes no secrets.toml.")
+    if not act_id or not token:
+        st.error("⚠️ Não foi possível carregar 'ad_account_id' ou 'access_token' da seção [facebook].")
+        st.info("Verifique se o secrets.toml está igual a:")
+        st.code("""
+[facebook]
+ad_account_id="act_777822113493164"
+access_token="EAA..."
+""", language="toml")
         st.stop()
 
     # ================= CONTINUA ANÁLISE NORMAL =================
-    # (aqui entra o restante do seu código que faz as requisições da API)
     st.write("🚀 Dashboard carregado com as credenciais automáticas!")
 
     # -------------------------------------------------
