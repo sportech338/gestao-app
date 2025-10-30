@@ -3524,7 +3524,21 @@ if menu == "📦 Dashboard – Logística":
             or produtos["product_title"].dropna().unique().tolist()
         )
 
-        produto_escolhido = st.selectbox("🧾 Selecione o produto:", produtos_unicos, index=0)
+        # =====================================================
+        # 🧾 Seleção de produto (com pré-seleção do Flexlive)
+        # =====================================================
+        produto_padrao = "Flexlive - Adesivo de Recuperação Natural"
+        if produto_padrao in produtos_unicos:
+            index_padrao = produtos_unicos.index(produto_padrao)
+        else:
+            index_padrao = 0  # se não encontrar, usa o primeiro da lista
+
+        produto_escolhido = st.selectbox(
+            "🧾 Selecione o produto:",
+            produtos_unicos,
+            index=index_padrao
+        )
+
 
         # =====================================================
         # 🗓️ Seleção de períodos para comparação
