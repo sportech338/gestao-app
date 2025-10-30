@@ -3723,43 +3723,132 @@ if menu == "📦 Dashboard – Logística":
         # =====================================================
         # 💰 Tabela 2 — Comparativo de Custos Totais (AliExpress)
         # =====================================================
+        # Corrige: usar 'line_revenue' (não 'line_price')
+        receita_a = df_a.groupby("variant_title")["line_revenue"].sum().reset_index(name="Receita A")
+        receita_b = df_b.groupby("variant_title")["line_revenue"].sum().reset_index(name="Receita B")
+
         custos_ali = comparativo.merge(df_custos[["Variante", "Custo AliExpress (R$)"]], on="Variante", how="left")
+        custos_ali = custos_ali.merge(receita_a, left_on="Variante", right_on="variant_title", how="left")
+        custos_ali = custos_ali.merge(receita_b, left_on="Variante", right_on="variant_title", how="left")
+
         custos_ali["Custo Total A"] = custos_ali["Custo AliExpress (R$)"] * custos_ali["Qtd. Período A"]
         custos_ali["Custo Total B"] = custos_ali["Custo AliExpress (R$)"] * custos_ali["Qtd. Período B"]
         custos_ali["Diferença de Custo Total"] = custos_ali["Custo Total A"] - custos_ali["Custo Total B"]
 
+        # 💵 Lucros (mantém formato numérico)
+        custos_ali["Lucro A"] = custos_ali["Receita A"] - custos_ali["Custo Total A"]
+        custos_ali["Lucro B"] = custos_ali["Receita B"] - custos_ali["Custo Total B"]
+        custos_ali["Diferença de Lucro (R$)"] = custos_ali["Lucro A"] - custos_ali["Lucro B"]
+
+        # =====================================================
+        # 💄 Função para exibir como R$ 45,00
+        # =====================================================
         def fmt_moeda(v):
             try:
                 return f"R$ {float(v):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
             except:
                 return "—"
 
-        for c in ["Custo Total A", "Custo Total B", "Diferença de Custo Total"]:
+        # =====================================================
+        # 📊 Formatação de colunas visuais
+        # =====================================================
+        for c in [
+            "Custo Total A", "Custo Total B", "Diferença de Custo Total",
+            "Receita A", "Receita B", "Lucro A", "Lucro B", "Diferença de Lucro (R$)"
+        ]:
             custos_ali[c] = custos_ali[c].apply(fmt_moeda)
 
         st.subheader("💰 Tabela 2 — Comparativo de Custos Totais (AliExpress)")
         st.dataframe(
-            custos_ali[["Variante", "Custo Total A", "Custo Total B", "Diferença de Custo Total"]],
+            custos_ali[[
+                "Variante",
+                "Custo Total A", "Custo Total B", "Diferença de Custo Total",
+                "Receita A", "Receita B",
+                "Lucro A", "Lucro B", "Diferença de Lucro (R$)"
+            ]],
             use_container_width=True
         )
+
+        # =====================================================
+        # 🔢 Totais gerais — cálculo seguro e formatação bonita
+        # =====================================================
+        def to_float_safe(series):
+            """Converte coluna formatada R$ para float, ignorando erros."""
+            return (
+                series.astype(str)
+                .str.replace("R$", "", regex=False)
+                .str.replace(".", "", regex=False)
+                .str.replace(",", ".", regex=False)
+                .str.strip()
+                .replace("", np.nan)
+                .astype(float)
+                .fillna(0)
+            )
+
+        total_ali = {
+            "Custo Total A": fmt_moeda(to_float_safe(custos_ali["Custo Total A"]).sum()),
+            "Custo Total B": fmt_moeda(to_float_safe(custos_ali["Custo Total B"]).sum()),
+            "Receita A": fmt_moeda(to_float_safe(custos_ali["Receita A"]).sum()),
+            "Receita B": fmt_moeda(to_float_safe(custos_ali["Receita B"]).sum()),
+            "Lucro A": fmt_moeda(to_float_safe(custos_ali["Lucro A"]).sum()),
+            "Lucro B": fmt_moeda(to_float_safe(custos_ali["Lucro B"]).sum())
+        }
+
+        st.markdown(f"""
+        **📊 Totais (AliExpress):**  
+        • Custo A: {total_ali['Custo Total A']}  • Custo B: {total_ali['Custo Total B']}  
+        • Receita A: {total_ali['Receita A']}  • Receita B: {total_ali['Receita B']}  
+        • Lucro A: {total_ali['Lucro A']}  • Lucro B: {total_ali['Lucro B']}
+        """)
 
 
         # =====================================================
         # 🏷️ Tabela 3 — Comparativo de Custos Totais (Estoque)
         # =====================================================
         custos_est = comparativo.merge(df_custos[["Variante", "Custo Estoque (R$)"]], on="Variante", how="left")
+        custos_est = custos_est.merge(receita_a, left_on="Variante", right_on="variant_title", how="left")
+        custos_est = custos_est.merge(receita_b, left_on="Variante", right_on="variant_title", how="left")
+
         custos_est["Custo Total A"] = custos_est["Custo Estoque (R$)"] * custos_est["Qtd. Período A"]
         custos_est["Custo Total B"] = custos_est["Custo Estoque (R$)"] * custos_est["Qtd. Período B"]
         custos_est["Diferença de Custo Total"] = custos_est["Custo Total A"] - custos_est["Custo Total B"]
 
-        for c in ["Custo Total A", "Custo Total B", "Diferença de Custo Total"]:
+        custos_est["Lucro A"] = custos_est["Receita A"] - custos_est["Custo Total A"]
+        custos_est["Lucro B"] = custos_est["Receita B"] - custos_est["Custo Total B"]
+        custos_est["Diferença de Lucro (R$)"] = custos_est["Lucro A"] - custos_est["Lucro B"]
+
+        for c in [
+            "Custo Total A", "Custo Total B", "Diferença de Custo Total",
+            "Receita A", "Receita B", "Lucro A", "Lucro B", "Diferença de Lucro (R$)"
+        ]:
             custos_est[c] = custos_est[c].apply(fmt_moeda)
 
         st.subheader("🏷️ Tabela 3 — Comparativo de Custos Totais (Estoque)")
         st.dataframe(
-            custos_est[["Variante", "Custo Total A", "Custo Total B", "Diferença de Custo Total"]],
+            custos_est[[
+                "Variante",
+                "Custo Total A", "Custo Total B", "Diferença de Custo Total",
+                "Receita A", "Receita B",
+                "Lucro A", "Lucro B", "Diferença de Lucro (R$)"
+            ]],
             use_container_width=True
         )
+
+        total_est = {
+            "Custo Total A": fmt_moeda(to_float_safe(custos_est["Custo Total A"]).sum()),
+            "Custo Total B": fmt_moeda(to_float_safe(custos_est["Custo Total B"]).sum()),
+            "Receita A": fmt_moeda(to_float_safe(custos_est["Receita A"]).sum()),
+            "Receita B": fmt_moeda(to_float_safe(custos_est["Receita B"]).sum()),
+            "Lucro A": fmt_moeda(to_float_safe(custos_est["Lucro A"]).sum()),
+            "Lucro B": fmt_moeda(to_float_safe(custos_est["Lucro B"]).sum())
+        }
+
+        st.markdown(f"""
+        **📊 Totais (Estoque):**  
+        • Custo A: {total_est['Custo Total A']}  • Custo B: {total_est['Custo Total B']}  
+        • Receita A: {total_est['Receita A']}  • Receita B: {total_est['Receita B']}  
+        • Lucro A: {total_est['Lucro A']}  • Lucro B: {total_est['Lucro B']}
+        """)
 
 
         # =====================================================
