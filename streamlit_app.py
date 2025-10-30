@@ -3848,73 +3848,52 @@ if menu == "📦 Dashboard – Logística":
         # -------------------------------------------------
         # 💰 Exibir tabelas lado a lado (com formatação monetária)
         # -------------------------------------------------
+        for df, periodo in [(df_a, "A"), (df_b, "B")]:
+            if "Invest. (R$)" in df.columns:
+                df[f"ROI {periodo}"] = np.where(
+                    df["Invest. (R$)"] > 0,
+                    (df[f"Lucro {periodo}"] / df["Invest. (R$)"]) * 100,
+                    np.nan
+                )
+                df[f"ROAS {periodo}"] = np.where(
+                    df["Invest. (R$)"] > 0,
+                    (df[f"Receita {periodo}"] / df["Invest. (R$)"]),
+                    np.nan
+                )
+
         col1, col2 = st.columns(2)
 
         with col1:
             st.markdown("### 📆 Período A")
             st.dataframe(
-                df_a[["Variante", "Qtd A", "Lucro A", "Part.A (%)", "Invest. (R$)"]]
-                .style.format({
+                df_a[[
+                    "Variante", "Qtd A", "Lucro A",
+                    "Invest. (R$)", "ROI A", "ROAS A", "Part.A (%)"
+                ]].style.format({
                     "Qtd A": "{:.0f}",
                     "Lucro A": fmt_moeda,
                     "Invest. (R$)": fmt_moeda,
+                    "ROI A": "{:.1f}%",
+                    "ROAS A": "{:.2f}x",
                     "Part.A (%)": "{:.1f}%"
-                }),
+                }).set_properties(**{"text-align": "right"}),
                 use_container_width=True
             )
 
         with col2:
             st.markdown("### 📆 Período B")
             st.dataframe(
-                df_b[["Variante", "Qtd B", "Lucro B", "Part.B (%)", "Invest. (R$)"]]
-                .style.format({
+                df_b[[
+                    "Variante", "Qtd B", "Lucro B",
+                    "Invest. (R$)", "ROI B", "ROAS B", "Part.B (%)"
+                ]].style.format({
                     "Qtd B": "{:.0f}",
                     "Lucro B": fmt_moeda,
                     "Invest. (R$)": fmt_moeda,
-                    "Part.B (%)": "{:.1f}%"
-                }),
-                use_container_width=True
-            )
-
-
-        # -------------------------------------------------
-        # 📊 ROI e ROAS por variante
-        # -------------------------------------------------
-        st.markdown("### 📈 ROI e ROAS por Variante")
-
-        for df, periodo in [(df_a, "A"), (df_b, "B")]:
-            if "Invest. (R$)" in df.columns:
-                df[f"ROI {periodo}"] = np.where(df["Invest. (R$)"] > 0,
-                                                (df[f"Lucro {periodo}"] / df["Invest. (R$)"]) * 100,
-                                                np.nan)
-                df[f"ROAS {periodo}"] = np.where(df["Invest. (R$)"] > 0,
-                                                 (df[f"Receita {periodo}"] / df["Invest. (R$)"]),
-                                                 np.nan)
-
-        col1, col2 = st.columns(2)
-        with col1:
-            st.dataframe(
-                df_a[["Variante", "Qtd A", "Lucro A", "Invest. (R$)", "ROI A", "ROAS A"]]
-                .style.format({
-                    "Lucro A": fmt_moeda,
-                    "Invest. (R$)": fmt_moeda,
-                    "Qtd A": "{:.0f}",
-                    "ROI A": "{:.1f}%",
-                    "ROAS A": "{:.2f}x"
-                }),
-                use_container_width=True
-            )
-
-        with col2:
-            st.dataframe(
-                df_b[["Variante", "Qtd B", "Lucro B", "Invest. (R$)", "ROI B", "ROAS B"]]
-                .style.format({
-                    "Lucro B": fmt_moeda,
-                    "Invest. (R$)": fmt_moeda,
-                    "Qtd B": "{:.0f}",
                     "ROI B": "{:.1f}%",
-                    "ROAS B": "{:.2f}x"
-                }),
+                    "ROAS B": "{:.2f}x",
+                    "Part.B (%)": "{:.1f}%"
+                }).set_properties(**{"text-align": "right"}),
                 use_container_width=True
             )
 
