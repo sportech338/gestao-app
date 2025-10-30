@@ -4084,9 +4084,9 @@ if menu == "📦 Dashboard – Logística":
                 match = re.search(r"\((.*?)\)", nome)
                 return match.group(1).strip().lower() if match else ""
 
-            # =====================================================
+            # -------------------------------------------------
             # Identifica a função modificada
-            # =====================================================
+            # -------------------------------------------------
             mudanca = None
             for _, row in comp.iterrows():
                 id_a = extrair_identificador(row["Variante A"])
@@ -4103,9 +4103,9 @@ if menu == "📦 Dashboard – Logística":
             var_a = mudanca["Variante A"]
             var_b = mudanca["Variante B"]
 
-            # =====================================================
-            # Métricas
-            # =====================================================
+            # -------------------------------------------------
+            # Métricas principais
+            # -------------------------------------------------
             part_pp = mudanca["A-B(Part. | p.p)"]
             lucro_dif = mudanca["A-B(Lucro)"]
             receita_dif = mudanca["A-B(Receita)"]
@@ -4118,9 +4118,9 @@ if menu == "📦 Dashboard – Logística":
             invest_total = comp["A-B(Invest.)"].sum()
             part_total = comp["A-B(Part. | p.p)"].sum()
 
-            # =====================================================
+            # -------------------------------------------------
             # Diagnóstico
-            # =====================================================
+            # -------------------------------------------------
             if lucro_dif > 0 and lucro_total > 0 and invest_total <= 0:
                 status_emoji, status_text, border_color = "🟢", "Altamente Favorável", "#00c46b"
                 diagnostico = "Aumento de lucro individual e global, com investimento igual ou menor."
@@ -4140,50 +4140,53 @@ if menu == "📦 Dashboard – Logística":
                 status_emoji, status_text, border_color = "⚖️", "Neutro", "#9ca3af"
                 diagnostico = "Variações pequenas, sem efeito relevante no desempenho total."
 
-            # =====================================================
-            # Layout em 3 colunas de altura igual
-            # =====================================================
+            # -------------------------------------------------
+            # Layout em 3 colunas com cards nivelados
+            # -------------------------------------------------
             col1, col2, col3 = st.columns(3)
 
-            # --- CSS customizado para cards ---
             card_style = f"""
                 <style>
                     .card {{
                         background-color: #181a1b;
                         border: 2px solid {border_color};
-                        border-radius: 14px;
-                        padding: 28px;
-                        height: 420px;
+                        border-radius: 16px;
+                        padding: 30px;
+                        height: 440px;
+                        box-shadow: 0 4px 12px rgba(0,0,0,0.35);
                         display: flex;
                         flex-direction: column;
-                        justify-content: space-between;
-                        box-shadow: 0 4px 12px rgba(0,0,0,0.35);
+                        justify-content: flex-start;
                     }}
                     .card h4 {{
                         color: #ffffff;
-                        font-size: 20px;
+                        font-size: 22px;
+                        font-weight: 700;
                         margin-bottom: 14px;
                     }}
                     .metric {{
                         color: #d1d5db;
-                        font-size: 17px;
-                        line-height: 1.6;
+                        font-size: 16px;
+                        line-height: 1.7;
+                        margin-bottom: 6px;
                     }}
                     .metric strong {{
                         color: #ffffff;
+                        font-size: 17px;
+                        font-weight: 600;
                     }}
                     hr {{
                         border: none;
-                        border-top: 1px solid rgba(255,255,255,0.1);
-                        margin: 10px 0;
+                        border-top: 1px solid rgba(255,255,255,0.15);
+                        margin: 14px 0;
                     }}
                 </style>
             """
             st.markdown(card_style, unsafe_allow_html=True)
 
-            # =====================================================
+            # -------------------------------------------------
             # Card 1 — Função Modificada
-            # =====================================================
+            # -------------------------------------------------
             with col1:
                 st.markdown(
                     f"""
@@ -4202,9 +4205,9 @@ if menu == "📦 Dashboard – Logística":
                     unsafe_allow_html=True
                 )
 
-            # =====================================================
+            # -------------------------------------------------
             # Card 2 — Impacto Global
-            # =====================================================
+            # -------------------------------------------------
             with col2:
                 st.markdown(
                     f"""
@@ -4220,15 +4223,15 @@ if menu == "📦 Dashboard – Logística":
                     unsafe_allow_html=True
                 )
 
-            # =====================================================
+            # -------------------------------------------------
             # Card 3 — Diagnóstico Estratégico
-            # =====================================================
+            # -------------------------------------------------
             with col3:
                 st.markdown(
                     f"""
                     <div class="card">
                         <h4>💬 Diagnóstico Estratégico</h4>
-                        <div class="metric">{status_emoji} <strong>{status_text}</strong></div>
+                        <div class="metric" style="font-size:18px;">{status_emoji} <strong>{status_text}</strong></div>
                         <hr>
                         <div class="metric" style="font-size:16px; color:#e5e7eb;">{diagnostico}</div>
                     </div>
@@ -4237,7 +4240,7 @@ if menu == "📦 Dashboard – Logística":
                 )
 
         # -------------------------------------------------
-        # Exibir a análise formatada no app
+        # Exibir cards no app
         # -------------------------------------------------
         gerar_analise_modificacao(comp)
 
