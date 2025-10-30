@@ -3758,7 +3758,8 @@ if menu == "📦 Dashboard – Logística":
             "Custo Total (AliExpress)", "Lucro (AliExpress)",
             "Custo Total (Estoque)", "Lucro (Estoque)"
         ]].astype(str)
-
+        
+        tabela_a_display = tabela_a_display.astype(str)
         st.dataframe(tabela_a_display, use_container_width=True)
 
 
