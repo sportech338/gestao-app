@@ -3699,39 +3699,42 @@ if menu == "📦 Dashboard – Logística":
         custos_base_A = df_custos[df_custos["Variante"].isin(variantes_a)].copy()
         custos_base_B = df_custos[df_custos["Variante"].isin(variantes_b)].copy()
 
-        # 🔗 Adiciona colunas de quantidades do comparativo
+        # 🔗 Adiciona colunas de quantidade correspondentes
         custos_base_A = custos_base_A.merge(comparativo[["Variante", "Qtd. Período A"]], on="Variante", how="left")
         custos_base_B = custos_base_B.merge(comparativo[["Variante", "Qtd. Período B"]], on="Variante", how="left")
 
-        # 🔢 Ajusta custos unitários
-        custos_base_A[col_custo] = df_custos.set_index("Variante").loc[custos_base_A["Variante"], col_custo].values
-        custos_base_B[col_custo] = df_custos.set_index("Variante").loc[custos_base_B["Variante"], col_custo].values
+        # 🔢 Ajusta custos unitários para cada base
+        if not df_custos.empty:
+            df_custos_indexed = df_custos.set_index("Variante")
 
-        custos_base_A.rename(columns={col_custo: "Custo Unitário"}, inplace=True)
-        custos_base_B.rename(columns={col_custo: "Custo Unitário"}, inplace=True)
+            # Preenche custo unitário para A
+            custos_base_A[col_custo] = custos_base_A["Variante"].map(df_custos_indexed[col_custo])
+            custos_base_A.rename(columns={col_custo: "Custo Unitário"}, inplace=True)
+            custos_base_A["Custo Unitário"] = pd.to_numeric(custos_base_A["Custo Unitário"], errors="coerce").fillna(0)
 
-        custos_base_A["Custo Unitário"] = pd.to_numeric(custos_base_A["Custo Unitário"], errors="coerce").fillna(0)
-        custos_base_B["Custo Unitário"] = pd.to_numeric(custos_base_B["Custo Unitário"], errors="coerce").fillna(0)
-
-
-        # 🔢 Ajusta custos unitários
-        custos_base[col_custo] = df_custos.set_index("Variante").loc[custos_base["Variante"], col_custo].values
-        custos_base.rename(columns={col_custo: "Custo Unitário"}, inplace=True)
-        custos_base["Custo Unitário"] = pd.to_numeric(custos_base["Custo Unitário"], errors="coerce").fillna(0)
+            # Preenche custo unitário para B
+            custos_base_B[col_custo] = custos_base_B["Variante"].map(df_custos_indexed[col_custo])
+            custos_base_B.rename(columns={col_custo: "Custo Unitário"}, inplace=True)
+            custos_base_B["Custo Unitário"] = pd.to_numeric(custos_base_B["Custo Unitário"], errors="coerce").fillna(0)
 
         # -------------------------------------------------
         # 💵 Adiciona preço médio real (se não existir)
         # -------------------------------------------------
-        if "Preço Médio" not in custos_base.columns:
-            if "price" in base_prod.columns:
-                precos = base_prod.groupby("variant_title")["price"].mean().reset_index()
-                precos.rename(columns={"variant_title": "Variante", "price": "Preço Médio"}, inplace=True)
-                custos_base = custos_base.merge(precos, on="Variante", how="left")
-            else:
-                custos_base["Preço Médio"] = (custos_base["Custo Unitário"] * 2.5).round(2)
+        def add_preco_medio(custos_df):
+            if "Preço Médio" not in custos_df.columns:
+                if "price" in base_prod.columns:
+                    precos = base_prod.groupby("variant_title")["price"].mean().reset_index()
+                    precos.rename(columns={"variant_title": "Variante", "price": "Preço Médio"}, inplace=True)
+                    custos_df = custos_df.merge(precos, on="Variante", how="left")
+                else:
+                    custos_df["Preço Médio"] = (custos_df["Custo Unitário"] * 2.5).round(2)
+            return custos_df
+
+        custos_base_A = add_preco_medio(custos_base_A)
+        custos_base_B = add_preco_medio(custos_base_B)
 
         # -------------------------------------------------
-        # 🧮 Cálculos por período
+        # 🧮 Cálculos por período (independentes)
         # -------------------------------------------------
         def calc_periodo(df, periodo_label, qtd_col):
             df = df.copy()
