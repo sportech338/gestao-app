@@ -3753,11 +3753,13 @@ if menu == "📦 Dashboard – Logística":
             "line_revenue": "Receita Total"
         }, inplace=True)
 
-        st.dataframe(tabela_a[[
+        tabela_a_display = tabela_a[[
             "Variante", "Qtd. Vendida", "Receita Total",
             "Custo Total (AliExpress)", "Lucro (AliExpress)",
             "Custo Total (Estoque)", "Lucro (Estoque)"
-        ]], use_container_width=True)
+        ]].astype(str)
+
+        st.dataframe(tabela_a_display, use_container_width=True)
 
 
         # =====================================================
@@ -3788,12 +3790,13 @@ if menu == "📦 Dashboard – Logística":
             "line_revenue": "Receita Total"
         }, inplace=True)
 
-        st.dataframe(tabela_b[[
+        tabela_b_display = tabela_b[[
             "Variante", "Qtd. Vendida", "Receita Total",
             "Custo Total (AliExpress)", "Lucro (AliExpress)",
             "Custo Total (Estoque)", "Lucro (Estoque)"
-        ]], use_container_width=True)
+        ]].astype(str)
 
+        st.dataframe(tabela_b_display, use_container_width=True)
 
         # =====================================================
         # ⚖️ TABELA C — Comparativo A vs B
@@ -3822,10 +3825,12 @@ if menu == "📦 Dashboard – Logística":
             lambda x: f"{x:.1f}%" if pd.notna(x) else "-"
         )
 
-        st.dataframe(comparativo_final[[
+        comparativo_display = comparativo_final[[
             "Variante", "Qtd. Período A", "Qtd. Período B", "Diferença (unid.)",
             "Receita A", "Receita B", "Diferença de Receita (R$)", "Crescimento Receita (%)"
-        ]], use_container_width=True)
+        ]].astype(str)
+
+        st.dataframe(comparativo_display, use_container_width=True)
 
 
         # =====================================================
