@@ -3535,6 +3535,7 @@ if menu == "📦 Dashboard – Logística":
         periodo_min = min(inicio_a, inicio_b)
         periodo_max = max(fim_a, fim_b)
         pedidos = ensure_orders_for_range(periodo_min, periodo_max)
+        st.write("📋 Colunas disponíveis em pedidos:", pedidos.columns.tolist())
 
         if pedidos.empty:
             st.warning("⚠️ Nenhum pedido encontrado no intervalo selecionado.")
@@ -3593,23 +3594,36 @@ if menu == "📦 Dashboard – Logística":
         # =====================================================
         # 🧮 Processar dados do produto selecionado
         # =====================================================
-        if "created_at" in pedidos.columns:
-            pedidos["created_at"] = pd.to_datetime(pedidos["created_at"], errors="coerce", utc=True)
-            # ⚙️ Ajusta o fuso horário apenas se existir informação de timezone
+        # 🔍 Verifica automaticamente qual coluna de data usar (created_at, processed_at ou updated_at)
+        coluna_data = None
+        for c in ["created_at", "processed_at", "updated_at"]:
+            if c in pedidos.columns:
+                coluna_data = c
+                break
+
+        if coluna_data:
+            st.info(f"📅 Usando coluna de data: '{coluna_data}'")
+            pedidos["created_at"] = pd.to_datetime(pedidos[coluna_data], errors="coerce", utc=True)
             try:
-                if pedidos["created_at"].dt.tz is not None:
-                    pedidos["created_at"] = pedidos["created_at"].dt.tz_convert(APP_TZ).dt.tz_localize(None)
+                # 🔄 Converte para o fuso horário da aplicação, se aplicável
+                pedidos["created_at"] = pedidos["created_at"].dt.tz_convert(APP_TZ).dt.tz_localize(None)
             except Exception:
                 pedidos["created_at"] = pedidos["created_at"].dt.tz_localize(None)
         else:
-            st.error("❌ A coluna 'created_at' não foi encontrada no dataframe de pedidos.")
+            st.error("❌ Nenhuma coluna de data válida encontrada (created_at / processed_at / updated_at).")
             st.stop()
 
+        # 🔎 Filtra apenas o produto selecionado
         base_prod = pedidos[pedidos["product_title"] == produto_escolhido].copy()
 
+        # 📆 Função de filtro por período
         def filtrar_periodo(df, ini, fim):
+            if "created_at" not in df.columns:
+                st.error("❌ A coluna 'created_at' não está disponível para filtragem.")
+                st.stop()
             return df[(df["created_at"].dt.date >= ini) & (df["created_at"].dt.date <= fim)].copy()
 
+        # 🔄 Filtra períodos A e B
         df_a = filtrar_periodo(base_prod, inicio_a, fim_a)
         df_b = filtrar_periodo(base_prod, inicio_b, fim_b)
 
