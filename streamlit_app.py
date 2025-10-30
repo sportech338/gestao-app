@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -4182,7 +4183,6 @@ if menu == "📦 Dashboard – Logística":
         analise_texto = gerar_analise_automatica_completa(comp)
         st.markdown("---")
         st.markdown(analise_texto)
-
 
         # =====================================================
         # 🧾 Cria versão formatada da planilha para edição
