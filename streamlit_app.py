@@ -3808,15 +3808,6 @@ if menu == "📦 Dashboard – Logística":
                 )
 
         # -------------------------------------------------
-        # 💲 Função auxiliar de formatação
-        # -------------------------------------------------
-        def fmt_moeda(valor):
-            try:
-                return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-            except Exception:
-                return valor
-        
-        # -------------------------------------------------
         # 📊 Exibir tabela comparativa formatada
         # -------------------------------------------------
         st.dataframe(
@@ -3851,6 +3842,43 @@ if menu == "📦 Dashboard – Logística":
                     if pd.notna(x) else ""
                 )
 
+        # -------------------------------------------------
+        # 🔄 Função para atualizar planilha de custos
+        # -------------------------------------------------
+        def atualizar_planilha_custos(df):
+            """Atualiza dados na planilha de custos no Google Sheets"""
+            import gspread
+            from google.oauth2.service_account import Credentials
+
+            try:
+                scopes = [
+                    "https://www.googleapis.com/auth/spreadsheets",
+                    "https://www.googleapis.com/auth/drive"
+                ]
+                gcp_info = dict(st.secrets["gcp_service_account"])
+                if isinstance(gcp_info.get("private_key"), str):
+                    gcp_info["private_key"] = gcp_info["private_key"].replace("\\n", "\n")
+
+                creds = Credentials.from_service_account_info(gcp_info, scopes=scopes)
+                client = gspread.authorize(creds)
+                sheet = client.open_by_key(st.secrets["sheets"]["spreadsheet_id"]).sheet1
+
+                df_safe = (
+                    df.copy()
+                    .fillna("")
+                    .astype(str)
+                    .replace("nan", "", regex=False)
+                )
+
+                body = [df_safe.columns.values.tolist()] + df_safe.values.tolist()
+                sheet.batch_clear(["A:Z"])
+                sheet.update(body)
+
+                st.success("✅ Planilha atualizada com sucesso!")
+            except Exception as e:
+                st.error(f"❌ Erro ao atualizar planilha: {e}")
+
+        
         # =====================================================
         # 📝 Edição direta da planilha no app
         # =====================================================
