@@ -3753,6 +3753,71 @@ if menu == "📦 Dashboard – Logística":
         df_a = calc_periodo(custos_base_A, "A", "Qtd A")
         df_b = calc_periodo(custos_base_B, "B", "Qtd B")
 
+        # =====================================================
+        # 💸 Vincular investimento Meta Ads automaticamente
+        # =====================================================
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        APP_TZ = ZoneInfo("America/Sao_Paulo")
+
+        # Datas formatadas para API Meta
+        since_a, until_a = inicio_a.strftime("%Y-%m-%d"), fim_a.strftime("%Y-%m-%d")
+        since_b, until_b = inicio_b.strftime("%Y-%m-%d"), fim_b.strftime("%Y-%m-%d")
+
+        # Nome base do produto (ex.: "Flexlive", "KneePro", etc.)
+        produto_nome = produto_escolhido.split(" - ")[0]
+
+        st.markdown("### 💰 Investimento Meta Ads — Distribuído por Variante")
+
+        try:
+            # Busca investimento Meta por produto e período
+            ads_a = fetch_insights_daily(
+                act_id=st.secrets["meta"]["ad_account_id"],
+                token=st.secrets["meta"]["access_token"],
+                api_version="v21.0",
+                since_str=since_a,
+                until_str=until_a,
+                level="campaign",
+                product_name=produto_nome
+            )
+
+            ads_b = fetch_insights_daily(
+                act_id=st.secrets["meta"]["ad_account_id"],
+                token=st.secrets["meta"]["access_token"],
+                api_version="v21.0",
+                since_str=since_b,
+                until_str=until_b,
+                level="campaign",
+                product_name=produto_nome
+            )
+
+            # Soma total de investimento de cada período
+            invest_total_a = ads_a["spend"].sum() if not ads_a.empty else 0
+            invest_total_b = ads_b["spend"].sum() if not ads_b.empty else 0
+
+            # Função para distribuir investimento proporcional às vendas
+            def distribuir_investimento(df, invest_total, qtd_col):
+                total_qtd = df[qtd_col].sum()
+                if total_qtd == 0:
+                    df["Investimento (R$)"] = 0
+                else:
+                    df["Investimento (R$)"] = (df[qtd_col] / total_qtd) * invest_total
+                return df
+
+            # Aplica para os dois períodos
+            df_a = distribuir_investimento(df_a, invest_total_a, "Qtd A")
+            df_b = distribuir_investimento(df_b, invest_total_b, "Qtd B")
+
+            # Feedback visual
+            st.success(
+                f"✅ Investimentos distribuídos automaticamente com base no gasto de anúncios Meta Ads ({produto_nome})"
+            )
+
+        except Exception as e:
+            st.warning(f"⚠️ Não foi possível calcular investimento automático: {e}")
+            df_a["Investimento (R$)"] = 0
+            df_b["Investimento (R$)"] = 0
+        
         # -------------------------------------------------
         # 💲 Função auxiliar para formatar valores monetários
         # -------------------------------------------------
@@ -3771,7 +3836,7 @@ if menu == "📦 Dashboard – Logística":
         with col1:
             st.markdown("### 📆 Período A")
             st.dataframe(
-                df_a[["Variante", "Qtd A", "Lucro A", "Participação A (%)"]]
+                df_a[["Variante", "Qtd A", "Lucro A", "Participação A (%)", "Investimento (R$)"]]
                 .style.format({
                     "Qtd A": "{:.0f}",
                     "Lucro A": fmt_moeda,
@@ -3783,11 +3848,50 @@ if menu == "📦 Dashboard – Logística":
         with col2:
             st.markdown("### 📆 Período B")
             st.dataframe(
-                df_b[["Variante", "Qtd B", "Lucro B", "Participação B (%)"]]
+                df_b[["Variante", "Qtd B", "Lucro B", "Participação B (%)", "Investimento (R$)"]]
                 .style.format({
                     "Qtd B": "{:.0f}",
                     "Lucro B": fmt_moeda,
                     "Participação B (%)": "{:.1f}%"
+                }),
+                use_container_width=True
+            )
+
+        # -------------------------------------------------
+        # 📊 ROI e ROAS por variante
+        # -------------------------------------------------
+        st.markdown("### 📈 ROI e ROAS por Variante")
+
+        for df, periodo in [(df_a, "A"), (df_b, "B")]:
+            if "Investimento (R$)" in df.columns:
+                df[f"ROI {periodo}"] = np.where(df["Investimento (R$)"] > 0,
+                                                (df[f"Lucro {periodo}"] / df["Investimento (R$)"]) * 100,
+                                                np.nan)
+                df[f"ROAS {periodo}"] = np.where(df["Investimento (R$)"] > 0,
+                                                 (df[f"Receita {periodo}"] / df["Investimento (R$)"]),
+                                                 np.nan)
+
+        col1, col2 = st.columns(2)
+        with col1:
+            st.dataframe(
+                df_a[["Variante", "Qtd A", "Lucro A", "Investimento (R$)", "ROI A", "ROAS A"]]
+                .style.format({
+                    "Lucro A": fmt_moeda,
+                    "Investimento (R$)": fmt_moeda,
+                    "ROI A": "{:.1f}%",
+                    "ROAS A": "{:.2f}x"
+                }),
+                use_container_width=True
+            )
+
+        with col2:
+            st.dataframe(
+                df_b[["Variante", "Qtd B", "Lucro B", "Investimento (R$)", "ROI B", "ROAS B"]]
+                .style.format({
+                    "Lucro B": fmt_moeda,
+                    "Investimento (R$)": fmt_moeda,
+                    "ROI B": "{:.1f}%",
+                    "ROAS B": "{:.2f}x"
                 }),
                 use_container_width=True
             )
