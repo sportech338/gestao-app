@@ -3602,30 +3602,30 @@ if menu == "📦 Dashboard – Logística":
         df_a = filtrar_periodo(base_prod, inicio_a, fim_a)
         df_b = filtrar_periodo(base_prod, inicio_b, fim_b)
 
-        resumo_a = df_a.groupby("variant_title")["quantity"].sum().reset_index(name="Qtd. Período A")
-        resumo_b = df_b.groupby("variant_title")["quantity"].sum().reset_index(name="Qtd. Período B")
+        resumo_a = df_a.groupby("variant_title")["quantity"].sum().reset_index(name="Qtd A")
+        resumo_b = df_b.groupby("variant_title")["quantity"].sum().reset_index(name="Qtd B")
 
         comparativo = pd.merge(resumo_a, resumo_b, on="variant_title", how="outer").fillna(0)
-        comparativo["Diferença (unid.)"] = comparativo["Qtd. Período A"] - comparativo["Qtd. Período B"]
+        comparativo["Diferença (unid.)"] = comparativo["Qtd A"] - comparativo["Qtd B"]
         comparativo["Crescimento (%)"] = np.where(
-            comparativo["Qtd. Período B"] > 0,
-            (comparativo["Qtd. Período A"] - comparativo["Qtd. Período B"]) / comparativo["Qtd. Período B"] * 100,
+            comparativo["Qtd B"] > 0,
+            (comparativo["Qtd A"] - comparativo["Qtd B"]) / comparativo["Qtd B"] * 100,
             np.nan
         )
         comparativo["Participação A (%)"] = np.where(
-            comparativo["Qtd. Período A"].sum() > 0,
-            comparativo["Qtd. Período A"] / comparativo["Qtd. Período A"].sum() * 100,
+            comparativo["Qtd A"].sum() > 0,
+            comparativo["Qtd A"] / comparativo["Qtd A"].sum() * 100,
             0
         )
         comparativo["Participação B (%)"] = np.where(
-            comparativo["Qtd. Período B"].sum() > 0,
-            comparativo["Qtd. Período B"] / comparativo["Qtd. Período B"].sum() * 100,
+            comparativo["Qtd B"].sum() > 0,
+            comparativo["Qtd B"] / comparativo["Qtd B"].sum() * 100,
             0
         )
         comparativo["Variação Part. (p.p.)"] = comparativo["Participação A (%)"] - comparativo["Participação B (%)"]
 
         comparativo.rename(columns={"variant_title": "Variante"}, inplace=True)
-        comparativo = comparativo.sort_values("Qtd. Período A", ascending=False).reset_index(drop=True)
+        comparativo = comparativo.sort_values("Qtd A", ascending=False).reset_index(drop=True)
 
         # =====================================================
         # 💰 Carregar planilha de custos (Google Sheets)
@@ -3700,8 +3700,8 @@ if menu == "📦 Dashboard – Logística":
         custos_base_B = df_custos[df_custos["Variante"].isin(variantes_b)].copy()
 
         # 🔗 Adiciona colunas de quantidade correspondentes
-        custos_base_A = custos_base_A.merge(comparativo[["Variante", "Qtd. Período A"]], on="Variante", how="left")
-        custos_base_B = custos_base_B.merge(comparativo[["Variante", "Qtd. Período B"]], on="Variante", how="left")
+        custos_base_A = custos_base_A.merge(comparativo[["Variante", "Qtd A"]], on="Variante", how="left")
+        custos_base_B = custos_base_B.merge(comparativo[["Variante", "Qtd B"]], on="Variante", how="left")
 
         # 🔢 Ajusta custos unitários para cada base
         if not df_custos.empty:
@@ -3750,8 +3750,8 @@ if menu == "📦 Dashboard – Logística":
             return df[["Variante", qtd_col, f"Custo Total {periodo_label}", f"Receita {periodo_label}",
                        f"Lucro {periodo_label}", f"Participação {periodo_label} (%)"]]
 
-        df_a = calc_periodo(custos_base_A, "A", "Qtd. Período A")
-        df_b = calc_periodo(custos_base_B, "B", "Qtd. Período B")
+        df_a = calc_periodo(custos_base_A, "A", "Qtd A")
+        df_b = calc_periodo(custos_base_B, "B", "Qtd B")
 
         # -------------------------------------------------
         # 💲 Função auxiliar para formatar valores monetários
@@ -3800,9 +3800,9 @@ if menu == "📦 Dashboard – Logística":
         comp.rename(columns={col_custo: "Custo Unitário"}, inplace=True)
         comp["Custo Unitário"] = pd.to_numeric(comp["Custo Unitário"], errors="coerce").fillna(0)
 
-        comp["Custo Total A"] = comp["Custo Unitário"] * comp["Qtd. Período A"]
-        comp["Custo Total B"] = comp["Custo Unitário"] * comp["Qtd. Período B"]
-        comp["Diferença Qtd."] = comp["Qtd. Período A"] - comp["Qtd. Período B"]
+        comp["Custo Total A"] = comp["Custo Unitário"] * comp["Qtd A"]
+        comp["Custo Total B"] = comp["Custo Unitário"] * comp["Qtd B"]
+        comp["Diferença Qtd."] = comp["Qtd A"] - comp["Qtd B"]
         comp["Diferença Custo Total"] = comp["Custo Total A"] - comp["Custo Total B"]
 
         # 💰 Lucro e variação (usando bases separadas)
@@ -3811,13 +3811,13 @@ if menu == "📦 Dashboard – Logística":
 
         comp["Lucro A"] = np.where(
             comp["Variante"].isin(precos_a.index),
-            (comp["Qtd. Período A"] * comp["Variante"].map(precos_a)) - comp["Custo Total A"],
+            (comp["Qtd A"] * comp["Variante"].map(precos_a)) - comp["Custo Total A"],
             np.nan
         )
 
         comp["Lucro B"] = np.where(
             comp["Variante"].isin(precos_b.index),
-            (comp["Qtd. Período B"] * comp["Variante"].map(precos_b)) - comp["Custo Total B"],
+            (comp["Qtd B"] * comp["Variante"].map(precos_b)) - comp["Custo Total B"],
             np.nan
         )
 
@@ -3828,8 +3828,8 @@ if menu == "📦 Dashboard – Logística":
         )
 
         comp["Crescimento (%)"] = np.where(
-            comp["Qtd. Período B"] > 0,
-            (comp["Qtd. Período A"] - comp["Qtd. Período B"]) / comp["Qtd. Período B"] * 100,
+            comp["Qtd B"] > 0,
+            (comp["Qtd A"] - comp["Qtd B"]) / comp["Qtd B"] * 100,
             np.nan
         )
 
