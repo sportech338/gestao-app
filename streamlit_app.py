@@ -3764,16 +3764,16 @@ if menu == "📦 Dashboard – Logística":
                 return valor
 
         # -------------------------------------------------
-        # 💰 Exibir tabelas lado a lado
+        # 💰 Exibir tabelas lado a lado (sem Receita e Custo)
         # -------------------------------------------------
         col1, col2 = st.columns(2)
+
         with col1:
             st.markdown("### 📆 Período A")
             st.dataframe(
-                df_a.style.format({
+                df_a[["Variante", "Qtd A", "Lucro A", "Participação A (%)"]]
+                .style.format({
                     "Qtd A": "{:.0f}",
-                    "Custo A": fmt_moeda,
-                    "Receita A": fmt_moeda,
                     "Lucro A": fmt_moeda,
                     "Participação A (%)": "{:.1f}%"
                 }),
@@ -3783,10 +3783,9 @@ if menu == "📦 Dashboard – Logística":
         with col2:
             st.markdown("### 📆 Período B")
             st.dataframe(
-                df_b.style.format({
+                df_b[["Variante", "Qtd B", "Lucro B", "Participação B (%)"]]
+                .style.format({
                     "Qtd B": "{:.0f}",
-                    "Custo B": fmt_moeda,
-                    "Receita B": fmt_moeda,
                     "Lucro B": fmt_moeda,
                     "Participação B (%)": "{:.1f}%"
                 }),
