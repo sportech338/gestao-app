@@ -4077,7 +4077,6 @@ if menu == "📦 Dashboard – Logística":
 
         def gerar_analise_modificacao(comp):
             import re
-            from streamlit_extras.metric_cards import style_metric_cards
 
             def extrair_identificador(nome):
                 """Extrai o texto entre parênteses (ex: '( Mais Vendido )')"""
@@ -4152,26 +4151,37 @@ if menu == "📦 Dashboard – Logística":
 
             if lucro_dif > 0 and lucro_total > 0 and invest_total <= 0:
                 texto.append("🟢 **Altamente favorável:** aumento de lucro individual e global, com investimento igual ou menor.")
+                status_color = "🟢"
+                status_text = "Altamente Favorável"
             elif lucro_dif > 0 and lucro_total > 0 and invest_total > 0:
                 texto.append("🟡 **Favorável com ressalvas:** crescimento geral, mas com maior investimento necessário.")
+                status_color = "🟡"
+                status_text = "Favorável com Ressalvas"
             elif lucro_dif > 0 and lucro_total < 0:
                 texto.append("🟠 **Parcialmente favorável:** a variante melhorou, mas o portfólio perdeu lucro total — possível canibalização das demais.")
+                status_color = "🟠"
+                status_text = "Parcialmente Favorável"
             elif lucro_dif < 0 and lucro_total > 0:
                 texto.append("🟢 **Mix mais eficiente:** o portfólio cresceu mesmo com queda da variante modificada.")
+                status_color = "🟢"
+                status_text = "Mix Eficiente"
             elif lucro_dif < 0 and lucro_total < 0:
                 texto.append("🔴 **Desfavorável:** perda de lucro individual e global, indicando impacto negativo.")
+                status_color = "🔴"
+                status_text = "Desfavorável"
             else:
                 texto.append("⚖️ **Neutro:** variações pequenas, sem efeito relevante no desempenho total.")
+                status_color = "⚖️"
+                status_text = "Neutro"
 
             # -------------------------------
-            # 📊 Painel visual de métricas rápidas
+            # 📊 Painel visual (métricas rápidas nativas)
             # -------------------------------
             st.markdown("---")
             col1, col2, col3 = st.columns(3)
-            col1.metric("📦 Variante modificada", f"{fmt_moeda(lucro_dif)}", "Lucro Δ", delta_color="normal")
-            col2.metric("💰 Lucro total", f"{fmt_moeda(lucro_total)}", "Δ Global", delta_color="inverse" if lucro_total < 0 else "normal")
-            col3.metric("⚙️ Eficiência geral", "ROI / ROAS ↑" if lucro_total >= 0 else "ROI / ROAS estáveis", delta_color="normal")
-            style_metric_cards(background_color="#0e1117", border_left_color="#5c9")
+            col1.metric("📦 Variante modificada", fmt_moeda(lucro_dif), "Lucro Δ")
+            col2.metric("💰 Lucro total", fmt_moeda(lucro_total), "Δ Global")
+            col3.metric("📈 Status Geral", f"{status_color} {status_text}")
 
             return "\n".join(texto)
 
