@@ -3856,10 +3856,10 @@ if menu == "📦 Dashboard – Logística":
                 "Variante B",
                 "Diferença Qtd.",
                 "Crescimento (%)",
-                "Variação Part. (p.p.)",
                 "Diferença Custo",
                 "Diferença Lucro",
                 "Variação Lucro (%)"
+                "Variação Part. (p.p.)",
             ]].style.format({
                 "Crescimento (%)": "{:+.1f}%",
                 "Variação Part. (p.p.)": "{:+.1f}",
