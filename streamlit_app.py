@@ -4054,15 +4054,8 @@ if menu == "📦 Dashboard – Logística":
                 "A-B(Part. | p.p)": "{:+.1f}"
             })
             .applymap(highlight_diferencas, subset=[
-                "A-B(Qtd.)",
                 "A-B(Qtd.%)",
-                "A-B(Custo)",
-                "A-B(Lucro)",
                 "A-B(Lucro %)",
-                "A-B(Receita)",
-                "A-B(Invest.)",
-                "A-B(ROI)",
-                "A-B(ROAS)",
                 "A-B(Part. | p.p)"
             ])
         )
