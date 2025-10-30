@@ -3772,6 +3772,8 @@ if menu == "📦 Dashboard – Logística":
             st.dataframe(
                 df_a.style.format({
                     "Qtd A": "{:.0f}",
+                    "Custo A": fmt_moeda,
+                    "Receita A": fmt_moeda,
                     "Lucro A": fmt_moeda,
                     "Participação A (%)": "{:.1f}%"
                 }),
@@ -3783,6 +3785,8 @@ if menu == "📦 Dashboard – Logística":
             st.dataframe(
                 df_b.style.format({
                     "Qtd B": "{:.0f}",
+                    "Custo B": fmt_moeda,
+                    "Receita B": fmt_moeda,
                     "Lucro B": fmt_moeda,
                     "Participação B (%)": "{:.1f}%"
                 }),
