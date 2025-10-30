@@ -1145,17 +1145,6 @@ if menu == "📊 Dashboard – Tráfego Pago":
         else:
             st.error("⚠️ Falha ao carregar credenciais do Facebook.")
 
-    # ================= VALIDAÇÃO DAS CREDENCIAIS =================
-    if not act_id or not token:
-        st.error("⚠️ Não foi possível carregar 'ad_account_id' ou 'access_token' da seção [facebook].")
-        st.info("Verifique se o arquivo `secrets.toml` está configurado assim:")
-        st.code("""
-[facebook]
-ad_account_id = "act_777822113493164"
-access_token = "EAA..."
-""", language="toml")
-        st.stop()
-
     # ================= CONTINUA ANÁLISE NORMAL =================
     st.write("🚀 Dashboard carregado com as credenciais automáticas!")
 
