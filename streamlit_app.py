@@ -3831,25 +3831,45 @@ if menu == "📦 Dashboard – Logística":
         )
 
         # -------------------------------------------------
-        # 📊 Exibir tabela comparativa
+        # 🧮 Participação por período e variação em p.p.
+        # (puxa das tabelas df_a/df_b por posição/linha)
+        # -------------------------------------------------
+        if "Participação A (%)" in df_a.columns:
+            comp["Participação A (%)"] = pd.to_numeric(df_a["Participação A (%)"], errors="coerce")
+        else:
+            comp["Participação A (%)"] = np.nan
+
+        if "Participação B (%)" in df_b.columns:
+            comp["Participação B (%)"] = pd.to_numeric(df_b["Participação B (%)"], errors="coerce")
+        else:
+            comp["Participação B (%)"] = np.nan
+
+        # Delta em pontos percentuais (A - B)
+        comp["Variação Part. (p.p.)"] = comp["Participação A (%)"] - comp["Participação B (%)"]
+
+        # -------------------------------------------------
+        # 📊 Exibir tabela comparativa formatada (com p.p.)
         # -------------------------------------------------
         st.dataframe(
             comp[[
                 "Variante A",
                 "Variante B",
                 "Diferença Qtd.",
+                "Crescimento (%)",
+                "Variação Part. (p.p.)",
                 "Diferença Custo",
                 "Diferença Lucro",
-                "Crescimento (%)",
                 "Variação Lucro (%)"
             ]].style.format({
+                "Crescimento (%)": "{:+.1f}%",
+                "Variação Part. (p.p.)": "{:+.1f}",
                 "Diferença Custo": fmt_moeda,
                 "Diferença Lucro": fmt_moeda,
-                "Crescimento (%)": "{:+.1f}%",
                 "Variação Lucro (%)": "{:+.1f}%"
             }),
             use_container_width=True
         )
+
 
         # =====================================================
         # 🧾 Cria versão formatada da planilha para edição
