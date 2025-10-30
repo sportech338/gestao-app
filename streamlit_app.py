@@ -4069,7 +4069,7 @@ if menu == "📦 Dashboard – Logística":
 
 
         # =====================================================
-        # 🧠 Análise automática completa baseada nos dados da Tabela 3 (versão aprimorada visualmente)
+        # 🧠 Análise automática consolidada baseada nos dados da Tabela 3
         # =====================================================
         def gerar_analise_automatica_completa(comp):
             import re
@@ -4084,121 +4084,105 @@ if menu == "📦 Dashboard – Logística":
                     return match.group(1).strip().lower()
                 return ""
 
-            texto = []
-            texto.append("## 📊 **Análise Automática — Interpretação por Camadas**\n")
-
-            # --- Cria identificadores
+            # Cria identificadores
             comp["funcao_A"] = comp["Variante A"].apply(extrair_identificador)
             comp["funcao_B"] = comp["Variante B"].apply(extrair_identificador)
 
-            # Detecta funções presentes em A ou B
-            funcoes = set(comp["funcao_A"].dropna().unique()) | set(comp["funcao_B"].dropna().unique())
+            # =============================
+            # 🧩 1. Identifica mudanças nas funções
+            # =============================
+            funcoes_a = set(comp["funcao_A"].dropna())
+            funcoes_b = set(comp["funcao_B"].dropna())
 
-            for func in funcoes:
-                bloco = comp[
-                    (comp["funcao_A"] == func) | (comp["funcao_B"] == func)
-                ].iloc[0]
+            funcoes_surgiram = funcoes_b - funcoes_a
+            funcoes_sumiram = funcoes_a - funcoes_b
+            funcoes_comuns = funcoes_a & funcoes_b
 
-                # Extrai valores com fallback seguro
-                def val(col):
-                    return bloco[col] if col in bloco else np.nan
+            texto = []
+            texto.append("## 🧾 **Análise Consolidada — Interpretação Completa**\n")
 
-                qtd_dif = val("A-B(Qtd.%)")
-                custo_dif = val("A-B(Custo)")
-                lucro_dif = val("A-B(Lucro)")
-                lucro_var = val("A-B(Lucro %)")
-                part_dif = val("A-B(Part. | p.p)")
-                invest_dif = val("A-B(Invest.)")
-                roi_dif = val("A-B(ROI)")
-                roas_dif = val("A-B(ROAS)")
-                receita_dif = val("A-B(Receita)")
+            # =============================
+            # 2. Mudanças detectadas
+            # =============================
+            if funcoes_surgiram or funcoes_sumiram:
+                if funcoes_surgiram:
+                    surgiram_fmt = ", ".join([f"**{f.title()}**" for f in funcoes_surgiram])
+                    texto.append(f"📈 Foram adicionadas novas variantes: {surgiram_fmt}.")
+                if funcoes_sumiram:
+                    sumiram_fmt = ", ".join([f"**{f.title()}**" for f in funcoes_sumiram])
+                    texto.append(f"📉 As variantes {sumiram_fmt} foram removidas do portfólio anterior.")
+                texto.append("")
 
-                texto.append(f"---\n### 🔹 **Função: {func.title()}**\n")
+            # =============================
+            # 3. Dados médios gerais
+            # =============================
+            qtd_dif = comp["A-B(Qtd.%)"].mean()
+            lucro_var = comp["A-B(Lucro %)"].mean()
+            roi_var = comp["A-B(ROI)"].mean()
+            roas_var = comp["A-B(ROAS)"].mean()
+            part_dif = comp["A-B(Part. | p.p)"].mean()
 
-                # 🛒 Vendas & Desejo do consumidor
-                texto.append("**🛒 Vendas & Desejo do Consumidor**")
+            texto.append("### 📊 Visão Geral de Desempenho\n")
+            texto.append(
+                f"O volume médio de vendas variou **{qtd_dif:+.1f}%**, "
+                f"com variação média de lucro em **{lucro_var:+.1f}%**. "
+                f"Em eficiência financeira, o ROI teve variação de **{roi_var:+.1f}%** e o ROAS de **{roas_var:+.2f}x**. "
+                f"A participação média entre variantes mudou **{part_dif:+.1f} p.p.**."
+            )
+
+            # =============================
+            # 4. Identifica qual função teve melhor e pior desempenho
+            # =============================
+            melhor = comp.loc[comp["A-B(Lucro %)"].idxmax()]
+            pior = comp.loc[comp["A-B(Lucro %)"].idxmin()]
+
+            func_melhor = extrair_identificador(melhor["Variante B"]) or extrair_identificador(melhor["Variante A"])
+            func_pior = extrair_identificador(pior["Variante B"]) or extrair_identificador(pior["Variante A"])
+
+            texto.append("\n### 🏅 Destaques e Insights\n")
+            texto.append(
+                f"🔹 A função **{func_melhor.title()}** apresentou o melhor desempenho, "
+                f"com aumento expressivo de lucro (**{melhor['A-B(Lucro %'):+.1f}%**) "
+                f"e ganho de participação (**{melhor['A-B(Part. | p.p)']:+.1f} p.p.**). "
+                f"Isto indica forte aceitação do público e equilíbrio entre preço, percepção de valor e mídia."
+            )
+
+            texto.append(
+                f"🔻 Já a função **{func_pior.title()}** teve o pior resultado, "
+                f"com queda de **{abs(pior['A-B(Lucro %)']):.1f}%** em lucro "
+                f"e perda de **{abs(pior['A-B(Part. | p.p)']):.1f} p.p.** de participação, "
+                f"sugerindo menor apelo comercial ou eficiência de investimento."
+            )
+
+            # =============================
+            # 5. Conclusão estratégica
+            # =============================
+            texto.append("\n### ✅ Conclusão Estratégica\n")
+
+            if qtd_dif > 0 and lucro_var > 0 and roi_var > 0:
                 texto.append(
-                    f"O volume vendido variou **{qtd_dif:+.1f}%**, e a participação no mix mudou **{part_dif:+.1f} p.p.**."
+                    "🟢 O cenário geral é **altamente positivo**: aumento de vendas, melhora nas margens e retorno mais eficiente sobre investimento."
                 )
-                if qtd_dif > 0:
-                    texto.append("➡️ O público demonstrou **maior preferência** pela nova variante dessa função.")
-                else:
-                    texto.append("🔻 O público mostrou **menor interesse** em relação ao período anterior.")
-
-                # 💰 Custo e Investimento
-                texto.append("\n**💰 Custo & Investimento**")
+            elif lucro_var > 0 and qtd_dif < 0:
                 texto.append(
-                    f"O custo total variou em **{fmt_moeda(custo_dif)}**, e o investimento em mídia variou em **{fmt_moeda(invest_dif)}**."
+                    "🟡 Apesar da queda em volume, o **lucro médio cresceu**, indicando eficiência operacional e maior margem por unidade."
                 )
-                if invest_dif > 0:
-                    texto.append("💸 Houve **aumento de investimento publicitário**, sugerindo reforço na oferta.")
-                elif invest_dif < 0:
-                    texto.append("💡 O investimento diminuiu, mantendo boa eficiência de mídia.")
-                else:
-                    texto.append("📊 O investimento permaneceu praticamente estável.")
-
-                # 📈 Eficiência Financeira
-                texto.append("\n**📈 Eficiência Financeira (ROI & ROAS)**")
+            elif qtd_dif > 0 and lucro_var < 0:
                 texto.append(
-                    f"O ROI mudou em **{roi_dif:+.1f}%** e o ROAS em **{roas_dif:+.2f}x**."
-                )
-                if (roi_dif > 0) and (roas_dif > 0):
-                    texto.append("🚀 Ambos indicadores subiram — **melhor retorno sobre investimento.**")
-                elif (roi_dif < 0) and (roas_dif < 0):
-                    texto.append("⚠️ Ambos caíram — **menor eficiência da mídia em gerar receita.**")
-                else:
-                    texto.append("📈 Desempenho misto: um dos indicadores manteve estabilidade ou leve variação positiva.")
-
-                # 🧾 Lucro e Margem
-                texto.append("\n**🧾 Lucro & Margem**")
-                texto.append(
-                    f"O lucro líquido variou **{fmt_moeda(lucro_dif)} ({lucro_var:+.1f}%)**, "
-                    f"com variação de receita em **{fmt_moeda(receita_dif)}**."
-                )
-                if lucro_var > 0:
-                    texto.append("✅ Margem mais saudável, gerando **maior lucro líquido real.**")
-                else:
-                    texto.append("🔻 Margem comprimida, possivelmente por custo alto ou precificação menos eficiente.")
-
-                # ✅ Conclusão da Função
-                texto.append("\n**✅ Conclusão da Função**")
-                if (qtd_dif > 0 and lucro_var > 0 and roi_dif > 0 and roas_dif > 0):
-                    texto.append("🟢 **Resultado muito positivo** — mais vendas, maior margem e melhor retorno financeiro.")
-                elif (qtd_dif > 0 and lucro_var <= 0):
-                    texto.append("🟡 **Volume cresceu**, mas a **margem caiu** — bom engajamento, porém menor rentabilidade.")
-                elif (qtd_dif <= 0 and lucro_var > 0):
-                    texto.append("🟡 **Menor volume**, mas **maior eficiência e lucro unitário.**")
-                else:
-                    texto.append("🔴 **Queda geral** — perda de tração e eficiência, precisa de revisão estratégica.")
-
-            # =====================================================
-            # 🧩 Conclusão geral consolidada
-            # =====================================================
-            texto.append("\n---\n## 🧩 **Conclusão Estratégica Geral**")
-            lucro_total = comp["A-B(Lucro %)"].mean()
-            qtd_total = comp["A-B(Qtd.%)"].mean()
-            roi_total = comp["A-B(ROI)"].mean()
-            roas_total = comp["A-B(ROAS)"].mean()
-
-            if lucro_total > 0 and qtd_total > 0 and roi_total > 0 and roas_total > 0:
-                texto.append(
-                    "💎 As alterações de portfólio resultaram em **crescimento consistente** — mais volume, mais lucro e maior eficiência de mídia."
-                )
-            elif lucro_total < 0 and qtd_total < 0:
-                texto.append(
-                    "📉 O conjunto das variantes apresentou **queda simultânea** de volume e rentabilidade, sinalizando saturação ou preço desalinhado."
+                    "🟠 Houve **crescimento em vendas**, mas **redução na margem**, o que pode indicar pressão promocional ou ajuste de preço."
                 )
             else:
                 texto.append(
-                    "⚖️ Resultado **misto**, com ganhos em algumas funções e quedas em outras — ajuste de foco recomendado."
+                    "🔴 O cenário indica **queda geral** de desempenho — recomenda-se revisar posicionamento, precificação e distribuição de mídia."
                 )
 
-            return "\n\n".join(texto)
+            return "\n".join(texto)
 
         # Exibir no app
         analise_texto = gerar_analise_automatica_completa(comp)
         st.markdown("---")
         st.markdown(analise_texto)
+
 
         # =====================================================
         # 🧾 Cria versão formatada da planilha para edição
