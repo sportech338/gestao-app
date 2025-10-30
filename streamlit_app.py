@@ -3727,6 +3727,16 @@ if menu == "📦 Dashboard – Logística":
 
 
         # -------------------------------------------------
+        # 💲 Função auxiliar para formatar valores monetários
+        # -------------------------------------------------
+        def fmt_moeda(valor):
+            """Formata número como moeda brasileira."""
+            try:
+                return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            except Exception:
+                return valor
+
+        # -------------------------------------------------
         # 💰 Exibir tabelas lado a lado
         # -------------------------------------------------
         col1, col2 = st.columns(2)
@@ -3741,6 +3751,7 @@ if menu == "📦 Dashboard – Logística":
                 }),
                 use_container_width=True
             )
+
 
         with col2:
             st.markdown("### 📆 Período B")
