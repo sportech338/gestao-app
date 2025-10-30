@@ -3261,7 +3261,27 @@ if menu == "📦 Dashboard – Logística":
             if c in base.columns:
                 base[c] = base[c].fillna(f"({c} desconhecido)")
 
-        base["created_at"] = pd.to_datetime(base.get("created_at"), errors="coerce").dt.tz_localize(None)
+        # 🔍 Corrige a criação da coluna 'created_at' com detecção automática
+        if "created_at" in base.columns:
+            base["created_at"] = pd.to_datetime(base["created_at"], errors="coerce", utc=True)
+            try:
+                base["created_at"] = base["created_at"].dt.tz_convert(APP_TZ).dt.tz_localize(None)
+            except Exception:
+                base["created_at"] = base["created_at"].dt.tz_localize(None)
+        else:
+            possiveis_datas = [c for c in base.columns if "date" in c or "at" in c]
+            if possiveis_datas:
+                col_data = possiveis_datas[0]
+                st.warning(f"⚠️ Coluna 'created_at' não encontrada. Usando '{col_data}' como base de data.")
+                base["created_at"] = pd.to_datetime(base[col_data], errors="coerce", utc=True)
+                try:
+                    base["created_at"] = base["created_at"].dt.tz_convert(APP_TZ).dt.tz_localize(None)
+                except Exception:
+                    base["created_at"] = base["created_at"].dt.tz_localize(None)
+            else:
+                st.error("❌ Nenhuma coluna de data encontrada no dataframe 'base'.")
+                st.stop()
+
         base["price"] = pd.to_numeric(base.get("price"), errors="coerce").fillna(0)
         base["quantity"] = pd.to_numeric(base.get("quantity"), errors="coerce").fillna(0)
         base["line_revenue"] = base["price"] * base["quantity"]
