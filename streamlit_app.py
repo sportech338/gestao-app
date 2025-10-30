@@ -3282,9 +3282,52 @@ if menu == "📦 Dashboard – Logística":
                 st.error("❌ Nenhuma coluna de data encontrada no dataframe 'base'.")
                 st.stop()
 
-        base["price"] = pd.to_numeric(base.get("price"), errors="coerce").fillna(0)
-        base["quantity"] = pd.to_numeric(base.get("quantity"), errors="coerce").fillna(0)
+        # =====================================================
+        # 🔧 Correção robusta de colunas ausentes
+        # =====================================================
+        # 🔹 Detectar e normalizar coluna de data
+        col_data = None
+        for c in ["created_at", "processed_at", "updated_at", "date"]:
+            if c in base.columns:
+                col_data = c
+                break
+        if col_data:
+            base["created_at"] = pd.to_datetime(base[col_data], errors="coerce", utc=True)
+            try:
+                base["created_at"] = base["created_at"].dt.tz_convert(APP_TZ).dt.tz_localize(None)
+            except Exception:
+                base["created_at"] = base["created_at"].dt.tz_localize(None)
+        else:
+            st.warning("⚠️ Nenhuma coluna de data encontrada — criando coluna vazia.")
+            base["created_at"] = pd.NaT
+
+        # 🔹 Corrigir coluna de preço
+        col_preco = None
+        for c in ["price", "current_price", "line_price", "value"]:
+            if c in base.columns:
+                col_preco = c
+                break
+        if col_preco:
+            base["price"] = pd.to_numeric(base[col_preco], errors="coerce").fillna(0)
+        else:
+            st.warning("⚠️ Nenhuma coluna de preço encontrada — criando coluna zerada.")
+            base["price"] = 0.0
+
+        # 🔹 Corrigir coluna de quantidade
+        col_qtd = None
+        for c in ["quantity", "qty", "amount", "units"]:
+            if c in base.columns:
+                col_qtd = c
+                break
+        if col_qtd:
+            base["quantity"] = pd.to_numeric(base[col_qtd], errors="coerce").fillna(0)
+        else:
+            st.warning("⚠️ Nenhuma coluna de quantidade encontrada — criando coluna zerada.")
+            base["quantity"] = 0.0
+
+        # 🔹 Criar receita por linha
         base["line_revenue"] = base["price"] * base["quantity"]
+
 
         # -------------------------------------------------
         # 🧠 Aplicação de filtros
