@@ -4085,6 +4085,9 @@ if menu == "📦 Dashboard – Logística":
                 match = re.search(r"\((.*?)\)", nome)
                 return match.group(1).strip().lower() if match else ""
 
+            texto = []
+            texto.append("## 📊 Interpretação Consolidada — Efeito Real da Mudança\n")
+
             # Identifica função modificada (mesmo identificador, mas nome diferente)
             mudanca = None
             for _, row in comp.iterrows():
