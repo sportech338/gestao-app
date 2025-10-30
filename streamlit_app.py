@@ -3373,6 +3373,7 @@ if menu == "📦 Dashboard – Logística":
         tabela.index = range(1, len(tabela) + 1)
 
         st.dataframe(styled_tabela, use_container_width=True)
+        tabela.index.name = "Nº"
 
         # -------------------------------------------------
         # 🎛️ Filtros adicionais
