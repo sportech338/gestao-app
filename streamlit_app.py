@@ -3659,6 +3659,88 @@ if menu == "📦 Dashboard – Logística":
         )
 
         # =====================================================
+        # 💰 Carregar planilha de custos (Google Sheets)
+        # =====================================================
+        import gspread
+        from google.oauth2.service_account import Credentials
+
+        def get_gsheet_client():
+            scopes = [
+                "https://www.googleapis.com/auth/spreadsheets",
+                "https://www.googleapis.com/auth/drive"
+            ]
+            gcp_info = dict(st.secrets["gcp_service_account"])
+            if isinstance(gcp_info.get("private_key"), str):
+                gcp_info["private_key"] = gcp_info["private_key"].replace("\\n", "\n")
+            creds = Credentials.from_service_account_info(gcp_info, scopes=scopes)
+            client = gspread.authorize(creds)
+            return client
+
+        @st.cache_data(ttl=600)
+        def carregar_planilha_custos():
+            """Lê planilha de custos do Google Sheets"""
+            client = get_gsheet_client()
+            sheet = client.open_by_key(st.secrets["sheets"]["spreadsheet_id"]).sheet1
+            df = pd.DataFrame(sheet.get_all_records())
+            df.columns = df.columns.str.strip()
+            mapa_colunas = {
+                "Produto": "Produto",
+                "Variantes": "Variante",
+                "Custo | Aliexpress": "Custo AliExpress (R$)",
+                "Custo | Estoque": "Custo Estoque (R$)",
+            }
+            df.rename(columns=mapa_colunas, inplace=True)
+            return df
+
+        def atualizar_planilha_custos(df):
+            """Atualiza dados na planilha de custos"""
+            client = get_gsheet_client()
+            sheet = client.open_by_key(st.secrets["sheets"]["spreadsheet_id"]).sheet1
+            try:
+                df_safe = (
+                    df.copy()
+                    .fillna("")
+                    .astype(str)
+                    .replace("nan", "", regex=False)
+                )
+                body = [df_safe.columns.values.tolist()] + df_safe.values.tolist()
+                sheet.batch_clear(["A:Z"])
+                sheet.update(body)
+                st.success("✅ Planilha atualizada com sucesso!")
+            except Exception as e:
+                st.error(f"❌ Erro ao atualizar planilha: {e}")
+
+        # Tenta carregar a planilha de custos
+        try:
+            df_custos = carregar_planilha_custos()
+        except Exception as e:
+            st.error(f"❌ Erro ao carregar planilha de custos: {e}")
+            st.stop()
+
+        # Normaliza as colunas de custo numéricas
+        for col in ["Custo AliExpress (R$)", "Custo Estoque (R$)"]:
+            if col in df_custos.columns:
+                df_custos[col] = (
+                    df_custos[col]
+                    .astype(str)
+                    .str.replace("R$", "", regex=False)
+                    .str.replace(",", ".")
+                    .str.strip()
+                    .replace(["inexistente", ""], np.nan)
+                    .astype(float)
+                )
+
+        # Cria versão formatada para o editor (embaixo)
+        df_display = df_custos.copy()
+        for col in ["Custo AliExpress (R$)", "Custo Estoque (R$)"]:
+            if col in df_display.columns:
+                df_display[col] = df_display[col].apply(
+                    lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                    if pd.notna(x) else ""
+                )
+
+        
+        # =====================================================
         # 💼 Análise de Custos e Lucros por Fornecedor
         # =====================================================
         st.subheader("💼 Análise de Custos e Lucros por Fornecedor")
@@ -3682,22 +3764,59 @@ if menu == "📦 Dashboard – Logística":
         # -------------------------------------------------
         def calc_periodo(df, periodo_label, qtd_col):
             df = df.copy()
+
+            # 🧾 Calcula custo total
             df[f"Custo Total {periodo_label}"] = df["Custo Unitário"] * df[qtd_col]
-            df[f"Receita {periodo_label}"] = df[qtd_col] * df["Preço Médio"] if "Preço Médio" in df.columns else np.nan
-            df[f"Lucro {periodo_label}"] = df[f"Receita {periodo_label}"] - df[f"Custo Total {periodo_label}"]
-            total_receita = df[f"Receita {periodo_label}"].sum() if df[f"Receita {periodo_label}"].notna().any() else 0
+
+            # 💰 Calcula receita total (usando preço médio real se existir)
+            df[f"Receita {periodo_label}"] = (
+                df[qtd_col] * df["Preço Médio"]
+                if "Preço Médio" in df.columns else np.nan
+            )
+
+            # 📈 Lucro = Receita - Custo
+            df[f"Lucro {periodo_label}"] = (
+                df[f"Receita {periodo_label}"] - df[f"Custo Total {periodo_label}"]
+            )
+
+            # 📊 Participação no total do período
+            total_receita = (
+                df[f"Receita {periodo_label}"].sum()
+                if df[f"Receita {periodo_label}"].notna().any()
+                else 0
+            )
             df[f"Participação {periodo_label} (%)"] = np.where(
                 total_receita > 0,
                 df[f"Receita {periodo_label}"] / total_receita * 100,
                 0
             )
-            return df[["Variante", qtd_col, f"Custo Total {periodo_label}", f"Receita {periodo_label}",
-                       f"Lucro {periodo_label}", f"Participação {periodo_label} (%)"]]
 
-        # Adiciona um preço médio estimado se não houver
+            # Retorna apenas as colunas necessárias
+            return df[
+                [
+                    "Variante",
+                    qtd_col,
+                    f"Custo Total {periodo_label}",
+                    f"Receita {periodo_label}",
+                    f"Lucro {periodo_label}",
+                    f"Participação {periodo_label} (%)",
+                ]
+            ]
+
+        # -------------------------------------------------
+        # 💵 Adiciona preço médio real (se não existir)
+        # -------------------------------------------------
         if "Preço Médio" not in custos_base.columns:
-            custos_base["Preço Médio"] = (custos_base["Custo Unitário"] * 2.5).round(2)  # fallback
+            if "price" in base_prod.columns:
+                # usa o preço médio real dos pedidos
+                precos = base_prod.groupby("variant_title")["price"].mean().reset_index()
+                precos.rename(columns={"variant_title": "Variante", "price": "Preço Médio"}, inplace=True)
+                custos_base = custos_base.merge(precos, on="Variante", how="left")
+            else:
+                # fallback se não houver coluna de preço
+                custos_base["Preço Médio"] = (custos_base["Custo Unitário"] * 2.5).round(2)
 
+        # Calcula tabelas de cada período
         df_a = calc_periodo(custos_base, "A", "Qtd. Período A")
         df_b = calc_periodo(custos_base, "B", "Qtd. Período B")
 
@@ -3707,21 +3826,27 @@ if menu == "📦 Dashboard – Logística":
         col1, col2 = st.columns(2)
         with col1:
             st.markdown("### 📆 Período A")
-            st.dataframe(df_a.style.format({
-                "Custo Total A": fmt_moeda,
-                "Receita A": fmt_moeda,
-                "Lucro A": fmt_moeda,
-                "Participação A (%)": "{:.1f}%"
-            }), use_container_width=True)
+            st.dataframe(
+                df_a.style.format({
+                    "Custo Total A": fmt_moeda,
+                    "Receita A": fmt_moeda,
+                    "Lucro A": fmt_moeda,
+                    "Participação A (%)": "{:.1f}%"
+                }),
+                use_container_width=True
+            )
 
         with col2:
             st.markdown("### 📆 Período B")
-            st.dataframe(df_b.style.format({
-                "Custo Total B": fmt_moeda,
-                "Receita B": fmt_moeda,
-                "Lucro B": fmt_moeda,
-                "Participação B (%)": "{:.1f}%"
-            }), use_container_width=True)
+            st.dataframe(
+                df_b.style.format({
+                    "Custo Total B": fmt_moeda,
+                    "Receita B": fmt_moeda,
+                    "Lucro B": fmt_moeda,
+                    "Participação B (%)": "{:.1f}%"
+                }),
+                use_container_width=True
+            )
 
         # -------------------------------------------------
         # 📈 Comparativo geral entre períodos
