@@ -3932,18 +3932,17 @@ if menu == "📦 Dashboard – Logística":
             if match:
                 return match.group(1).strip().lower()
             else:
-                # fallback: usa o nome todo sem número
+                # fallback: remove números e usa o nome
                 nome = re.sub(r"\d+", "", nome)
                 return nome.lower().strip()
 
-        # Cria identificadores para correspondência
+        # Cria identificadores
         df_a["identificador"] = df_a["Variante"].apply(extrair_identificador)
         df_b["identificador"] = df_b["Variante"].apply(extrair_identificador)
 
-        # Faz o pareamento A ↔ B pelo identificador
+        # Pareia variantes A ↔ B
         matches = []
         usadas_b = set()
-
         for _, row_a in df_a.iterrows():
             ident_a = row_a["identificador"]
             possiveis_b = df_b[df_b["identificador"] == ident_a]
@@ -3953,47 +3952,45 @@ if menu == "📦 Dashboard – Logística":
                 usadas_b.add(match_b["Variante"])
             else:
                 matches.append((row_a["Variante"], None))
-
-        # Adiciona variantes novas do período B (sem correspondência anterior)
         for _, row_b in df_b.iterrows():
             if row_b["Variante"] not in usadas_b:
                 matches.append((None, row_b["Variante"]))
 
-        # Monta DataFrame de correspondência
+        # Cria tabela de correspondência
         corresp = pd.DataFrame(matches, columns=["Variante A", "Variante B"])
 
-        # --- 🚧 Ajuste preventivo: renomeia colunas para evitar conflito no merge
-        df_a_pref = df_a.add_suffix(" A")
-        df_b_pref = df_b.add_suffix(" B")
+        # --- Renomeia colunas para evitar conflito no merge
+        df_a_pref = df_a.add_suffix("_A")
+        df_b_pref = df_b.add_suffix("_B")
 
         # --- Faz merge seguro
         comp = (
             corresp
-            .merge(df_a_pref, left_on="Variante A", right_on="Variante A", how="left")
-            .merge(df_b_pref, left_on="Variante B", right_on="Variante B", how="left")
+            .merge(df_a_pref, left_on="Variante A", right_on="Variante_A", how="left")
+            .merge(df_b_pref, left_on="Variante B", right_on="Variante_B", how="left")
             .fillna(0)
         )
 
         # =====================================================
         # 📊 Cálculos de diferenças e variações
         # =====================================================
-        comp["A-B(Qtd.)"] = comp["Qtd A"] - comp["Qtd B"]
-        comp["A-B(Custo)"] = comp["Custo A"] - comp["Custo B"]
-        comp["A-B(Lucro)"] = comp["Lucro A"] - comp["Lucro B"]
+        comp["A-B(Qtd.)"] = comp["Qtd A_A"] - comp["Qtd B_B"]
+        comp["A-B(Custo)"] = comp["Custo A_A"] - comp["Custo B_B"]
+        comp["A-B(Lucro)"] = comp["Lucro A_A"] - comp["Lucro B_B"]
 
         comp["A-B(Qtd.%)"] = np.where(
-            comp["Qtd B"] > 0,
-            (comp["Qtd A"] - comp["Qtd B"]) / comp["Qtd B"] * 100,
+            comp["Qtd B_B"] > 0,
+            (comp["Qtd A_A"] - comp["Qtd B_B"]) / comp["Qtd B_B"] * 100,
             np.nan
         )
 
         comp["A-B(Lucro %)"] = np.where(
-            comp["Lucro B"] > 0,
-            (comp["Lucro A"] - comp["Lucro B"]) / comp["Lucro B"] * 100,
+            comp["Lucro B_B"] > 0,
+            (comp["Lucro A_A"] - comp["Lucro B_B"]) / comp["Lucro B_B"] * 100,
             np.nan
         )
 
-        comp["A-B(Part. | p.p)"] = comp["Participação A (%)"] - comp["Participação B (%)"]
+        comp["A-B(Part. | p.p)"] = comp["Participação A (%)_A"] - comp["Participação B (%)_B"]
 
         # =====================================================
         # 🎨 Estilo visual (verde = positivo, vermelho = negativo)
