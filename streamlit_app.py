@@ -3898,6 +3898,7 @@ if menu == "📦 Dashboard – Logística":
                 .style.format({
                     "Lucro A": fmt_moeda,
                     "Investimento (R$)": fmt_moeda,
+                    "Qtd A": "{:.0f}",
                     "ROI A": "{:.1f}%",
                     "ROAS A": "{:.2f}x"
                 }),
@@ -3910,6 +3911,7 @@ if menu == "📦 Dashboard – Logística":
                 .style.format({
                     "Lucro B": fmt_moeda,
                     "Investimento (R$)": fmt_moeda,
+                    "Qtd B": "{:.0f}",
                     "ROI B": "{:.1f}%",
                     "ROAS B": "{:.2f}x"
                 }),
