@@ -3850,9 +3850,19 @@ if menu == "📦 Dashboard – Logística":
         comp["Variação Part. (p.p.)"] = comp["Participação A (%)"] - comp["Participação B (%)"]
 
         # -------------------------------------------------
-        # 📊 Exibir tabela comparativa formatada (com p.p.)
+        # 📊 Exibir tabela comparativa formatada (com cores)
         # -------------------------------------------------
-        st.dataframe(
+        def highlight_diferencas(val):
+            """Aplica cor verde para valores positivos e vermelho para negativos."""
+            try:
+                if pd.isna(val):
+                    return ""
+                color = "green" if val > 0 else "red" if val < 0 else "inherit"
+                return f"color: {color}; font-weight: 600;"
+            except Exception:
+                return ""
+
+        styled_comp = (
             comp[[
                 "Variante A",
                 "Variante B",
@@ -3862,16 +3872,25 @@ if menu == "📦 Dashboard – Logística":
                 "Diferença Lucro",
                 "Variação Lucro (%)",
                 "Variação Part. (p.p.)"
-            ]].style.format({
+            ]]
+            .style
+            .format({
                 "Diferença Qtd.": "{:.0f}",
                 "Crescimento (%)": "{:+.1f}%",
                 "Variação Part. (p.p.)": "{:+.1f}",
                 "Diferença Custo": fmt_moeda,
                 "Diferença Lucro": fmt_moeda,
                 "Variação Lucro (%)": "{:+.1f}%"
-            }),
-            use_container_width=True
+            })
+            .applymap(highlight_diferencas, subset=[
+                "Diferença Qtd.",
+                "Crescimento (%)",
+                "Variação Lucro (%)",
+                "Variação Part. (p.p.)"
+            ])
         )
+
+        st.dataframe(styled_comp, use_container_width=True)
 
 
         # =====================================================
