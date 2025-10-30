@@ -3968,8 +3968,24 @@ if menu == "📦 Dashboard – Logística":
             corresp
             .merge(df_a_pref, left_on="Variante A", right_on="Variante_A", how="left")
             .merge(df_b_pref, left_on="Variante B", right_on="Variante_B", how="left")
-            .fillna(0)
         )
+
+        # =====================================================
+        # 💡 Preenche corretamente nomes de variantes ausentes
+        # =====================================================
+        comp["Variante A"] = np.where(
+            comp["Variante A"].isna() | (comp["Variante A"] == 0),
+            comp["Variante B"],
+            comp["Variante A"]
+        )
+        comp["Variante B"] = np.where(
+            comp["Variante B"].isna() | (comp["Variante B"] == 0),
+            comp["Variante A"],
+            comp["Variante B"]
+        )
+
+        # Converte valores numéricos vazios em 0 (mantém compatibilidade)
+        comp = comp.fillna(0)
 
         # =====================================================
         # 📊 Cálculos de diferenças e variações
