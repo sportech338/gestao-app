@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -3721,22 +3720,23 @@ if menu == "📦 Dashboard – Logística":
 
 
         # =====================================================
-        # 🅰️ TABELA A — Período Mais Recente
+        # 💰 Tabela 2 — Comparativo de Custos Totais (AliExpress)
         # =====================================================
-        st.subheader("🅰️ Tabela A — Saídas e Custos (Período Mais Recente)")
+        receita_a = df_a.groupby("variant_title")["line_revenue"].sum().reset_index(name="Receita A")
+        receita_b = df_b.groupby("variant_title")["line_revenue"].sum().reset_index(name="Receita B")
 
-        tabela_a = df_a.groupby("variant_title").agg({
-            "quantity": "sum",
-            "line_revenue": "sum"
-        }).reset_index()
+        custos_ali = comparativo.merge(df_custos[["Variante", "Custo AliExpress (R$)"]], on="Variante", how="left")
+        custos_ali = custos_ali.merge(receita_a, left_on="Variante", right_on="variant_title", how="left")
+        custos_ali = custos_ali.merge(receita_b, left_on="Variante", right_on="variant_title", how="left")
 
-        tabela_a = tabela_a.merge(df_custos[["Variante", "Custo AliExpress (R$)", "Custo Estoque (R$)"]],
-                                  left_on="variant_title", right_on="Variante", how="left")
+        custos_ali["Custo Total A"] = custos_ali["Custo AliExpress (R$)"] * custos_ali["Qtd. Período A"]
+        custos_ali["Custo Total B"] = custos_ali["Custo AliExpress (R$)"] * custos_ali["Qtd. Período B"]
+        custos_ali["Diferença de Custo Total"] = custos_ali["Custo Total A"] - custos_ali["Custo Total B"]
 
-        tabela_a["Custo Total (AliExpress)"] = tabela_a["Custo AliExpress (R$)"] * tabela_a["quantity"]
-        tabela_a["Custo Total (Estoque)"] = tabela_a["Custo Estoque (R$)"] * tabela_a["quantity"]
-        tabela_a["Lucro (AliExpress)"] = tabela_a["line_revenue"] - tabela_a["Custo Total (AliExpress)"]
-        tabela_a["Lucro (Estoque)"] = tabela_a["line_revenue"] - tabela_a["Custo Total (Estoque)"]
+        # 💵 Lucros
+        custos_ali["Lucro A"] = custos_ali["Receita A"] - custos_ali["Custo Total A"]
+        custos_ali["Lucro B"] = custos_ali["Receita B"] - custos_ali["Custo Total B"]
+        custos_ali["Diferença de Lucro (R$)"] = custos_ali["Lucro A"] - custos_ali["Lucro B"]
 
         def fmt_moeda(v):
             try:
@@ -3744,104 +3744,90 @@ if menu == "📦 Dashboard – Logística":
             except:
                 return "—"
 
-        for col in ["line_revenue", "Custo Total (AliExpress)", "Custo Total (Estoque)",
-                    "Lucro (AliExpress)", "Lucro (Estoque)"]:
-            tabela_a[col] = tabela_a[col].apply(fmt_moeda)
+        for c in [
+            "Custo Total A", "Custo Total B", "Diferença de Custo Total",
+            "Receita A", "Receita B", "Lucro A", "Lucro B", "Diferença de Lucro (R$)"
+        ]:
+            custos_ali[c] = custos_ali[c].apply(fmt_moeda)
 
-        tabela_a.rename(columns={
-            "variant_title": "Variante",
-            "quantity": "Qtd. Vendida",
-            "line_revenue": "Receita Total"
-        }, inplace=True)
-
-        tabela_a_display = tabela_a[[
-            "Variante", "Qtd. Vendida", "Receita Total",
-            "Custo Total (AliExpress)", "Lucro (AliExpress)",
-            "Custo Total (Estoque)", "Lucro (Estoque)"
-        ]].copy()
-
-        tabela_a_display = tabela_a_display.fillna("").astype(str)
-        tabela_a_display.index = tabela_a_display.index.map(str)
-
-        st.dataframe(tabela_a_display, use_container_width=True)
-
-
-
-        # =====================================================
-        # 🅱️ TABELA B — Período de Comparação
-        # =====================================================
-        st.subheader("🅱️ Tabela B — Saídas e Custos (Período de Comparação)")
-
-        tabela_b = df_b.groupby("variant_title").agg({
-            "quantity": "sum",
-            "line_revenue": "sum"
-        }).reset_index()
-
-        tabela_b = tabela_b.merge(df_custos[["Variante", "Custo AliExpress (R$)", "Custo Estoque (R$)"]],
-                                  left_on="variant_title", right_on="Variante", how="left")
-
-        tabela_b["Custo Total (AliExpress)"] = tabela_b["Custo AliExpress (R$)"] * tabela_b["quantity"]
-        tabela_b["Custo Total (Estoque)"] = tabela_b["Custo Estoque (R$)"] * tabela_b["quantity"]
-        tabela_b["Lucro (AliExpress)"] = tabela_b["line_revenue"] - tabela_b["Custo Total (AliExpress)"]
-        tabela_b["Lucro (Estoque)"] = tabela_b["line_revenue"] - tabela_b["Custo Total (Estoque)"]
-
-        for col in ["line_revenue", "Custo Total (AliExpress)", "Custo Total (Estoque)",
-                    "Lucro (AliExpress)", "Lucro (Estoque)"]:
-            tabela_b[col] = tabela_b[col].apply(fmt_moeda)
-
-        tabela_b.rename(columns={
-            "variant_title": "Variante",
-            "quantity": "Qtd. Vendida",
-            "line_revenue": "Receita Total"
-        }, inplace=True)
-
-        tabela_b_display = tabela_b[[
-            "Variante", "Qtd. Vendida", "Receita Total",
-            "Custo Total (AliExpress)", "Lucro (AliExpress)",
-            "Custo Total (Estoque)", "Lucro (Estoque)"
-        ]].copy()
-
-        tabela_b_display = tabela_b_display.fillna("").astype(str)
-        tabela_b_display.index = tabela_b_display.index.map(str)
-
-        st.dataframe(tabela_b_display, use_container_width=True)
-
-        # =====================================================
-        # ⚖️ TABELA C — Comparativo A vs B
-        # =====================================================
-        st.subheader("⚖️ Tabela C — Comparativo Entre Períodos")
-
-        comparativo_final = comparativo.copy()
-
-        receita_a = df_a.groupby("variant_title")["line_revenue"].sum().reset_index(name="Receita A")
-        receita_b = df_b.groupby("variant_title")["line_revenue"].sum().reset_index(name="Receita B")
-
-        comparativo_final = comparativo_final.merge(receita_a, left_on="Variante", right_on="variant_title", how="left")
-        comparativo_final = comparativo_final.merge(receita_b, left_on="Variante", right_on="variant_title", how="left")
-
-        comparativo_final["Diferença de Receita (R$)"] = comparativo_final["Receita A"] - comparativo_final["Receita B"]
-        comparativo_final["Crescimento Receita (%)"] = np.where(
-            comparativo_final["Receita B"] > 0,
-            (comparativo_final["Receita A"] - comparativo_final["Receita B"]) / comparativo_final["Receita B"] * 100,
-            np.nan
+        st.subheader("💰 Tabela 2 — Comparativo de Custos Totais (AliExpress)")
+        st.dataframe(
+            custos_ali[[
+                "Variante",
+                "Custo Total A", "Custo Total B", "Diferença de Custo Total",
+                "Receita A", "Receita B",
+                "Lucro A", "Lucro B", "Diferença de Lucro (R$)"
+            ]],
+            use_container_width=True
         )
 
-        for col in ["Receita A", "Receita B", "Diferença de Receita (R$)"]:
-            comparativo_final[col] = comparativo_final[col].apply(fmt_moeda)
+        # 🔢 Totais gerais
+        total_ali = {
+            "Custo Total A": fmt_moeda(custos_ali["Custo Total A"].replace("R$ ", "").str.replace(".", "").str.replace(",", ".").astype(float).sum()),
+            "Custo Total B": fmt_moeda(custos_ali["Custo Total B"].replace("R$ ", "").str.replace(".", "").str.replace(",", ".").astype(float).sum()),
+            "Receita A": fmt_moeda(custos_ali["Receita A"].replace("R$ ", "").str.replace(".", "").str.replace(",", ".").astype(float).sum()),
+            "Receita B": fmt_moeda(custos_ali["Receita B"].replace("R$ ", "").str.replace(".", "").str.replace(",", ".").astype(float).sum()),
+            "Lucro A": fmt_moeda(custos_ali["Lucro A"].replace("R$ ", "").str.replace(".", "").str.replace(",", ".").astype(float).sum()),
+            "Lucro B": fmt_moeda(custos_ali["Lucro B"].replace("R$ ", "").str.replace(".", "").str.replace(",", ".").astype(float).sum())
+        }
 
-        comparativo_final["Crescimento Receita (%)"] = comparativo_final["Crescimento Receita (%)"].apply(
-            lambda x: f"{x:.1f}%" if pd.notna(x) else "-"
+        st.markdown(f"""
+        **📊 Totais (AliExpress):**  
+        • Custo A: {total_ali['Custo Total A']}  • Custo B: {total_ali['Custo Total B']}  
+        • Receita A: {total_ali['Receita A']}  • Receita B: {total_ali['Receita B']}  
+        • Lucro A: {total_ali['Lucro A']}  • Lucro B: {total_ali['Lucro B']}
+        """)
+
+
+        # =====================================================
+        # 🏷️ Tabela 3 — Comparativo de Custos Totais (Estoque)
+        # =====================================================
+        custos_est = comparativo.merge(df_custos[["Variante", "Custo Estoque (R$)"]], on="Variante", how="left")
+        custos_est = custos_est.merge(receita_a, left_on="Variante", right_on="variant_title", how="left")
+        custos_est = custos_est.merge(receita_b, left_on="Variante", right_on="variant_title", how="left")
+
+        custos_est["Custo Total A"] = custos_est["Custo Estoque (R$)"] * custos_est["Qtd. Período A"]
+        custos_est["Custo Total B"] = custos_est["Custo Estoque (R$)"] * custos_est["Qtd. Período B"]
+        custos_est["Diferença de Custo Total"] = custos_est["Custo Total A"] - custos_est["Custo Total B"]
+
+        # 💵 Lucros
+        custos_est["Lucro A"] = custos_est["Receita A"] - custos_est["Custo Total A"]
+        custos_est["Lucro B"] = custos_est["Receita B"] - custos_est["Custo Total B"]
+        custos_est["Diferença de Lucro (R$)"] = custos_est["Lucro A"] - custos_est["Lucro B"]
+
+        for c in [
+            "Custo Total A", "Custo Total B", "Diferença de Custo Total",
+            "Receita A", "Receita B", "Lucro A", "Lucro B", "Diferença de Lucro (R$)"
+        ]:
+            custos_est[c] = custos_est[c].apply(fmt_moeda)
+
+        st.subheader("🏷️ Tabela 3 — Comparativo de Custos Totais (Estoque)")
+        st.dataframe(
+            custos_est[[
+                "Variante",
+                "Custo Total A", "Custo Total B", "Diferença de Custo Total",
+                "Receita A", "Receita B",
+                "Lucro A", "Lucro B", "Diferença de Lucro (R$)"
+            ]],
+            use_container_width=True
         )
 
-        comparativo_display = comparativo_final[[
-            "Variante", "Qtd. Período A", "Qtd. Período B", "Diferença (unid.)",
-            "Receita A", "Receita B", "Diferença de Receita (R$)", "Crescimento Receita (%)"
-        ]].copy()
+        # 🔢 Totais gerais
+        total_est = {
+            "Custo Total A": fmt_moeda(custos_est["Custo Total A"].replace("R$ ", "").str.replace(".", "").str.replace(",", ".").astype(float).sum()),
+            "Custo Total B": fmt_moeda(custos_est["Custo Total B"].replace("R$ ", "").str.replace(".", "").str.replace(",", ".").astype(float).sum()),
+            "Receita A": fmt_moeda(custos_est["Receita A"].replace("R$ ", "").str.replace(".", "").str.replace(",", ".").astype(float).sum()),
+            "Receita B": fmt_moeda(custos_est["Receita B"].replace("R$ ", "").str.replace(".", "").str.replace(",", ".").astype(float).sum()),
+            "Lucro A": fmt_moeda(custos_est["Lucro A"].replace("R$ ", "").str.replace(".", "").str.replace(",", ".").astype(float).sum()),
+            "Lucro B": fmt_moeda(custos_est["Lucro B"].replace("R$ ", "").str.replace(".", "").str.replace(",", ".").astype(float).sum())
+        }
 
-        comparativo_display = comparativo_display.fillna("").astype(str)
-        comparativo_display.index = comparativo_display.index.map(str)
-
-        st.dataframe(comparativo_display, use_container_width=True)
+        st.markdown(f"""
+        **📊 Totais (Estoque):**  
+        • Custo A: {total_est['Custo Total A']}  • Custo B: {total_est['Custo Total B']}  
+        • Receita A: {total_est['Receita A']}  • Receita B: {total_est['Receita B']}  
+        • Lucro A: {total_est['Lucro A']}  • Lucro B: {total_est['Lucro B']}
+        """)
 
 
         # =====================================================
