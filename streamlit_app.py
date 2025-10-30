@@ -3820,6 +3820,16 @@ if menu == "📦 Dashboard – Logística":
         df_a = calc_periodo(custos_base, "A", "Qtd. Período A")
         df_b = calc_periodo(custos_base, "B", "Qtd. Período B")
 
+
+        # -------------------------------------------------
+        # 💲 Função auxiliar para formatar moeda
+        # -------------------------------------------------
+        def fmt_moeda(valor):
+            try:
+                return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            except Exception:
+                return valor
+
         # -------------------------------------------------
         # 💰 Exibir tabelas lado a lado
         # -------------------------------------------------
