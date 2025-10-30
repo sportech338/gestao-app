@@ -3863,6 +3863,7 @@ if menu == "📦 Dashboard – Logística":
                 "Variação Lucro (%)",
                 "Variação Part. (p.p.)"
             ]].style.format({
+                "Diferença Qtd.": "{:.0f}",
                 "Crescimento (%)": "{:+.1f}%",
                 "Variação Part. (p.p.)": "{:+.1f}",
                 "Diferença Custo": fmt_moeda,
