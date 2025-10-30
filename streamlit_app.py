@@ -3880,6 +3880,14 @@ if menu == "📦 Dashboard – Logística":
 
         comp["Variação Part. (p.p.)"] = comparativo["Variação Part. (p.p.)"]  # reaproveita coluna original
 
+        # 🔧 Garantir colunas numéricas antes da exibição
+        for df_temp in [df_a, df_b, comp]:
+            for col in df_temp.columns:
+                if any(p in col for p in ["Custo", "Receita", "Lucro"]) and df_temp[col].dtype == "O":
+                    df_temp[col] = pd.to_numeric(df_temp[col], errors="coerce")
+                if "Participação" in col and df_temp[col].dtype == "O":
+                    df_temp[col] = pd.to_numeric(df_temp[col], errors="coerce")
+
         st.dataframe(
             comp[["Variante", "Diferença Qtd.", "Diferença Custo Total", "Crescimento (%)", "Variação Part. (p.p.)"]]
             .style.format({
