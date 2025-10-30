@@ -4077,6 +4077,7 @@ if menu == "📦 Dashboard – Logística":
 
         def gerar_analise_modificacao(comp):
             import re
+            from streamlit_extras.metric_cards import style_metric_cards
 
             def extrair_identificador(nome):
                 """Extrai o texto entre parênteses (ex: '( Mais Vendido )')"""
@@ -4145,29 +4146,41 @@ if menu == "📦 Dashboard – Logística":
             )
 
             # -------------------------------
-            # 💬 Interpretação causal
+            # 💬 Diagnóstico Estratégico
             # -------------------------------
-            texto.append("### 💬 Interpretação Estratégica")
+            texto.append("### 💬 Diagnóstico Estratégico")
 
             if lucro_dif > 0 and lucro_total > 0 and invest_total <= 0:
-                texto.append("🟢 A mudança foi **altamente benéfica** — aumentou lucro individual e global, com investimento igual ou menor.")
+                texto.append("🟢 **Altamente favorável:** aumento de lucro individual e global, com investimento igual ou menor.")
             elif lucro_dif > 0 and lucro_total > 0 and invest_total > 0:
-                texto.append("🟡 A modificação foi **positiva**, mas exigiu mais investimento para gerar resultado.")
+                texto.append("🟡 **Favorável com ressalvas:** crescimento geral, mas com maior investimento necessário.")
             elif lucro_dif > 0 and lucro_total < 0:
-                texto.append("🟠 A variante melhorou, porém **o portfólio perdeu lucro total** — possível canibalização das demais variantes.")
+                texto.append("🟠 **Parcialmente favorável:** a variante melhorou, mas o portfólio perdeu lucro total — possível canibalização das demais.")
             elif lucro_dif < 0 and lucro_total > 0:
-                texto.append("🟢 O portfólio melhorou mesmo com queda da variante — o novo mix foi mais eficiente.")
+                texto.append("🟢 **Mix mais eficiente:** o portfólio cresceu mesmo com queda da variante modificada.")
             elif lucro_dif < 0 and lucro_total < 0:
-                texto.append("🔴 A mudança foi **desfavorável**, com perda de lucro individual e global.")
+                texto.append("🔴 **Desfavorável:** perda de lucro individual e global, indicando impacto negativo.")
             else:
-                texto.append("⚖️ Impacto neutro — variações pequenas entre custo, lucro e investimento não alteraram significativamente o resultado final.")
+                texto.append("⚖️ **Neutro:** variações pequenas, sem efeito relevante no desempenho total.")
+
+            # -------------------------------
+            # 📊 Painel visual de métricas rápidas
+            # -------------------------------
+            st.markdown("---")
+            col1, col2, col3 = st.columns(3)
+            col1.metric("📦 Variante modificada", f"{fmt_moeda(lucro_dif)}", "Lucro Δ", delta_color="normal")
+            col2.metric("💰 Lucro total", f"{fmt_moeda(lucro_total)}", "Δ Global", delta_color="inverse" if lucro_total < 0 else "normal")
+            col3.metric("⚙️ Eficiência geral", "ROI / ROAS ↑" if lucro_total >= 0 else "ROI / ROAS estáveis", delta_color="normal")
+            style_metric_cards(background_color="#0e1117", border_left_color="#5c9")
 
             return "\n".join(texto)
 
-        # Exibir a análise como card limpo no app
+        # -------------------------------------------------
+        # Exibir a análise formatada no app
+        # -------------------------------------------------
         analise_texto = gerar_analise_modificacao(comp)
-        st.markdown("---")
         st.markdown(analise_texto)
+
 
         # =====================================================
         # 🧾 Cria versão formatada da planilha para edição
