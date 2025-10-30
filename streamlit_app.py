@@ -3474,7 +3474,7 @@ if menu == "📦 Dashboard – Logística":
     # =====================================================
     with aba2:
         st.subheader("Comparativo de Saídas e Custos por Variante:")
-        
+
         # =====================================================
         # 🔄 Carregamento de produtos e pedidos
         # =====================================================
@@ -3541,79 +3541,7 @@ if menu == "📦 Dashboard – Logística":
             st.stop()
 
         # =====================================================
-        # 🧮 Análise de saídas por produto
-        # =====================================================
-        pedidos["created_at"] = pd.to_datetime(pedidos["created_at"], utc=True, errors="coerce")\
-                                   .dt.tz_convert(APP_TZ).dt.tz_localize(None)
-
-        base_prod = pedidos[pedidos["product_title"] == produto_escolhido].copy()
-
-        def filtrar_periodo(df, ini, fim):
-            return df[(df["created_at"].dt.date >= ini) & (df["created_at"].dt.date <= fim)].copy()
-
-        df_a = filtrar_periodo(base_prod, inicio_a, fim_a)
-        df_b = filtrar_periodo(base_prod, inicio_b, fim_b)
-
-        resumo_a = df_a.groupby("variant_title")["quantity"].sum().reset_index(name="Qtd. Período A")
-        resumo_b = df_b.groupby("variant_title")["quantity"].sum().reset_index(name="Qtd. Período B")
-
-        comparativo = pd.merge(resumo_a, resumo_b, on="variant_title", how="outer").fillna(0)
-        comparativo["Diferença (unid.)"] = comparativo["Qtd. Período A"] - comparativo["Qtd. Período B"]
-        comparativo["Crescimento (%)"] = np.where(
-            comparativo["Qtd. Período B"] > 0,
-            (comparativo["Qtd. Período A"] - comparativo["Qtd. Período B"]) / comparativo["Qtd. Período B"] * 100,
-            np.nan
-        )
-        comparativo["Participação A (%)"] = np.where(
-            comparativo["Qtd. Período A"].sum() > 0,
-            comparativo["Qtd. Período A"] / comparativo["Qtd. Período A"].sum() * 100,
-            0
-        )
-        comparativo["Participação B (%)"] = np.where(
-            comparativo["Qtd. Período B"].sum() > 0,
-            comparativo["Qtd. Período B"] / comparativo["Qtd. Período B"].sum() * 100,
-            0
-        )
-        comparativo["Variação Part. (p.p.)"] = comparativo["Participação A (%)"] - comparativo["Participação B (%)"]
-
-        comparativo.rename(columns={"variant_title": "Variante"}, inplace=True)
-        comparativo = comparativo.sort_values("Qtd. Período A", ascending=False).reset_index(drop=True)
-
-        # 🔧 Formatação de números
-        comparativo["Qtd. Período A"] = comparativo["Qtd. Período A"].astype(int)
-        comparativo["Qtd. Período B"] = comparativo["Qtd. Período B"].astype(int)
-        comparativo["Diferença (unid.)"] = comparativo["Diferença (unid.)"].astype(int)
-
-        # 🔧 Formatação de percentuais
-        for col in ["Crescimento (%)", "Participação A (%)", "Participação B (%)"]:
-            comparativo[col] = comparativo[col].apply(
-                lambda x: f"{x:.1f}%" if pd.notna(x) else "-"
-            )
-
-        comparativo["Variação Part. (p.p.)"] = comparativo["Variação Part. (p.p.)"].apply(
-            lambda x: f"{x:+.1f}" if pd.notna(x) else "-"
-        )
-
-        # 🎨 Estilo visual: verde para positivo, vermelho para negativo
-        def highlight_variacao(val):
-            if isinstance(val, str):
-                try:
-                    num = float(val.replace("%", "").replace("+", "").replace(",", "."))
-                    color = "#00ff2a" if "+" in val else "#f00000" if "-" in val else "inherit"
-                    return f"color: {color}; font-weight: 600;"
-                except:
-                    return ""
-            return ""
-
-        styled_df = comparativo.style.applymap(
-            highlight_variacao, subset=["Crescimento (%)", "Variação Part. (p.p.)"]
-        )
-
-        st.subheader("📋 Tabela 1 — Comparativo de Saídas por Variante")
-        st.dataframe(styled_df, use_container_width=True)
-
-        # =====================================================
-        # 💰 Tabelas de custo — integração com Google Sheets (edição direta)
+        # 💰 Carregar planilha de custos
         # =====================================================
         import gspread
         from google.oauth2.service_account import Credentials
@@ -3623,21 +3551,11 @@ if menu == "📦 Dashboard – Logística":
                 "https://www.googleapis.com/auth/spreadsheets",
                 "https://www.googleapis.com/auth/drive"
             ]
-
-            # 🔧 Corrige o formato da chave vinda do Streamlit secrets
             gcp_info = dict(st.secrets["gcp_service_account"])
-
-            # Corrige as quebras de linha da private_key
             if isinstance(gcp_info.get("private_key"), str):
                 gcp_info["private_key"] = gcp_info["private_key"].replace("\\n", "\n")
-
-            # ✅ Cria as credenciais direto do dicionário
             creds = Credentials.from_service_account_info(gcp_info, scopes=scopes)
-
-            # ✅ Autoriza o gspread com as credenciais
-            client = gspread.authorize(creds)
-            return client
-
+            return gspread.authorize(creds)
 
         @st.cache_data(ttl=600)
         def carregar_planilha_custos():
@@ -3645,7 +3563,6 @@ if menu == "📦 Dashboard – Logística":
             sheet = client.open_by_key(st.secrets["sheets"]["spreadsheet_id"]).sheet1
             df = pd.DataFrame(sheet.get_all_records())
             df.columns = df.columns.str.strip()
-
             mapa_colunas = {
                 "Produto": "Produto",
                 "Variantes": "Variante",
@@ -3655,45 +3572,12 @@ if menu == "📦 Dashboard – Logística":
             df.rename(columns=mapa_colunas, inplace=True)
             return df
 
-
-        def atualizar_planilha_custos(df):
-            client = get_gsheet_client()
-            sheet = client.open_by_key(st.secrets["sheets"]["spreadsheet_id"]).sheet1
-
-            try:
-                # ✅ Converte tudo para texto antes de enviar
-                df_safe = (
-                    df.copy()
-                    .fillna("")                           # remove NaN
-                    .astype(str)                          # garante tudo como string
-                    .replace("nan", "", regex=False)       # remove "nan" literais
-                )
-
-                # ✅ Monta o corpo limpo para update
-                body = [df_safe.columns.values.tolist()] + df_safe.values.tolist()
-
-                # ✅ Envia de forma segura ao Sheets
-                sheet.batch_clear(["A:Z"])                # limpa o conteúdo antigo
-                sheet.update(body)
-                st.success("✅ Planilha atualizada com sucesso!")
-
-            except Exception as e:
-                st.error(f"❌ Erro ao atualizar planilha: {e}")
-
-
-        # =====================================================
-        # 🔄 Carregar planilha de custos (antes de usar df_custos)
-        # =====================================================
         try:
             df_custos = carregar_planilha_custos()
         except Exception as e:
             st.error(f"❌ Erro ao carregar planilha de custos: {e}")
             st.stop()
 
-
-        # =====================================================
-        # 💸 Normalização das colunas de custo
-        # =====================================================
         for col in ["Custo AliExpress (R$)", "Custo Estoque (R$)"]:
             if col in df_custos.columns:
                 df_custos[col] = (
@@ -3706,57 +3590,98 @@ if menu == "📦 Dashboard – Logística":
                     .astype(float)
                 )
 
+        # =====================================================
+        # 🧮 Processar dados do produto selecionado
+        # =====================================================
+        pedidos["created_at"] = pd.to_datetime(pedidos["created_at"], utc=True, errors="coerce")\
+                                   .dt.tz_convert(APP_TZ).dt.tz_localize(None)
+        base_prod = pedidos[pedidos["product_title"] == produto_escolhido].copy()
+
+        def filtrar_periodo(df, ini, fim):
+            return df[(df["created_at"].dt.date >= ini) & (df["created_at"].dt.date <= fim)].copy()
+
+        df_a = filtrar_periodo(base_prod, inicio_a, fim_a)
+        df_b = filtrar_periodo(base_prod, inicio_b, fim_b)
 
         # =====================================================
-        # 💄 Formatação visual (exibir R$ 25,00 na tabela)
+        # 🏷️ Escolher fornecedor base para custo
         # =====================================================
-        df_display = df_custos.copy()
-        for col in ["Custo AliExpress (R$)", "Custo Estoque (R$)"]:
-            if col in df_display.columns:
-                df_display[col] = df_display[col].apply(
-                    lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-                    if pd.notna(x) else ""
-                )
+        fornecedor_escolhido = st.radio(
+            "📦 Escolher custo base:",
+            ["AliExpress", "Estoque"],
+            horizontal=True
+        )
 
+        custo_col = f"Custo {fornecedor_escolhido} (R$)"
 
         # =====================================================
-        # 💰 Tabela 2 — Comparativo de Custos Totais (AliExpress)
+        # 🧾 Calcular métricas por período
         # =====================================================
-        custos_ali = comparativo.merge(df_custos[["Variante", "Custo AliExpress (R$)"]], on="Variante", how="left")
-        custos_ali["Custo Total A"] = custos_ali["Custo AliExpress (R$)"] * custos_ali["Qtd. Período A"]
-        custos_ali["Custo Total B"] = custos_ali["Custo AliExpress (R$)"] * custos_ali["Qtd. Período B"]
-        custos_ali["Diferença de Custo Total"] = custos_ali["Custo Total A"] - custos_ali["Custo Total B"]
+        def calcular_resumo(df, periodo_nome):
+            resumo = df.groupby("variant_title").agg({
+                "quantity": "sum",
+                "price": "mean"  # média de preço de venda por item
+            }).reset_index()
+            resumo.rename(columns={"variant_title": "Variante", "quantity": f"Qtd. {periodo_nome}", "price": f"Preço Médio {periodo_nome}"}, inplace=True)
 
+            resumo = resumo.merge(df_custos[["Variante", custo_col]], on="Variante", how="left")
+            resumo[f"Custo Total {periodo_nome}"] = resumo[custo_col] * resumo[f"Qtd. {periodo_nome}"]
+            resumo[f"Receita {periodo_nome}"] = resumo[f"Qtd. {periodo_nome}"] * resumo[f"Preço Médio {periodo_nome}"]
+            resumo[f"Lucro {periodo_nome}"] = resumo[f"Receita {periodo_nome}"] - resumo[f"Custo Total {periodo_nome}"]
+
+            total_vendas = resumo[f"Qtd. {periodo_nome}"].sum()
+            resumo[f"Participação {periodo_nome} (%)"] = np.where(
+                total_vendas > 0, resumo[f"Qtd. {periodo_nome}"] / total_vendas * 100, 0
+            )
+            return resumo
+
+        resumo_a = calcular_resumo(df_a, "A")
+        resumo_b = calcular_resumo(df_b, "B")
+
+        # =====================================================
+        # 💄 Formatar tabelas
+        # =====================================================
         def fmt_moeda(v):
             try:
                 return f"R$ {float(v):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
             except:
                 return "—"
 
-        for c in ["Custo Total A", "Custo Total B", "Diferença de Custo Total"]:
-            custos_ali[c] = custos_ali[c].apply(fmt_moeda)
-
-        st.subheader("💰 Tabela 2 — Comparativo de Custos Totais (AliExpress)")
-        st.dataframe(
-            custos_ali[["Variante", "Custo Total A", "Custo Total B", "Diferença de Custo Total"]],
-            use_container_width=True
-        )
-
+        for df_resumo in [resumo_a, resumo_b]:
+            for col in df_resumo.columns:
+                if "R$" in col or "Custo" in col or "Receita" in col or "Lucro" in col:
+                    df_resumo[col] = df_resumo[col].apply(fmt_moeda)
+                if "(%)" in col:
+                    df_resumo[col] = df_resumo[col].apply(lambda x: f"{x:.1f}%" if pd.notna(x) else "-")
 
         # =====================================================
-        # 🏷️ Tabela 3 — Comparativo de Custos Totais (Estoque)
+        # 📊 Exibir tabelas separadas
         # =====================================================
-        custos_est = comparativo.merge(df_custos[["Variante", "Custo Estoque (R$)"]], on="Variante", how="left")
-        custos_est["Custo Total A"] = custos_est["Custo Estoque (R$)"] * custos_est["Qtd. Período A"]
-        custos_est["Custo Total B"] = custos_est["Custo Estoque (R$)"] * custos_est["Qtd. Período B"]
-        custos_est["Diferença de Custo Total"] = custos_est["Custo Total A"] - custos_est["Custo Total B"]
+        st.subheader("📈 Período A")
+        st.dataframe(resumo_a[["Variante", "Qtd. A", "Custo Total A", "Receita A", "Lucro A", "Participação A (%)"]], use_container_width=True)
 
-        for c in ["Custo Total A", "Custo Total B", "Diferença de Custo Total"]:
-            custos_est[c] = custos_est[c].apply(fmt_moeda)
+        st.subheader("📉 Período B")
+        st.dataframe(resumo_b[["Variante", "Qtd. B", "Custo Total B", "Receita B", "Lucro B", "Participação B (%)"]], use_container_width=True)
 
-        st.subheader("🏷️ Tabela 3 — Comparativo de Custos Totais (Estoque)")
+        # =====================================================
+        # 🔄 Comparativo consolidado
+        # =====================================================
+        comparativo = resumo_a.merge(resumo_b, on="Variante", how="outer").fillna(0)
+        comparativo["Δ Qtd"] = comparativo["Qtd. A"] - comparativo["Qtd. B"]
+        comparativo["Δ Custo Total"] = comparativo["Custo Total A"] - comparativo["Custo Total B"]
+        comparativo["Δ Receita"] = comparativo["Receita A"] - comparativo["Receita B"]
+        comparativo["Δ Lucro"] = comparativo["Lucro A"] - comparativo["Lucro B"]
+        comparativo["Δ Part. (p.p.)"] = comparativo["Participação A (%)"] - comparativo["Participação B (%)"]
+
+        # 💄 Formatação visual
+        for col in ["Δ Custo Total", "Δ Receita", "Δ Lucro"]:
+            comparativo[col] = comparativo[col].apply(fmt_moeda)
+        for col in ["Δ Qtd", "Δ Part. (p.p.)"]:
+            comparativo[col] = comparativo[col].apply(lambda x: f"{x:+.1f}" if pd.notna(x) else "-")
+
+        st.subheader("⚖️ Comparativo Consolidado")
         st.dataframe(
-            custos_est[["Variante", "Custo Total A", "Custo Total B", "Diferença de Custo Total"]],
+            comparativo[["Variante", "Δ Qtd", "Δ Custo Total", "Δ Receita", "Δ Lucro", "Δ Part. (p.p.)"]],
             use_container_width=True
         )
 
