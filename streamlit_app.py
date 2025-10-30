@@ -1208,8 +1208,8 @@ access_token="EAA..."
     until = end_date
 
     # ================= VALIDAÇÃO E COLETA DE DADOS =================
-    if not ready:
-        st.info("Informe **Ad Account ID** e **Access Token** para iniciar.")
+    if not act_id or not token:
+        st.error("⚠️ Credenciais ausentes — verifique o arquivo secrets.toml.")
         st.stop()
 
     with st.spinner("Buscando dados da Meta…"):
