@@ -3261,10 +3261,18 @@ if menu == "📦 Dashboard – Logística":
             if c in base.columns:
                 base[c] = base[c].fillna(f"({c} desconhecido)")
 
-        base["created_at"] = pd.to_datetime(base.get("created_at"), errors="coerce").dt.tz_localize(None)
+        if "created_at" in base.columns:
+            base["created_at"] = (
+                pd.to_datetime(base["created_at"], errors="coerce")
+                .dt.tz_localize(None)
+            )
+        else:
+            base["created_at"] = pd.NaT
+
         base["price"] = pd.to_numeric(base.get("price"), errors="coerce").fillna(0)
         base["quantity"] = pd.to_numeric(base.get("quantity"), errors="coerce").fillna(0)
         base["line_revenue"] = base["price"] * base["quantity"]
+
 
         # -------------------------------------------------
         # 🧠 Aplicação de filtros
