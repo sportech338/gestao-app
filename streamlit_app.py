@@ -4122,52 +4122,61 @@ if menu == "📦 Dashboard – Logística":
             # Diagnóstico
             # =====================================================
             if lucro_dif > 0 and lucro_total > 0 and invest_total <= 0:
-                status_emoji, status_text = "🟢", "Altamente Favorável"
+                status_emoji, status_text, border_color = "🟢", "Altamente Favorável", "#00c46b"
                 diagnostico = "Aumento de lucro individual e global, com investimento igual ou menor."
             elif lucro_dif > 0 and lucro_total > 0 and invest_total > 0:
-                status_emoji, status_text = "🟡", "Favorável com Ressalvas"
+                status_emoji, status_text, border_color = "🟡", "Favorável com Ressalvas", "#facc15"
                 diagnostico = "Crescimento geral, mas exigindo maior investimento."
             elif lucro_dif > 0 and lucro_total < 0:
-                status_emoji, status_text = "🟠", "Parcialmente Favorável"
+                status_emoji, status_text, border_color = "🟠", "Parcialmente Favorável", "#f97316"
                 diagnostico = "A variante melhorou, mas o portfólio perdeu lucro total — possível canibalização."
             elif lucro_dif < 0 and lucro_total > 0:
-                status_emoji, status_text = "🟢", "Mix Eficiente"
+                status_emoji, status_text, border_color = "🟢", "Mix Eficiente", "#22c55e"
                 diagnostico = "O portfólio cresceu mesmo com queda da variante modificada."
             elif lucro_dif < 0 and lucro_total < 0:
-                status_emoji, status_text = "🔴", "Desfavorável"
+                status_emoji, status_text, border_color = "🔴", "Desfavorável", "#ef4444"
                 diagnostico = "Perda de lucro individual e global, indicando impacto negativo."
             else:
-                status_emoji, status_text = "⚖️", "Neutro"
+                status_emoji, status_text, border_color = "⚖️", "Neutro", "#9ca3af"
                 diagnostico = "Variações pequenas, sem efeito relevante no desempenho total."
 
             # =====================================================
-            # Exibição em cards lado a lado
+            # Layout em 3 colunas de altura igual
             # =====================================================
             col1, col2, col3 = st.columns(3)
 
             # --- CSS customizado para cards ---
-            card_style = """
+            card_style = f"""
                 <style>
-                    .card {
-                        background-color: #1e1e1e;
-                        border: 1px solid rgba(255,255,255,0.1);
-                        border-radius: 12px;
-                        padding: 20px;
-                        margin: 5px;
-                        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-                    }
-                    .card h4 {
-                        color: #fff;
-                        margin-bottom: 10px;
-                    }
-                    .metric {
+                    .card {{
+                        background-color: #181a1b;
+                        border: 2px solid {border_color};
+                        border-radius: 14px;
+                        padding: 28px;
+                        height: 420px;
+                        display: flex;
+                        flex-direction: column;
+                        justify-content: space-between;
+                        box-shadow: 0 4px 12px rgba(0,0,0,0.35);
+                    }}
+                    .card h4 {{
+                        color: #ffffff;
+                        font-size: 20px;
+                        margin-bottom: 14px;
+                    }}
+                    .metric {{
                         color: #d1d5db;
-                        font-size: 15px;
-                        margin-bottom: 4px;
-                    }
-                    .metric strong {
-                        color: #fff;
-                    }
+                        font-size: 17px;
+                        line-height: 1.6;
+                    }}
+                    .metric strong {{
+                        color: #ffffff;
+                    }}
+                    hr {{
+                        border: none;
+                        border-top: 1px solid rgba(255,255,255,0.1);
+                        margin: 10px 0;
+                    }}
                 </style>
             """
             st.markdown(card_style, unsafe_allow_html=True)
@@ -4221,7 +4230,7 @@ if menu == "📦 Dashboard – Logística":
                         <h4>💬 Diagnóstico Estratégico</h4>
                         <div class="metric">{status_emoji} <strong>{status_text}</strong></div>
                         <hr>
-                        <div class="metric">{diagnostico}</div>
+                        <div class="metric" style="font-size:16px; color:#e5e7eb;">{diagnostico}</div>
                     </div>
                     """,
                     unsafe_allow_html=True
