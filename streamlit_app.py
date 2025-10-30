@@ -3771,6 +3771,7 @@ if menu == "📦 Dashboard – Logística":
             st.markdown("### 📆 Período A")
             st.dataframe(
                 df_a.style.format({
+                    "Qtd A": "{:.0f}",
                     "Custo A": fmt_moeda,
                     "Receita A": fmt_moeda,
                     "Lucro A": fmt_moeda,
@@ -3783,6 +3784,7 @@ if menu == "📦 Dashboard – Logística":
             st.markdown("### 📆 Período B")
             st.dataframe(
                 df_b.style.format({
+                    "Qtd B": "{:.0f}",
                     "Custo B": fmt_moeda,
                     "Receita B": fmt_moeda,
                     "Lucro B": fmt_moeda,
