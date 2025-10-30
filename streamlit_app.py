@@ -3815,9 +3815,9 @@ if menu == "📦 Dashboard – Logística":
         })
 
         # Calcula diferenças e variações
-        comp["Diferença Qtd."] = comp["Qtd. A"] - comp["Qtd. B"]
-        comp["Diferença Custo"] = comp["Custo A"] - comp["Custo B"]
-        comp["Diferença Lucro"] = comp["Lucro A"] - comp["Lucro B"]
+        comp["A-B(Qtd.)"] = comp["Qtd. A"] - comp["Qtd. B"]
+        comp["A-B(Custo)"] = comp["Custo A"] - comp["Custo B"]
+        comp["A-B(Lucro)"] = comp["Lucro A"] - comp["Lucro B"]
 
         comp["Crescimento (%)"] = np.where(
             comp["Qtd. B"] > 0,
@@ -3865,24 +3865,24 @@ if menu == "📦 Dashboard – Logística":
             comp[[
                 "Variante A",
                 "Variante B",
-                "Diferença Qtd.",
+                "A-B(Qtd.)",
                 "Crescimento (%)",
-                "Diferença Custo",
-                "Diferença Lucro",
+                "A-B(Custo)",
+                "A-B(Lucro)",
                 "Variação Lucro (%)",
                 "Variação Part. (p.p.)"
             ]]
             .style
             .format({
-                "Diferença Qtd.": "{:.0f}",
+                "A-B(Qtd.)": "{:.0f}",
                 "Crescimento (%)": "{:+.1f}%",
                 "Variação Part. (p.p.)": "{:+.1f}",
-                "Diferença Custo": fmt_moeda,
-                "Diferença Lucro": fmt_moeda,
+                "A-B(Custo)": fmt_moeda,
+                "A-B(Lucro)": fmt_moeda,
                 "Variação Lucro (%)": "{:+.1f}%"
             })
             .applymap(highlight_diferencas, subset=[
-                "Diferença Qtd.",
+                "A-B(Qtd.)",
                 "Crescimento (%)",
                 "Variação Lucro (%)",
                 "Variação Part. (p.p.)"
