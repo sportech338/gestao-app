@@ -3786,8 +3786,6 @@ if menu == "📦 Dashboard – Logística":
         # Nome base do produto (ex.: "Flexlive", "KneePro", etc.)
         produto_nome = produto_escolhido.split(" - ")[0]
 
-        st.markdown("### 💰 Investimento Meta Ads — Distribuído por Variante")
-
         try:
             # Busca investimento Meta por produto e período (usando credenciais automáticas)
             ads_a = fetch_insights_daily(
