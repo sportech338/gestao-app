@@ -1110,7 +1110,8 @@ if menu == "📊 Dashboard – Tráfego Pago":
     from datetime import datetime
     from zoneinfo import ZoneInfo
     APP_TZ = ZoneInfo("America/Sao_Paulo")
-
+    
+    st.write("🔑 Chaves disponíveis no secrets:", list(st.secrets.keys()))
     # 🔒 Pega credenciais direto do st.secrets
     act_id = st.secrets["facebook"]["ad_account_id"]
     token = st.secrets["facebook"]["access_token"]
