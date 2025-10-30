@@ -3366,14 +3366,26 @@ if menu == "📦 Dashboard – Logística":
             else:
                 return [''] * len(row)
 
-        colunas_visiveis = [c for c in tabela.columns if c not in ["duplicado", "is_sedex"]]
-        styled_tabela = tabela[colunas_visiveis + ["duplicado", "is_sedex"]].style.apply(highlight_prioridades, axis=1)
-        styled_tabela = styled_tabela.hide(["duplicado", "is_sedex"], axis=1)
-
+        # 🔢 Ajusta o índice antes de aplicar o estilo
         tabela.index = range(1, len(tabela) + 1)
-
-        st.dataframe(styled_tabela, use_container_width=True)
         tabela.index.name = "Nº"
+
+        # Cria uma cópia apenas com as colunas visíveis + técnicas
+        colunas_visiveis = [c for c in tabela.columns if c not in ["duplicado", "is_sedex"]]
+        tabela_exibir = tabela[colunas_visiveis + ["duplicado", "is_sedex"]].copy()
+
+        # Aplica estilo condicional
+        styled_tabela = tabela_exibir.style.apply(highlight_prioridades, axis=1)
+
+        # Esconde colunas técnicas
+        try:
+            styled_tabela = styled_tabela.hide(["duplicado", "is_sedex"], axis=1)
+        except:
+            styled_tabela = styled_tabela.hide_columns(["duplicado", "is_sedex"])
+
+        # Exibe tabela final
+        st.dataframe(styled_tabela, use_container_width=True)
+
 
         # -------------------------------------------------
         # 🎛️ Filtros adicionais
