@@ -3998,33 +3998,34 @@ if menu == "📦 Dashboard – Logística":
         # 💰 Cálculos adicionais — Investimento, ROI, ROAS, Receita
         # =====================================================
         comp["A-B(Invest.)"] = comp.get("Invest. (R$)_A", 0) - comp.get("Invest. (R$)_B", 0)
-
         comp["A-B(ROI)"] = np.where(
             comp.get("ROI B_B", 0) != 0,
             (comp.get("ROI A_A", 0) - comp.get("ROI B_B", 0)),
             np.nan
         )
-
         comp["A-B(ROAS)"] = np.where(
             comp.get("ROAS B_B", 0) != 0,
             (comp.get("ROAS A_A", 0) - comp.get("ROAS B_B", 0)),
             np.nan
         )
-
         comp["A-B(Receita)"] = comp.get("Receita A_A", 0) - comp.get("Receita B_B", 0)
 
         # =====================================================
-        # 🎨 Estilo visual (verde = positivo, vermelho = negativo)
+        # 📈 Novas colunas — Percentuais e Pontos Percentuais (A - B)
         # =====================================================
-        def highlight_diferencas(val):
-            try:
-                if pd.isna(val):
-                    return ""
-                color = "green" if val > 0 else "red" if val < 0 else "inherit"
-                return f"color: {color}; font-weight: 600;"
-            except Exception:
-                return ""
+        def safe_div(a, b):
+            """Evita divisões por zero"""
+            return np.where(b != 0, (a - b) / b * 100, np.nan)
 
+        comp["A-B(Custo %)"] = safe_div(comp["Custo A_A"], comp["Custo B_B"])
+        comp["A-B(Receita %)"] = safe_div(comp["Receita A_A"], comp["Receita B_B"])
+        comp["A-B(Invest. %)"] = safe_div(comp["Invest. (R$)_A"], comp["Invest. (R$)_B"])
+        comp["A-B(ROI | p.p)"] = comp.get("ROI A_A", 0) - comp.get("ROI B_B", 0)
+        comp["A-B(ROAS | p.p)"] = comp.get("ROAS A_A", 0) - comp.get("ROAS B_B", 0)
+
+        # =====================================================
+        # 🎨 Estilo visual da tabela comparativa
+        # =====================================================
         styled_comp = (
             comp[[
                 "Variante A",
@@ -4032,12 +4033,17 @@ if menu == "📦 Dashboard – Logística":
                 "A-B(Qtd.)",
                 "A-B(Qtd.%)",
                 "A-B(Custo)",
+                "A-B(Custo %)",
                 "A-B(Lucro)",
                 "A-B(Lucro %)",
                 "A-B(Receita)",
+                "A-B(Receita %)",
                 "A-B(Invest.)",
+                "A-B(Invest. %)",
                 "A-B(ROI)",
+                "A-B(ROI | p.p)",
                 "A-B(ROAS)",
+                "A-B(ROAS | p.p)",
                 "A-B(Part. | p.p)"
             ]]
             .style
@@ -4045,19 +4051,25 @@ if menu == "📦 Dashboard – Logística":
                 "A-B(Qtd.)": "{:.0f}",
                 "A-B(Qtd.%)": "{:+.1f}%",
                 "A-B(Custo)": fmt_moeda,
+                "A-B(Custo %)": "{:+.1f}%",
                 "A-B(Lucro)": fmt_moeda,
                 "A-B(Lucro %)": "{:+.1f}%",
                 "A-B(Receita)": fmt_moeda,
+                "A-B(Receita %)": "{:+.1f}%",
                 "A-B(Invest.)": fmt_moeda,
+                "A-B(Invest. %)": "{:+.1f}%",
                 "A-B(ROI)": "{:+.1f}%",
+                "A-B(ROI | p.p)": "{:+.1f}",
                 "A-B(ROAS)": "{:+.2f}x",
+                "A-B(ROAS | p.p)": "{:+.2f}",
                 "A-B(Part. | p.p)": "{:+.1f}"
             })
-            .applymap(highlight_diferencas, subset=[
-                "A-B(Qtd.%)",
-                "A-B(Lucro %)",
-                "A-B(Part. | p.p)"
-            ])
+            .set_properties(**{
+                "color": "white",
+                "text-align": "right",
+                "font-size": "14px",
+                "border-color": "rgba(255,255,255,0.1)"
+            })
         )
 
         st.dataframe(styled_comp, use_container_width=True)
