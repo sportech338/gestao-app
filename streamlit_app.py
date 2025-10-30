@@ -3858,8 +3858,8 @@ if menu == "📦 Dashboard – Logística":
                 "Crescimento (%)",
                 "Diferença Custo",
                 "Diferença Lucro",
-                "Variação Lucro (%)"
-                "Variação Part. (p.p.)",
+                "Variação Lucro (%)",
+                "Variação Part. (p.p.)"
             ]].style.format({
                 "Crescimento (%)": "{:+.1f}%",
                 "Variação Part. (p.p.)": "{:+.1f}",
