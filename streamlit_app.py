@@ -2771,7 +2771,7 @@ if menu == "📊 Dashboard – Tráfego Pago":
                 fig.add_trace(go.Scatter(
                     x=g["Dia da Semana"],
                     y=g["spend"],
-                    name="Investimento (R$)",
+                    name="Invest.(R$)",
                     mode="lines+markers+text",
                     text=[fmt_real(v) for v in g["spend"]],
                     textposition="top center",
@@ -2791,7 +2791,7 @@ if menu == "📊 Dashboard – Tráfego Pago":
                     ),
                     xaxis=dict(title="Dia da Semana"),
                     yaxis=dict(title="Compras", side="left", showgrid=False, zeroline=False),
-                    yaxis2=dict(title="Investimento (R$)", overlaying="y", side="right", showgrid=False, zeroline=False),
+                    yaxis2=dict(title="Invest.(R$)", overlaying="y", side="right", showgrid=False, zeroline=False),
                     legend=dict(
                         orientation="h",
                         x=0.5, y=-0.2,
@@ -3631,17 +3631,17 @@ if menu == "📦 Dashboard – Logística":
             (comparativo["Qtd A"] - comparativo["Qtd B"]) / comparativo["Qtd B"] * 100,
             np.nan
         )
-        comparativo["Participação A (%)"] = np.where(
+        comparativo["Part.A (%)"] = np.where(
             comparativo["Qtd A"].sum() > 0,
             comparativo["Qtd A"] / comparativo["Qtd A"].sum() * 100,
             0
         )
-        comparativo["Participação B (%)"] = np.where(
+        comparativo["Part.B (%)"] = np.where(
             comparativo["Qtd B"].sum() > 0,
             comparativo["Qtd B"] / comparativo["Qtd B"].sum() * 100,
             0
         )
-        comparativo["A-B(Part. | p.p)"] = comparativo["Participação A (%)"] - comparativo["Participação B (%)"]
+        comparativo["A-B(Part. | p.p)"] = comparativo["Part.A (%)"] - comparativo["Part.B (%)"]
 
         comparativo.rename(columns={"variant_title": "Variante"}, inplace=True)
         comparativo = comparativo.sort_values("Qtd A", ascending=False).reset_index(drop=True)
@@ -3763,11 +3763,11 @@ if menu == "📦 Dashboard – Logística":
             )
             df[f"Lucro {periodo_label}"] = df[f"Receita {periodo_label}"] - df[f"Custo {periodo_label}"]
             total_receita = df[f"Receita {periodo_label}"].sum() if df[f"Receita {periodo_label}"].notna().any() else 0
-            df[f"Participação {periodo_label} (%)"] = np.where(
+            df[f"Part.{periodo_label} (%)"] = np.where(
                 total_receita > 0, df[f"Receita {periodo_label}"] / total_receita * 100, 0
             )
             return df[["Variante", qtd_col, f"Custo {periodo_label}", f"Receita {periodo_label}",
-                       f"Lucro {periodo_label}", f"Participação {periodo_label} (%)"]]
+                       f"Lucro {periodo_label}", f"Part.{periodo_label} (%)"]]
 
         df_a = calc_periodo(custos_base_A, "A", "Qtd A")
         df_b = calc_periodo(custos_base_B, "B", "Qtd B")
@@ -3816,9 +3816,9 @@ if menu == "📦 Dashboard – Logística":
             def distribuir_investimento(df, invest_total, qtd_col):
                 total_qtd = df[qtd_col].sum()
                 if total_qtd == 0:
-                    df["Investimento (R$)"] = 0
+                    df["Invest.(R$)"] = 0
                 else:
-                    df["Investimento (R$)"] = (df[qtd_col] / total_qtd) * invest_total
+                    df["Invest.(R$)"] = (df[qtd_col] / total_qtd) * invest_total
                 return df
 
             # Aplica para os dois períodos
@@ -3832,8 +3832,8 @@ if menu == "📦 Dashboard – Logística":
 
         except Exception as e:
             st.warning(f"⚠️ Não foi possível calcular investimento automático via Meta Ads. Detalhe: {e}")
-            df_a["Investimento (R$)"] = 0
-            df_b["Investimento (R$)"] = 0
+            df_a["Invest.(R$)"] = 0
+            df_b["Invest.(R$)"] = 0
         
         # -------------------------------------------------
         # 💲 Função auxiliar para formatar valores monetários
@@ -3853,12 +3853,12 @@ if menu == "📦 Dashboard – Logística":
         with col1:
             st.markdown("### 📆 Período A")
             st.dataframe(
-                df_a[["Variante", "Qtd A", "Lucro A", "Participação A (%)", "Investimento (R$)"]]
+                df_a[["Variante", "Qtd A", "Lucro A", "Part.A (%)", "Invest.(R$)"]]
                 .style.format({
                     "Qtd A": "{:.0f}",
                     "Lucro A": fmt_moeda,
-                    "Investimento (R$)": fmt_moeda,
-                    "Participação A (%)": "{:.1f}%"
+                    "Invest.(R$)": fmt_moeda,
+                    "Part.A (%)": "{:.1f}%"
                 }),
                 use_container_width=True
             )
@@ -3866,12 +3866,12 @@ if menu == "📦 Dashboard – Logística":
         with col2:
             st.markdown("### 📆 Período B")
             st.dataframe(
-                df_b[["Variante", "Qtd B", "Lucro B", "Participação B (%)", "Investimento (R$)"]]
+                df_b[["Variante", "Qtd B", "Lucro B", "Part.B (%)", "Invest.(R$)"]]
                 .style.format({
                     "Qtd B": "{:.0f}",
                     "Lucro B": fmt_moeda,
-                    "Investimento (R$)": fmt_moeda,
-                    "Participação B (%)": "{:.1f}%"
+                    "Invest.(R$)": fmt_moeda,
+                    "Part.B (%)": "{:.1f}%"
                 }),
                 use_container_width=True
             )
@@ -3883,21 +3883,21 @@ if menu == "📦 Dashboard – Logística":
         st.markdown("### 📈 ROI e ROAS por Variante")
 
         for df, periodo in [(df_a, "A"), (df_b, "B")]:
-            if "Investimento (R$)" in df.columns:
-                df[f"ROI {periodo}"] = np.where(df["Investimento (R$)"] > 0,
-                                                (df[f"Lucro {periodo}"] / df["Investimento (R$)"]) * 100,
+            if "Invest.(R$)" in df.columns:
+                df[f"ROI {periodo}"] = np.where(df["Invest.(R$)"] > 0,
+                                                (df[f"Lucro {periodo}"] / df["Invest.(R$)"]) * 100,
                                                 np.nan)
-                df[f"ROAS {periodo}"] = np.where(df["Investimento (R$)"] > 0,
-                                                 (df[f"Receita {periodo}"] / df["Investimento (R$)"]),
+                df[f"ROAS {periodo}"] = np.where(df["Invest.(R$)"] > 0,
+                                                 (df[f"Receita {periodo}"] / df["Invest.(R$)"]),
                                                  np.nan)
 
         col1, col2 = st.columns(2)
         with col1:
             st.dataframe(
-                df_a[["Variante", "Qtd A", "Lucro A", "Investimento (R$)", "ROI A", "ROAS A"]]
+                df_a[["Variante", "Qtd A", "Lucro A", "Invest.(R$)", "ROI A", "ROAS A"]]
                 .style.format({
                     "Lucro A": fmt_moeda,
-                    "Investimento (R$)": fmt_moeda,
+                    "Invest.(R$)": fmt_moeda,
                     "Qtd A": "{:.0f}",
                     "ROI A": "{:.1f}%",
                     "ROAS A": "{:.2f}x"
@@ -3907,10 +3907,10 @@ if menu == "📦 Dashboard – Logística":
 
         with col2:
             st.dataframe(
-                df_b[["Variante", "Qtd B", "Lucro B", "Investimento (R$)", "ROI B", "ROAS B"]]
+                df_b[["Variante", "Qtd B", "Lucro B", "Invest.(R$)", "ROI B", "ROAS B"]]
                 .style.format({
                     "Lucro B": fmt_moeda,
-                    "Investimento (R$)": fmt_moeda,
+                    "Invest.(R$)": fmt_moeda,
                     "Qtd B": "{:.0f}",
                     "ROI B": "{:.1f}%",
                     "ROAS B": "{:.2f}x"
@@ -4011,7 +4011,7 @@ if menu == "📦 Dashboard – Logística":
             np.nan
         )
 
-        comp["A-B(Part. | p.p)"] = comp["Participação A (%)_A"] - comp["Participação B (%)_B"]
+        comp["A-B(Part. | p.p)"] = comp["Part.A (%)_A"] - comp["Part.B (%)_B"]
 
         # =====================================================
         # 🎨 Estilo visual (verde = positivo, vermelho = negativo)
