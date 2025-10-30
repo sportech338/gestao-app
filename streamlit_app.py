@@ -4124,128 +4124,97 @@ if menu == "📦 Dashboard – Logística":
             part_total = comp["A-B(Part. | p.p)"].sum()
 
             # -------------------------------------------------
-            # Diagnóstico
+            # Diagnóstico e narrativa contextual
             # -------------------------------------------------
-            if lucro_dif > 0 and lucro_total > 0 and invest_total <= 0:
-                status_emoji, status_text, border_color = "🟢", "Altamente Favorável", "#00c46b"
-                diagnostico = "Aumento de lucro individual e global, com investimento igual ou menor."
-            elif lucro_dif > 0 and lucro_total > 0 and invest_total > 0:
-                status_emoji, status_text, border_color = "🟡", "Favorável com Ressalvas", "#facc15"
-                diagnostico = "Crescimento geral, mas exigindo maior investimento."
-            elif lucro_dif > 0 and lucro_total < 0:
-                status_emoji, status_text, border_color = "🟠", "Parcialmente Favorável", "#f97316"
-                diagnostico = "A variante melhorou, mas o portfólio perdeu lucro total — possível canibalização."
+            if lucro_dif > 0 and lucro_total < 0:
+                status_emoji, status_text = "🟠", "Parcialmente Favorável"
+                interpretacao = (
+                    f"A alteração de {var_b} para {var_a} gerou ganhos claros de eficiência e atratividade comercial. "
+                    f"A nova variante mostrou crescimento expressivo de lucro individual (**{fmt_moeda(lucro_dif)}**) "
+                    f"e aumento na receita (**{fmt_moeda(receita_dif)}**), além de maior participação no portfólio (**{part_pp:+.1f} p.p.**). "
+                    f"Por outro lado, o portfólio como um todo apresentou queda de lucro total (**{fmt_moeda(lucro_total)}**) e receita global (**{fmt_moeda(receita_total)}**), "
+                    f"indicando um possível efeito de **canibalização**, onde parte do público migrou da variante anterior para a nova. "
+                    f"O investimento (**{fmt_moeda(invest_total)}**) caiu, o que sugere que a perda global está mais ligada à redistribuição da demanda do que à ineficiência de mídia."
+                )
+                conclusao = (
+                    "Em síntese, a modificação foi **estrategicamente correta**, pois a nova variante apresentou desempenho superior, "
+                    "melhor margem e melhor aceitação, mas o portfólio perdeu tração total devido à realocação de demanda. "
+                    "Para reverter isso, recomenda-se reforçar o investimento nas variantes complementares e ajustar o mix, "
+                    "para que o ganho individual da função mais vendida se converta em crescimento total de lucro e volume."
+                )
+
+            elif lucro_dif > 0 and lucro_total > 0:
+                status_emoji, status_text = "🟢", "Altamente Favorável"
+                interpretacao = (
+                    f"A substituição de {var_b} por {var_a} resultou em ganhos simultâneos de performance individual e global. "
+                    f"A função {funcao.title()} apresentou elevação de lucro (**{fmt_moeda(lucro_dif)}**), incremento de receita (**{fmt_moeda(receita_dif)}**) "
+                    f"e avanço de participação (**{part_pp:+.1f} p.p.**), reforçando o apelo comercial e a eficiência da nova configuração. "
+                    f"No nível agregado, o portfólio também cresceu em lucro (**{fmt_moeda(lucro_total)}**) e receita (**{fmt_moeda(receita_total)}**), "
+                    f"com investimento controlado (**{fmt_moeda(invest_total)}**)."
+                )
+                conclusao = (
+                    "A modificação foi **claramente benéfica**, consolidando um cenário de maior rentabilidade e eficiência global. "
+                    "A decisão deve ser mantida e reforçada com novos testes de precificação e aumento de investimento gradual."
+                )
+
             elif lucro_dif < 0 and lucro_total > 0:
-                status_emoji, status_text, border_color = "🟢", "Mix Eficiente", "#22c55e"
-                diagnostico = "O portfólio cresceu mesmo com queda da variante modificada."
+                status_emoji, status_text = "🟢", "Mix Eficiente"
+                interpretacao = (
+                    f"A variante alterada teve queda de lucro individual (**{fmt_moeda(lucro_dif)}**), mas o portfólio geral obteve ganho expressivo (**{fmt_moeda(lucro_total)}**). "
+                    f"Isso sugere que a mudança contribuiu para redistribuir melhor o desempenho entre as demais funções, "
+                    f"aumentando a eficiência do conjunto mesmo com perda pontual."
+                )
+                conclusao = (
+                    "O cenário indica que o mix se tornou mais equilibrado e sustentável, "
+                    "com melhor retorno global mesmo sacrificando uma função isolada. "
+                    "Estratégia considerada positiva e eficiente no médio prazo."
+                )
+
             elif lucro_dif < 0 and lucro_total < 0:
-                status_emoji, status_text, border_color = "🔴", "Desfavorável", "#ef4444"
-                diagnostico = "Perda de lucro individual e global, indicando impacto negativo."
+                status_emoji, status_text = "🔴", "Desfavorável"
+                interpretacao = (
+                    f"A alteração de {var_b} para {var_a} apresentou queda tanto no desempenho individual quanto no global. "
+                    f"O lucro individual reduziu em **{fmt_moeda(lucro_dif)}**, e o portfólio total caiu **{fmt_moeda(lucro_total)}**, "
+                    f"demonstrando que a mudança impactou negativamente o resultado financeiro e a competitividade das variantes."
+                )
+                conclusao = (
+                    "A decisão mostrou-se **ineficiente** no curto prazo. Recomenda-se reavaliar o posicionamento, "
+                    "ajustar preço e comunicação, ou retornar à configuração anterior para estancar as perdas."
+                )
+
             else:
-                status_emoji, status_text, border_color = "⚖️", "Neutro", "#9ca3af"
-                diagnostico = "Variações pequenas, sem efeito relevante no desempenho total."
-
-            # -------------------------------------------------
-            # Layout em 3 colunas com cards nivelados
-            # -------------------------------------------------
-            col1, col2, col3 = st.columns(3)
-
-            card_style = f"""
-                <style>
-                    .card {{
-                        background-color: #181a1b;
-                        border: 2px solid {border_color};
-                        border-radius: 16px;
-                        padding: 30px;
-                        height: 440px;
-                        box-shadow: 0 4px 12px rgba(0,0,0,0.35);
-                        display: flex;
-                        flex-direction: column;
-                        justify-content: flex-start;
-                    }}
-                    .card h4 {{
-                        color: #ffffff;
-                        font-size: 22px;
-                        font-weight: 700;
-                        margin-bottom: 14px;
-                    }}
-                    .metric {{
-                        color: #d1d5db;
-                        font-size: 16px;
-                        line-height: 1.7;
-                        margin-bottom: 6px;
-                    }}
-                    .metric strong {{
-                        color: #ffffff;
-                        font-size: 17px;
-                        font-weight: 600;
-                    }}
-                    hr {{
-                        border: none;
-                        border-top: 1px solid rgba(255,255,255,0.15);
-                        margin: 14px 0;
-                    }}
-                </style>
-            """
-            st.markdown(card_style, unsafe_allow_html=True)
-
-            # -------------------------------------------------
-            # Card 1 — Função Modificada
-            # -------------------------------------------------
-            with col1:
-                st.markdown(
-                    f"""
-                    <div class="card">
-                        <h4>🔹 Função Modificada</h4>
-                        <div class="metric"><strong>Função:</strong> {funcao.title()}</div>
-                        <div class="metric"><strong>Troca:</strong> {var_b} → {var_a}</div>
-                        <hr>
-                        <div class="metric"><strong>Lucro:</strong> {fmt_moeda(lucro_dif)}</div>
-                        <div class="metric"><strong>Receita:</strong> {fmt_moeda(receita_dif)}</div>
-                        <div class="metric"><strong>Custo:</strong> {fmt_moeda(custo_dif)}</div>
-                        <div class="metric"><strong>Investimento:</strong> {fmt_moeda(invest_dif)}</div>
-                        <div class="metric"><strong>Participação:</strong> {part_pp:+.1f} p.p.</div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True
+                status_emoji, status_text = "⚖️", "Neutro"
+                interpretacao = (
+                    "As variações entre lucro, receita e investimento foram pequenas, sem impacto relevante sobre a estrutura geral do portfólio. "
+                    "O cenário permanece estável e não exige mudanças imediatas."
+                )
+                conclusao = (
+                    "O resultado é **neutro**, sem efeito expressivo positivo ou negativo. "
+                    "Manter monitoramento é recomendável para detectar tendências futuras."
                 )
 
             # -------------------------------------------------
-            # Card 2 — Impacto Global
+            # Geração do texto final completo
             # -------------------------------------------------
-            with col2:
-                st.markdown(
-                    f"""
-                    <div class="card">
-                        <h4>🌍 Impacto Global do Portfólio</h4>
-                        <div class="metric"><strong>Lucro total:</strong> {fmt_moeda(lucro_total)}</div>
-                        <div class="metric"><strong>Receita total:</strong> {fmt_moeda(receita_total)}</div>
-                        <div class="metric"><strong>Custo total:</strong> {fmt_moeda(custo_total)}</div>
-                        <div class="metric"><strong>Investimento total:</strong> {fmt_moeda(invest_total)}</div>
-                        <div class="metric"><strong>Δ Participação:</strong> {part_total:+.1f} p.p.</div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True
-                )
+            analise = f"""
+### {status_emoji} {status_text}
 
-            # -------------------------------------------------
-            # Card 3 — Diagnóstico Estratégico
-            # -------------------------------------------------
-            with col3:
-                st.markdown(
-                    f"""
-                    <div class="card">
-                        <h4>💬 Diagnóstico Estratégico</h4>
-                        <div class="metric" style="font-size:18px;">{status_emoji} <strong>{status_text}</strong></div>
-                        <hr>
-                        <div class="metric" style="font-size:16px; color:#e5e7eb;">{diagnostico}</div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True
-                )
+{interpretacao}
+
+📊 **Resumo Global**
+- Lucro total: {fmt_moeda(lucro_total)}
+- Receita total: {fmt_moeda(receita_total)}
+- Custo total: {fmt_moeda(custo_total)}
+- Investimento total: {fmt_moeda(invest_total)}
+- Δ Participação: {part_total:+.1f} p.p.
+
+🧩 **Síntese Final:**  
+{conclusao}
+"""
+            st.markdown(analise)
 
         # -------------------------------------------------
-        # Exibir cards no app
+        # Exibir análise textual completa no app
         # -------------------------------------------------
         gerar_analise_modificacao(comp)
 
