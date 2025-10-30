@@ -3916,33 +3916,69 @@ if menu == "📦 Dashboard – Logística":
         # -------------------------------------------------
         # 📈 Comparativo geral entre períodos (por posição)
         # -------------------------------------------------
-        st.subheader("📈 Tabela 3 — Comparativo Entre Períodos (por posição)")
+        st.subheader("📈 Tabela 3 — Comparativo Entre Períodos (por função da variante)")
 
-        # Garante que os DataFrames tenham o mesmo tamanho
-        max_linhas = max(len(df_a), len(df_b))
-        df_a = df_a.reindex(range(max_linhas)).fillna(0)
-        df_b = df_b.reindex(range(max_linhas)).fillna(0)
+        # =====================================================
+        # 🔍 Pareamento inteligente com base no complemento entre parênteses
+        # =====================================================
+        import re
 
-        # Cria DataFrame de comparação lado a lado
-        comp = pd.DataFrame({
-            "Variante A": df_a["Variante"],
-            "Variante B": df_b["Variante"],
-            "Qtd. A": df_a["Qtd A"],
-            "Qtd. B": df_b["Qtd B"],
-            "Custo A": df_a["Custo A"],
-            "Custo B": df_b["Custo B"],
-            "Lucro A": df_a["Lucro A"],
-            "Lucro B": df_b["Lucro B"]
-        })
+        def extrair_identificador(nome):
+            """Extrai o texto entre parênteses — ou usa o nome completo se não houver."""
+            if not isinstance(nome, str):
+                return ""
+            nome = nome.strip()
+            # Busca texto dentro de parênteses
+            match = re.search(r"\((.*?)\)", nome)
+            if match:
+                return match.group(1).strip().lower()
+            else:
+                # fallback: usa o nome todo sem número
+                nome = re.sub(r"\d+", "", nome)
+                return nome.lower().strip()
+
+        # Cria identificadores para correspondência
+        df_a["identificador"] = df_a["Variante"].apply(extrair_identificador)
+        df_b["identificador"] = df_b["Variante"].apply(extrair_identificador)
+
+        # Faz o pareamento A ↔ B pelo identificador
+        matches = []
+        usadas_b = set()
+
+        for _, row_a in df_a.iterrows():
+            ident_a = row_a["identificador"]
+            possiveis_b = df_b[df_b["identificador"] == ident_a]
+            if not possiveis_b.empty:
+                match_b = possiveis_b.iloc[0]
+                matches.append((row_a["Variante"], match_b["Variante"]))
+                usadas_b.add(match_b["Variante"])
+            else:
+                matches.append((row_a["Variante"], None))
+
+        # Adiciona variantes novas do período B (sem correspondência anterior)
+        for _, row_b in df_b.iterrows():
+            if row_b["Variante"] not in usadas_b:
+                matches.append((None, row_b["Variante"]))
+
+        # Monta DataFrame de correspondência
+        corresp = pd.DataFrame(matches, columns=["Variante A", "Variante B"])
+
+        # Junta com dados A e B
+        comp = (
+            corresp
+            .merge(df_a, left_on="Variante A", right_on="Variante", how="left")
+            .merge(df_b, left_on="Variante B", right_on="Variante", how="left", suffixes=(" A", " B"))
+            .fillna(0)
+        )
 
         # Calcula diferenças e variações
-        comp["A-B(Qtd.)"] = comp["Qtd. A"] - comp["Qtd. B"]
+        comp["A-B(Qtd.)"] = comp["Qtd A"] - comp["Qtd B"]
         comp["A-B(Custo)"] = comp["Custo A"] - comp["Custo B"]
         comp["A-B(Lucro)"] = comp["Lucro A"] - comp["Lucro B"]
 
         comp["A-B(Qtd.%)"] = np.where(
-            comp["Qtd. B"] > 0,
-            (comp["Qtd. A"] - comp["Qtd. B"]) / comp["Qtd. B"] * 100,
+            comp["Qtd B"] > 0,
+            (comp["Qtd A"] - comp["Qtd B"]) / comp["Qtd B"] * 100,
             np.nan
         )
 
@@ -3952,21 +3988,6 @@ if menu == "📦 Dashboard – Logística":
             np.nan
         )
 
-        # -------------------------------------------------
-        # 🧮 Participação por período e variação em p.p.
-        # (puxa das tabelas df_a/df_b por posição/linha)
-        # -------------------------------------------------
-        if "Participação A (%)" in df_a.columns:
-            comp["Participação A (%)"] = pd.to_numeric(df_a["Participação A (%)"], errors="coerce")
-        else:
-            comp["Participação A (%)"] = np.nan
-
-        if "Participação B (%)" in df_b.columns:
-            comp["Participação B (%)"] = pd.to_numeric(df_b["Participação B (%)"], errors="coerce")
-        else:
-            comp["Participação B (%)"] = np.nan
-
-        # Delta em pontos percentuais (A - B)
         comp["A-B(Part. | p.p)"] = comp["Participação A (%)"] - comp["Participação B (%)"]
 
         # -------------------------------------------------
@@ -4013,6 +4034,7 @@ if menu == "📦 Dashboard – Logística":
         )
 
         st.dataframe(styled_comp, use_container_width=True)
+
 
         # =====================================================
         # 🧾 Cria versão formatada da planilha para edição
