@@ -4070,123 +4070,101 @@ if menu == "📦 Dashboard – Logística":
 
 
         # =====================================================
-        # 🧠 Análise automática consolidada baseada nos dados da Tabela 3
+        # 🧭 Análise Estratégica — Efeito Real da Modificação
         # =====================================================
-        def gerar_analise_automatica_completa(comp):
+        st.subheader("🧾 Análise Estratégica — Efeito Real da Modificação no Portfólio")
+
+        def gerar_analise_modificacao(comp):
             import re
 
             def extrair_identificador(nome):
-                """Extrai o texto entre parênteses — ex: '( Mais Vendido )' → 'mais vendido'"""
+                """Extrai o texto entre parênteses (ex: '( Mais Vendido )')"""
                 if not isinstance(nome, str):
                     return ""
-                nome = nome.strip()
                 match = re.search(r"\((.*?)\)", nome)
-                if match:
-                    return match.group(1).strip().lower()
-                return ""
-
-            # Cria identificadores
-            comp["funcao_A"] = comp["Variante A"].apply(extrair_identificador)
-            comp["funcao_B"] = comp["Variante B"].apply(extrair_identificador)
-
-            # =============================
-            # 🧩 1. Identifica mudanças nas funções
-            # =============================
-            funcoes_a = set(comp["funcao_A"].dropna())
-            funcoes_b = set(comp["funcao_B"].dropna())
-
-            funcoes_surgiram = funcoes_b - funcoes_a
-            funcoes_sumiram = funcoes_a - funcoes_b
-            funcoes_comuns = funcoes_a & funcoes_b
+                return match.group(1).strip().lower() if match else ""
 
             texto = []
-            texto.append("## 🧾 **Análise Consolidada — Interpretação Completa**\n")
+            texto.append("## 📊 Interpretação Consolidada — Efeito Real da Mudança\n")
 
-            # =============================
-            # 2. Mudanças detectadas
-            # =============================
-            if funcoes_surgiram or funcoes_sumiram:
-                if funcoes_surgiram:
-                    surgiram_fmt = ", ".join([f"**{f.title()}**" for f in funcoes_surgiram])
-                    texto.append(f"📈 Foram adicionadas novas variantes: {surgiram_fmt}.")
-                if funcoes_sumiram:
-                    sumiram_fmt = ", ".join([f"**{f.title()}**" for f in funcoes_sumiram])
-                    texto.append(f"📉 As variantes {sumiram_fmt} foram removidas do portfólio anterior.")
-                texto.append("")
+            # Identifica função modificada (mesmo identificador, mas nome diferente)
+            mudanca = None
+            for _, row in comp.iterrows():
+                id_a = extrair_identificador(row["Variante A"])
+                id_b = extrair_identificador(row["Variante B"])
+                if id_a == id_b and row["Variante A"] != row["Variante B"]:
+                    mudanca = row
+                    break
 
-            # =============================
-            # 3. Dados médios gerais
-            # =============================
-            qtd_dif = comp["A-B(Qtd.%)"].mean()
-            lucro_var = comp["A-B(Lucro %)"].mean()
-            roi_var = comp["A-B(ROI)"].mean()
-            roas_var = comp["A-B(ROAS)"].mean()
-            part_dif = comp["A-B(Part. | p.p)"].mean()
+            if mudanca is None:
+                texto.append("⚠️ Nenhuma modificação direta de variante detectada.")
+                return "\n".join(texto)
 
-            texto.append("### 📊 Visão Geral de Desempenho\n")
-            texto.append(
-                f"O volume médio de vendas variou **{qtd_dif:+.1f}%**, "
-                f"com variação média de lucro em **{lucro_var:+.1f}%**. "
-                f"Em eficiência financeira, o ROI teve variação de **{roi_var:+.1f}%** e o ROAS de **{roas_var:+.2f}x**. "
-                f"A participação média entre variantes mudou **{part_dif:+.1f} p.p.**."
-            )
+            funcao = extrair_identificador(mudanca["Variante A"])
+            var_a = mudanca["Variante A"]
+            var_b = mudanca["Variante B"]
 
-            # =============================
-            # 4. Identifica qual função teve melhor e pior desempenho
-            # =============================
-            melhor = comp.loc[comp["A-B(Lucro %)"].idxmax()]
-            pior = comp.loc[comp["A-B(Lucro %)"].idxmin()]
+            # -------------------------------
+            # 🔹 Dados da função modificada
+            # -------------------------------
+            texto.append(f"### 🔹 Função Modificada: {funcao.title()}")
+            texto.append(f"Troca detectada: **{var_b} → {var_a}**")
 
-            func_melhor = extrair_identificador(melhor["Variante B"]) or extrair_identificador(melhor["Variante A"])
-            func_pior = extrair_identificador(pior["Variante B"]) or extrair_identificador(pior["Variante A"])
-
-            # 💡 evita erro de aspas em f-strings
-            lucro_melhor = melhor["A-B(Lucro %)"]
-            lucro_pior = pior["A-B(Lucro %)"]
-            part_melhor = melhor["A-B(Part. | p.p)"]
-            part_pior = pior["A-B(Part. | p.p)"]
-
-            texto.append("\n### 🏅 Destaques e Insights\n")
-            texto.append(
-                f"🔹 A função **{func_melhor.title()}** apresentou o melhor desempenho, "
-                f"com aumento expressivo de lucro (**{lucro_melhor:+.1f}%**) "
-                f"e ganho de participação (**{part_melhor:+.1f} p.p.**). "
-                "Isto indica forte aceitação do público e equilíbrio entre preço, percepção de valor e mídia."
-            )
+            part_pp = mudanca["A-B(Part. | p.p)"]
+            lucro_dif = mudanca["A-B(Lucro)"]
+            receita_dif = mudanca["A-B(Receita)"]
+            custo_dif = mudanca["A-B(Custo)"]
+            invest_dif = mudanca["A-B(Invest.)"]
 
             texto.append(
-                f"🔻 Já a função **{func_pior.title()}** teve o pior resultado, "
-                f"com queda de **{abs(lucro_pior):.1f}%** em lucro "
-                f"e perda de **{abs(part_pior):.1f} p.p.** de participação, "
-                "sugerindo menor apelo comercial ou eficiência de investimento."
+                f"\n**Resultados diretos da função:**\n"
+                f"- Lucro: {fmt_moeda(lucro_dif)}\n"
+                f"- Receita: {fmt_moeda(receita_dif)}\n"
+                f"- Custo: {fmt_moeda(custo_dif)}\n"
+                f"- Investimento: {fmt_moeda(invest_dif)}\n"
+                f"- Participação: {part_pp:+.1f} p.p.\n"
             )
 
-            # =============================
-            # 5. Conclusão estratégica
-            # =============================
-            texto.append("\n### ✅ Conclusão Estratégica\n")
+            # -------------------------------
+            # 🌍 Impacto global no portfólio
+            # -------------------------------
+            lucro_total = comp["A-B(Lucro)"].sum()
+            receita_total = comp["A-B(Receita)"].sum()
+            custo_total = comp["A-B(Custo)"].sum()
+            invest_total = comp["A-B(Invest.)"].sum()
+            part_total = comp["A-B(Part. | p.p)"].sum()
 
-            if qtd_dif > 0 and lucro_var > 0 and roi_var > 0:
-                texto.append(
-                    "🟢 O cenário geral é **altamente positivo**: aumento de vendas, melhora nas margens e retorno mais eficiente sobre investimento."
-                )
-            elif lucro_var > 0 and qtd_dif < 0:
-                texto.append(
-                    "🟡 Apesar da queda em volume, o **lucro médio cresceu**, indicando eficiência operacional e maior margem por unidade."
-                )
-            elif qtd_dif > 0 and lucro_var < 0:
-                texto.append(
-                    "🟠 Houve **crescimento em vendas**, mas **redução na margem**, o que pode indicar pressão promocional ou ajuste de preço."
-                )
+            texto.append("### 🌍 Impacto Global do Portfólio")
+            texto.append(
+                f"- Lucro total: {fmt_moeda(lucro_total)}\n"
+                f"- Receita total: {fmt_moeda(receita_total)}\n"
+                f"- Custo total: {fmt_moeda(custo_total)}\n"
+                f"- Investimento total: {fmt_moeda(invest_total)}\n"
+                f"- Δ Participação: {part_total:+.1f} p.p.\n"
+            )
+
+            # -------------------------------
+            # 💬 Interpretação causal
+            # -------------------------------
+            texto.append("### 💬 Interpretação Estratégica")
+
+            if lucro_dif > 0 and lucro_total > 0 and invest_total <= 0:
+                texto.append("🟢 A mudança foi **altamente benéfica** — aumentou lucro individual e global, com investimento igual ou menor.")
+            elif lucro_dif > 0 and lucro_total > 0 and invest_total > 0:
+                texto.append("🟡 A modificação foi **positiva**, mas exigiu mais investimento para gerar resultado.")
+            elif lucro_dif > 0 and lucro_total < 0:
+                texto.append("🟠 A variante melhorou, porém **o portfólio perdeu lucro total** — possível canibalização das demais.")
+            elif lucro_dif < 0 and lucro_total > 0:
+                texto.append("🟢 O portfólio melhorou mesmo com queda da variante — o novo mix foi mais eficiente.")
+            elif lucro_dif < 0 and lucro_total < 0:
+                texto.append("🔴 A mudança foi **desfavorável**, com perda de lucro individual e global.")
             else:
-                texto.append(
-                    "🔴 O cenário indica **queda geral** de desempenho — recomenda-se revisar posicionamento, precificação e distribuição de mídia."
-                )
+                texto.append("⚖️ Impacto neutro — variações pequenas entre custo, lucro e investimento não alteraram significativamente o resultado final.")
 
             return "\n".join(texto)
 
-        # Exibir no app
-        analise_texto = gerar_analise_automatica_completa(comp)
+        # Exibir a análise como card limpo no app
+        analise_texto = gerar_analise_modificacao(comp)
         st.markdown("---")
         st.markdown(analise_texto)
 
