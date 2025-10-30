@@ -3867,10 +3867,11 @@ if menu == "📦 Dashboard – Logística":
             st.markdown("### 📆 Período A")
             st.dataframe(
                 df_a[[
-                    "Variante", "Qtd A", "Lucro A",
+                    "Variante", "Qtd A", "Receita A", "Lucro A",
                     "Invest. (R$)", "ROI A", "ROAS A", "Part.A (%)"
                 ]].style.format({
                     "Qtd A": "{:.0f}",
+                    "Receita A": fmt_moeda,
                     "Lucro A": fmt_moeda,
                     "Invest. (R$)": fmt_moeda,
                     "ROI A": "{:.1f}%",
@@ -3884,10 +3885,11 @@ if menu == "📦 Dashboard – Logística":
             st.markdown("### 📆 Período B")
             st.dataframe(
                 df_b[[
-                    "Variante", "Qtd B", "Lucro B",
+                    "Variante", "Qtd B", "Receita B", "Lucro B",
                     "Invest. (R$)", "ROI B", "ROAS B", "Part.B (%)"
                 ]].style.format({
                     "Qtd B": "{:.0f}",
+                    "Receita B": fmt_moeda,
                     "Lucro B": fmt_moeda,
                     "Invest. (R$)": fmt_moeda,
                     "ROI B": "{:.1f}%",
