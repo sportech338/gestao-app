@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -3370,6 +3369,9 @@ if menu == "📦 Dashboard – Logística":
         colunas_visiveis = [c for c in tabela.columns if c not in ["duplicado", "is_sedex"]]
         styled_tabela = tabela[colunas_visiveis + ["duplicado", "is_sedex"]].style.apply(highlight_prioridades, axis=1)
         styled_tabela = styled_tabela.hide(["duplicado", "is_sedex"], axis=1)
+
+        tabela.index = range(1, len(tabela) + 1)
+
         st.dataframe(styled_tabela, use_container_width=True)
 
         # -------------------------------------------------
