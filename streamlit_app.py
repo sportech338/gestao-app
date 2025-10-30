@@ -5,10 +5,37 @@ import requests, json, time
 from datetime import date, timedelta, datetime
 from zoneinfo import ZoneInfo
 APP_TZ = ZoneInfo("America/Sao_Paulo")
+# =====================================================
+# 🔐 CREDENCIAIS GLOBAIS DO FACEBOOK (META ADS)
+# =====================================================
+facebook_secrets = st.secrets.get("facebook", {})
+
+act_id = (
+    facebook_secrets.get("ad_account_id")
+    or facebook_secrets.get("DEFAULT_ACT_ID")
+    or None
+)
+
+token = (
+    facebook_secrets.get("access_token")
+    or facebook_secrets.get("FB_TOKEN")
+    or None
+)
+
+api_version = "v23.0"
+level = "campaign"
+
+# 🚨 Alerta opcional de debug
+if not act_id or not token:
+    st.warning("⚠️ Credenciais do Facebook não encontradas em st.secrets. Verifique o [facebook] no secrets.toml.")
+
+
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional
+
+
 
 st.set_page_config(page_title="Meta Ads — Paridade + Funil", page_icon="📊", layout="wide")
 
@@ -1105,29 +1132,6 @@ def _range_from_preset(p):
 if menu == "📊 Dashboard – Tráfego Pago":
     st.title("📈 Dashboard — Tráfego Pago")
     st.caption("Análise completa de campanhas e funil de conversão.")
-
-    # ================= CONFIGURAÇÃO AUTOMÁTICA =================
-    from datetime import datetime
-    from zoneinfo import ZoneInfo
-    APP_TZ = ZoneInfo("America/Sao_Paulo")
-
-    # 🔒 Pega credenciais com fallback seguro
-    facebook_secrets = st.secrets.get("facebook", {})
-
-    act_id = (
-        facebook_secrets.get("ad_account_id")
-        or facebook_secrets.get("DEFAULT_ACT_ID")
-        or None
-    )
-
-    token = (
-        facebook_secrets.get("access_token")
-        or facebook_secrets.get("FB_TOKEN")
-        or None
-    )
-
-    api_version = "v23.0"
-    level = "campaign"
 
     # ================= EXIBE STATUS NO SIDEBAR =================
     with st.sidebar:
