@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -4153,7 +4152,7 @@ if menu == "📦 Dashboard – Logística":
             elif lucro_dif > 0 and lucro_total > 0 and invest_total > 0:
                 texto.append("🟡 A modificação foi **positiva**, mas exigiu mais investimento para gerar resultado.")
             elif lucro_dif > 0 and lucro_total < 0:
-                texto.append("🟠 A variante melhorou, porém **o portfólio perdeu lucro total** — possível canibalização das demais.")
+                texto.append("🟠 A variante melhorou, porém **o portfólio perdeu lucro total** — possível canibalização das demais variantes.")
             elif lucro_dif < 0 and lucro_total > 0:
                 texto.append("🟢 O portfólio melhorou mesmo com queda da variante — o novo mix foi mais eficiente.")
             elif lucro_dif < 0 and lucro_total < 0:
