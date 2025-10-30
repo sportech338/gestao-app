@@ -3531,14 +3531,13 @@ if menu == "📦 Dashboard – Logística":
         if produto_padrao in produtos_unicos:
             index_padrao = produtos_unicos.index(produto_padrao)
         else:
-            index_padrao = 0  # se não encontrar, usa o primeiro da lista
+            index_padrao = 0
 
         produto_escolhido = st.selectbox(
             "🧾 Selecione o produto:",
             produtos_unicos,
             index=index_padrao
         )
-
 
         # =====================================================
         # 🗓️ Seleção de períodos para comparação
@@ -3628,36 +3627,6 @@ if menu == "📦 Dashboard – Logística":
         comparativo.rename(columns={"variant_title": "Variante"}, inplace=True)
         comparativo = comparativo.sort_values("Qtd. Período A", ascending=False).reset_index(drop=True)
 
-        # 🔧 Formatação de números
-        comparativo["Qtd. Período A"] = comparativo["Qtd. Período A"].astype(int)
-        comparativo["Qtd. Período B"] = comparativo["Qtd. Período B"].astype(int)
-        comparativo["Diferença (unid.)"] = comparativo["Diferença (unid.)"].astype(int)
-
-        # 🔧 Formatação de percentuais
-        for col in ["Crescimento (%)", "Participação A (%)", "Participação B (%)"]:
-            comparativo[col] = comparativo[col].apply(
-                lambda x: f"{x:.1f}%" if pd.notna(x) else "-"
-            )
-
-        comparativo["Variação Part. (p.p.)"] = comparativo["Variação Part. (p.p.)"].apply(
-            lambda x: f"{x:+.1f}" if pd.notna(x) else "-"
-        )
-
-        # 🎨 Estilo visual: verde para positivo, vermelho para negativo
-        def highlight_variacao(val):
-            if isinstance(val, str):
-                try:
-                    num = float(val.replace("%", "").replace("+", "").replace(",", "."))
-                    color = "#00ff2a" if "+" in val else "#f00000" if "-" in val else "inherit"
-                    return f"color: {color}; font-weight: 600;"
-                except:
-                    return ""
-            return ""
-
-        styled_df = comparativo.style.applymap(
-            highlight_variacao, subset=["Crescimento (%)", "Variação Part. (p.p.)"]
-        )
-
         # =====================================================
         # 💰 Carregar planilha de custos (Google Sheets)
         # =====================================================
@@ -3678,7 +3647,6 @@ if menu == "📦 Dashboard – Logística":
 
         @st.cache_data(ttl=600)
         def carregar_planilha_custos():
-            """Lê planilha de custos do Google Sheets"""
             client = get_gsheet_client()
             sheet = client.open_by_key(st.secrets["sheets"]["spreadsheet_id"]).sheet1
             df = pd.DataFrame(sheet.get_all_records())
@@ -3692,32 +3660,12 @@ if menu == "📦 Dashboard – Logística":
             df.rename(columns=mapa_colunas, inplace=True)
             return df
 
-        def atualizar_planilha_custos(df):
-            """Atualiza dados na planilha de custos"""
-            client = get_gsheet_client()
-            sheet = client.open_by_key(st.secrets["sheets"]["spreadsheet_id"]).sheet1
-            try:
-                df_safe = (
-                    df.copy()
-                    .fillna("")
-                    .astype(str)
-                    .replace("nan", "", regex=False)
-                )
-                body = [df_safe.columns.values.tolist()] + df_safe.values.tolist()
-                sheet.batch_clear(["A:Z"])
-                sheet.update(body)
-                st.success("✅ Planilha atualizada com sucesso!")
-            except Exception as e:
-                st.error(f"❌ Erro ao atualizar planilha: {e}")
-
-        # Tenta carregar a planilha de custos
         try:
             df_custos = carregar_planilha_custos()
         except Exception as e:
             st.error(f"❌ Erro ao carregar planilha de custos: {e}")
             st.stop()
 
-        # Normaliza as colunas de custo numéricas
         for col in ["Custo AliExpress (R$)", "Custo Estoque (R$)"]:
             if col in df_custos.columns:
                 df_custos[col] = (
@@ -3730,16 +3678,6 @@ if menu == "📦 Dashboard – Logística":
                     .astype(float)
                 )
 
-        # Cria versão formatada para o editor (embaixo)
-        df_display = df_custos.copy()
-        for col in ["Custo AliExpress (R$)", "Custo Estoque (R$)"]:
-            if col in df_display.columns:
-                df_display[col] = df_display[col].apply(
-                    lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-                    if pd.notna(x) else ""
-                )
-
-        
         # =====================================================
         # 💼 Análise de Custos e Lucros por Fornecedor
         # =====================================================
@@ -3751,78 +3689,44 @@ if menu == "📦 Dashboard – Logística":
             horizontal=True
         )
 
-        # Mapeia o nome da coluna conforme a escolha
         col_custo = "Custo AliExpress (R$)" if fornecedor == "AliExpress" else "Custo Estoque (R$)"
-
-        # Cria cópia segura do comparativo e custos
         custos_base = comparativo.merge(df_custos[["Variante", col_custo]], on="Variante", how="left")
         custos_base.rename(columns={col_custo: "Custo Unitário"}, inplace=True)
         custos_base["Custo Unitário"] = pd.to_numeric(custos_base["Custo Unitário"], errors="coerce").fillna(0)
-
-        # -------------------------------------------------
-        # 🧮 Cálculos para cada período
-        # -------------------------------------------------
-        def calc_periodo(df, periodo_label, qtd_col):
-            df = df.copy()
-
-            # 🧾 Calcula custo total
-            df[f"Custo Total {periodo_label}"] = df["Custo Unitário"] * df[qtd_col]
-
-            # 💰 Calcula receita total (usando preço médio real se existir)
-            df[f"Receita {periodo_label}"] = (
-                df[qtd_col] * df["Preço Médio"]
-                if "Preço Médio" in df.columns else np.nan
-            )
-
-            # 📈 Lucro = Receita - Custo
-            df[f"Lucro {periodo_label}"] = (
-                df[f"Receita {periodo_label}"] - df[f"Custo Total {periodo_label}"]
-            )
-
-            # 📊 Participação no total do período
-            total_receita = (
-                df[f"Receita {periodo_label}"].sum()
-                if df[f"Receita {periodo_label}"].notna().any()
-                else 0
-            )
-            df[f"Participação {periodo_label} (%)"] = np.where(
-                total_receita > 0,
-                df[f"Receita {periodo_label}"] / total_receita * 100,
-                0
-            )
-
-            # Retorna apenas as colunas necessárias
-            return df[
-                [
-                    "Variante",
-                    qtd_col,
-                    f"Custo Total {periodo_label}",
-                    f"Receita {periodo_label}",
-                    f"Lucro {periodo_label}",
-                    f"Participação {periodo_label} (%)",
-                ]
-            ]
 
         # -------------------------------------------------
         # 💵 Adiciona preço médio real (se não existir)
         # -------------------------------------------------
         if "Preço Médio" not in custos_base.columns:
             if "price" in base_prod.columns:
-                # usa o preço médio real dos pedidos
                 precos = base_prod.groupby("variant_title")["price"].mean().reset_index()
                 precos.rename(columns={"variant_title": "Variante", "price": "Preço Médio"}, inplace=True)
                 custos_base = custos_base.merge(precos, on="Variante", how="left")
             else:
-                # fallback se não houver coluna de preço
                 custos_base["Preço Médio"] = (custos_base["Custo Unitário"] * 2.5).round(2)
 
-        # Calcula tabelas de cada período
+        # -------------------------------------------------
+        # 🧮 Cálculos por período
+        # -------------------------------------------------
+        def calc_periodo(df, periodo_label, qtd_col):
+            df = df.copy()
+            df[f"Custo Total {periodo_label}"] = df["Custo Unitário"] * df[qtd_col]
+            df[f"Receita {periodo_label}"] = (
+                df[qtd_col] * df["Preço Médio"] if "Preço Médio" in df.columns else np.nan
+            )
+            df[f"Lucro {periodo_label}"] = df[f"Receita {periodo_label}"] - df[f"Custo Total {periodo_label}"]
+            total_receita = df[f"Receita {periodo_label}"].sum() if df[f"Receita {periodo_label}"].notna().any() else 0
+            df[f"Participação {periodo_label} (%)"] = np.where(
+                total_receita > 0, df[f"Receita {periodo_label}"] / total_receita * 100, 0
+            )
+            return df[["Variante", qtd_col, f"Custo Total {periodo_label}", f"Receita {periodo_label}",
+                       f"Lucro {periodo_label}", f"Participação {periodo_label} (%)"]]
+
         df_a = calc_periodo(custos_base, "A", "Qtd. Período A")
         df_b = calc_periodo(custos_base, "B", "Qtd. Período B")
 
-
         # -------------------------------------------------
-        # 💲 Função auxiliar para formatar moeda
+        # 💲 Função auxiliar de formatação
         # -------------------------------------------------
         def fmt_moeda(valor):
             try:
@@ -3872,28 +3776,46 @@ if menu == "📦 Dashboard – Logística":
         comp["Diferença Qtd."] = comp["Qtd. Período A"] - comp["Qtd. Período B"]
         comp["Diferença Custo Total"] = comp["Custo Total A"] - comp["Custo Total B"]
 
+        # 💰 Lucro e variação
+        comp["Lucro A"] = (comp["Qtd. Período A"] * custos_base["Preço Médio"]) - comp["Custo Total A"]
+        comp["Lucro B"] = (comp["Qtd. Período B"] * custos_base["Preço Médio"]) - comp["Custo Total B"]
+        comp["Variação Lucro (%)"] = np.where(
+            comp["Lucro B"] > 0, (comp["Lucro A"] - comp["Lucro B"]) / comp["Lucro B"] * 100, np.nan
+        )
+
         comp["Crescimento (%)"] = np.where(
             comp["Qtd. Período B"] > 0,
             (comp["Qtd. Período A"] - comp["Qtd. Período B"]) / comp["Qtd. Período B"] * 100,
             np.nan
         )
 
-        comp["Variação Part. (p.p.)"] = comparativo["Variação Part. (p.p.)"]  # reaproveita coluna original
+        comp["Variação Part. (p.p.)"] = comparativo["Variação Part. (p.p.)"]
 
-        # 🔧 Garantir colunas numéricas antes da exibição
-        for df_temp in [df_a, df_b, comp]:
-            for col in df_temp.columns:
-                if any(p in col for p in ["Custo", "Receita", "Lucro"]) and df_temp[col].dtype == "O":
-                    df_temp[col] = pd.to_numeric(df_temp[col], errors="coerce")
-                if "Participação" in col and df_temp[col].dtype == "O":
-                    df_temp[col] = pd.to_numeric(df_temp[col], errors="coerce")
+        # 🧹 Corrige colunas percentuais antes do estilo
+        for col in ["Crescimento (%)", "Variação Part. (p.p.)", "Variação Lucro (%)"]:
+            if comp[col].dtype == "O":
+                comp[col] = (
+                    comp[col]
+                    .astype(str)
+                    .str.replace("%", "")
+                    .str.replace("+", "")
+                    .str.replace(",", ".")
+                    .replace("-", np.nan)
+                    .astype(float)
+                )
 
         st.dataframe(
-            comp[["Variante", "Diferença Qtd.", "Diferença Custo Total", "Crescimento (%)", "Variação Part. (p.p.)"]]
-            .style.format({
+            comp[[
+                "Variante", "Diferença Qtd.", "Diferença Custo Total",
+                "Crescimento (%)", "Variação Part. (p.p.)",
+                "Lucro A", "Lucro B", "Variação Lucro (%)"
+            ]].style.format({
                 "Diferença Custo Total": fmt_moeda,
+                "Lucro A": fmt_moeda,
+                "Lucro B": fmt_moeda,
                 "Crescimento (%)": "{:+.1f}%",
-                "Variação Part. (p.p.)": "{:+.1f}"
+                "Variação Part. (p.p.)": "{:+.1f}",
+                "Variação Lucro (%)": "{:+.1f}%"
             }),
             use_container_width=True
         )
