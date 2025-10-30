@@ -3276,9 +3276,19 @@ if menu == "📦 Dashboard – Logística":
         else:
             base["created_at"] = pd.NaT
 
-        base["price"] = pd.to_numeric(base.get("price"), errors="coerce").fillna(0)
-        base["quantity"] = pd.to_numeric(base.get("quantity"), errors="coerce").fillna(0)
+
+        if "price" in base.columns:
+            base["price"] = pd.to_numeric(base["price"], errors="coerce").fillna(0)
+        else:
+            base["price"] = 0
+
+        if "quantity" in base.columns:
+            base["quantity"] = pd.to_numeric(base["quantity"], errors="coerce").fillna(0)
+        else:
+            base["quantity"] = 0
+
         base["line_revenue"] = base["price"] * base["quantity"]
+
 
         # -------------------------------------------------
         # 🧠 Aplicação de filtros
