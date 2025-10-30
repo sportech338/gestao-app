@@ -3678,9 +3678,9 @@ if menu == "📦 Dashboard – Logística":
                     .astype(float)
                 )
 
-        # =====================================================
+        # -------------------------------------------------
         # 💼 Análise de Custos e Lucros por Fornecedor
-        # =====================================================
+        # -------------------------------------------------
         st.subheader("💼 Análise de Custos e Lucros por Fornecedor")
 
         fornecedor = st.radio(
@@ -3690,7 +3690,20 @@ if menu == "📦 Dashboard – Logística":
         )
 
         col_custo = "Custo AliExpress (R$)" if fornecedor == "AliExpress" else "Custo Estoque (R$)"
-        custos_base = comparativo.merge(df_custos[["Variante", col_custo]], on="Variante", how="left")
+
+        # 🔍 Detecta variantes realmente existentes em cada período
+        variantes_a = base_prod[base_prod["created_at"].dt.date.between(inicio_a, fim_a)]["variant_title"].unique().tolist()
+        variantes_b = base_prod[base_prod["created_at"].dt.date.between(inicio_b, fim_b)]["variant_title"].unique().tolist()
+
+        # 🔗 Mantém apenas variantes que existiam em pelo menos um dos períodos
+        variantes_validas = list(set(variantes_a + variantes_b))
+
+        # 🔧 Gera base de custos apenas com variantes válidas
+        custos_base = df_custos[df_custos["Variante"].isin(variantes_validas)].copy()
+        custos_base = custos_base.merge(comparativo, on="Variante", how="inner")
+
+        # 🔢 Ajusta custos unitários
+        custos_base[col_custo] = df_custos.set_index("Variante").loc[custos_base["Variante"], col_custo].values
         custos_base.rename(columns={col_custo: "Custo Unitário"}, inplace=True)
         custos_base["Custo Unitário"] = pd.to_numeric(custos_base["Custo Unitário"], errors="coerce").fillna(0)
 
@@ -3725,7 +3738,6 @@ if menu == "📦 Dashboard – Logística":
         df_a = calc_periodo(custos_base, "A", "Qtd. Período A")
         df_b = calc_periodo(custos_base, "B", "Qtd. Período B")
 
-
         # -------------------------------------------------
         # 💲 Função auxiliar para formatar valores monetários
         # -------------------------------------------------
@@ -3751,7 +3763,6 @@ if menu == "📦 Dashboard – Logística":
                 }),
                 use_container_width=True
             )
-
 
         with col2:
             st.markdown("### 📆 Período B")
