@@ -3852,7 +3852,7 @@ if menu == "📦 Dashboard – Logística":
             if "Invest. (R$)" in df.columns:
                 df[f"ROI {periodo}"] = np.where(
                     df["Invest. (R$)"] > 0,
-                    (df[f"Lucro {periodo}"] / df["Invest. (R$)"]) * 100,
+                    df[f"Lucro {periodo}"] / df["Invest. (R$)"],
                     np.nan
                 )
                 df[f"ROAS {periodo}"] = np.where(
@@ -3874,7 +3874,7 @@ if menu == "📦 Dashboard – Logística":
                     "Receita A": fmt_moeda,
                     "Lucro A": fmt_moeda,
                     "Invest. (R$)": fmt_moeda,
-                    "ROI A": "{:.1f}%",
+                    "ROI A": "{:.2f}x",
                     "ROAS A": "{:.2f}x",
                     "Part.A (%)": "{:.1f}%"
                 }).set_properties(**{"text-align": "right"}),
@@ -3892,7 +3892,7 @@ if menu == "📦 Dashboard – Logística":
                     "Receita B": fmt_moeda,
                     "Lucro B": fmt_moeda,
                     "Invest. (R$)": fmt_moeda,
-                    "ROI B": "{:.1f}%",
+                    "ROI B": "{:.2f}x",
                     "ROAS B": "{:.2f}x",
                     "Part.B (%)": "{:.1f}%"
                 }).set_properties(**{"text-align": "right"}),
