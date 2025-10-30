@@ -1110,12 +1110,9 @@ if menu == "📊 Dashboard – Tráfego Pago":
     from datetime import datetime
     from zoneinfo import ZoneInfo
     APP_TZ = ZoneInfo("America/Sao_Paulo")
-    
-    st.write("🔑 Chaves disponíveis no secrets:", list(st.secrets.keys()))
 
     # 🔒 Pega credenciais com fallback seguro
     facebook_secrets = st.secrets.get("facebook", {})
-    st.write("📘 Conteúdo da seção [facebook]:", dict(facebook_secrets))  # debug opcional
 
     act_id = (
         facebook_secrets.get("ad_account_id")
@@ -1132,7 +1129,7 @@ if menu == "📊 Dashboard – Tráfego Pago":
     api_version = "v23.0"
     level = "campaign"
 
-    # Mostra no sidebar as infos (não editáveis)
+    # ================= EXIBE STATUS NO SIDEBAR =================
     with st.sidebar:
         st.markdown("## ⚙️ Configuração — Tráfego Pago")
         st.info(f"**Ad Account ID:** {act_id or '❌ Não encontrado'}")
@@ -1144,16 +1141,16 @@ if menu == "📊 Dashboard – Tráfego Pago":
         else:
             st.error("⚠️ Falha ao carregar credenciais do Facebook.")
 
+    # ================= VALIDAÇÃO DAS CREDENCIAIS =================
     if not act_id or not token:
         st.error("⚠️ Não foi possível carregar 'ad_account_id' ou 'access_token' da seção [facebook].")
-        st.info("Verifique se o secrets.toml está igual a:")
+        st.info("Verifique se o arquivo `secrets.toml` está configurado assim:")
         st.code("""
 [facebook]
-ad_account_id="act_777822113493164"
-access_token="EAA..."
+ad_account_id = "act_777822113493164"
+access_token = "EAA..."
 """, language="toml")
         st.stop()
-
 
     # ================= CONTINUA ANÁLISE NORMAL =================
     st.write("🚀 Dashboard carregado com as credenciais automáticas!")
