@@ -4126,92 +4126,109 @@ if menu == "📦 Dashboard – Logística":
             # -------------------------------------------------
             # Diagnóstico e narrativa contextual
             # -------------------------------------------------
-            if lucro_dif > 0 and lucro_total < 0:
-                status_emoji, status_text = "🟠", "Parcialmente Favorável"
+            if lucro_dif > 0 and lucro_total > 0 and invest_total <= 0:
+                status_emoji, status_text, cor_borda = "🟢", "Altamente Favorável", "#16a34a"
                 interpretacao = (
-                    f"A alteração de {var_b} para {var_a} gerou ganhos claros de eficiência e atratividade comercial. "
-                    f"A nova variante mostrou crescimento expressivo de lucro individual (**{fmt_moeda(lucro_dif)}**) "
-                    f"e aumento na receita (**{fmt_moeda(receita_dif)}**), além de maior participação no portfólio (**{part_pp:+.1f} p.p.**). "
-                    f"Por outro lado, o portfólio como um todo apresentou queda de lucro total (**{fmt_moeda(lucro_total)}**) e receita global (**{fmt_moeda(receita_total)}**), "
-                    f"indicando um possível efeito de **canibalização**, onde parte do público migrou da variante anterior para a nova. "
-                    f"O investimento (**{fmt_moeda(invest_total)}**) caiu, o que sugere que a perda global está mais ligada à redistribuição da demanda do que à ineficiência de mídia."
+                    f"A substituição de <strong>{var_b}</strong> por <strong>{var_a}</strong> resultou em um cenário "
+                    f"de desempenho excepcional. Houve crescimento simultâneo no lucro individual (**{fmt_moeda(lucro_dif)}**) "
+                    f"e no lucro global do portfólio (**{fmt_moeda(lucro_total)}**), acompanhado de avanço significativo na participação "
+                    f"(**{part_pp:+.1f} p.p.**) e aumento de receita (**{fmt_moeda(receita_dif)}**). O controle de custos e o "
+                    f"investimento estável (**{fmt_moeda(invest_total)}**) reforçam a eficiência da estratégia e indicam maturidade na gestão do mix."
                 )
                 conclusao = (
-                    "Em síntese, a modificação foi **estrategicamente correta**, pois a nova variante apresentou desempenho superior, "
-                    "melhor margem e melhor aceitação, mas o portfólio perdeu tração total devido à realocação de demanda. "
-                    "Para reverter isso, recomenda-se reforçar o investimento nas variantes complementares e ajustar o mix, "
-                    "para que o ganho individual da função mais vendida se converta em crescimento total de lucro e volume."
+                    "A decisão foi **plenamente bem-sucedida**, consolidando ganhos sustentáveis de margem, escala e relevância comercial. "
+                    "O portfólio apresentou sinergia e expansão conjunta, evidenciando uma evolução estratégica sólida. "
+                    "Manter a configuração atual e reforçar o investimento em comunicação pode potencializar ainda mais os resultados."
                 )
 
-            elif lucro_dif > 0 and lucro_total > 0:
-                status_emoji, status_text = "🟢", "Altamente Favorável"
+            elif lucro_dif > 0 and lucro_total > 0 and invest_total > 0:
+                status_emoji, status_text, cor_borda = "🟡", "Favorável com Ressalvas", "#facc15"
                 interpretacao = (
-                    f"A substituição de {var_b} por {var_a} resultou em ganhos simultâneos de performance individual e global. "
-                    f"A função {funcao.title()} apresentou elevação de lucro (**{fmt_moeda(lucro_dif)}**), incremento de receita (**{fmt_moeda(receita_dif)}**) "
-                    f"e avanço de participação (**{part_pp:+.1f} p.p.**), reforçando o apelo comercial e a eficiência da nova configuração. "
-                    f"No nível agregado, o portfólio também cresceu em lucro (**{fmt_moeda(lucro_total)}**) e receita (**{fmt_moeda(receita_total)}**), "
-                    f"com investimento controlado (**{fmt_moeda(invest_total)}**)."
+                    f"A troca de <strong>{var_b}</strong> por <strong>{var_a}</strong> gerou aumento de lucro individual "
+                    f"(**{fmt_moeda(lucro_dif)}**) e crescimento do portfólio (**{fmt_moeda(lucro_total)}**), com ganhos expressivos em receita "
+                    f"(**{fmt_moeda(receita_dif)}**) e relevância de mix (**{part_pp:+.1f} p.p.**). Entretanto, esse avanço veio acompanhado "
+                    f"de um aumento no investimento (**{fmt_moeda(invest_total)}**), o que indica que parte do resultado dependeu de maior aporte "
+                    f"em mídia ou incentivos comerciais."
                 )
                 conclusao = (
-                    "A modificação foi **claramente benéfica**, consolidando um cenário de maior rentabilidade e eficiência global. "
-                    "A decisão deve ser mantida e reforçada com novos testes de precificação e aumento de investimento gradual."
+                    "O cenário é **positivo e validado pelo mercado**, porém exige atenção à eficiência do investimento. "
+                    "A estratégia deve ser mantida com ajustes no custo por aquisição (CPA) e otimização de verba para maximizar a rentabilidade futura."
+                )
+
+            elif lucro_dif > 0 and lucro_total < 0:
+                status_emoji, status_text, cor_borda = "🟠", "Parcialmente Favorável", "#fb923c"
+                interpretacao = (
+                    f"A modificação de <strong>{var_b}</strong> para <strong>{var_a}</strong> trouxe avanços notáveis na performance individual, "
+                    f"com aumento de lucro (**{fmt_moeda(lucro_dif)}**) e receita (**{fmt_moeda(receita_dif)}**), além de ganho de participação "
+                    f"(**{part_pp:+.1f} p.p.**). Contudo, o portfólio global registrou retração de lucro (**{fmt_moeda(lucro_total)}**) e receita "
+                    f"(**{fmt_moeda(receita_total)}**), indicando um possível efeito de **canibalização interna**. "
+                    f"O investimento total (**{fmt_moeda(invest_total)}**) caiu, sugerindo que a perda decorre de redistribuição de demanda, "
+                    f"não de queda de eficiência."
+                )
+                conclusao = (
+                    "A mudança foi **estrategicamente correta**, mas exige refinamento no equilíbrio do mix. "
+                    "A nova variante se mostrou mais atrativa, porém absorveu parte do volume das demais. "
+                    "Recomenda-se fortalecer variantes complementares e ampliar o investimento para transformar o ganho pontual em crescimento global."
                 )
 
             elif lucro_dif < 0 and lucro_total > 0:
-                status_emoji, status_text = "🟢", "Mix Eficiente"
+                status_emoji, status_text, cor_borda = "🟢", "Mix Eficiente", "#22c55e"
                 interpretacao = (
-                    f"A variante alterada teve queda de lucro individual (**{fmt_moeda(lucro_dif)}**), mas o portfólio geral obteve ganho expressivo (**{fmt_moeda(lucro_total)}**). "
-                    f"Isso sugere que a mudança contribuiu para redistribuir melhor o desempenho entre as demais funções, "
-                    f"aumentando a eficiência do conjunto mesmo com perda pontual."
+                    f"A variante modificada apresentou queda individual de lucro (**{fmt_moeda(lucro_dif)}**), "
+                    f"mas o portfólio total registrou crescimento (**{fmt_moeda(lucro_total)}**). "
+                    f"Esse resultado indica redistribuição saudável de vendas e maior eficiência coletiva. "
+                    f"A estrutura do mix foi fortalecida, melhorando margens e diluindo custos fixos entre variantes mais rentáveis."
                 )
                 conclusao = (
-                    "O cenário indica que o mix se tornou mais equilibrado e sustentável, "
-                    "com melhor retorno global mesmo sacrificando uma função isolada. "
-                    "Estratégia considerada positiva e eficiente no médio prazo."
+                    "A estratégia foi **positiva e sustentável**, demonstrando que o mix se tornou mais eficiente. "
+                    "Recomenda-se manter o modelo atual e explorar otimizações pontuais nas variantes com menor contribuição."
                 )
 
             elif lucro_dif < 0 and lucro_total < 0:
-                status_emoji, status_text = "🔴", "Desfavorável"
+                status_emoji, status_text, cor_borda = "🔴", "Desfavorável", "#ef4444"
                 interpretacao = (
-                    f"A alteração de {var_b} para {var_a} apresentou queda tanto no desempenho individual quanto no global. "
-                    f"O lucro individual reduziu em **{fmt_moeda(lucro_dif)}**, e o portfólio total caiu **{fmt_moeda(lucro_total)}**, "
-                    f"demonstrando que a mudança impactou negativamente o resultado financeiro e a competitividade das variantes."
+                    f"A substituição de <strong>{var_b}</strong> por <strong>{var_a}</strong> apresentou impacto negativo. "
+                    f"O lucro individual caiu (**{fmt_moeda(lucro_dif)}**) e o portfólio global também recuou (**{fmt_moeda(lucro_total)}**), "
+                    f"acompanhado de redução de receita (**{fmt_moeda(receita_total)}**) e menor participação (**{part_pp:+.1f} p.p.**). "
+                    f"Esses sinais indicam perda de apelo comercial e possível desalinhamento com o comportamento de compra do público."
                 )
                 conclusao = (
-                    "A decisão mostrou-se **ineficiente** no curto prazo. Recomenda-se reavaliar o posicionamento, "
-                    "ajustar preço e comunicação, ou retornar à configuração anterior para estancar as perdas."
+                    "A decisão mostrou-se **ineficiente**. Recomenda-se revisão imediata de precificação, "
+                    "comunicação e proposta de valor. Caso os indicadores permaneçam negativos, o retorno à configuração anterior deve ser considerado."
                 )
 
             else:
-                status_emoji, status_text = "⚖️", "Neutro"
+                status_emoji, status_text, cor_borda = "⚖️", "Neutro", "#9ca3af"
                 interpretacao = (
-                    "As variações entre lucro, receita e investimento foram pequenas, sem impacto relevante sobre a estrutura geral do portfólio. "
-                    "O cenário permanece estável e não exige mudanças imediatas."
+                    "As variações observadas entre lucro, receita e investimento foram pequenas e não alteraram significativamente "
+                    "a estrutura de rentabilidade do portfólio. O desempenho permanece estável e sem sinais de ruptura ou evolução relevante."
                 )
                 conclusao = (
-                    "O resultado é **neutro**, sem efeito expressivo positivo ou negativo. "
-                    "Manter monitoramento é recomendável para detectar tendências futuras."
+                    "O cenário é **neutro** e não requer mudanças imediatas. "
+                    "Sugere-se manter o monitoramento periódico e acompanhar as tendências de demanda para eventuais ajustes futuros."
                 )
 
             # -------------------------------------------------
-            # Geração do texto final completo
+            # Estilo e exibição final com layout fluido e legível
             # -------------------------------------------------
-            analise = f"""
-### {status_emoji} {status_text}
-
-{interpretacao}
-
-📊 **Resumo Global**
-- Lucro total: {fmt_moeda(lucro_total)}
-- Receita total: {fmt_moeda(receita_total)}
-- Custo total: {fmt_moeda(custo_total)}
-- Investimento total: {fmt_moeda(invest_total)}
-- Δ Participação: {part_total:+.1f} p.p.
-
-🧩 **Síntese Final:**  
-{conclusao}
-"""
-            st.markdown(analise)
+            st.markdown(f"""
+            <div style='background-color:#111317; border-left: 5px solid {cor_borda}; border-radius:10px; padding:26px 30px;'>
+                <h3 style='margin-top:0; margin-bottom:16px;'>{status_emoji} {status_text}</h3>
+                <p style='text-align:justify; color:#e5e7eb; line-height:1.7; font-size:16px;'>{interpretacao}</p>
+                <hr style='opacity:0.2; margin:18px 0;'>
+                <h4 style='color:#f3f4f6;'>📊 Resumo Global</h4>
+                <ul style='color:#d1d5db; line-height:1.7; font-size:15px;'>
+                    <li><strong>Lucro total:</strong> {fmt_moeda(lucro_total)}</li>
+                    <li><strong>Receita total:</strong> {fmt_moeda(receita_total)}</li>
+                    <li><strong>Custo total:</strong> {fmt_moeda(custo_total)}</li>
+                    <li><strong>Investimento total:</strong> {fmt_moeda(invest_total)}</li>
+                    <li><strong>Δ Participação:</strong> {part_total:+.1f} p.p.</li>
+                </ul>
+                <hr style='opacity:0.2; margin:18px 0;'>
+                <h4 style='color:#f3f4f6;'>🧩 Síntese Final</h4>
+                <p style='text-align:justify; color:#e5e7eb; line-height:1.7; font-size:16px;'>{conclusao}</p>
+            </div>
+            """, unsafe_allow_html=True)
 
         # -------------------------------------------------
         # Exibir análise textual completa no app
