@@ -3296,100 +3296,121 @@ if menu == "📦 Dashboard – Logística":
         colC.metric("💰 Receita total", formatar_moeda(total_receita))
         colD.metric("💸 Ticket médio", formatar_moeda(ticket_medio))
 
-# -------------------------------------------------
-# 📋 Tabela de pedidos (com seleção)
-# -------------------------------------------------
+        # -------------------------------------------------
+        # 📊 Métricas de resumo
+        # -------------------------------------------------
+        order_col = "order_number" if df["order_number"].notna().any() else "order_id"
+        total_pedidos = df[order_col].nunique()
+        total_unidades = df["quantity"].sum()
+        total_receita = df["line_revenue"].sum()
+        ticket_medio = total_receita / total_pedidos if total_pedidos > 0 else 0
 
-st.markdown("""
-    <style>
-    thead tr th:first-child, tbody tr td:first-child {
-        text-align: right !important;
-    }
-    input[type="text"] {
-        border-radius: 10px;
-        border: 1px solid #444;
-        padding: 8px 12px;
-    }
-    </style>
-""", unsafe_allow_html=True)
+        colA, colB, colC, colD = st.columns(4)
+        colA.metric("🧾 Pedidos", total_pedidos)
+        colB.metric("📦 Unidades vendidas", int(total_unidades))
+        def formatar_moeda(valor):
+            try:
+                return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            except Exception:
+                return f"R$ {valor:.2f}"
 
-colunas = [
-    order_col, "fulfillment_status", "customer_name", "product_title", "variant_title",
-    "quantity", "created_at", "forma_entrega", "customer_email", "customer_phone",
-    "customer_cpf", "endereco", "bairro", "cep", "estado", "cidade"
-]
-colunas = [c for c in colunas if c in df.columns]
-tabela = df[colunas].sort_values("created_at", ascending=False).copy()
+        colC.metric("💰 Receita total", formatar_moeda(total_receita))
+        colD.metric("💸 Ticket médio", formatar_moeda(ticket_medio))
 
-tabela.rename(columns={
-    order_col: "Pedido", "created_at": "Data do pedido", "customer_name": "Cliente", 
-    "customer_email": "E-mail", "customer_phone": "Telefone", "customer_cpf": "CPF",
-    "endereco": "Endereço", "bairro": "Bairro", "cep": "CEP", "quantity": "Qtd", 
-    "product_title": "Produto", "variant_title": "Variante", "price": "Preço",
-    "fulfillment_status": "Status de processamento", "forma_entrega": "Frete", "estado": "Estado"
-}, inplace=True)
+        # -------------------------------------------------
+        # 📋 Tabela de pedidos (com seleção)
+        # -------------------------------------------------
+        st.markdown("""
+            <style>
+            thead tr th:first-child, tbody tr td:first-child {
+                text-align: right !important;
+            }
+            input[type="text"] {
+                border-radius: 10px;
+                border: 1px solid #444;
+                padding: 8px 12px;
+            }
+            </style>
+        """, unsafe_allow_html=True)
 
-if "Pedido" in tabela.columns:
-    tabela["Pedido"] = tabela["Pedido"].astype(str).str.replace(",", "").str.replace(".0", "", regex=False)
+        colunas = [
+            order_col, "fulfillment_status", "customer_name", "product_title", "variant_title",
+            "quantity", "created_at", "forma_entrega", "customer_email", "customer_phone",
+            "customer_cpf", "endereco", "bairro", "cep", "estado", "cidade"
+        ]
+        colunas = [c for c in colunas if c in df.columns]
+        tabela = df[colunas].sort_values("created_at", ascending=False).copy()
 
-tabela["Status de processamento"] = df["fulfillment_status"].apply(
-    lambda x: "✅ Processado" if str(x).lower() in ["fulfilled", "shipped", "complete"]
-    else "🟡 Não processado"
-)
+        tabela.rename(columns={
+            order_col: "Pedido", "created_at": "Data do pedido", "customer_name": "Cliente", 
+            "customer_email": "E-mail", "customer_phone": "Telefone", "customer_cpf": "CPF",
+            "endereco": "Endereço", "bairro": "Bairro", "cep": "CEP", "quantity": "Qtd", 
+            "product_title": "Produto", "variant_title": "Variante", "price": "Preço",
+            "fulfillment_status": "Status de processamento", "forma_entrega": "Frete", "estado": "Estado"
+        }, inplace=True)
 
-# 🔍 Identificar duplicados e pedidos SEDEX
-def identificar_duplicado(row, df_ref):
-    nome = str(row.get("Cliente", "")).strip().lower()
-    email = str(row.get("E-mail", "")).strip().lower()
-    cpf = str(row.get("CPF", "")).strip()
-    tel = str(row.get("Telefone", "")).strip()
-    end = str(row.get("Endereço", "")).strip().lower()
-    ignorar = ["(sem cpf)", "(sem email)", "(sem telefone)", "(sem endereço)", "(sem bairro)"]
-    if cpf and cpf not in ignorar and df_ref["CPF"].eq(cpf).sum() > 1:
-        return True
-    if email and email not in ignorar and df_ref["E-mail"].str.lower().eq(email).sum() > 1:
-        return True
-    if nome and df_ref["Cliente"].str.lower().eq(nome).sum() > 1:
-        return True
-    if tel and tel not in ignorar and df_ref["Telefone"].eq(tel).sum() > 1:
-        return True
-    if end and end not in ignorar and df_ref["Endereço"].str.lower().eq(end).sum() > 1:
-        return True
-    return False
+        if "Pedido" in tabela.columns:
+            tabela["Pedido"] = tabela["Pedido"].astype(str).str.replace(",", "").str.replace(".0", "", regex=False)
 
-tabela["duplicado"] = tabela.apply(lambda row: identificar_duplicado(row, tabela), axis=1)
-tabela["is_sedex"] = tabela["Frete"].str.contains("SEDEX", case=False, na=False)
-tabela = tabela.sort_values(by=["duplicado", "is_sedex", "Data do pedido"], ascending=[False, True, False])
+        tabela["Status de processamento"] = df["fulfillment_status"].apply(
+            lambda x: "✅ Processado" if str(x).lower() in ["fulfilled", "shipped", "complete"]
+            else "🟡 Não processado"
+        )
 
-# ✳️ Adiciona coluna de seleção manual
-if "Selecionado" not in tabela.columns:
-    tabela["Selecionado"] = False
+        # 🔍 Identificar duplicados e pedidos SEDEX
+        def identificar_duplicado(row, df_ref):
+            nome = str(row.get("Cliente", "")).strip().lower()
+            email = str(row.get("E-mail", "")).strip().lower()
+            cpf = str(row.get("CPF", "")).strip()
+            tel = str(row.get("Telefone", "")).strip()
+            end = str(row.get("Endereço", "")).strip().lower()
+            ignorar = ["(sem cpf)", "(sem email)", "(sem telefone)", "(sem endereço)", "(sem bairro)"]
+            if cpf and cpf not in ignorar and df_ref["CPF"].eq(cpf).sum() > 1:
+                return True
+            if email and email not in ignorar and df_ref["E-mail"].str.lower().eq(email).sum() > 1:
+                return True
+            if nome and df_ref["Cliente"].str.lower().eq(nome).sum() > 1:
+                return True
+            if tel and tel not in ignorar and df_ref["Telefone"].eq(tel).sum() > 1:
+                return True
+            if end and end not in ignorar and df_ref["Endereço"].str.lower().eq(end).sum() > 1:
+                return True
+            return False
 
-# 🎨 Configura visual e colunas
-colunas_visiveis = [c for c in tabela.columns if c not in ["duplicado", "is_sedex"]]
-tabela_visivel = tabela[colunas_visiveis]
+        tabela["duplicado"] = tabela.apply(lambda row: identificar_duplicado(row, tabela), axis=1)
+        tabela["is_sedex"] = tabela["Frete"].str.contains("SEDEX", case=False, na=False)
+        tabela = tabela.sort_values(by=["duplicado", "is_sedex", "Data do pedido"], ascending=[False, True, False])
 
-# 🧾 Exibe com checkboxes interativos
-edit_tabela = st.data_editor(
-    tabela_visivel,
-    hide_index=True,
-    use_container_width=True,
-    key="tabela_pedidos_editor",
-    column_config={
-        "Selecionado": st.column_config.CheckboxColumn("✔️", help="Marque para selecionar o pedido"),
-        "Status de processamento": st.column_config.TextColumn("📦 Status"),
-        "Produto": st.column_config.TextColumn("🧾 Produto"),
-        "Variante": st.column_config.TextColumn("🎯 Variante"),
-        "Frete": st.column_config.TextColumn("🚚 Frete"),
-    },
-    disabled=["Pedido", "Cliente", "Produto", "Variante", "E-mail", "Status de processamento", "Data do pedido"],
-)
+        # ✳️ Adiciona coluna de seleção manual
+        if "Selecionado" not in tabela.columns:
+            tabela["Selecionado"] = False
 
-# 🔍 Exibe somente os selecionados abaixo (opcional)
-selecionados = edit_tabela[edit_tabela["Selecionado"] == True]
-if not selecionados.empty:
-    st.success(f"✅ {len(selecionados)} pedidos selecionados:")
-    st.dataframe(selecionados, use_container_width=True)
+        # 🎨 Configura visual e colunas
+        colunas_visiveis = [c for c in tabela.columns if c not in ["duplicado", "is_sedex"]]
+        tabela_visivel = tabela[colunas_visiveis]
+
+        # 🧾 Exibe com checkboxes interativos
+        edit_tabela = st.data_editor(
+            tabela_visivel,
+            hide_index=True,
+            use_container_width=True,
+            key="tabela_pedidos_editor",
+            column_config={
+                "Selecionado": st.column_config.CheckboxColumn("✔️", help="Marque para selecionar o pedido"),
+                "Status de processamento": st.column_config.TextColumn("📦 Status"),
+                "Produto": st.column_config.TextColumn("🧾 Produto"),
+                "Variante": st.column_config.TextColumn("🎯 Variante"),
+                "Frete": st.column_config.TextColumn("🚚 Frete"),
+            },
+            disabled=["Pedido", "Cliente", "Produto", "Variante", "E-mail", "Status de processamento", "Data do pedido"],
+        )
+
+        # 🔍 Exibe somente os selecionados abaixo (opcional)
+        selecionados = edit_tabela[edit_tabela["Selecionado"] == True]
+        if not selecionados.empty:
+            st.success(f"✅ {len(selecionados)} pedidos selecionados:")
+            st.dataframe(selecionados, use_container_width=True)
+
 
         # -------------------------------------------------
         # 🎛️ Filtros adicionais
