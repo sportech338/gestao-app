@@ -4140,19 +4140,25 @@ if menu == "📦 Dashboard – Logística":
             func_melhor = extrair_identificador(melhor["Variante B"]) or extrair_identificador(melhor["Variante A"])
             func_pior = extrair_identificador(pior["Variante B"]) or extrair_identificador(pior["Variante A"])
 
+            # 💡 evita erro de aspas em f-strings
+            lucro_melhor = melhor["A-B(Lucro %)"]
+            lucro_pior = pior["A-B(Lucro %)"]
+            part_melhor = melhor["A-B(Part. | p.p)"]
+            part_pior = pior["A-B(Part. | p.p)"]
+
             texto.append("\n### 🏅 Destaques e Insights\n")
             texto.append(
                 f"🔹 A função **{func_melhor.title()}** apresentou o melhor desempenho, "
-                f"com aumento expressivo de lucro (**{melhor['A-B(Lucro %'):+.1f}%**) "
-                f"e ganho de participação (**{melhor['A-B(Part. | p.p)']:+.1f} p.p.**). "
-                f"Isto indica forte aceitação do público e equilíbrio entre preço, percepção de valor e mídia."
+                f"com aumento expressivo de lucro (**{lucro_melhor:+.1f}%**) "
+                f"e ganho de participação (**{part_melhor:+.1f} p.p.**). "
+                "Isto indica forte aceitação do público e equilíbrio entre preço, percepção de valor e mídia."
             )
 
             texto.append(
                 f"🔻 Já a função **{func_pior.title()}** teve o pior resultado, "
-                f"com queda de **{abs(pior['A-B(Lucro %)']):.1f}%** em lucro "
-                f"e perda de **{abs(pior['A-B(Part. | p.p)']):.1f} p.p.** de participação, "
-                f"sugerindo menor apelo comercial ou eficiência de investimento."
+                f"com queda de **{abs(lucro_pior):.1f}%** em lucro "
+                f"e perda de **{abs(part_pior):.1f} p.p.** de participação, "
+                "sugerindo menor apelo comercial ou eficiência de investimento."
             )
 
             # =============================
