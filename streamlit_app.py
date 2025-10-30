@@ -3993,6 +3993,25 @@ if menu == "📦 Dashboard – Logística":
         comp["A-B(Part. | p.p)"] = comp["Part.A (%)_A"] - comp["Part.B (%)_B"]
 
         # =====================================================
+        # 💰 Cálculos adicionais — Investimento, ROI, ROAS, Receita
+        # =====================================================
+        comp["A-B(Invest.)"] = comp.get("Invest. (R$)_A", 0) - comp.get("Invest. (R$)_B", 0)
+
+        comp["A-B(ROI)"] = np.where(
+            comp.get("ROI B_B", 0) != 0,
+            (comp.get("ROI A_A", 0) - comp.get("ROI B_B", 0)),
+            np.nan
+        )
+
+        comp["A-B(ROAS)"] = np.where(
+            comp.get("ROAS B_B", 0) != 0,
+            (comp.get("ROAS A_A", 0) - comp.get("ROAS B_B", 0)),
+            np.nan
+        )
+
+        comp["A-B(Receita)"] = comp.get("Receita A_A", 0) - comp.get("Receita B_B", 0)
+
+        # =====================================================
         # 🎨 Estilo visual (verde = positivo, vermelho = negativo)
         # =====================================================
         def highlight_diferencas(val):
@@ -4013,6 +4032,10 @@ if menu == "📦 Dashboard – Logística":
                 "A-B(Custo)",
                 "A-B(Lucro)",
                 "A-B(Lucro %)",
+                "A-B(Receita)",
+                "A-B(Invest.)",
+                "A-B(ROI)",
+                "A-B(ROAS)",
                 "A-B(Part. | p.p)"
             ]]
             .style
@@ -4022,6 +4045,10 @@ if menu == "📦 Dashboard – Logística":
                 "A-B(Custo)": fmt_moeda,
                 "A-B(Lucro)": fmt_moeda,
                 "A-B(Lucro %)": "{:+.1f}%",
+                "A-B(Receita)": fmt_moeda,
+                "A-B(Invest.)": fmt_moeda,
+                "A-B(ROI)": "{:+.1f}%",
+                "A-B(ROAS)": "{:+.2f}x",
                 "A-B(Part. | p.p)": "{:+.1f}"
             })
             .applymap(highlight_diferencas, subset=[
@@ -4030,11 +4057,16 @@ if menu == "📦 Dashboard – Logística":
                 "A-B(Custo)",
                 "A-B(Lucro)",
                 "A-B(Lucro %)",
+                "A-B(Receita)",
+                "A-B(Invest.)",
+                "A-B(ROI)",
+                "A-B(ROAS)",
                 "A-B(Part. | p.p)"
             ])
         )
 
         st.dataframe(styled_comp, use_container_width=True)
+
 
         # =====================================================
         # 🧠 Análise automática completa baseada nos dados da Tabela 3
@@ -4076,12 +4108,16 @@ if menu == "📦 Dashboard – Logística":
                 lucro_dif = val("A-B(Lucro)")
                 lucro_var = val("A-B(Lucro %)")
                 part_dif = val("A-B(Part. | p.p)")
-                invest_a = val("Invest. (R$)_A") if "Invest. (R$)_A" in bloco else np.nan
-                invest_b = val("Invest. (R$)_B") if "Invest. (R$)_B" in bloco else np.nan
-                roi_a = val("ROI A_A") if "ROI A_A" in bloco else np.nan
-                roi_b = val("ROI B_B") if "ROI B_B" in bloco else np.nan
-                roas_a = val("ROAS A_A") if "ROAS A_A" in bloco else np.nan
-                roas_b = val("ROAS B_B") if "ROAS B_B" in bloco else np.nan
+                invest_dif = val("A-B(Invest.)")
+                roi_dif = val("A-B(ROI)")
+                roas_dif = val("A-B(ROAS)")
+                receita_dif = val("A-B(Receita)")
+                invest_a = val("Invest. (R$)_A")
+                invest_b = val("Invest. (R$)_B")
+                roi_a = val("ROI A_A")
+                roi_b = val("ROI B_B")
+                roas_a = val("ROAS A_A")
+                roas_b = val("ROAS B_B")
 
                 texto.append(f"### 🔹 Função: {func.title()}")
 
@@ -4098,12 +4134,12 @@ if menu == "📦 Dashboard – Logística":
                 # 2️⃣ Custo e Investimento
                 texto.append("\n**2. Custo e Investimento**")
                 texto.append(
-                    f"O custo total variou em **{fmt_moeda(custo_dif)}**, enquanto o investimento em mídia mudou de "
-                    f"**{fmt_moeda(invest_b)} → {fmt_moeda(invest_a)}**."
+                    f"O custo total variou em **{fmt_moeda(custo_dif)}**, "
+                    f"enquanto o investimento mudou em **{fmt_moeda(invest_dif)}**."
                 )
-                if invest_a > invest_b:
+                if invest_dif > 0:
                     texto.append("💰 Houve **aumento de investimento publicitário**, possivelmente para reforçar a nova oferta.")
-                elif invest_a < invest_b:
+                elif invest_dif < 0:
                     texto.append("💡 O investimento diminuiu, mas ainda manteve boa performance relativa.")
                 else:
                     texto.append("📊 O investimento permaneceu praticamente estável entre os períodos.")
@@ -4111,11 +4147,11 @@ if menu == "📦 Dashboard – Logística":
                 # 3️⃣ Eficiência Financeira
                 texto.append("\n**3. Eficiência Financeira (ROI e ROAS)**")
                 texto.append(
-                    f"O ROI evoluiu de **{roi_b:.1f}% → {roi_a:.1f}%**, e o ROAS passou de **{roas_b:.2f}x → {roas_a:.2f}x**."
+                    f"O ROI variou em **{roi_dif:+.1f}%**, e o ROAS mudou em **{roas_dif:+.2f}x**."
                 )
-                if (roi_a > roi_b) and (roas_a > roas_b):
+                if (roi_dif > 0) and (roas_dif > 0):
                     texto.append("🚀 Ambos indicadores subiram, indicando **melhor retorno sobre investimento**.")
-                elif (roi_a < roi_b) and (roas_a < roas_b):
+                elif (roi_dif < 0) and (roas_dif < 0):
                     texto.append("⚠️ Ambos caíram, sinalizando **menor eficiência na conversão de mídia em receita.**")
                 else:
                     texto.append("📈 Um dos indicadores se manteve estável, mostrando performance mista entre volume e rentabilidade.")
@@ -4124,7 +4160,7 @@ if menu == "📦 Dashboard – Logística":
                 texto.append("\n**4. Lucro e Margem**")
                 texto.append(
                     f"O lucro líquido variou em **{fmt_moeda(lucro_dif)} ({lucro_var:+.1f}%)**, "
-                    f"refletindo {'melhoria' if lucro_var > 0 else 'queda'} de margem."
+                    f"enquanto a receita mudou em **{fmt_moeda(receita_dif)}**."
                 )
                 if lucro_var > 0:
                     texto.append("✅ A operação se tornou **mais rentável**, gerando ganho real de lucro líquido.")
@@ -4133,13 +4169,13 @@ if menu == "📦 Dashboard – Logística":
 
                 # 5️⃣ Conclusão específica da função
                 texto.append("\n**Conclusão da Função**")
-                if (qtd_dif > 0 and lucro_var > 0 and roi_a > roi_b):
+                if (qtd_dif > 0 and lucro_var > 0 and roi_dif > 0 and roas_dif > 0):
                     texto.append(
                         "🟢 Resultado **muito positivo**: mais vendas, maior margem e melhor retorno financeiro."
                     )
                 elif (qtd_dif > 0 and lucro_var <= 0):
                     texto.append(
-                        "🟡 Volume cresceu, mas **margem caiu** — bom engajamento, porém menos rentabilidade."
+                        "🟡 Volume cresceu, mas **margem caiu** — bom engajamento, porém menor rentabilidade."
                     )
                 elif (qtd_dif <= 0 and lucro_var > 0):
                     texto.append(
@@ -4156,18 +4192,21 @@ if menu == "📦 Dashboard – Logística":
             texto.append("## ✅ **Conclusão Estratégica Geral**")
             lucro_total = comp["A-B(Lucro %)"].mean()
             qtd_total = comp["A-B(Qtd.%)"].mean()
-            if lucro_total > 0 and qtd_total > 0:
+            roi_total = comp["A-B(ROI)"].mean()
+            roas_total = comp["A-B(ROAS)"].mean()
+
+            if lucro_total > 0 and qtd_total > 0 and roi_total > 0 and roas_total > 0:
                 texto.append(
-                    "💎 O conjunto das variantes apresentou **crescimento sólido** em volume e rentabilidade, "
-                    "mostrando boa resposta do mercado às alterações."
+                    "💎 O conjunto das variantes apresentou **crescimento sólido** em volume, rentabilidade e eficiência financeira, "
+                    "mostrando ótima resposta do mercado às alterações."
                 )
             elif lucro_total < 0 and qtd_total < 0:
                 texto.append(
-                    "📉 As variantes tiveram **queda simultânea** de volume e lucro — provável sinal de saturação ou precificação alta."
+                    "📉 As variantes tiveram **queda simultânea** de volume e lucro — possível saturação ou preço desalinhado."
                 )
             else:
                 texto.append(
-                    "⚖️ O resultado foi **misto**, sugerindo que parte do portfólio ganhou eficiência, enquanto outras variantes perderam tração."
+                    "⚖️ O resultado foi **misto**, sugerindo que algumas funções melhoraram o ROI e ROAS, enquanto outras perderam tração."
                 )
 
             return "\n".join(texto)
