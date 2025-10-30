@@ -3876,21 +3876,22 @@ if menu == "📦 Dashboard – Logística":
             .format({
                 "A-B(Qtd.)": "{:.0f}",
                 "A-B(Qtd.%)": "{:+.1f}%",
-                "A-B(Part. | p.p)": "{:+.1f}",
                 "A-B(Custo)": fmt_moeda,
                 "A-B(Lucro)": fmt_moeda,
-                "A-B(Lucro %)": "{:+.1f}%"
+                "A-B(Lucro %)": "{:+.1f}%",
+                "A-B(Part. | p.p)": "{:+.1f}"
             })
             .applymap(highlight_diferencas, subset=[
                 "A-B(Qtd.)",
                 "A-B(Qtd.%)",
+                "A-B(Custo)",
+                "A-B(Lucro)",
                 "A-B(Lucro %)",
                 "A-B(Part. | p.p)"
             ])
         )
 
         st.dataframe(styled_comp, use_container_width=True)
-
 
         # =====================================================
         # 🧾 Cria versão formatada da planilha para edição
