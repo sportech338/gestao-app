@@ -3796,11 +3796,11 @@ if menu == "📦 Dashboard – Logística":
         st.markdown("### 💰 Investimento Meta Ads — Distribuído por Variante")
 
         try:
-            # Busca investimento Meta por produto e período
+            # Busca investimento Meta por produto e período (usando credenciais automáticas)
             ads_a = fetch_insights_daily(
-                act_id=st.secrets["facebook"]["ad_account_id"],
-                token=st.secrets["facebook"]["access_token"],
-                api_version="v21.0",
+                act_id=act_id,
+                token=token,
+                api_version="v23.0",
                 since_str=since_a,
                 until_str=until_a,
                 level="campaign",
@@ -3808,9 +3808,9 @@ if menu == "📦 Dashboard – Logística":
             )
 
             ads_b = fetch_insights_daily(
-                act_id=st.secrets["facebook"]["ad_account_id"],
-                token=st.secrets["facebook"]["access_token"],
-                api_version="v21.0",
+                act_id=act_id,
+                token=token,
+                api_version="v23.0",
                 since_str=since_b,
                 until_str=until_b,
                 level="campaign",
@@ -3840,7 +3840,7 @@ if menu == "📦 Dashboard – Logística":
             )
 
         except Exception as e:
-            st.warning(f"⚠️ Não foi possível calcular investimento automático: {e}")
+            st.warning(f"⚠️ Não foi possível calcular investimento automático via Meta Ads. Detalhe: {e}")
             df_a["Investimento (R$)"] = 0
             df_b["Investimento (R$)"] = 0
         
