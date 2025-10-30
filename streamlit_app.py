@@ -3831,28 +3831,18 @@ if menu == "📦 Dashboard – Logística":
         )
 
         # -------------------------------------------------
-        # 📊 Exibir tabela comparativa formatada
+        # 📊 Exibir tabela comparativa
         # -------------------------------------------------
         st.dataframe(
             comp[[
                 "Variante A",
                 "Variante B",
-                "Qtd. A",
-                "Qtd. B",
                 "Diferença Qtd.",
-                "Custo A",
-                "Custo B",
                 "Diferença Custo",
-                "Lucro A",
-                "Lucro B",
                 "Diferença Lucro",
                 "Crescimento (%)",
                 "Variação Lucro (%)"
             ]].style.format({
-                "Custo A": fmt_moeda,
-                "Custo B": fmt_moeda,
-                "Lucro A": fmt_moeda,
-                "Lucro B": fmt_moeda,
                 "Diferença Custo": fmt_moeda,
                 "Diferença Lucro": fmt_moeda,
                 "Crescimento (%)": "{:+.1f}%",
