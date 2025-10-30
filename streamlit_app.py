@@ -3757,9 +3757,13 @@ if menu == "📦 Dashboard – Logística":
             "Variante", "Qtd. Vendida", "Receita Total",
             "Custo Total (AliExpress)", "Lucro (AliExpress)",
             "Custo Total (Estoque)", "Lucro (Estoque)"
-        ]].astype(str)
+        ]].copy()
+
+        tabela_a_display = tabela_a_display.fillna("").astype(str)
+        tabela_a_display.index = tabela_a_display.index.map(str)
 
         st.dataframe(tabela_a_display, use_container_width=True)
+
 
 
         # =====================================================
@@ -3794,7 +3798,10 @@ if menu == "📦 Dashboard – Logística":
             "Variante", "Qtd. Vendida", "Receita Total",
             "Custo Total (AliExpress)", "Lucro (AliExpress)",
             "Custo Total (Estoque)", "Lucro (Estoque)"
-        ]].astype(str)
+        ]].copy()
+
+        tabela_b_display = tabela_b_display.fillna("").astype(str)
+        tabela_b_display.index = tabela_b_display.index.map(str)
 
         st.dataframe(tabela_b_display, use_container_width=True)
 
@@ -3828,7 +3835,10 @@ if menu == "📦 Dashboard – Logística":
         comparativo_display = comparativo_final[[
             "Variante", "Qtd. Período A", "Qtd. Período B", "Diferença (unid.)",
             "Receita A", "Receita B", "Diferença de Receita (R$)", "Crescimento Receita (%)"
-        ]].astype(str)
+        ]].copy()
+
+        comparativo_display = comparativo_display.fillna("").astype(str)
+        comparativo_display.index = comparativo_display.index.map(str)
 
         st.dataframe(comparativo_display, use_container_width=True)
 
