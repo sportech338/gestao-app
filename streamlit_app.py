@@ -3469,10 +3469,6 @@ if menu == "📦 Dashboard – Logística":
                     else:
                         st.info(msg)
     
-Preciso de ajuda para arrumar isso. Pois pensei em outra forma de deixar melhor
-
-
-
     # =====================================================
     # 📦 ABA 2 — ESTOQUE
     # =====================================================
