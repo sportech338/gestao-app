@@ -3738,16 +3738,16 @@ if menu == "📦 Dashboard – Logística":
         # -------------------------------------------------
         def calc_periodo(df, periodo_label, qtd_col):
             df = df.copy()
-            df[f"Custo Total {periodo_label}"] = df["Custo Unitário"] * df[qtd_col]
+            df[f"Custo {periodo_label}"] = df["Custo Unitário"] * df[qtd_col]
             df[f"Receita {periodo_label}"] = (
                 df[qtd_col] * df["Preço Médio"] if "Preço Médio" in df.columns else np.nan
             )
-            df[f"Lucro {periodo_label}"] = df[f"Receita {periodo_label}"] - df[f"Custo Total {periodo_label}"]
+            df[f"Lucro {periodo_label}"] = df[f"Receita {periodo_label}"] - df[f"Custo {periodo_label}"]
             total_receita = df[f"Receita {periodo_label}"].sum() if df[f"Receita {periodo_label}"].notna().any() else 0
             df[f"Participação {periodo_label} (%)"] = np.where(
                 total_receita > 0, df[f"Receita {periodo_label}"] / total_receita * 100, 0
             )
-            return df[["Variante", qtd_col, f"Custo Total {periodo_label}", f"Receita {periodo_label}",
+            return df[["Variante", qtd_col, f"Custo {periodo_label}", f"Receita {periodo_label}",
                        f"Lucro {periodo_label}", f"Participação {periodo_label} (%)"]]
 
         df_a = calc_periodo(custos_base_A, "A", "Qtd A")
@@ -3771,7 +3771,7 @@ if menu == "📦 Dashboard – Logística":
             st.markdown("### 📆 Período A")
             st.dataframe(
                 df_a.style.format({
-                    "Custo Total A": fmt_moeda,
+                    "Custo A": fmt_moeda,
                     "Receita A": fmt_moeda,
                     "Lucro A": fmt_moeda,
                     "Participação A (%)": "{:.1f}%"
@@ -3783,7 +3783,7 @@ if menu == "📦 Dashboard – Logística":
             st.markdown("### 📆 Período B")
             st.dataframe(
                 df_b.style.format({
-                    "Custo Total B": fmt_moeda,
+                    "Custo B": fmt_moeda,
                     "Receita B": fmt_moeda,
                     "Lucro B": fmt_moeda,
                     "Participação B (%)": "{:.1f}%"
@@ -3800,10 +3800,10 @@ if menu == "📦 Dashboard – Logística":
         comp.rename(columns={col_custo: "Custo Unitário"}, inplace=True)
         comp["Custo Unitário"] = pd.to_numeric(comp["Custo Unitário"], errors="coerce").fillna(0)
 
-        comp["Custo Total A"] = comp["Custo Unitário"] * comp["Qtd A"]
-        comp["Custo Total B"] = comp["Custo Unitário"] * comp["Qtd B"]
+        comp["Custo A"] = comp["Custo Unitário"] * comp["Qtd A"]
+        comp["Custo B"] = comp["Custo Unitário"] * comp["Qtd B"]
         comp["Diferença Qtd."] = comp["Qtd A"] - comp["Qtd B"]
-        comp["Diferença Custo Total"] = comp["Custo Total A"] - comp["Custo Total B"]
+        comp["Diferença Custo"] = comp["Custo A"] - comp["Custo B"]
 
         # 💰 Lucro e variação (usando bases separadas)
         precos_a = custos_base_A.set_index("Variante")["Preço Médio"] if "Preço Médio" in custos_base_A.columns else pd.Series(dtype=float)
@@ -3811,13 +3811,13 @@ if menu == "📦 Dashboard – Logística":
 
         comp["Lucro A"] = np.where(
             comp["Variante"].isin(precos_a.index),
-            (comp["Qtd A"] * comp["Variante"].map(precos_a)) - comp["Custo Total A"],
+            (comp["Qtd A"] * comp["Variante"].map(precos_a)) - comp["Custo A"],
             np.nan
         )
 
         comp["Lucro B"] = np.where(
             comp["Variante"].isin(precos_b.index),
-            (comp["Qtd B"] * comp["Variante"].map(precos_b)) - comp["Custo Total B"],
+            (comp["Qtd B"] * comp["Variante"].map(precos_b)) - comp["Custo B"],
             np.nan
         )
 
@@ -3855,14 +3855,14 @@ if menu == "📦 Dashboard – Logística":
             comp[[
                 "Variante",
                 "Diferença Qtd.",
-                "Diferença Custo Total",
+                "Diferença Custo",
                 "Crescimento (%)",
                 "Variação Part. (p.p.)",
                 "Lucro A",
                 "Lucro B",
                 "Variação Lucro (%)"
             ]].style.format({
-                "Diferença Custo Total": fmt_moeda,
+                "Diferença Custo": fmt_moeda,
                 "Lucro A": fmt_moeda,
                 "Lucro B": fmt_moeda,
                 "Crescimento (%)": "{:+.1f}%",
