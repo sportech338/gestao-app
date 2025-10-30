@@ -1106,28 +1106,34 @@ if menu == "📊 Dashboard – Tráfego Pago":
     st.title("📈 Dashboard — Tráfego Pago")
     st.caption("Análise completa de campanhas e funil de conversão.")
 
-    # ================= CONFIGURAÇÃO LOCAL DO DASHBOARD =================
-    ready = False
-    act_id = None
-    token = None
+    # ================= CONFIGURAÇÃO AUTOMÁTICA =================
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    APP_TZ = ZoneInfo("America/Sao_Paulo")
 
+    # 🔒 Pega credenciais direto do st.secrets
+    act_id = st.secrets["facebook"]["ad_account_id"]
+    token = st.secrets["facebook"]["access_token"]
+
+    api_version = "v23.0"
+    level = "campaign"  # pode deixar fixo ou colocar como selectbox se quiser mudar
+
+    # Mostra no sidebar só como info (não editável)
     with st.sidebar:
         st.markdown("## ⚙️ Configuração — Tráfego Pago")
+        st.info(f"**Ad Account ID:** {act_id}")
+        st.markdown(f"**API Version:** `{api_version}`")
+        st.markdown(f"**Nível:** `{level}`")
+        st.success("✅ Credenciais carregadas automaticamente via `st.secrets`")
 
-        act_id_input = st.text_input("Ad Account ID", placeholder="ex.: 1234567890")
-        if act_id_input and not act_id_input.isdigit():
-            st.warning("Por favor, insira apenas números (sem letras ou símbolos).")
-        act_id = f"act_{act_id_input.strip()}" if act_id_input.isdigit() else None
-
-        token = st.text_input("Access Token", type="password")
-        api_version = st.text_input("API Version", value="v23.0")
-        level = st.selectbox("Nível (recomendado: campaign)", ["campaign"], index=0)
-
-        ready = bool(act_id and token)
-
-    if not ready:
-        st.warning("⚠️ Preencha o Ad Account ID e o Access Token para continuar.")
+    # ================= VERIFICAÇÃO =================
+    if not (act_id and token):
+        st.error("❌ Credenciais do Facebook ausentes no secrets.toml.")
         st.stop()
+
+    # ================= CONTINUA ANÁLISE NORMAL =================
+    # (aqui entra o restante do seu código que faz as requisições da API)
+    st.write("🚀 Dashboard carregado com as credenciais automáticas!")
 
     # -------------------------------------------------
     # 🧭 SIDEBAR — Filtro lateral de período
