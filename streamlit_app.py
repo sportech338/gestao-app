@@ -1145,7 +1145,6 @@ if menu == "📊 Dashboard – Tráfego Pago":
             st.error("⚠️ Falha ao carregar credenciais do Facebook.")
 
     # ================= CONTINUA ANÁLISE NORMAL =================
-    st.write("🚀 Dashboard carregado com as credenciais automáticas!")
 
     # -------------------------------------------------
     # 🧭 SIDEBAR — Filtro lateral de período
