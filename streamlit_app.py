@@ -3896,7 +3896,7 @@ if menu == "📦 Dashboard – Logística":
                 )
 
         # =====================================================
-        # 🧾 Função: adiciona linha TOTAL com cor igual ao cabeçalho (#1A1C24)
+        # 🧾 Função: adiciona linha TOTAL com cor igual ao cabeçalho
         # =====================================================
         def adicionar_total_integrado(df, periodo):
             """Adiciona linha TOTAL como rodapé com a mesma cor do cabeçalho da tabela."""
@@ -3915,7 +3915,7 @@ if menu == "📦 Dashboard – Logística":
             def highlight_total(row):
                 if row["Variante"] == "TOTAL":
                     return [
-                        "background-color: #1A1C24; color: white; font-weight: bold; border-top: 2px solid rgba(255,255,255,0.15);"
+                        "background-color: #0c0d11; color: white; font-weight: bold; border-top: 2px solid rgba(255,255,255,0.15);"
                     ] * len(row)
                 else:
                     return [""] * len(row)
