@@ -3452,17 +3452,17 @@ if menu == "📦 Dashboard – Logística":
         tabela.index = range(1, len(tabela) + 1)
 
         # Cria uma cópia apenas com as colunas visíveis + técnicas
-        colunas_visiveis = [c for c in tabela.columns if c not in ["duplicado", "is_sedex", "grupo_id", "grupo_verde"]]
-        tabela_exibir = tabela[colunas_visiveis + ["duplicado", "is_sedex", "grupo_id", "grupo_verde"]].copy()
+        colunas_visiveis = [c for c in tabela.columns if c not in ["duplicado", "is_sedex", "grupo_verde", "grupo_id"]]
+        tabela_exibir = tabela[colunas_visiveis + ["duplicado", "is_sedex", "grupo_verde", "grupo_id"]].copy()
 
         # Aplica estilo condicional
         styled_tabela = tabela_exibir.style.apply(highlight_prioridades, axis=1)
 
         # Esconde colunas técnicas
         try:
-            styled_tabela = styled_tabela.hide(["duplicado", "is_sedex", "grupo_id", "grupo_verde"], axis=1)
+            styled_tabela = styled_tabela.hide(["duplicado", "is_sedex", "grupo_verde", "grupo_id"], axis=1)
         except:
-            styled_tabela = styled_tabela.hide_columns(["duplicado", "is_sedex", "grupo_id", "grupo_verde"])
+            styled_tabela = styled_tabela.hide_columns(["duplicado", "is_sedex", "grupo_verde", "grupo_id"])
 
         # Exibe tabela final
         st.dataframe(styled_tabela, use_container_width=True)
