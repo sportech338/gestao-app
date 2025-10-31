@@ -1135,7 +1135,6 @@ if menu == "📊 Dashboard – Tráfego Pago":
 
     # ================= EXIBE STATUS NO SIDEBAR =================
     with st.sidebar:
-        st.markdown("## ⚙️ Configuração — Tráfego Pago")
         st.info(f"**Ad Account ID:** {act_id or '❌ Não encontrado'}")
         st.markdown(f"**API Version:** `{api_version}`")
         st.markdown(f"**Nível:** `{level}`")
