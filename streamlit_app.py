@@ -3587,17 +3587,24 @@ if menu == "📦 Dashboard – Logística":
         )
 
         # =====================================================
-        # 🗓️ Seleção de períodos para comparação
+        # 🗓️ Seleção de períodos para comparação (hoje vs ontem)
         # =====================================================
         hoje = datetime.now(APP_TZ).date()
-        semana_atual_inicio = hoje - timedelta(days=hoje.weekday())
-        semana_anterior_inicio = semana_atual_inicio - timedelta(days=7)
+        ontem = hoje - timedelta(days=1)
 
         col1, col2 = st.columns(2)
         with col1:
-            periodo_a = st.date_input("📅 Período A (mais recente):", (semana_atual_inicio, hoje), format="DD/MM/YYYY")
+            periodo_a = st.date_input(
+                "📅 Período A (mais recente):",
+                (hoje, hoje),
+                format="DD/MM/YYYY"
+            )
         with col2:
-            periodo_b = st.date_input("📅 Período B (comparar):", (semana_anterior_inicio, semana_anterior_inicio + timedelta(days=6)), format="DD/MM/YYYY")
+            periodo_b = st.date_input(
+                "📅 Período B (comparar):",
+                (ontem, ontem),
+                format="DD/MM/YYYY"
+            )
 
         if not (isinstance(periodo_a, tuple) and len(periodo_a) == 2):
             st.warning("⚠️ Selecione um intervalo completo para o Período A.")
