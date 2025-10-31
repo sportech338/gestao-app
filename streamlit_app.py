@@ -3883,7 +3883,11 @@ if menu == "📦 Dashboard – Logística":
         # -------------------------------------------------
         # 💰 Exibir tabelas lado a lado (com formatação monetária)
         # -------------------------------------------------
-        for df, periodo in [(df_a, "A"), (df_b, "B")]:
+        def calcular_roi_roas(df, periodo):
+            """Calcula ROI e ROAS com base no investimento e adiciona linha TOTAL."""
+            df = df.copy()
+
+            # Calcula ROI e ROAS individuais
             if "Invest. (R$)" in df.columns:
                 df[f"ROI {periodo}"] = np.where(
                     df["Invest. (R$)"] > 0,
@@ -3892,9 +3896,41 @@ if menu == "📦 Dashboard – Logística":
                 )
                 df[f"ROAS {periodo}"] = np.where(
                     df["Invest. (R$)"] > 0,
-                    (df[f"Receita {periodo}"] / df["Invest. (R$)"]),
+                    df[f"Receita {periodo}"] / df["Invest. (R$)"],
                     np.nan
                 )
+
+            # Calcula totais consolidados
+            total_qtd = df[f"Qtd {periodo}"].sum()
+            total_custo = df[f"Custo {periodo}"].sum()
+            total_receita = df[f"Receita {periodo}"].sum()
+            total_lucro = df[f"Lucro {periodo}"].sum()
+            total_invest = df["Invest. (R$)"].sum()
+
+            if total_invest > 0:
+                roi_total = total_lucro / total_invest
+                roas_total = total_receita / total_invest
+            else:
+                roi_total, roas_total = np.nan, np.nan
+
+            total_row = pd.DataFrame([{
+                "Variante": "🧾 TOTAL",
+                f"Qtd {periodo}": total_qtd,
+                f"Custo {periodo}": total_custo,
+                f"Receita {periodo}": total_receita,
+                f"Lucro {periodo}": total_lucro,
+                "Invest. (R$)": total_invest,
+                f"ROI {periodo}": roi_total,
+                f"ROAS {periodo}": roas_total,
+                f"Part.{periodo} (%)": 100.0
+            }])
+
+            # Junta total no final
+            return pd.concat([df, total_row], ignore_index=True)
+
+        # ✅ Aplica aos dois períodos
+        df_a = calcular_roi_roas(df_a, "A")
+        df_b = calcular_roi_roas(df_b, "B")
 
         col1, col2 = st.columns(2)
 
@@ -3913,7 +3949,9 @@ if menu == "📦 Dashboard – Logística":
                     "ROI A": "{:.2f}x",
                     "ROAS A": "{:.2f}x",
                     "Part.A (%)": "{:.1f}%"
-                }).set_properties(**{"text-align": "right"}),
+                }).set_properties(**{
+                    "text-align": "right"
+                }),
                 use_container_width=True
             )
 
@@ -3932,7 +3970,9 @@ if menu == "📦 Dashboard – Logística":
                     "ROI B": "{:.2f}x",
                     "ROAS B": "{:.2f}x",
                     "Part.B (%)": "{:.1f}%"
-                }).set_properties(**{"text-align": "right"}),
+                }).set_properties(**{
+                    "text-align": "right"
+                }),
                 use_container_width=True
             )
 
