@@ -3880,7 +3880,7 @@ if menu == "📦 Dashboard – Logística":
                 return valor
 
         # -------------------------------------------------
-        # 💰 Exibir tabelas lado a lado (com formatação monetária)
+        # 💰 Exibir tabelas lado a lado (com formatação monetária e fechamento separado)
         # -------------------------------------------------
         for df, periodo in [(df_a, "A"), (df_b, "B")]:
             if "Invest. (R$)" in df.columns:
@@ -3895,33 +3895,18 @@ if menu == "📦 Dashboard – Logística":
                     np.nan
                 )
 
-        # =====================================================
-        # ➕ Adiciona linha de TOTAL aos DataFrames A e B (corrigido)
-        # =====================================================
-        def adicionar_total(df):
-            """Cria linha TOTAL apenas somando colunas numéricas relevantes (Qtd, Custo, Receita, Lucro, Invest.)."""
-            # Define colunas a somar
-            colunas_somar = [c for c in df.columns if any(x in c for x in ["Qtd ", "Custo", "Receita", "Lucro", "Invest."])]
-
-            # Soma apenas colunas numéricas
-            soma = df[colunas_somar].apply(pd.to_numeric, errors="coerce").sum(numeric_only=True)
-
-            # Cria linha total com os valores somados
-            linha_total = {col: soma.get(col, None) for col in df.columns}
-            linha_total["Variante"] = "TOTAL"
-
-            # Remove ROI / ROAS / Part. da soma
-            for col in df.columns:
-                if any(x in col for x in ["ROI", "ROAS", "Part."]):
-                    linha_total[col] = None
-
-            return pd.concat([df, pd.DataFrame([linha_total])], ignore_index=True)
-
-        df_a = adicionar_total(df_a)
-        df_b = adicionar_total(df_b)
-        # =====================================================
-
         col1, col2 = st.columns(2)
+
+        def fechamento(df, periodo):
+            """Retorna dicionário com totais formatados."""
+            total = {
+                "Qtd": int(df[f"Qtd {periodo}"].sum()),
+                "Custo": fmt_moeda(df[f"Custo {periodo}"].sum()),
+                "Receita": fmt_moeda(df[f"Receita {periodo}"].sum()),
+                "Lucro": fmt_moeda(df[f"Lucro {periodo}"].sum()),
+                "Invest": fmt_moeda(df["Invest. (R$)"].sum()) if "Invest. (R$)" in df.columns else "—"
+            }
+            return total
 
         with col1:
             st.markdown("### 📆 Período A")
@@ -3942,6 +3927,26 @@ if menu == "📦 Dashboard – Logística":
                 use_container_width=True
             )
 
+            total_a = fechamento(df_a, "A")
+            st.markdown(
+                f"""
+                <div style='
+                    background-color:rgba(255,255,255,0.05);
+                    padding:10px;
+                    border-radius:8px;
+                    margin-top:-8px;
+                    font-size:14px;
+                    font-weight:600;
+                    display:flex;
+                    justify-content:space-between;
+                '>
+                    <span>TOTAL</span>
+                    <span>Qtd: {total_a['Qtd']} | Custo: {total_a['Custo']} | Receita: {total_a['Receita']} | Lucro: {total_a['Lucro']} | Invest: {total_a['Invest']}</span>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+
         with col2:
             st.markdown("### 📆 Período B")
             st.dataframe(
@@ -3959,6 +3964,26 @@ if menu == "📦 Dashboard – Logística":
                     "Part.B (%)": "{:.1f}%"
                 }).set_properties(**{"text-align": "right"}),
                 use_container_width=True
+            )
+
+            total_b = fechamento(df_b, "B")
+            st.markdown(
+                f"""
+                <div style='
+                    background-color:rgba(255,255,255,0.05);
+                    padding:10px;
+                    border-radius:8px;
+                    margin-top:-8px;
+                    font-size:14px;
+                    font-weight:600;
+                    display:flex;
+                    justify-content:space-between;
+                '>
+                    <span>TOTAL</span>
+                    <span>Qtd: {total_b['Qtd']} | Custo: {total_b['Custo']} | Receita: {total_b['Receita']} | Lucro: {total_b['Lucro']} | Invest: {total_b['Invest']}</span>
+                </div>
+                """,
+                unsafe_allow_html=True
             )
 
         # -------------------------------------------------
