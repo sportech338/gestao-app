@@ -3411,8 +3411,13 @@ if menu == "📦 Dashboard – Logística":
 
 
         def highlight_prioridades(row):
-            if row["duplicado"]:
+            # 🟢 Duplicado + SEDEX → Verde translúcido
+            if row["duplicado"] and row["is_sedex"]:
+                return ['background-color: rgba(0, 255, 128, 0.15)'] * len(row)
+            # 🔵 Duplicado → Azul translúcido
+            elif row["duplicado"]:
                 return ['background-color: rgba(0, 123, 255, 0.15)'] * len(row)
+            # 🟡 SEDEX → Amarelo translúcido
             elif row["is_sedex"]:
                 return ['background-color: rgba(255, 215, 0, 0.15)'] * len(row)
             else:
