@@ -3915,7 +3915,7 @@ if menu == "📦 Dashboard – Logística":
             def highlight_total(row):
                 if row["Variante"] == "TOTAL":
                     return [
-                        "background-color: rgba(26,28,36,0.8); color: #424549; font-weight: bold; border-top: 2px solid rgba(255,255,255,0.15);"
+                        "background-color: rgba(26,28,36,0.8); color: black; font-weight: bold; border-top: 2px solid rgba(255,255,255,0.15);"
                     ] * len(row)
                 else:
                     return [""] * len(row)
