@@ -4112,6 +4112,12 @@ if menu == "📦 Dashboard – Logística":
         comp["A-B(ROAS | p.p)"] = comp.get("ROAS A_A", 0) - comp.get("ROAS B_B", 0)
 
         # =====================================================
+        # 📋 Garante que a linha TOTAL fique no final
+        # =====================================================
+        mask_total = comp["Variante A"].astype(str).str.contains("TOTAL", case=False, na=False)
+        comp = pd.concat([comp[~mask_total], comp[mask_total]], ignore_index=True)
+
+        # =====================================================
         # 🎨 Estilo visual da tabela comparativa
         # =====================================================
         styled_comp = (
@@ -4158,6 +4164,7 @@ if menu == "📦 Dashboard – Logística":
                 "font-size": "14px",
                 "border-color": "rgba(255,255,255,0.1)"
             })
+            .apply(highlight_total, axis=1)
         )
 
         st.dataframe(styled_comp, use_container_width=True)
