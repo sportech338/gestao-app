@@ -3908,7 +3908,6 @@ if menu == "📦 Dashboard – Logística":
 
             html = f"""
             <div style="
-                background-color:black;
                 color:white;
                 font-weight:600;
                 font-size:14px;
