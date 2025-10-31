@@ -3925,22 +3925,29 @@ if menu == "📦 Dashboard – Logística":
                 f"Part.{periodo} (%)": 100.0
             }])
 
-            # Junta total no final
             return pd.concat([df, total_row], ignore_index=True)
 
         # ✅ Aplica aos dois períodos
         df_a = calcular_roi_roas(df_a, "A")
         df_b = calcular_roi_roas(df_b, "B")
 
+        def highlight_total(row):
+            """Aplica o mesmo fundo do cabeçalho para a linha TOTAL."""
+            if str(row["Variante"]).strip().upper() == "🧾 TOTAL":
+                return ['background-color: #262730; font-weight: bold; color: white;'] * len(row)
+            return [''] * len(row)
+
         col1, col2 = st.columns(2)
 
         with col1:
             st.markdown("### 📆 Período A")
-            st.dataframe(
+            styled_a = (
                 df_a[[
                     "Variante", "Qtd A", "Custo A", "Receita A", "Lucro A",
                     "Invest. (R$)", "ROI A", "ROAS A", "Part.A (%)"
-                ]].style.format({
+                ]]
+                .style
+                .format({
                     "Qtd A": "{:.0f}",
                     "Custo A": fmt_moeda,
                     "Receita A": fmt_moeda,
@@ -3949,19 +3956,21 @@ if menu == "📦 Dashboard – Logística":
                     "ROI A": "{:.2f}x",
                     "ROAS A": "{:.2f}x",
                     "Part.A (%)": "{:.1f}%"
-                }).set_properties(**{
-                    "text-align": "right"
-                }),
-                use_container_width=True
+                })
+                .set_properties(**{"text-align": "right"})
+                .apply(highlight_total, axis=1)
             )
+            st.dataframe(styled_a, use_container_width=True)
 
         with col2:
             st.markdown("### 📆 Período B")
-            st.dataframe(
+            styled_b = (
                 df_b[[
                     "Variante", "Qtd B", "Custo B", "Receita B", "Lucro B",
                     "Invest. (R$)", "ROI B", "ROAS B", "Part.B (%)"
-                ]].style.format({
+                ]]
+                .style
+                .format({
                     "Qtd B": "{:.0f}",
                     "Custo B": fmt_moeda,
                     "Receita B": fmt_moeda,
@@ -3970,11 +3979,12 @@ if menu == "📦 Dashboard – Logística":
                     "ROI B": "{:.2f}x",
                     "ROAS B": "{:.2f}x",
                     "Part.B (%)": "{:.1f}%"
-                }).set_properties(**{
-                    "text-align": "right"
-                }),
-                use_container_width=True
+                })
+                .set_properties(**{"text-align": "right"})
+                .apply(highlight_total, axis=1)
             )
+            st.dataframe(styled_b, use_container_width=True)
+
 
         # -------------------------------------------------
         # 📈 Comparativo geral entre períodos (por função da variante)
