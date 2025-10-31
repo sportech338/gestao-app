@@ -3735,8 +3735,6 @@ if menu == "📦 Dashboard – Logística":
         # -------------------------------------------------
         # 💼 Análise de Custos e Lucros por Fornecedor
         # -------------------------------------------------
-        st.subheader("💼 Análise de Custos e Lucros por Fornecedor")
-
         fornecedor = st.radio(
             "Selecione o fornecedor para cálculo de custos e lucros:",
             ["AliExpress", "Estoque"],
