@@ -3895,28 +3895,43 @@ if menu == "📦 Dashboard – Logística":
                     np.nan
                 )
 
-            # =====================================================
-            # 🧮 Substituir None da linha TOTAL por médias ponderadas
-            # =====================================================
-            if "Variante" in df.columns:
-                total_mask = df["Variante"].astype(str).str.upper().str.strip() == "TOTAL"
-                if total_mask.any():
-                    total_idx = df[total_mask].index[0]
+        # =====================================================
+        # ➕ Inserir linha TOTAL no próprio DataFrame
+        # =====================================================
+        def adicionar_total(df, periodo):
+            total_qtd = df[f"Qtd {periodo}"].sum()
+            total_custo = df[f"Custo {periodo}"].sum()
+            total_receita = df[f"Receita {periodo}"].sum()
+            total_lucro = df[f"Lucro {periodo}"].sum()
+            total_invest = df["Invest. (R$)"].sum() if "Invest. (R$)" in df.columns else 0
 
-                    # ROI / ROAS ponderados
-                    total_invest = df.loc[~total_mask, "Invest. (R$)"].sum()
-                    if total_invest > 0:
-                        roi_pond = (df.loc[~total_mask, f"ROI {periodo}"] * df.loc[~total_mask, "Invest. (R$)"]).sum() / total_invest
-                        roas_pond = (df.loc[~total_mask, f"ROAS {periodo}"] * df.loc[~total_mask, "Invest. (R$)"]).sum() / total_invest
-                    else:
-                        roi_pond = np.nan
-                        roas_pond = np.nan
+            # ROI / ROAS ponderados
+            if total_invest > 0:
+                roi_pond = (df[f"Lucro {periodo}"].sum() / total_invest)
+                roas_pond = (df[f"Receita {periodo}"].sum() / total_invest)
+            else:
+                roi_pond = np.nan
+                roas_pond = np.nan
 
-                    part_media = df.loc[~total_mask, f"Part.{periodo} (%)"].mean()
+            total_part = df[f"Part.{periodo} (%)"].mean()
 
-                    df.loc[total_idx, f"ROI {periodo}"] = roi_pond
-                    df.loc[total_idx, f"ROAS {periodo}"] = roas_pond
-                    df.loc[total_idx, f"Part.{periodo} (%)"] = part_media
+            total_row = pd.DataFrame([{
+                "Variante": "TOTAL",
+                f"Qtd {periodo}": total_qtd,
+                f"Custo {periodo}": total_custo,
+                f"Receita {periodo}": total_receita,
+                f"Lucro {periodo}": total_lucro,
+                "Invest. (R$)": total_invest,
+                f"ROI {periodo}": roi_pond,
+                f"ROAS {periodo}": roas_pond,
+                f"Part.{periodo} (%)": total_part
+            }])
+
+            return pd.concat([df, total_row], ignore_index=True)
+
+        # ✅ Aplica às duas tabelas (A e B)
+        df_a = adicionar_total(df_a, "A")
+        df_b = adicionar_total(df_b, "B")
 
         # =====================================================
         # 🧾 Função: fechamento igual ao cabeçalho (estilo rodapé)
