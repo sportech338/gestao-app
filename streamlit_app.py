@@ -4145,8 +4145,8 @@ if menu == "📦 Dashboard – Logística":
                 "Δ Lucro Líq.", "Δ Lucro Líq.(%)",
                 "Δ Receita", "Δ Receita(%)",
                 "Δ Invest.", "Δ Invest.(%)",
-                "Δ ROI", "Δ ROI(p.p)",
-                "Δ ROAS", "Δ ROAS(p.p)",
+                "Δ ROI",
+                "Δ ROAS",
                 "Δ Part.(p.p)"
             ]]
             .style
@@ -4164,9 +4164,7 @@ if menu == "📦 Dashboard – Logística":
                 "Δ Invest.": fmt_moeda,
                 "Δ Invest.(%)": "{:+.1f}%",
                 "Δ ROI": "{:+.2f}x",
-                "Δ ROI(p.p)": "{:+.2f}",
                 "Δ ROAS": "{:+.2f}x",
-                "Δ ROAS(p.p)": "{:+.2f}",
                 "Δ Part.(p.p)": "{:+.1f}"
             })
             .set_properties(**{
