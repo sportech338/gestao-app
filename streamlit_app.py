@@ -3911,10 +3911,11 @@ if menu == "📦 Dashboard – Logística":
 
             df_total = pd.concat([df, pd.DataFrame([linha_total])], ignore_index=True)
 
+            # === Linha TOTAL com cor idêntica ao cabeçalho, mas mais translúcida ===
             def highlight_total(row):
                 if row["Variante"] == "TOTAL":
                     return [
-                        "background-color: rgba(26,28,36,0.8); color: rgba(255,255,255,0.9); font-weight: bold; border-top: 2px solid rgba(255,255,255,0.15);"
+                        "background-color: rgba(26,28,36,0.6); color: rgba(255,255,255,0.9); font-weight: bold; border-top: 1px solid rgba(255,255,255,0.08);"
                     ] * len(row)
                 else:
                     return [""] * len(row)
