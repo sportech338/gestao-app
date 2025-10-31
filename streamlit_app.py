@@ -4005,7 +4005,6 @@ if menu == "📦 Dashboard – Logística":
             )
             fechamento_visual(df_b, "B")
 
-
         # -------------------------------------------------
         # 📈 Comparativo geral entre períodos (por função da variante)
         # -------------------------------------------------
