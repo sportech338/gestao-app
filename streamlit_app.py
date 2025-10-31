@@ -3796,13 +3796,13 @@ if menu == "📦 Dashboard – Logística":
             df[f"Receita {periodo_label}"] = (
                 df[qtd_col] * df["Preço Médio"] if "Preço Médio" in df.columns else np.nan
             )
-            df[f"Lucro {periodo_label}"] = df[f"Receita {periodo_label}"] - df[f"Custo {periodo_label}"]
+            df[f"Lucro Bruto {periodo_label}"] = df[f"Receita {periodo_label}"] - df[f"Custo {periodo_label}"]
             total_receita = df[f"Receita {periodo_label}"].sum() if df[f"Receita {periodo_label}"].notna().any() else 0
             df[f"Part.{periodo_label} (%)"] = np.where(
                 total_receita > 0, df[f"Receita {periodo_label}"] / total_receita * 100, 0
             )
             return df[["Variante", qtd_col, f"Custo {periodo_label}", f"Receita {periodo_label}",
-                       f"Lucro {periodo_label}", f"Part.{periodo_label} (%)"]]
+                       f"Lucro Bruto {periodo_label}", f"Part.{periodo_label} (%)"]]
 
         df_a = calc_periodo(custos_base_A, "A", "Qtd A")
         df_b = calc_periodo(custos_base_B, "B", "Qtd B")
@@ -3893,7 +3893,7 @@ if menu == "📦 Dashboard – Logística":
             if "Invest. (R$)" in df.columns:
                 df[f"ROI {periodo}"] = np.where(
                     df["Invest. (R$)"] > 0,
-                    df[f"Lucro {periodo}"] / df["Invest. (R$)"],
+                    df[f"Lucro Bruto {periodo}"] / df["Invest. (R$)"],
                     np.nan
                 )
                 df[f"ROAS {periodo}"] = np.where(
@@ -3905,7 +3905,7 @@ if menu == "📦 Dashboard – Logística":
             # -------------------------------------------------
             # ✅ Calcula Lucro Líquido (abatendo investimento)
             # -------------------------------------------------
-            df[f"Lucro Líquido {periodo}"] = df[f"Lucro {periodo}"] - df["Invest. (R$)"]
+            df[f"Lucro Líquido {periodo}"] = df[f"Lucro Bruto {periodo}"] - df["Invest. (R$)"]
 
             # -------------------------------------------------
             # 📊 Totais consolidados
@@ -3913,7 +3913,7 @@ if menu == "📦 Dashboard – Logística":
             total_qtd = df[f"Qtd {periodo}"].sum()
             total_custo = df[f"Custo {periodo}"].sum()
             total_receita = df[f"Receita {periodo}"].sum()
-            total_lucro = df[f"Lucro {periodo}"].sum()
+            total_lucro = df[f"Lucro Bruto {periodo}"].sum()
             total_lucro_liq = df[f"Lucro Líquido {periodo}"].sum()
             total_invest = df["Invest. (R$)"].sum()
 
@@ -3928,7 +3928,7 @@ if menu == "📦 Dashboard – Logística":
                 f"Qtd {periodo}": total_qtd,
                 f"Custo {periodo}": total_custo,
                 f"Receita {periodo}": total_receita,
-                f"Lucro {periodo}": total_lucro,
+                f"Lucro Bruto {periodo}": total_lucro,
                 f"Lucro Líquido {periodo}": total_lucro_liq,
                 "Invest. (R$)": total_invest,
                 f"ROI {periodo}": roi_total,
@@ -3958,7 +3958,7 @@ if menu == "📦 Dashboard – Logística":
             styled_a = (
                 df_a[[
                     "Variante", "Qtd A", "Receita A", "Custo A",
-                    "Lucro A", "Lucro Líquido A",
+                    "Lucro Bruto A", "Lucro Líquido A",
                     "Invest. (R$)", "ROI A", "ROAS A", "Part.A (%)"
                 ]]
                 .style
@@ -3966,7 +3966,7 @@ if menu == "📦 Dashboard – Logística":
                     "Qtd A": "{:.0f}",
                     "Custo A": fmt_moeda,
                     "Receita A": fmt_moeda,
-                    "Lucro A": fmt_moeda,
+                    "Lucro Bruto A": fmt_moeda,
                     "Lucro Líquido A": fmt_moeda,
                     "Invest. (R$)": fmt_moeda,
                     "ROI A": "{:.2f}x",
@@ -3986,7 +3986,7 @@ if menu == "📦 Dashboard – Logística":
             styled_b = (
                 df_b[[
                     "Variante", "Qtd B", "Receita B", "Custo B",
-                    "Lucro B", "Lucro Líquido B",
+                    "Lucro Bruto B", "Lucro Líquido B",
                     "Invest. (R$)", "ROI B", "ROAS B", "Part.B (%)"
                 ]]
                 .style
@@ -3994,7 +3994,7 @@ if menu == "📦 Dashboard – Logística":
                     "Qtd B": "{:.0f}",
                     "Custo B": fmt_moeda,
                     "Receita B": fmt_moeda,
-                    "Lucro B": fmt_moeda,
+                    "Lucro Bruto B": fmt_moeda,
                     "Lucro Líquido B": fmt_moeda,
                     "Invest. (R$)": fmt_moeda,
                     "ROI B": "{:.2f}x",
@@ -4091,7 +4091,7 @@ if menu == "📦 Dashboard – Logística":
         # Diferenças diretas
         comp["A-B(Qtd.)"] = comp.get("Qtd A_A", 0) - comp.get("Qtd B_B", 0)
         comp["A-B(Custo)"] = comp.get("Custo A_A", 0) - comp.get("Custo B_B", 0)
-        comp["A-B(Lucro)"] = comp.get("Lucro A_A", 0) - comp.get("Lucro B_B", 0)
+        comp["A-B(Lucro B.)"] = comp.get("Lucro Bruto A_A", 0) - comp.get("Lucro Bruto B_B", 0)
 
         # 💰 Lucro Líquido (Receita - Custo - Investimento)
         comp["A-B(Lucro Líq.)"] = comp.get("Lucro Líquido A_A", 0) - comp.get("Lucro Líquido B_B", 0)
@@ -4108,9 +4108,9 @@ if menu == "📦 Dashboard – Logística":
             np.nan
         )
 
-        comp["A-B(Lucro %)"] = np.where(
-            comp.get("Lucro B_B", 0) > 0,
-            (comp.get("Lucro A_A", 0) - comp.get("Lucro B_B", 0)) / comp.get("Lucro B_B", 0) * 100,
+        comp["A-B(Lucro B. %)"] = np.where(
+            comp.get("Lucro Bruto B_B", 0) > 0,
+            (comp.get("Lucro Bruto A_A", 0) - comp.get("Lucro Bruto B_B", 0)) / comp.get("Lucro Bruto B_B", 0) * 100,
             np.nan
         )
 
@@ -4165,7 +4165,7 @@ if menu == "📦 Dashboard – Logística":
                 "Variante A", "Variante B",
                 "A-B(Qtd.)", "A-B(Qtd.%)",
                 "A-B(Custo)", "A-B(Custo %)",
-                "A-B(Lucro)", "A-B(Lucro %)",
+                "A-B(Lucro B.)", "A-B(Lucro B. %)",
                 "A-B(Lucro Líq.)", "A-B(Lucro Líq. %)",
                 "A-B(Receita)", "A-B(Receita %)",
                 "A-B(Invest.)", "A-B(Invest. %)",
@@ -4179,8 +4179,8 @@ if menu == "📦 Dashboard – Logística":
                 "A-B(Qtd.%)": "{:+.1f}%",
                 "A-B(Custo)": fmt_moeda,
                 "A-B(Custo %)": "{:+.1f}%",
-                "A-B(Lucro)": fmt_moeda,
-                "A-B(Lucro %)": "{:+.1f}%",
+                "A-B(Lucro B.)": fmt_moeda,
+                "A-B(Lucro B. %)": "{:+.1f}%",
                 "A-B(Lucro Líq.)": fmt_moeda,
                 "A-B(Lucro Líq. %)": "{:+.1f}%",
                 "A-B(Receita)": fmt_moeda,
