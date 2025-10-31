@@ -3404,15 +3404,40 @@ if menu == "📦 Dashboard – Logística":
         else:
             tabela["is_sedex"] = False  # cria coluna padrão
 
+        # -------------------------------------------------
+        # 🟩 Agrupamento lógico de duplicados (CPF, E-mail, Telefone, Nome, Endereço)
+        # -------------------------------------------------
+        def chave_grupo(row):
+            partes = [
+                str(row.get("CPF", "")).strip().lower(),
+                str(row.get("E-mail", "")).strip().lower(),
+                str(row.get("Telefone", "")).strip(),
+                str(row.get("Cliente", "")).strip().lower(),
+                str(row.get("Endereço", "")).strip().lower()
+            ]
+            return "|".join([p for p in partes if p and "(sem" not in p])
+
+        tabela["grupo_id"] = tabela.apply(chave_grupo, axis=1)
+
+        # Se o grupo tiver mais de um item e pelo menos um SEDEX, marca todos como grupo_verde
+        grupo_sedex = (
+            tabela.groupby("grupo_id")["is_sedex"]
+            .transform(lambda x: x.any())
+        )
+        grupo_duplicado = (
+            tabela.groupby("grupo_id")["duplicado"]
+            .transform(lambda x: x.any())
+        )
+        tabela["grupo_verde"] = grupo_duplicado & grupo_sedex
+
         # ✅ Garante que colunas de ordenação existem
         colunas_ordem = [c for c in ["duplicado", "is_sedex", "Data do pedido"] if c in tabela.columns]
         if colunas_ordem:
             tabela = tabela.sort_values(by=colunas_ordem, ascending=[False, True, False][:len(colunas_ordem)])
 
-
         def highlight_prioridades(row):
-            # 🟢 Duplicado + SEDEX → Verde translúcido
-            if row["duplicado"] and row["is_sedex"]:
+            # 🟢 Grupo duplicado com SEDEX → Verde translúcido
+            if row["grupo_verde"]:
                 return ['background-color: rgba(0, 255, 128, 0.15)'] * len(row)
             # 🔵 Duplicado → Azul translúcido
             elif row["duplicado"]:
@@ -3427,17 +3452,17 @@ if menu == "📦 Dashboard – Logística":
         tabela.index = range(1, len(tabela) + 1)
 
         # Cria uma cópia apenas com as colunas visíveis + técnicas
-        colunas_visiveis = [c for c in tabela.columns if c not in ["duplicado", "is_sedex"]]
-        tabela_exibir = tabela[colunas_visiveis + ["duplicado", "is_sedex"]].copy()
+        colunas_visiveis = [c for c in tabela.columns if c not in ["duplicado", "is_sedex", "grupo_id", "grupo_verde"]]
+        tabela_exibir = tabela[colunas_visiveis + ["duplicado", "is_sedex", "grupo_id", "grupo_verde"]].copy()
 
         # Aplica estilo condicional
         styled_tabela = tabela_exibir.style.apply(highlight_prioridades, axis=1)
 
         # Esconde colunas técnicas
         try:
-            styled_tabela = styled_tabela.hide(["duplicado", "is_sedex"], axis=1)
+            styled_tabela = styled_tabela.hide(["duplicado", "is_sedex", "grupo_id", "grupo_verde"], axis=1)
         except:
-            styled_tabela = styled_tabela.hide_columns(["duplicado", "is_sedex"])
+            styled_tabela = styled_tabela.hide_columns(["duplicado", "is_sedex", "grupo_id", "grupo_verde"])
 
         # Exibe tabela final
         st.dataframe(styled_tabela, use_container_width=True)
