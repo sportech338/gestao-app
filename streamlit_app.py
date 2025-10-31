@@ -3905,30 +3905,7 @@ if menu == "📦 Dashboard – Logística":
             total_receita = fmt_moeda(df[f"Receita {periodo}"].sum())
             total_lucro = fmt_moeda(df[f"Lucro {periodo}"].sum())
             total_invest = fmt_moeda(df["Invest. (R$)"].sum()) if "Invest. (R$)" in df.columns else "—"
-
-            html = f"""
-            <div style="
-                color:white;
-                font-weight:600;
-                font-size:14px;
-                border-radius:0 0 8px 8px;
-                padding:8px 10px;
-                display:flex;
-                justify-content:space-between;
-                align-items:center;
-                margin-top:-8px;
-                border-top:1px solid rgba(255,255,255,0.15);
-            ">
-                <span>TOTAL</span>
-                <span>
-                    Qtd: {total_qtd} |
-                    Custo: {total_custo} |
-                    Receita: {total_receita} |
-                    Lucro: {total_lucro} |
-                    Invest: {total_invest}
-                </span>
-            </div>
-            """
+            
             st.markdown(html, unsafe_allow_html=True)
 
         # =====================================================
