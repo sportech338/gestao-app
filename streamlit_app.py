@@ -3456,17 +3456,19 @@ if menu == "📦 Dashboard – Logística":
         tabela_exibir = tabela[colunas_visiveis + ["duplicado", "is_sedex", "grupo_verde", "grupo_id"]].copy()
 
         # Aplica estilo condicional
-        styled_tabela = tabela_exibir.style.apply(highlight_prioridades, axis=1)
+        tabela_estilizada = tabela_exibir.style.apply(highlight_prioridades, axis=1)
 
-        # Esconde colunas técnicas
-        try:
-            styled_tabela = styled_tabela.hide(["duplicado", "is_sedex", "grupo_verde", "grupo_id"], axis=1)
-        except:
-            styled_tabela = styled_tabela.hide_columns(["duplicado", "is_sedex", "grupo_verde", "grupo_id"])
+        # ✅ Remove colunas técnicas antes de exibir
+        colunas_visiveis = [
+            c for c in tabela_exibir.columns 
+            if c not in ["duplicado", "is_sedex", "grupo_verde", "grupo_id"]
+        ]
 
-        # Exibe tabela final
-        st.dataframe(styled_tabela, use_container_width=True)
+        # ✅ Converte valores para string (evita erro React no front-end)
+        tabela_mostrar = tabela_exibir[colunas_visiveis].fillna("").astype(str)
 
+        # ✅ Exibe tabela final sem usar .hide() (corrige o erro React #185)
+        st.dataframe(tabela_mostrar, use_container_width=True)
 
         # -------------------------------------------------
         # 🎛️ Filtros adicionais
