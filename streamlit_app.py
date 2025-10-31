@@ -3884,10 +3884,12 @@ if menu == "📦 Dashboard – Logística":
         # 💰 Exibir tabelas lado a lado (com formatação monetária)
         # -------------------------------------------------
         def calcular_roi_roas(df, periodo):
-            """Calcula ROI e ROAS com base no investimento e adiciona linha TOTAL."""
+            """Calcula ROI, ROAS, Lucro Bruto e Lucro Líquido com base no investimento e adiciona linha TOTAL."""
             df = df.copy()
 
-            # Calcula ROI e ROAS individuais
+            # -------------------------------------------------
+            # 💸 ROI e ROAS individuais
+            # -------------------------------------------------
             if "Invest. (R$)" in df.columns:
                 df[f"ROI {periodo}"] = np.where(
                     df["Invest. (R$)"] > 0,
@@ -3900,11 +3902,19 @@ if menu == "📦 Dashboard – Logística":
                     np.nan
                 )
 
-            # Calcula totais consolidados
+            # -------------------------------------------------
+            # ✅ Calcula Lucro Líquido (abatendo investimento)
+            # -------------------------------------------------
+            df[f"Lucro Líquido {periodo}"] = df[f"Lucro {periodo}"] - df["Invest. (R$)"]
+
+            # -------------------------------------------------
+            # 📊 Totais consolidados
+            # -------------------------------------------------
             total_qtd = df[f"Qtd {periodo}"].sum()
             total_custo = df[f"Custo {periodo}"].sum()
             total_receita = df[f"Receita {periodo}"].sum()
             total_lucro = df[f"Lucro {periodo}"].sum()
+            total_lucro_liq = df[f"Lucro Líquido {periodo}"].sum()
             total_invest = df["Invest. (R$)"].sum()
 
             if total_invest > 0:
@@ -3919,6 +3929,7 @@ if menu == "📦 Dashboard – Logística":
                 f"Custo {periodo}": total_custo,
                 f"Receita {periodo}": total_receita,
                 f"Lucro {periodo}": total_lucro,
+                f"Lucro Líquido {periodo}": total_lucro_liq,
                 "Invest. (R$)": total_invest,
                 f"ROI {periodo}": roi_total,
                 f"ROAS {periodo}": roas_total,
@@ -3939,11 +3950,15 @@ if menu == "📦 Dashboard – Logística":
 
         col1, col2 = st.columns(2)
 
+        # -------------------------------------------------
+        # 📆 Tabela Período A
+        # -------------------------------------------------
         with col1:
             st.markdown("### 📆 Período A")
             styled_a = (
                 df_a[[
-                    "Variante", "Qtd A", "Custo A", "Receita A", "Lucro A",
+                    "Variante", "Qtd A", "Custo A", "Receita A",
+                    "Lucro A", "Lucro Líquido A",
                     "Invest. (R$)", "ROI A", "ROAS A", "Part.A (%)"
                 ]]
                 .style
@@ -3952,6 +3967,7 @@ if menu == "📦 Dashboard – Logística":
                     "Custo A": fmt_moeda,
                     "Receita A": fmt_moeda,
                     "Lucro A": fmt_moeda,
+                    "Lucro Líquido A": fmt_moeda,
                     "Invest. (R$)": fmt_moeda,
                     "ROI A": "{:.2f}x",
                     "ROAS A": "{:.2f}x",
@@ -3962,11 +3978,15 @@ if menu == "📦 Dashboard – Logística":
             )
             st.dataframe(styled_a, use_container_width=True)
 
+        # -------------------------------------------------
+        # 📆 Tabela Período B
+        # -------------------------------------------------
         with col2:
             st.markdown("### 📆 Período B")
             styled_b = (
                 df_b[[
-                    "Variante", "Qtd B", "Custo B", "Receita B", "Lucro B",
+                    "Variante", "Qtd B", "Custo B", "Receita B",
+                    "Lucro B", "Lucro Líquido B",
                     "Invest. (R$)", "ROI B", "ROAS B", "Part.B (%)"
                 ]]
                 .style
@@ -3975,6 +3995,7 @@ if menu == "📦 Dashboard – Logística":
                     "Custo B": fmt_moeda,
                     "Receita B": fmt_moeda,
                     "Lucro B": fmt_moeda,
+                    "Lucro Líquido B": fmt_moeda,
                     "Invest. (R$)": fmt_moeda,
                     "ROI B": "{:.2f}x",
                     "ROAS B": "{:.2f}x",
@@ -3984,6 +4005,16 @@ if menu == "📦 Dashboard – Logística":
                 .apply(highlight_total, axis=1)
             )
             st.dataframe(styled_b, use_container_width=True)
+
+        # -------------------------------------------------
+        # 📈 Ajuste no comparativo (incluir Lucro Líquido)
+        # -------------------------------------------------
+        comp["A-B(Lucro Líq.)"] = comp.get("Lucro Líquido A_A", 0) - comp.get("Lucro Líquido B_B", 0)
+        comp["A-B(Lucro Líq. %)"] = np.where(
+            comp.get("Lucro Líquido B_B", 0) > 0,
+            (comp.get("Lucro Líquido A_A", 0) - comp.get("Lucro Líquido B_B", 0)) / comp.get("Lucro Líquido B_B", 0) * 100,
+            np.nan
+        )
 
 
         # -------------------------------------------------
