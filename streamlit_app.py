@@ -3958,8 +3958,8 @@ if menu == "📦 Dashboard – Logística":
             styled_a = (
                 df_a[[
                     "Variante", "Qtd A", "Receita A", "Custo A",
-                    "Lucro Bruto A", "Lucro Líquido A",
-                    "Invest. (R$)", "ROI A", "ROAS A", "Part.A (%)"
+                    "Lucro Bruto A", "Invest. (R$)", "Lucro Líquido A",
+                    "ROI A", "ROAS A", "Part.A (%)"
                 ]]
                 .style
                 .format({
@@ -3986,8 +3986,8 @@ if menu == "📦 Dashboard – Logística":
             styled_b = (
                 df_b[[
                     "Variante", "Qtd B", "Receita B", "Custo B",
-                    "Lucro Bruto B", "Lucro Líquido B",
-                    "Invest. (R$)", "ROI B", "ROAS B", "Part.B (%)"
+                    "Lucro Bruto B", "Invest. (R$)", "Lucro Líquido B",
+                    "ROI B", "ROAS B", "Part.B (%)"
                 ]]
                 .style
                 .format({
