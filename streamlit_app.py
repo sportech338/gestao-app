@@ -3880,7 +3880,7 @@ if menu == "📦 Dashboard – Logística":
                 return valor
 
         # -------------------------------------------------
-        # 💰 Exibir tabelas lado a lado (com formatação monetária e rodapé integrado com cor do cabeçalho)
+        # 💰 Exibir tabelas lado a lado (com formatação monetária e fechamento igual ao cabeçalho)
         # -------------------------------------------------
         for df, periodo in [(df_a, "A"), (df_b, "B")]:
             if "Invest. (R$)" in df.columns:
@@ -3896,31 +3896,41 @@ if menu == "📦 Dashboard – Logística":
                 )
 
         # =====================================================
-        # 🧾 Função: adiciona linha TOTAL com cor igual ao cabeçalho
+        # 🧾 Função: fechamento igual ao cabeçalho (estilo rodapé)
         # =====================================================
-        def adicionar_total_integrado(df, periodo):
-            """Adiciona linha TOTAL como rodapé com a mesma cor do cabeçalho da tabela."""
-            colunas_somar = [c for c in df.columns if any(x in c for x in ["Qtd ", "Custo", "Receita", "Lucro", "Invest."])]
-            soma = df[colunas_somar].apply(pd.to_numeric, errors="coerce").sum(numeric_only=True)
+        def fechamento_visual(df, periodo):
+            """Cria o bloco de fechamento com mesma cor e estilo do cabeçalho da tabela."""
+            total_qtd = int(df[f"Qtd {periodo}"].sum())
+            total_custo = fmt_moeda(df[f"Custo {periodo}"].sum())
+            total_receita = fmt_moeda(df[f"Receita {periodo}"].sum())
+            total_lucro = fmt_moeda(df[f"Lucro {periodo}"].sum())
+            total_invest = fmt_moeda(df["Invest. (R$)"].sum()) if "Invest. (R$)" in df.columns else "—"
 
-            linha_total = {col: soma.get(col, None) for col in df.columns}
-            linha_total["Variante"] = "TOTAL"
-            for col in df.columns:
-                if any(x in col for x in ["ROI", "ROAS", "Part."]):
-                    linha_total[col] = None
-
-            df_total = pd.concat([df, pd.DataFrame([linha_total])], ignore_index=True)
-
-            # === Linha TOTAL com cor idêntica ao cabeçalho, mas mais translúcida ===
-            def highlight_total(row):
-                if row["Variante"] == "TOTAL":
-                    return [
-                        "background-color: rgba(26,28,36,0.6); color: rgba(255,255,255,0.9); font-weight: bold; border-top: 1px solid rgba(255,255,255,0.08);"
-                    ] * len(row)
-                else:
-                    return [""] * len(row)
-
-            return df_total.style.apply(highlight_total, axis=1)
+            html = f"""
+            <div style="
+                background-color:#1A1C24;
+                color:white;
+                font-weight:600;
+                font-size:14px;
+                border-radius:0 0 8px 8px;
+                padding:8px 10px;
+                display:flex;
+                justify-content:space-between;
+                align-items:center;
+                margin-top:-8px;
+                border-top:1px solid rgba(255,255,255,0.15);
+            ">
+                <span>TOTAL</span>
+                <span>
+                    Qtd: {total_qtd} |
+                    Custo: {total_custo} |
+                    Receita: {total_receita} |
+                    Lucro: {total_lucro} |
+                    Invest: {total_invest}
+                </span>
+            </div>
+            """
+            st.markdown(html, unsafe_allow_html=True)
 
         # =====================================================
         # 📊 Exibição lado a lado
@@ -3930,7 +3940,10 @@ if menu == "📦 Dashboard – Logística":
         with col1:
             st.markdown("### 📆 Período A")
             st.dataframe(
-                adicionar_total_integrado(df_a, "A").format({
+                df_a[[
+                    "Variante", "Qtd A", "Custo A", "Receita A", "Lucro A",
+                    "Invest. (R$)", "ROI A", "ROAS A", "Part.A (%)"
+                ]].style.format({
                     "Qtd A": "{:.0f}",
                     "Custo A": fmt_moeda,
                     "Receita A": fmt_moeda,
@@ -3939,19 +3952,18 @@ if menu == "📦 Dashboard – Logística":
                     "ROI A": "{:.2f}x",
                     "ROAS A": "{:.2f}x",
                     "Part.A (%)": "{:.1f}%"
-                }).set_properties(**{
-                    "text-align": "right",
-                    "border-color": "rgba(255,255,255,0.1)",
-                    "color": "white",
-                    "font-size": "14px"
-                }),
+                }).set_properties(**{"text-align": "right"}),
                 use_container_width=True
             )
+            fechamento_visual(df_a, "A")
 
         with col2:
             st.markdown("### 📆 Período B")
             st.dataframe(
-                adicionar_total_integrado(df_b, "B").format({
+                df_b[[
+                    "Variante", "Qtd B", "Custo B", "Receita B", "Lucro B",
+                    "Invest. (R$)", "ROI B", "ROAS B", "Part.B (%)"
+                ]].style.format({
                     "Qtd B": "{:.0f}",
                     "Custo B": fmt_moeda,
                     "Receita B": fmt_moeda,
@@ -3960,14 +3972,10 @@ if menu == "📦 Dashboard – Logística":
                     "ROI B": "{:.2f}x",
                     "ROAS B": "{:.2f}x",
                     "Part.B (%)": "{:.1f}%"
-                }).set_properties(**{
-                    "text-align": "right",
-                    "border-color": "rgba(255,255,255,0.1)",
-                    "color": "white",
-                    "font-size": "14px"
-                }),
+                }).set_properties(**{"text-align": "right"}),
                 use_container_width=True
             )
+            fechamento_visual(df_b, "B")
 
 
         # -------------------------------------------------
