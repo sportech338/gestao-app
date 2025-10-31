@@ -3880,7 +3880,7 @@ if menu == "📦 Dashboard – Logística":
                 return valor
 
         # -------------------------------------------------
-        # 💰 Exibir tabelas lado a lado (com formatação monetária e rodapé integrado com cor igual ao cabeçalho)
+        # 💰 Exibir tabelas lado a lado (com formatação monetária e rodapé integrado com cor do cabeçalho)
         # -------------------------------------------------
         for df, periodo in [(df_a, "A"), (df_b, "B")]:
             if "Invest. (R$)" in df.columns:
@@ -3896,10 +3896,10 @@ if menu == "📦 Dashboard – Logística":
                 )
 
         # =====================================================
-        # 🧾 Função: adiciona linha TOTAL e aplica estilo igual ao cabeçalho
+        # 🧾 Função: adiciona linha TOTAL com cor igual ao cabeçalho (#1A1C24)
         # =====================================================
         def adicionar_total_integrado(df, periodo):
-            """Adiciona linha TOTAL como rodapé com cor de fundo igual ao cabeçalho da tabela."""
+            """Adiciona linha TOTAL como rodapé com a mesma cor do cabeçalho da tabela."""
             colunas_somar = [c for c in df.columns if any(x in c for x in ["Qtd ", "Custo", "Receita", "Lucro", "Invest."])]
             soma = df[colunas_somar].apply(pd.to_numeric, errors="coerce").sum(numeric_only=True)
 
@@ -3911,11 +3911,11 @@ if menu == "📦 Dashboard – Logística":
 
             df_total = pd.concat([df, pd.DataFrame([linha_total])], ignore_index=True)
 
-            # === Estilo especial: linha TOTAL igual ao cabeçalho ===
+            # === Linha TOTAL com cor idêntica ao cabeçalho ===
             def highlight_total(row):
                 if row["Variante"] == "TOTAL":
                     return [
-                        "background-color: #2b2b2b; color: white; font-weight: bold; border-top: 2px solid rgba(255,255,255,0.2);"
+                        "background-color: #1A1C24; color: white; font-weight: bold; border-top: 2px solid rgba(255,255,255,0.15);"
                     ] * len(row)
                 else:
                     return [""] * len(row)
