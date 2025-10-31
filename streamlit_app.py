@@ -3957,7 +3957,7 @@ if menu == "📦 Dashboard – Logística":
             st.markdown("### 📆 Período A")
             styled_a = (
                 df_a[[
-                    "Variante", "Qtd A", "Custo A", "Receita A",
+                    "Variante", "Qtd A", "Receita A", "Custo A",
                     "Lucro A", "Lucro Líquido A",
                     "Invest. (R$)", "ROI A", "ROAS A", "Part.A (%)"
                 ]]
@@ -3985,7 +3985,7 @@ if menu == "📦 Dashboard – Logística":
             st.markdown("### 📆 Período B")
             styled_b = (
                 df_b[[
-                    "Variante", "Qtd B", "Custo B", "Receita B",
+                    "Variante", "Qtd B", "Receita B", "Custo B",
                     "Lucro B", "Lucro Líquido B",
                     "Invest. (R$)", "ROI B", "ROAS B", "Part.B (%)"
                 ]]
