@@ -3891,9 +3891,32 @@ if menu == "📦 Dashboard – Logística":
                 )
                 df[f"ROAS {periodo}"] = np.where(
                     df["Invest. (R$)"] > 0,
-                    (df[f"Receita {periodo}"] / df["Invest. (R$)"]),
+                    df[f"Receita {periodo}"] / df["Invest. (R$)"],
                     np.nan
                 )
+
+            # =====================================================
+            # 🧮 Substituir None da linha TOTAL por médias ponderadas
+            # =====================================================
+            if "Variante" in df.columns:
+                total_mask = df["Variante"].astype(str).str.upper().str.strip() == "TOTAL"
+                if total_mask.any():
+                    total_idx = df[total_mask].index[0]
+
+                    # ROI / ROAS ponderados
+                    total_invest = df.loc[~total_mask, "Invest. (R$)"].sum()
+                    if total_invest > 0:
+                        roi_pond = (df.loc[~total_mask, f"ROI {periodo}"] * df.loc[~total_mask, "Invest. (R$)"]).sum() / total_invest
+                        roas_pond = (df.loc[~total_mask, f"ROAS {periodo}"] * df.loc[~total_mask, "Invest. (R$)"]).sum() / total_invest
+                    else:
+                        roi_pond = np.nan
+                        roas_pond = np.nan
+
+                    part_media = df.loc[~total_mask, f"Part.{periodo} (%)"].mean()
+
+                    df.loc[total_idx, f"ROI {periodo}"] = roi_pond
+                    df.loc[total_idx, f"ROAS {periodo}"] = roas_pond
+                    df.loc[total_idx, f"Part.{periodo} (%)"] = part_media
 
         # =====================================================
         # 🧾 Função: fechamento igual ao cabeçalho (estilo rodapé)
