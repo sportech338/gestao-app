@@ -3932,18 +3932,20 @@ if menu == "📦 Dashboard – Logística":
             weighted_roi_fmt = f"{weighted_roi:.2f}x" if not np.isnan(weighted_roi) else "—"
             weighted_roas_fmt = f"{weighted_roas:.2f}x" if not np.isnan(weighted_roas) else "—"
 
+            # --- HTML de fechamento ---
             html = f"""
             <div style="
-                color:white;
-                font-weight:600;
-                font-size:14px;
-                border-radius:0 0 8px 8px;
-                padding:8px 10px;
-                display:flex;
-                justify-content:space-between;
-                align-items:center;
-                margin-top:-8px;
-                border-top:1px solid rgba(255,255,255,0.15);
+                background-color: rgba(26,28,36,0.9);
+                color: white;
+                font-weight: 600;
+                font-size: 14px;
+                border-radius: 0 0 8px 8px;
+                padding: 8px 10px;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-top: -4px;
+                border-top: 1px solid rgba(255,255,255,0.15);
             ">
                 <span>TOTAL</span>
                 <span>
@@ -3958,7 +3960,7 @@ if menu == "📦 Dashboard – Logística":
                 </span>
             </div>
             """
-            st.markdown(html, unsafe_allow_html=True)
+            return html
 
         # =====================================================
         # 📊 Exibição lado a lado
@@ -3983,7 +3985,7 @@ if menu == "📦 Dashboard – Logística":
                 }).set_properties(**{"text-align": "right"}),
                 use_container_width=True
             )
-            fechamento_visual(df_a, "A")
+            st.markdown(fechamento_visual(df_a, "A"), unsafe_allow_html=True)
 
         with col2:
             st.markdown("### 📆 Período B")
@@ -4003,7 +4005,7 @@ if menu == "📦 Dashboard – Logística":
                 }).set_properties(**{"text-align": "right"}),
                 use_container_width=True
             )
-            fechamento_visual(df_b, "B")
+            st.markdown(fechamento_visual(df_b, "B"), unsafe_allow_html=True)
 
         # -------------------------------------------------
         # 📈 Comparativo geral entre períodos (por função da variante)
