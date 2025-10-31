@@ -2812,7 +2812,8 @@ if menu == "📊 Dashboard – Tráfego Pago":
                     best_roas = g.loc[g["ROAS"].idxmax()]
                     best_cpa = g.loc[g["Custo por Compra"].idxmin()]
                     best_pur = g.loc[g["purchases"].idxmax()]
-                    
+
+                    st.markdown("### 🧠 Insights Automáticos (Período Selecionado)")
                     # ==== Melhores dias ====
                     best_roas = g.loc[g["ROAS"].idxmax()]
                     best_cpa = g.loc[g["Custo por Compra"].idxmin()]
@@ -3734,7 +3735,7 @@ if menu == "📦 Dashboard – Logística":
         # -------------------------------------------------
         # 💼 Análise de Custos e Lucros por Fornecedor
         # -------------------------------------------------
-
+        st.subheader("💼 Análise de Custos e Lucros por Fornecedor")
 
         fornecedor = st.radio(
             "Selecione o fornecedor para cálculo de custos e lucros:",
@@ -3880,10 +3881,9 @@ if menu == "📦 Dashboard – Logística":
                 return valor
 
         # -------------------------------------------------
-        # 💰 Cálculo de ROI / ROAS e criação da linha TOTAL
+        # 💰 Exibir tabelas lado a lado (com formatação monetária)
         # -------------------------------------------------
-        def calcular_roi_roas(df, periodo):
-            df = df.copy()
+        for df, periodo in [(df_a, "A"), (df_b, "B")]:
             if "Invest. (R$)" in df.columns:
                 df[f"ROI {periodo}"] = np.where(
                     df["Invest. (R$)"] > 0,
@@ -3892,130 +3892,20 @@ if menu == "📦 Dashboard – Logística":
                 )
                 df[f"ROAS {periodo}"] = np.where(
                     df["Invest. (R$)"] > 0,
-                    df[f"Receita {periodo}"] / df["Invest. (R$)"],
+                    (df[f"Receita {periodo}"] / df["Invest. (R$)"]),
                     np.nan
                 )
-            return df
 
-        # =====================================================
-        # ➕ Inserir linha TOTAL no próprio DataFrame
-        # =====================================================
-        def adicionar_total(df, periodo):
-            total_qtd = df[f"Qtd {periodo}"].sum()
-            total_custo = df[f"Custo {periodo}"].sum()
-            total_receita = df[f"Receita {periodo}"].sum()
-            total_lucro = df[f"Lucro {periodo}"].sum()
-            total_invest = df["Invest. (R$)"].sum() if "Invest. (R$)" in df.columns else 0
-
-            if total_invest > 0:
-                roi_pond = total_lucro / total_invest
-                roas_pond = total_receita / total_invest
-            else:
-                roi_pond = np.nan
-                roas_pond = np.nan
-
-            total_part = df[f"Part.{periodo} (%)"].mean()
-
-            total_row = pd.DataFrame([{
-                "Variante": "TOTAL",
-                f"Qtd {periodo}": total_qtd,
-                f"Custo {periodo}": total_custo,
-                f"Receita {periodo}": total_receita,
-                f"Lucro {periodo}": total_lucro,
-                "Invest. (R$)": total_invest,
-                f"ROI {periodo}": roi_pond,
-                f"ROAS {periodo}": roas_pond,
-                f"Part.{periodo} (%)": total_part
-            }])
-
-            return pd.concat([df, total_row], ignore_index=True)
-
-        # ✅ Aplica corretamente (com ROI/ROAS + linha TOTAL)
-        df_a = adicionar_total(calcular_roi_roas(df_a, "A"), "A")
-        df_b = adicionar_total(calcular_roi_roas(df_b, "B"), "B")
-
-
-        # =====================================================
-        # 🧾 Função: fechamento igual ao cabeçalho (estilo rodapé)
-        # =====================================================
-        def fechamento_visual(df, periodo):
-            """Cria o bloco de fechamento com médias simples e ponderadas (ROI/ROAS) no rodapé."""
-            total_qtd = int(df[f"Qtd {periodo}"].sum())
-            total_custo = fmt_moeda(df[f"Custo {periodo}"].sum())
-            total_receita = fmt_moeda(df[f"Receita {periodo}"].sum())
-            total_lucro = fmt_moeda(df[f"Lucro {periodo}"].sum())
-            total_invest = fmt_moeda(df["Invest. (R$)"].sum()) if "Invest. (R$)" in df.columns else "—"
-
-            # === Médias simples e ponderadas ===
-            part_col = f"Part.{periodo} (%)"
-            roi_col = f"ROI {periodo}"
-            roas_col = f"ROAS {periodo}"
-            invest_col = "Invest. (R$)"
-
-            # --- Médias simples ---
-            total_part = f"{df[part_col].mean():.1f}%" if part_col in df.columns else "—"
-            mean_roi = df[roi_col].mean() if roi_col in df.columns else np.nan
-            mean_roas = df[roas_col].mean() if roas_col in df.columns else np.nan
-
-            # --- Médias ponderadas (ROI/ROAS total real) ---
-            total_invest_num = df[invest_col].sum() if invest_col in df.columns else 0
-            if total_invest_num > 0:
-                weighted_roi = (df[roi_col] * df[invest_col]).sum() / total_invest_num
-                weighted_roas = (df[roas_col] * df[invest_col]).sum() / total_invest_num
-            else:
-                weighted_roi = mean_roi
-                weighted_roas = mean_roas
-
-            # --- Formatação final ---
-            mean_roi_fmt = f"{mean_roi:.2f}x" if not np.isnan(mean_roi) else "—"
-            mean_roas_fmt = f"{mean_roas:.2f}x" if not np.isnan(mean_roas) else "—"
-            weighted_roi_fmt = f"{weighted_roi:.2f}x" if not np.isnan(weighted_roi) else "—"
-            weighted_roas_fmt = f"{weighted_roas:.2f}x" if not np.isnan(weighted_roas) else "—"
-
-            # --- HTML de fechamento ---
-            html = f"""
-            <div style="
-                background-color: rgba(26,28,36,0.9);
-                color: white;
-                font-weight: 600;
-                font-size: 14px;
-                border-radius: 0 0 8px 8px;
-                padding: 8px 10px;
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-                margin-top: -4px;
-                border-top: 1px solid rgba(255,255,255,0.15);
-            ">
-                <span>TOTAL</span>
-                <span>
-                    Qtd: {total_qtd} |
-                    Custo: {total_custo} |
-                    Receita: {total_receita} |
-                    Lucro: {total_lucro} |
-                    Invest: {total_invest} |
-                    Part.: {total_part} |
-                    ROI médio: {mean_roi_fmt} • ROI total: {weighted_roi_fmt} |
-                    ROAS médio: {mean_roas_fmt} • ROAS total: {weighted_roas_fmt}
-                </span>
-            </div>
-            """
-            return html
-
-        # =====================================================
-        # 📊 Exibição lado a lado
-        # =====================================================
         col1, col2 = st.columns(2)
 
         with col1:
             st.markdown("### 📆 Período A")
             st.dataframe(
                 df_a[[
-                    "Variante", "Qtd A", "Custo A", "Receita A", "Lucro A",
+                    "Variante", "Qtd A", "Receita A", "Lucro A",
                     "Invest. (R$)", "ROI A", "ROAS A", "Part.A (%)"
                 ]].style.format({
                     "Qtd A": "{:.0f}",
-                    "Custo A": fmt_moeda,
                     "Receita A": fmt_moeda,
                     "Lucro A": fmt_moeda,
                     "Invest. (R$)": fmt_moeda,
@@ -4025,17 +3915,15 @@ if menu == "📦 Dashboard – Logística":
                 }).set_properties(**{"text-align": "right"}),
                 use_container_width=True
             )
-            st.markdown(fechamento_visual(df_a, "A"), unsafe_allow_html=True)
 
         with col2:
             st.markdown("### 📆 Período B")
             st.dataframe(
                 df_b[[
-                    "Variante", "Qtd B", "Custo B", "Receita B", "Lucro B",
+                    "Variante", "Qtd B", "Receita B", "Lucro B",
                     "Invest. (R$)", "ROI B", "ROAS B", "Part.B (%)"
                 ]].style.format({
                     "Qtd B": "{:.0f}",
-                    "Custo B": fmt_moeda,
                     "Receita B": fmt_moeda,
                     "Lucro B": fmt_moeda,
                     "Invest. (R$)": fmt_moeda,
@@ -4045,7 +3933,6 @@ if menu == "📦 Dashboard – Logística":
                 }).set_properties(**{"text-align": "right"}),
                 use_container_width=True
             )
-            st.markdown(fechamento_visual(df_b, "B"), unsafe_allow_html=True)
 
         # -------------------------------------------------
         # 📈 Comparativo geral entre períodos (por função da variante)
