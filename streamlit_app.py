@@ -3895,6 +3895,20 @@ if menu == "📦 Dashboard – Logística":
                     np.nan
                 )
 
+        # =====================================================
+        # ➕ Adiciona linha de total aos DataFrames A e B
+        # =====================================================
+        def adicionar_total(df):
+            """Cria linha TOTAL somando colunas numéricas relevantes."""
+            colunas_somar = [c for c in df.columns if any(x in c for x in ["Qtd", "Custo", "Receita", "Lucro", "Invest."])]
+            total = df[colunas_somar].sum(numeric_only=True)
+            total["Variante"] = "TOTAL"
+            return pd.concat([df, pd.DataFrame([total])], ignore_index=True)
+
+        df_a = adicionar_total(df_a)
+        df_b = adicionar_total(df_b)
+        # =====================================================
+
         col1, col2 = st.columns(2)
 
         with col1:
