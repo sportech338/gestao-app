@@ -4154,6 +4154,12 @@ if menu == "📦 Dashboard – Logística":
         # =====================================================
         # 🎨 Estilo visual da tabela comparativa
         # =====================================================
+        def highlight_total(row):
+            """Deixa a linha TOTAL com fundo escuro e texto branco."""
+            if "TOTAL" in str(row.get("Variante A", "")).upper():
+                return ['background-color: #262730; font-weight: bold; color: white;'] * len(row)
+            return [''] * len(row)
+
         styled_comp = (
             comp[[
                 "Variante A", "Variante B",
@@ -4193,6 +4199,7 @@ if menu == "📦 Dashboard – Logística":
                 "font-size": "14px",
                 "border-color": "rgba(255,255,255,0.1)"
             })
+            .apply(highlight_total, axis=1)
         )
 
         st.dataframe(styled_comp, use_container_width=True)
