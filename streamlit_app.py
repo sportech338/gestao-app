@@ -3880,9 +3880,10 @@ if menu == "📦 Dashboard – Logística":
                 return valor
 
         # -------------------------------------------------
-        # 💰 Exibir tabelas lado a lado (com formatação monetária e fechamento igual ao cabeçalho)
+        # 💰 Cálculo de ROI / ROAS e criação da linha TOTAL
         # -------------------------------------------------
-        for df, periodo in [(df_a, "A"), (df_b, "B")]:
+        def calcular_roi_roas(df, periodo):
+            df = df.copy()
             if "Invest. (R$)" in df.columns:
                 df[f"ROI {periodo}"] = np.where(
                     df["Invest. (R$)"] > 0,
@@ -3894,6 +3895,7 @@ if menu == "📦 Dashboard – Logística":
                     df[f"Receita {periodo}"] / df["Invest. (R$)"],
                     np.nan
                 )
+            return df
 
         # =====================================================
         # ➕ Inserir linha TOTAL no próprio DataFrame
@@ -3905,10 +3907,9 @@ if menu == "📦 Dashboard – Logística":
             total_lucro = df[f"Lucro {periodo}"].sum()
             total_invest = df["Invest. (R$)"].sum() if "Invest. (R$)" in df.columns else 0
 
-            # ROI / ROAS ponderados
             if total_invest > 0:
-                roi_pond = (df[f"Lucro {periodo}"].sum() / total_invest)
-                roas_pond = (df[f"Receita {periodo}"].sum() / total_invest)
+                roi_pond = total_lucro / total_invest
+                roas_pond = total_receita / total_invest
             else:
                 roi_pond = np.nan
                 roas_pond = np.nan
@@ -3929,9 +3930,10 @@ if menu == "📦 Dashboard – Logística":
 
             return pd.concat([df, total_row], ignore_index=True)
 
-        # ✅ Aplica às duas tabelas (A e B)
-        df_a = adicionar_total(df_a, "A")
-        df_b = adicionar_total(df_b, "B")
+        # ✅ Aplica corretamente (com ROI/ROAS + linha TOTAL)
+        df_a = adicionar_total(calcular_roi_roas(df_a, "A"), "A")
+        df_b = adicionar_total(calcular_roi_roas(df_b, "B"), "B")
+
 
         # =====================================================
         # 🧾 Função: fechamento igual ao cabeçalho (estilo rodapé)
