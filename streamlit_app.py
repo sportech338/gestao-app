@@ -3958,7 +3958,7 @@ if menu == "📦 Dashboard – Logística":
             styled_a = (
                 df_a[[
                     "Variante", "Qtd A", "Receita A", "Custo A",
-                    "Lucro A", "Lucro Líquido A",
+                    "Lucro Bruto A", "Lucro Líquido A",
                     "Invest. (R$)", "ROI A", "ROAS A", "Part.A (%)"
                 ]]
                 .style
@@ -3966,7 +3966,7 @@ if menu == "📦 Dashboard – Logística":
                     "Qtd A": "{:.0f}",
                     "Custo A": fmt_moeda,
                     "Receita A": fmt_moeda,
-                    "Lucro A": fmt_moeda,
+                    "Lucro Bruto A": fmt_moeda,
                     "Lucro Líquido A": fmt_moeda,
                     "Invest. (R$)": fmt_moeda,
                     "ROI A": "{:.2f}x",
@@ -3986,7 +3986,7 @@ if menu == "📦 Dashboard – Logística":
             styled_b = (
                 df_b[[
                     "Variante", "Qtd B", "Receita B", "Custo B",
-                    "Lucro B", "Lucro Líquido B",
+                    "Lucro Bruto B", "Lucro Líquido B",
                     "Invest. (R$)", "ROI B", "ROAS B", "Part.B (%)"
                 ]]
                 .style
@@ -3994,7 +3994,7 @@ if menu == "📦 Dashboard – Logística":
                     "Qtd B": "{:.0f}",
                     "Custo B": fmt_moeda,
                     "Receita B": fmt_moeda,
-                    "Lucro B": fmt_moeda,
+                    "Lucro Bruto B": fmt_moeda,
                     "Lucro Líquido B": fmt_moeda,
                     "Invest. (R$)": fmt_moeda,
                     "ROI B": "{:.2f}x",
@@ -4091,7 +4091,7 @@ if menu == "📦 Dashboard – Logística":
         # Diferenças diretas
         comp["A-B(Qtd.)"] = comp.get("Qtd A_A", 0) - comp.get("Qtd B_B", 0)
         comp["A-B(Custo)"] = comp.get("Custo A_A", 0) - comp.get("Custo B_B", 0)
-        comp["A-B(Lucro)"] = comp.get("Lucro A_A", 0) - comp.get("Lucro B_B", 0)
+        comp["A-B(Lucro)"] = comp.get("Lucro Bruto A_A", 0) - comp.get("Lucro Bruto B_B", 0)
 
         # 💰 Lucro Líquido (Receita - Custo - Investimento)
         comp["A-B(Lucro Líq.)"] = comp.get("Lucro Líquido A_A", 0) - comp.get("Lucro Líquido B_B", 0)
@@ -4109,8 +4109,8 @@ if menu == "📦 Dashboard – Logística":
         )
 
         comp["A-B(Lucro %)"] = np.where(
-            comp.get("Lucro B_B", 0) > 0,
-            (comp.get("Lucro A_A", 0) - comp.get("Lucro B_B", 0)) / comp.get("Lucro B_B", 0) * 100,
+            comp.get("Lucro Bruto B_B", 0) > 0,
+            (comp.get("Lucro Bruto A_A", 0) - comp.get("Lucro Bruto B_B", 0)) / comp.get("Lucro Bruto B_B", 0) * 100,
             np.nan
         )
 
