@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -4005,16 +4006,13 @@ if menu == "📦 Dashboard – Logística":
             if match:
                 return match.group(1).strip().lower()
             else:
+                # fallback: remove números e usa o nome
                 nome = re.sub(r"\d+", "", nome)
                 return nome.lower().strip()
 
         # Cria identificadores
         df_a["identificador"] = df_a["Variante"].apply(extrair_identificador)
         df_b["identificador"] = df_b["Variante"].apply(extrair_identificador)
-
-        # Remove linhas TOTAL antes do comparativo
-        df_a = df_a[~df_a["Variante"].astype(str).str.upper().str.contains("TOTAL")].copy()
-        df_b = df_b[~df_b["Variante"].astype(str).str.upper().str.contains("TOTAL")].copy()
 
         # Pareia variantes A ↔ B
         matches = []
@@ -4060,6 +4058,7 @@ if menu == "📦 Dashboard – Logística":
             comp["Variante B"]
         )
 
+        # Converte valores numéricos vazios em 0 (mantém compatibilidade)
         comp = comp.fillna(0)
 
         # =====================================================
@@ -4068,16 +4067,19 @@ if menu == "📦 Dashboard – Logística":
         comp["A-B(Qtd.)"] = comp["Qtd A_A"] - comp["Qtd B_B"]
         comp["A-B(Custo)"] = comp["Custo A_A"] - comp["Custo B_B"]
         comp["A-B(Lucro)"] = comp["Lucro A_A"] - comp["Lucro B_B"]
+
         comp["A-B(Qtd.%)"] = np.where(
             comp["Qtd B_B"] > 0,
             (comp["Qtd A_A"] - comp["Qtd B_B"]) / comp["Qtd B_B"] * 100,
             np.nan
         )
+
         comp["A-B(Lucro %)"] = np.where(
             comp["Lucro B_B"] > 0,
             (comp["Lucro A_A"] - comp["Lucro B_B"]) / comp["Lucro B_B"] * 100,
             np.nan
         )
+
         comp["A-B(Part. | p.p)"] = comp["Part.A (%)_A"] - comp["Part.B (%)_B"]
 
         # =====================================================
@@ -4097,43 +4099,21 @@ if menu == "📦 Dashboard – Logística":
         comp["A-B(Receita)"] = comp.get("Receita A_A", 0) - comp.get("Receita B_B", 0)
 
         # =====================================================
-        # 🧮 Linha TOTAL consolidada no final
+        # 📈 Novas colunas — Percentuais e Pontos Percentuais (A - B)
         # =====================================================
-        total_row = pd.DataFrame([{
-            "Variante A": "🧾 TOTAL",
-            "Variante B": "🧾 TOTAL",
-            "A-B(Qtd.)": comp["A-B(Qtd.)"].sum(),
-            "A-B(Custo)": comp["A-B(Custo)"].sum(),
-            "A-B(Lucro)": comp["A-B(Lucro)"].sum(),
-            "A-B(Receita)": comp["A-B(Receita)"].sum(),
-            "A-B(Invest.)": comp["A-B(Invest.)"].sum(),
-            "A-B(Qtd.%)": np.nan,
-            "A-B(Lucro %)": np.nan,
-            "A-B(Custo %)": np.nan,
-            "A-B(Receita %)": np.nan,
-            "A-B(Invest. %)": np.nan,
-            "A-B(ROI)": np.nan,
-            "A-B(ROAS)": np.nan,
-            "A-B(ROI | p.p)": np.nan,
-            "A-B(ROAS | p.p)": np.nan,
-            "A-B(Part. | p.p)": np.nan
-        }])
+        def safe_div(a, b):
+            """Evita divisões por zero"""
+            return np.where(b != 0, (a - b) / b * 100, np.nan)
 
-        comp = pd.concat([comp, total_row], ignore_index=True)
+        comp["A-B(Custo %)"] = safe_div(comp["Custo A_A"], comp["Custo B_B"])
+        comp["A-B(Receita %)"] = safe_div(comp["Receita A_A"], comp["Receita B_B"])
+        comp["A-B(Invest. %)"] = safe_div(comp["Invest. (R$)_A"], comp["Invest. (R$)_B"])
+        comp["A-B(ROI | p.p)"] = comp.get("ROI A_A", 0) - comp.get("ROI B_B", 0)
+        comp["A-B(ROAS | p.p)"] = comp.get("ROAS A_A", 0) - comp.get("ROAS B_B", 0)
 
         # =====================================================
         # 🎨 Estilo visual da tabela comparativa
         # =====================================================
-        def highlight_total_comp(row):
-            if str(row["Variante A"]).strip().upper() == "🧾 TOTAL":
-                return [
-                    'background-color: #262730; '
-                    'border-top: 2px solid #555; '
-                    'font-weight: bold; '
-                    'color: white;'
-                ] * len(row)
-            return [''] * len(row)
-
         styled_comp = (
             comp[[
                 "Variante A",
@@ -4178,7 +4158,6 @@ if menu == "📦 Dashboard – Logística":
                 "font-size": "14px",
                 "border-color": "rgba(255,255,255,0.1)"
             })
-            .apply(highlight_total_comp, axis=1)
         )
 
         st.dataframe(styled_comp, use_container_width=True)
