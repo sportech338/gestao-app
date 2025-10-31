@@ -3899,13 +3899,65 @@ if menu == "📦 Dashboard – Logística":
         # 🧾 Função: fechamento igual ao cabeçalho (estilo rodapé)
         # =====================================================
         def fechamento_visual(df, periodo):
-            """Cria o bloco de fechamento com mesma cor e estilo do cabeçalho da tabela."""
+            """Cria o bloco de fechamento com médias simples e ponderadas (ROI/ROAS) no rodapé."""
             total_qtd = int(df[f"Qtd {periodo}"].sum())
             total_custo = fmt_moeda(df[f"Custo {periodo}"].sum())
             total_receita = fmt_moeda(df[f"Receita {periodo}"].sum())
             total_lucro = fmt_moeda(df[f"Lucro {periodo}"].sum())
             total_invest = fmt_moeda(df["Invest. (R$)"].sum()) if "Invest. (R$)" in df.columns else "—"
-            
+
+            # === Médias simples e ponderadas ===
+            part_col = f"Part.{periodo} (%)"
+            roi_col = f"ROI {periodo}"
+            roas_col = f"ROAS {periodo}"
+            invest_col = "Invest. (R$)"
+
+            # --- Médias simples ---
+            total_part = f"{df[part_col].mean():.1f}%" if part_col in df.columns else "—"
+            mean_roi = df[roi_col].mean() if roi_col in df.columns else np.nan
+            mean_roas = df[roas_col].mean() if roas_col in df.columns else np.nan
+
+            # --- Médias ponderadas (ROI/ROAS total real) ---
+            total_invest_num = df[invest_col].sum() if invest_col in df.columns else 0
+            if total_invest_num > 0:
+                weighted_roi = (df[roi_col] * df[invest_col]).sum() / total_invest_num
+                weighted_roas = (df[roas_col] * df[invest_col]).sum() / total_invest_num
+            else:
+                weighted_roi = mean_roi
+                weighted_roas = mean_roas
+
+            # --- Formatação final ---
+            mean_roi_fmt = f"{mean_roi:.2f}x" if not np.isnan(mean_roi) else "—"
+            mean_roas_fmt = f"{mean_roas:.2f}x" if not np.isnan(mean_roas) else "—"
+            weighted_roi_fmt = f"{weighted_roi:.2f}x" if not np.isnan(weighted_roi) else "—"
+            weighted_roas_fmt = f"{weighted_roas:.2f}x" if not np.isnan(weighted_roas) else "—"
+
+            html = f"""
+            <div style="
+                color:white;
+                font-weight:600;
+                font-size:14px;
+                border-radius:0 0 8px 8px;
+                padding:8px 10px;
+                display:flex;
+                justify-content:space-between;
+                align-items:center;
+                margin-top:-8px;
+                border-top:1px solid rgba(255,255,255,0.15);
+            ">
+                <span>TOTAL</span>
+                <span>
+                    Qtd: {total_qtd} |
+                    Custo: {total_custo} |
+                    Receita: {total_receita} |
+                    Lucro: {total_lucro} |
+                    Invest: {total_invest} |
+                    Part.: {total_part} |
+                    ROI médio: {mean_roi_fmt} • ROI total: {weighted_roi_fmt} |
+                    ROAS médio: {mean_roas_fmt} • ROAS total: {weighted_roas_fmt}
+                </span>
+            </div>
+            """
             st.markdown(html, unsafe_allow_html=True)
 
         # =====================================================
