@@ -4088,62 +4088,38 @@ if menu == "📦 Dashboard – Logística":
             st.error("❌ ERRO: A variável 'comp' não foi criada antes deste ponto.")
             st.stop()
 
-        # Diferenças diretas
-        comp["A-B(Qtd.)"] = comp.get("Qtd A_A", 0) - comp.get("Qtd B_B", 0)
-        comp["A-B(Custo)"] = comp.get("Custo A_A", 0) - comp.get("Custo B_B", 0)
-        comp["A-B(Lucro B.)"] = comp.get("Lucro Bruto A_A", 0) - comp.get("Lucro Bruto B_B", 0)
+        # -------------------------------------------------
+        # 📈 Diferenças diretas (valores absolutos)
+        # -------------------------------------------------
+        comp["Δ Qtd."] = comp.get("Qtd A_A", 0) - comp.get("Qtd B_B", 0)
+        comp["Δ Custo"] = comp.get("Custo A_A", 0) - comp.get("Custo B_B", 0)
+        comp["Δ Lucro B."] = comp.get("Lucro Bruto A_A", 0) - comp.get("Lucro Bruto B_B", 0)
+        comp["Δ Lucro Líq."] = comp.get("Lucro Líquido A_A", 0) - comp.get("Lucro Líquido B_B", 0)
+        comp["Δ Receita"] = comp.get("Receita A_A", 0) - comp.get("Receita B_B", 0)
+        comp["Δ Invest."] = comp.get("Invest. (R$)_A", 0) - comp.get("Invest. (R$)_B", 0)
+        comp["Δ ROI"] = comp.get("ROI A_A", 0) - comp.get("ROI B_B", 0)
+        comp["Δ ROAS"] = comp.get("ROAS A_A", 0) - comp.get("ROAS B_B", 0)
+        comp["Δ Part.(p.p)"] = comp.get("Part.A (%)_A", 0) - comp.get("Part.B (%)_B", 0)
 
-        # 💰 Lucro Líquido (Receita - Custo - Investimento)
-        comp["A-B(Lucro Líq.)"] = comp.get("Lucro Líquido A_A", 0) - comp.get("Lucro Líquido B_B", 0)
-        comp["A-B(Lucro Líq. %)"] = np.where(
-            comp.get("Lucro Líquido B_B", 0) > 0,
-            (comp.get("Lucro Líquido A_A", 0) - comp.get("Lucro Líquido B_B", 0)) / comp.get("Lucro Líquido B_B", 0) * 100,
-            np.nan
-        )
-
-        # Percentuais gerais
-        comp["A-B(Qtd.%)"] = np.where(
-            comp.get("Qtd B_B", 0) > 0,
-            (comp.get("Qtd A_A", 0) - comp.get("Qtd B_B", 0)) / comp.get("Qtd B_B", 0) * 100,
-            np.nan
-        )
-
-        comp["A-B(Lucro B. %)"] = np.where(
-            comp.get("Lucro Bruto B_B", 0) > 0,
-            (comp.get("Lucro Bruto A_A", 0) - comp.get("Lucro Bruto B_B", 0)) / comp.get("Lucro Bruto B_B", 0) * 100,
-            np.nan
-        )
-
-        comp["A-B(Part. | p.p)"] = comp.get("Part.A (%)_A", 0) - comp.get("Part.B (%)_B", 0)
-
-        # =====================================================
-        # 💰 Cálculos adicionais — Investimento, ROI, ROAS, Receita
-        # =====================================================
-        comp["A-B(Invest.)"] = comp.get("Invest. (R$)_A", 0) - comp.get("Invest. (R$)_B", 0)
-        comp["A-B(ROI)"] = np.where(
-            comp.get("ROI B_B", 0) != 0,
-            (comp.get("ROI A_A", 0) - comp.get("ROI B_B", 0)),
-            np.nan
-        )
-        comp["A-B(ROAS)"] = np.where(
-            comp.get("ROAS B_B", 0) != 0,
-            (comp.get("ROAS A_A", 0) - comp.get("ROAS B_B", 0)),
-            np.nan
-        )
-        comp["A-B(Receita)"] = comp.get("Receita A_A", 0) - comp.get("Receita B_B", 0)
-
-        # =====================================================
-        # 📈 Novas colunas — Percentuais e Pontos Percentuais (A - B)
-        # =====================================================
+        # -------------------------------------------------
+        # 📊 Diferenças percentuais (%)
+        # -------------------------------------------------
         def safe_div(a, b):
-            """Evita divisões por zero"""
+            """Evita divisões por zero e retorna variação percentual"""
             return np.where(b != 0, (a - b) / b * 100, np.nan)
 
-        comp["A-B(Custo %)"] = safe_div(comp.get("Custo A_A", 0), comp.get("Custo B_B", 0))
-        comp["A-B(Receita %)"] = safe_div(comp.get("Receita A_A", 0), comp.get("Receita B_B", 0))
-        comp["A-B(Invest. %)"] = safe_div(comp.get("Invest. (R$)_A", 0), comp.get("Invest. (R$)_B", 0))
-        comp["A-B(ROI | p.p)"] = comp.get("ROI A_A", 0) - comp.get("ROI B_B", 0)
-        comp["A-B(ROAS | p.p)"] = comp.get("ROAS A_A", 0) - comp.get("ROAS B_B", 0)
+        comp["Δ Qtd.(%)"] = safe_div(comp.get("Qtd A_A", 0), comp.get("Qtd B_B", 0))
+        comp["Δ Custo(%)"] = safe_div(comp.get("Custo A_A", 0), comp.get("Custo B_B", 0))
+        comp["Δ Lucro B.(%)"] = safe_div(comp.get("Lucro Bruto A_A", 0), comp.get("Lucro Bruto B_B", 0))
+        comp["Δ Lucro Líq.(%)"] = safe_div(comp.get("Lucro Líquido A_A", 0), comp.get("Lucro Líquido B_B", 0))
+        comp["Δ Receita(%)"] = safe_div(comp.get("Receita A_A", 0), comp.get("Receita B_B", 0))
+        comp["Δ Invest.(%)"] = safe_div(comp.get("Invest. (R$)_A", 0), comp.get("Invest. (R$)_B", 0))
+
+        # -------------------------------------------------
+        # 📊 Pontos percentuais (variações absolutas)
+        # -------------------------------------------------
+        comp["Δ ROI(p.p)"] = comp.get("ROI A_A", 0) - comp.get("ROI B_B", 0)
+        comp["Δ ROAS(p.p)"] = comp.get("ROAS A_A", 0) - comp.get("ROAS B_B", 0)
 
         # =====================================================
         # 📋 Garante que a linha TOTAL fique no final
@@ -4163,35 +4139,35 @@ if menu == "📦 Dashboard – Logística":
         styled_comp = (
             comp[[
                 "Variante A", "Variante B",
-                "A-B(Qtd.)", "A-B(Qtd.%)",
-                "A-B(Custo)", "A-B(Custo %)",
-                "A-B(Lucro B.)", "A-B(Lucro B. %)",
-                "A-B(Lucro Líq.)", "A-B(Lucro Líq. %)",
-                "A-B(Receita)", "A-B(Receita %)",
-                "A-B(Invest.)", "A-B(Invest. %)",
-                "A-B(ROI)", "A-B(ROI | p.p)",
-                "A-B(ROAS)", "A-B(ROAS | p.p)",
-                "A-B(Part. | p.p)"
+                "Δ Qtd.", "Δ Qtd.(%)",
+                "Δ Custo", "Δ Custo(%)",
+                "Δ Lucro B.", "Δ Lucro B.(%)",
+                "Δ Lucro Líq.", "Δ Lucro Líq.(%)",
+                "Δ Receita", "Δ Receita(%)",
+                "Δ Invest.", "Δ Invest.(%)",
+                "Δ ROI", "Δ ROI(p.p)",
+                "Δ ROAS", "Δ ROAS(p.p)",
+                "Δ Part.(p.p)"
             ]]
             .style
             .format({
-                "A-B(Qtd.)": "{:.0f}",
-                "A-B(Qtd.%)": "{:+.1f}%",
-                "A-B(Custo)": fmt_moeda,
-                "A-B(Custo %)": "{:+.1f}%",
-                "A-B(Lucro B.)": fmt_moeda,
-                "A-B(Lucro B. %)": "{:+.1f}%",
-                "A-B(Lucro Líq.)": fmt_moeda,
-                "A-B(Lucro Líq. %)": "{:+.1f}%",
-                "A-B(Receita)": fmt_moeda,
-                "A-B(Receita %)": "{:+.1f}%",
-                "A-B(Invest.)": fmt_moeda,
-                "A-B(Invest. %)": "{:+.1f}%",
-                "A-B(ROI)": "{:+.1f}%",
-                "A-B(ROI | p.p)": "{:+.1f}",
-                "A-B(ROAS)": "{:+.2f}x",
-                "A-B(ROAS | p.p)": "{:+.2f}",
-                "A-B(Part. | p.p)": "{:+.1f}"
+                "Δ Qtd.": "{:.0f}",
+                "Δ Qtd.(%)": "{:+.1f}%",
+                "Δ Custo": fmt_moeda,
+                "Δ Custo(%)": "{:+.1f}%",
+                "Δ Lucro B.": fmt_moeda,
+                "Δ Lucro B.(%)": "{:+.1f}%",
+                "Δ Lucro Líq.": fmt_moeda,
+                "Δ Lucro Líq.(%)": "{:+.1f}%",
+                "Δ Receita": fmt_moeda,
+                "Δ Receita(%)": "{:+.1f}%",
+                "Δ Invest.": fmt_moeda,
+                "Δ Invest.(%)": "{:+.1f}%",
+                "Δ ROI": "{:+.2f}x",
+                "Δ ROI(p.p)": "{:+.2f}",
+                "Δ ROAS": "{:+.2f}x",
+                "Δ ROAS(p.p)": "{:+.2f}",
+                "Δ Part.(p.p)": "{:+.1f}"
             })
             .set_properties(**{
                 "color": "white",
@@ -4203,6 +4179,7 @@ if menu == "📦 Dashboard – Logística":
         )
 
         st.dataframe(styled_comp, use_container_width=True)
+
 
         # =====================================================
         # 🧾 Cria versão formatada da planilha para edição
