@@ -2812,8 +2812,7 @@ if menu == "📊 Dashboard – Tráfego Pago":
                     best_roas = g.loc[g["ROAS"].idxmax()]
                     best_cpa = g.loc[g["Custo por Compra"].idxmin()]
                     best_pur = g.loc[g["purchases"].idxmax()]
-
-                    st.markdown("### 🧠 Insights Automáticos (Período Selecionado)")
+                    
                     # ==== Melhores dias ====
                     best_roas = g.loc[g["ROAS"].idxmax()]
                     best_cpa = g.loc[g["Custo por Compra"].idxmin()]
