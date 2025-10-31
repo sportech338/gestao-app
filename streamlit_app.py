@@ -4118,6 +4118,17 @@ if menu == "📦 Dashboard – Logística":
         comp = pd.concat([comp[~mask_total], comp[mask_total]], ignore_index=True)
 
         # =====================================================
+        # ✅ Ajuste da função highlight_total para funcionar em qualquer tabela
+        # =====================================================
+        def highlight_total(row):
+            """Aplica o mesmo fundo do cabeçalho para a linha TOTAL (funciona em qualquer tabela)."""
+            cols = row.index.tolist()
+            for col in ["Variante", "Variante A", "Variante B"]:
+                if col in cols and "TOTAL" in str(row[col]).upper():
+                    return ['background-color: #262730; font-weight: bold; color: white;'] * len(row)
+            return [''] * len(row)
+
+        # =====================================================
         # 🎨 Estilo visual da tabela comparativa
         # =====================================================
         styled_comp = (
