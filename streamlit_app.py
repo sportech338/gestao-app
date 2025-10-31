@@ -4009,7 +4009,7 @@ if menu == "📦 Dashboard – Logística":
         # -------------------------------------------------
         # 📈 Comparativo geral entre períodos (por função da variante)
         # -------------------------------------------------
-        st.subheader("📈 Tabela 3 — Comparativo Entre Períodos (por função da variante)")
+        st.subheader("📈 Comparativo Entre Períodos (por função da variante)")
 
         import re
 
