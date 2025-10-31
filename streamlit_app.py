@@ -4094,11 +4094,17 @@ if menu == "📦 Dashboard – Logística":
         # =====================================================
         # 📊 Cálculos de diferenças e variações
         # =====================================================
-        comp["A-B(Qtd.)"] = comp["Qtd A_A"] - comp["Qtd B_B"]
-        comp["A-B(Custo)"] = comp["Custo A_A"] - comp["Custo B_B"]
-        comp["A-B(Lucro)"] = comp["Lucro A_A"] - comp["Lucro B_B"]
+        # 🔒 Garante que comp já exista antes dos cálculos
+        if "comp" not in locals():
+            st.error("❌ ERRO: A variável 'comp' não foi criada antes deste ponto.")
+            st.stop()
 
-        # 🧮 Novo cálculo: Lucro Líquido (Receita - Custo - Invest.)
+        # Diferenças diretas
+        comp["A-B(Qtd.)"] = comp.get("Qtd A_A", 0) - comp.get("Qtd B_B", 0)
+        comp["A-B(Custo)"] = comp.get("Custo A_A", 0) - comp.get("Custo B_B", 0)
+        comp["A-B(Lucro)"] = comp.get("Lucro A_A", 0) - comp.get("Lucro B_B", 0)
+
+        # 💰 Lucro Líquido (Receita - Custo - Investimento)
         comp["A-B(Lucro Líq.)"] = comp.get("Lucro Líquido A_A", 0) - comp.get("Lucro Líquido B_B", 0)
         comp["A-B(Lucro Líq. %)"] = np.where(
             comp.get("Lucro Líquido B_B", 0) > 0,
@@ -4106,19 +4112,20 @@ if menu == "📦 Dashboard – Logística":
             np.nan
         )
 
+        # Percentuais gerais
         comp["A-B(Qtd.%)"] = np.where(
-            comp["Qtd B_B"] > 0,
-            (comp["Qtd A_A"] - comp["Qtd B_B"]) / comp["Qtd B_B"] * 100,
+            comp.get("Qtd B_B", 0) > 0,
+            (comp.get("Qtd A_A", 0) - comp.get("Qtd B_B", 0)) / comp.get("Qtd B_B", 0) * 100,
             np.nan
         )
 
         comp["A-B(Lucro %)"] = np.where(
-            comp["Lucro B_B"] > 0,
-            (comp["Lucro A_A"] - comp["Lucro B_B"]) / comp["Lucro B_B"] * 100,
+            comp.get("Lucro B_B", 0) > 0,
+            (comp.get("Lucro A_A", 0) - comp.get("Lucro B_B", 0)) / comp.get("Lucro B_B", 0) * 100,
             np.nan
         )
 
-        comp["A-B(Part. | p.p)"] = comp["Part.A (%)_A"] - comp["Part.B (%)_B"]
+        comp["A-B(Part. | p.p)"] = comp.get("Part.A (%)_A", 0) - comp.get("Part.B (%)_B", 0)
 
         # =====================================================
         # 💰 Cálculos adicionais — Investimento, ROI, ROAS, Receita
@@ -4143,52 +4150,32 @@ if menu == "📦 Dashboard – Logística":
             """Evita divisões por zero"""
             return np.where(b != 0, (a - b) / b * 100, np.nan)
 
-        comp["A-B(Custo %)"] = safe_div(comp["Custo A_A"], comp["Custo B_B"])
-        comp["A-B(Receita %)"] = safe_div(comp["Receita A_A"], comp["Receita B_B"])
-        comp["A-B(Invest. %)"] = safe_div(comp["Invest. (R$)_A"], comp["Invest. (R$)_B"])
+        comp["A-B(Custo %)"] = safe_div(comp.get("Custo A_A", 0), comp.get("Custo B_B", 0))
+        comp["A-B(Receita %)"] = safe_div(comp.get("Receita A_A", 0), comp.get("Receita B_B", 0))
+        comp["A-B(Invest. %)"] = safe_div(comp.get("Invest. (R$)_A", 0), comp.get("Invest. (R$)_B", 0))
         comp["A-B(ROI | p.p)"] = comp.get("ROI A_A", 0) - comp.get("ROI B_B", 0)
         comp["A-B(ROAS | p.p)"] = comp.get("ROAS A_A", 0) - comp.get("ROAS B_B", 0)
 
         # =====================================================
         # 📋 Garante que a linha TOTAL fique no final
         # =====================================================
-        mask_total = comp["Variante A"].astype(str).str.contains("TOTAL", case=False, na=False)
+        mask_total = comp.get("Variante A", pd.Series(dtype=str)).astype(str).str.contains("TOTAL", case=False, na=False)
         comp = pd.concat([comp[~mask_total], comp[mask_total]], ignore_index=True)
-
-        # =====================================================
-        # ✅ Ajuste da função highlight_total para funcionar em qualquer tabela
-        # =====================================================
-        def highlight_total(row):
-            """Aplica o mesmo fundo do cabeçalho para a linha TOTAL (funciona em qualquer tabela)."""
-            cols = row.index.tolist()
-            for col in ["Variante", "Variante A", "Variante B"]:
-                if col in cols and "TOTAL" in str(row[col]).upper():
-                    return ['background-color: #262730; font-weight: bold; color: white;'] * len(row)
-            return [''] * len(row)
 
         # =====================================================
         # 🎨 Estilo visual da tabela comparativa
         # =====================================================
         styled_comp = (
             comp[[
-                "Variante A",
-                "Variante B",
-                "A-B(Qtd.)",
-                "A-B(Qtd.%)",
-                "A-B(Custo)",
-                "A-B(Custo %)",
-                "A-B(Lucro)",
-                "A-B(Lucro %)",
-                "A-B(Lucro Líq.)",
-                "A-B(Lucro Líq. %)",
-                "A-B(Receita)",
-                "A-B(Receita %)",
-                "A-B(Invest.)",
-                "A-B(Invest. %)",
-                "A-B(ROI)",
-                "A-B(ROI | p.p)",
-                "A-B(ROAS)",
-                "A-B(ROAS | p.p)",
+                "Variante A", "Variante B",
+                "A-B(Qtd.)", "A-B(Qtd.%)",
+                "A-B(Custo)", "A-B(Custo %)",
+                "A-B(Lucro)", "A-B(Lucro %)",
+                "A-B(Lucro Líq.)", "A-B(Lucro Líq. %)",
+                "A-B(Receita)", "A-B(Receita %)",
+                "A-B(Invest.)", "A-B(Invest. %)",
+                "A-B(ROI)", "A-B(ROI | p.p)",
+                "A-B(ROAS)", "A-B(ROAS | p.p)",
                 "A-B(Part. | p.p)"
             ]]
             .style
@@ -4217,7 +4204,6 @@ if menu == "📦 Dashboard – Logística":
                 "font-size": "14px",
                 "border-color": "rgba(255,255,255,0.1)"
             })
-            .apply(highlight_total, axis=1)
         )
 
         st.dataframe(styled_comp, use_container_width=True)
