@@ -4007,17 +4007,6 @@ if menu == "📦 Dashboard – Logística":
             st.dataframe(styled_b, use_container_width=True)
 
         # -------------------------------------------------
-        # 📈 Ajuste no comparativo (incluir Lucro Líquido)
-        # -------------------------------------------------
-        comp["A-B(Lucro Líq.)"] = comp.get("Lucro Líquido A_A", 0) - comp.get("Lucro Líquido B_B", 0)
-        comp["A-B(Lucro Líq. %)"] = np.where(
-            comp.get("Lucro Líquido B_B", 0) > 0,
-            (comp.get("Lucro Líquido A_A", 0) - comp.get("Lucro Líquido B_B", 0)) / comp.get("Lucro Líquido B_B", 0) * 100,
-            np.nan
-        )
-
-
-        # -------------------------------------------------
         # 📈 Comparativo geral entre períodos (por função da variante)
         # -------------------------------------------------
         st.subheader("📈 Tabela 3 — Comparativo Entre Períodos (por função da variante)")
@@ -4073,7 +4062,7 @@ if menu == "📦 Dashboard – Logística":
             .merge(df_a_pref, left_on="Variante A", right_on="Variante_A", how="left")
             .merge(df_b_pref, left_on="Variante B", right_on="Variante_B", how="left")
         )
-
+        
         # =====================================================
         # 💡 Preenche corretamente nomes de variantes ausentes
         # =====================================================
