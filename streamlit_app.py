@@ -3880,7 +3880,7 @@ if menu == "📦 Dashboard – Logística":
                 return valor
 
         # -------------------------------------------------
-        # 💰 Exibir tabelas lado a lado (com formatação monetária e rodapé integrado)
+        # 💰 Exibir tabelas lado a lado (com formatação monetária e rodapé integrado com cor igual ao cabeçalho)
         # -------------------------------------------------
         for df, periodo in [(df_a, "A"), (df_b, "B")]:
             if "Invest. (R$)" in df.columns:
@@ -3896,10 +3896,10 @@ if menu == "📦 Dashboard – Logística":
                 )
 
         # =====================================================
-        # 🧾 Função: adiciona linha TOTAL e aplica estilo de rodapé
+        # 🧾 Função: adiciona linha TOTAL e aplica estilo igual ao cabeçalho
         # =====================================================
         def adicionar_total_integrado(df, periodo):
-            """Adiciona linha TOTAL como rodapé, mantendo alinhamento e formato da tabela."""
+            """Adiciona linha TOTAL como rodapé com cor de fundo igual ao cabeçalho da tabela."""
             colunas_somar = [c for c in df.columns if any(x in c for x in ["Qtd ", "Custo", "Receita", "Lucro", "Invest."])]
             soma = df[colunas_somar].apply(pd.to_numeric, errors="coerce").sum(numeric_only=True)
 
@@ -3911,10 +3911,12 @@ if menu == "📦 Dashboard – Logística":
 
             df_total = pd.concat([df, pd.DataFrame([linha_total])], ignore_index=True)
 
-            # Aplica estilo especial na última linha (TOTAL)
+            # === Estilo especial: linha TOTAL igual ao cabeçalho ===
             def highlight_total(row):
                 if row["Variante"] == "TOTAL":
-                    return ["background-color: rgba(255,255,255,0.08); font-weight: bold; border-top: 2px solid rgba(255,255,255,0.2);"] * len(row)
+                    return [
+                        "background-color: #2b2b2b; color: white; font-weight: bold; border-top: 2px solid rgba(255,255,255,0.2);"
+                    ] * len(row)
                 else:
                     return [""] * len(row)
 
@@ -3966,6 +3968,7 @@ if menu == "📦 Dashboard – Logística":
                 }),
                 use_container_width=True
             )
+
 
         # -------------------------------------------------
         # 📈 Comparativo geral entre períodos (por função da variante)
