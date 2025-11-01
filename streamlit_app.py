@@ -3976,70 +3976,95 @@ if menu == "📦 Dashboard – Logística":
         df_b = calcular_roi_roas(df_b, "B")
 
         # =====================================================
-        # 🧮 Consolida por produto quando (Todos) estiver selecionado (sem duplicar TOTAL e sem inflar valores)
+        # 🧮 Consolida por produto quando (Todos) estiver selecionado (sem duplicar variantes)
         # =====================================================
         if produto_escolhido == "(Todos)":
-            def consolidar_por_produto(df, periodo: str):
-                # remove TOTAL para não afetar o agrupamento
-                dados = df[~df[label_nivel].astype(str).str.contains("TOTAL", case=False, na=False)].copy()
+            def consolidar_por_produto(periodo_df, periodo_label):
+                """
+                Consolida diretamente da base de pedidos (sem somar novamente variantes).
+                Usa as quantidades e preços reais de cada pedido.
+                """
+                # Garante colunas esperadas
+                required_cols = ["product_title", "quantity", "price"]
+                if not all(col in pedidos.columns for col in required_cols):
+                    st.warning("⚠️ Colunas de pedidos incompletas para consolidação.")
+                    return periodo_df
 
-                # soma corretamente os valores agregados
+                # Filtra pedidos no período exato
+                inicio = inicio_a if periodo_label == "A" else inicio_b
+                fim = fim_a if periodo_label == "A" else fim_b
+                df_filtrado = pedidos[
+                    (pedidos["created_at"].dt.date >= inicio)
+                    & (pedidos["created_at"].dt.date <= fim)
+                ].copy()
+
+                # Agrupa direto por produto (sem duplicar variantes)
                 agrup = (
-                    dados.groupby("Produto", as_index=False)
+                    df_filtrado.groupby("product_title", as_index=False)
                     .agg({
-                        f"Qtd {periodo}": "sum",
-                        f"Custo {periodo}": "sum",
-                        f"Receita {periodo}": "sum",
-                        f"Lucro Bruto {periodo}": "sum",
-                        "Invest. (R$)": "sum",
+                        "quantity": "sum",
+                        "price": "mean"  # preço médio do produto no período
                     })
+                    .rename(columns={"product_title": "Produto", "quantity": f"Qtd {periodo_label}", "price": "Preço Médio"})
                 )
 
-                # Lucro líquido, ROI e ROAS por produto
-                agrup[f"Lucro Líquido {periodo}"] = agrup[f"Lucro Bruto {periodo}"] - agrup["Invest. (R$)"]
-                agrup[f"ROI {periodo}"] = np.where(
-                    agrup["Invest. (R$)"] > 0,
-                    agrup[f"Lucro Líquido {periodo}"] / agrup["Invest. (R$)"],
-                    np.nan
-                )
-                agrup[f"ROAS {periodo}"] = np.where(
-                    agrup["Invest. (R$)"] > 0,
-                    agrup[f"Receita {periodo}"] / agrup["Invest. (R$)"],
-                    np.nan
+                # Junta custo unitário real da planilha
+                agrup = agrup.merge(
+                    df_custos[["Produto", col_custo]],
+                    on="Produto",
+                    how="left"
                 )
 
-                # participação de receita dentro do total
-                receita_total = agrup[f"Receita {periodo}"].sum()
-                agrup[f"Part.{periodo} (%)"] = np.where(
-                    receita_total > 0,
-                    agrup[f"Receita {periodo}"] / receita_total * 100,
+                agrup["Custo Unitário"] = pd.to_numeric(agrup[col_custo], errors="coerce").fillna(0)
+                agrup[f"Custo {periodo_label}"] = agrup["Custo Unitário"] * agrup[f"Qtd {periodo_label}"]
+                agrup[f"Receita {periodo_label}"] = agrup[f"Qtd {periodo_label}"] * agrup["Preço Médio"]
+                agrup[f"Lucro Bruto {periodo_label}"] = agrup[f"Receita {periodo_label}"] - agrup[f"Custo {periodo_label}"]
+
+                # Distribui investimento proporcional
+                invest_total = invest_total_a if periodo_label == "A" else invest_total_b
+                total_qtd = agrup[f"Qtd {periodo_label}"].sum()
+                agrup["Invest. (R$)"] = np.where(
+                    total_qtd > 0,
+                    (agrup[f"Qtd {periodo_label}"] / total_qtd) * invest_total,
                     0
                 )
 
-                # linha TOTAL calculada uma única vez
-                total_qtd = agrup[f"Qtd {periodo}"].sum()
-                total_custo = agrup[f"Custo {periodo}"].sum()
-                total_receita = agrup[f"Receita {periodo}"].sum()
-                total_lucro_b = agrup[f"Lucro Bruto {periodo}"].sum()
-                total_invest = agrup["Invest. (R$)"].sum()
-                total_lucro_liq = total_lucro_b - total_invest
+                agrup[f"Lucro Líquido {periodo_label}"] = agrup[f"Lucro Bruto {periodo_label}"] - agrup["Invest. (R$)"]
+                agrup[f"ROI {periodo_label}"] = np.where(
+                    agrup["Invest. (R$)"] > 0,
+                    agrup[f"Lucro Líquido {periodo_label}"] / agrup["Invest. (R$)"],
+                    np.nan
+                )
+                agrup[f"ROAS {periodo_label}"] = np.where(
+                    agrup["Invest. (R$)"] > 0,
+                    agrup[f"Receita {periodo_label}"] / agrup["Invest. (R$)"],
+                    np.nan
+                )
 
+                receita_total = agrup[f"Receita {periodo_label}"].sum()
+                agrup[f"Part.{periodo_label} (%)"] = np.where(
+                    receita_total > 0,
+                    agrup[f"Receita {periodo_label}"] / receita_total * 100,
+                    0
+                )
+
+                # linha TOTAL
                 total_row = pd.DataFrame([{
                     "Produto": "🧾 TOTAL",
-                    f"Qtd {periodo}": total_qtd,
-                    f"Custo {periodo}": total_custo,
-                    f"Receita {periodo}": total_receita,
-                    f"Lucro Bruto {periodo}": total_lucro_b,
-                    "Invest. (R$)": total_invest,
-                    f"Lucro Líquido {periodo}": total_lucro_liq,
-                    f"ROI {periodo}": (total_lucro_liq / total_invest) if total_invest > 0 else np.nan,
-                    f"ROAS {periodo}": (total_receita / total_invest) if total_invest > 0 else np.nan,
-                    f"Part.{periodo} (%)": 100.0
+                    f"Qtd {periodo_label}": agrup[f"Qtd {periodo_label}"].sum(),
+                    f"Custo {periodo_label}": agrup[f"Custo {periodo_label}"].sum(),
+                    f"Receita {periodo_label}": agrup[f"Receita {periodo_label}"].sum(),
+                    f"Lucro Bruto {periodo_label}": agrup[f"Lucro Bruto {periodo_label}"].sum(),
+                    "Invest. (R$)": agrup["Invest. (R$)"].sum(),
+                    f"Lucro Líquido {periodo_label}": agrup[f"Lucro Líquido {periodo_label}"].sum(),
+                    f"ROI {periodo_label}": (agrup[f"Lucro Líquido {periodo_label}"].sum() / agrup["Invest. (R$)"].sum()) if agrup["Invest. (R$)"].sum() > 0 else np.nan,
+                    f"ROAS {periodo_label}": (agrup[f"Receita {periodo_label}"].sum() / agrup["Invest. (R$)"].sum()) if agrup["Invest. (R$)"].sum() > 0 else np.nan,
+                    f"Part.{periodo_label} (%)": 100.0
                 }])
 
                 return pd.concat([agrup, total_row], ignore_index=True)
 
-            # aplica sem inflar valores
+            # 🔄 aplica a consolidação corrigida
             df_a = consolidar_por_produto(df_a, "A")
             df_b = consolidar_por_produto(df_b, "B")
 
