@@ -3890,6 +3890,13 @@ if menu == "📦 Dashboard – Logística":
                 if "price" in base_prod.columns:
                     precos = base_prod.groupby(nivel_agrupamento)["price"].mean().reset_index()
                     precos.rename(columns={nivel_agrupamento: label_nivel, "price": "Preço Médio"}, inplace=True)
+
+                    # ✅ Garante que a coluna usada no merge exista
+                    if label_nivel not in custos_df.columns:
+                        custos_df[label_nivel] = custos_df["Variante"] if "Variante" in custos_df.columns else (
+                            custos_df["Produto"] if "Produto" in custos_df.columns else ""
+                        )
+
                     custos_df = custos_df.merge(precos, on=label_nivel, how="left")
                 else:
                     custos_df["Preço Médio"] = (custos_df["Custo Unitário"] * 2.5).round(2)
