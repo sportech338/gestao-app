@@ -4014,7 +4014,7 @@ if menu == "📦 Dashboard – Logística":
         # -------------------------------------------------
         # 📈 Comparativo geral entre períodos (por função da variante)
         # -------------------------------------------------
-        st.subheader("📈 Comparativo Entre Períodos")
+        st.subheader("📈 Comparativo Entre Períodos (por função da variante)")
 
         import re
 
@@ -4141,20 +4141,6 @@ if menu == "📦 Dashboard – Logística":
                 return ['background-color: #262730; font-weight: bold; color: white;'] * len(row)
             return [''] * len(row)
 
-        def highlight_variations(val):
-            """Aplica verde para melhora e vermelho para piora."""
-            try:
-                if isinstance(val, (int, float)):
-                    if val > 0:
-                        return 'color: #00bf63; font-weight: 600;'  # verde
-                    elif val < 0:
-                        return 'color: #ff4d4d; font-weight: 600;'  # vermelho
-                    else:
-                        return 'color: white;'
-                return ''
-            except Exception:
-                return ''
-
         styled_comp = (
             comp[[
                 "Variante A", "Variante B",
@@ -4186,10 +4172,6 @@ if menu == "📦 Dashboard – Logística":
                 "Δ ROAS": "{:+.2f}x",
                 "Δ Part.(p.p)": "{:+.1f}"
             })
-            .applymap(highlight_variations, subset=[
-                "Δ Qtd.(%)", "Δ Custo(%)", "Δ Lucro B.(%)", "Δ Lucro Líq.(%)",
-                "Δ Receita(%)", "Δ Invest.(%)", "Δ ROI", "Δ ROAS", "Δ Part.(p.p)"
-            ])
             .set_properties(**{
                 "color": "white",
                 "text-align": "right",
@@ -4199,8 +4181,7 @@ if menu == "📦 Dashboard – Logística":
             .apply(highlight_total, axis=1)
         )
 
-        st.write(styled_comp.to_html(), unsafe_allow_html=True)
-
+        st.dataframe(styled_comp, use_container_width=True)
 
 
         # =====================================================
