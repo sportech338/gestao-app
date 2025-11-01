@@ -4250,7 +4250,7 @@ if menu == "📦 Dashboard – Logística":
         # -------------------------------------------------
         # 📈 Comparativo geral entre períodos
         # -------------------------------------------------
-        st.subheader(f"📈 Comparativo Entre Períodos (por {label_nivel.lower()})")
+        st.subheader(f"📈 Comparativo entre Períodos (por {label_nivel.lower()})")
 
         import re
 
