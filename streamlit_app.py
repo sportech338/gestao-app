@@ -3837,8 +3837,19 @@ if menu == "📦 Dashboard – Logística":
             return df[[label_nivel, qtd_col, f"Custo {periodo_label}", f"Receita {periodo_label}",
                        f"Lucro Bruto {periodo_label}", f"Part.{periodo_label} (%)"]]
 
-        df_a = calc_periodo(custos_base_A, "A", "Qtd A")
-        df_b = calc_periodo(custos_base_B, "B", "Qtd B")
+        # =====================================================
+        # 💡 Evita dupla agregação (quando "(Todos)" está selecionado)
+        # =====================================================
+        if produto_escolhido != "(Todos)":
+            # Mantém comportamento normal quando um produto específico é escolhido
+            df_a = calc_periodo(custos_base_A, "A", "Qtd A")
+            df_b = calc_periodo(custos_base_B, "B", "Qtd B")
+        else:
+            # Quando "(Todos)" está selecionado, evita somar duas vezes as variantes
+            # Passa a base bruta com custos e quantidades diretamente para consolidação
+            df_a = custos_base_A.copy()
+            df_b = custos_base_B.copy()
+
 
         # =====================================================
         # 💸 Vincular investimento Meta Ads automaticamente
