@@ -3772,19 +3772,19 @@ if menu == "📦 Dashboard – Logística":
 
         # 🔢 Ajusta custos unitários para cada base (dinâmico)
         if not df_custos.empty:
-            # Índices possíveis: Variante e Produto
-            if label_nivel in ["Variante", "Produto"]:
-                df_custos_indexed = df_custos.set_index(label_nivel if label_nivel in df_custos.columns else "Variante")
+            # Escolhe a coluna base para indexar de forma segura
+            col_index = label_nivel if label_nivel in df_custos.columns else "Variante"
 
-                # Preenche custo unitário para A
-                custos_base_A[col_custo] = custos_base_A[label_nivel].map(df_custos_indexed[col_custo])
-                custos_base_A.rename(columns={col_custo: "Custo Unitário"}, inplace=True)
-                custos_base_A["Custo Unitário"] = pd.to_numeric(custos_base_A["Custo Unitário"], errors="coerce").fillna(0)
+            # Remove duplicados antes de indexar para evitar InvalidIndexError
+            df_custos_indexed = df_custos.drop_duplicates(subset=[col_index]).set_index(col_index)
 
-                # Preenche custo unitário para B
-                custos_base_B[col_custo] = custos_base_B[label_nivel].map(df_custos_indexed[col_custo])
-                custos_base_B.rename(columns={col_custo: "Custo Unitário"}, inplace=True)
-                custos_base_B["Custo Unitário"] = pd.to_numeric(custos_base_B["Custo Unitário"], errors="coerce").fillna(0)
+            # --- Período A ---
+            custos_base_A["Custo Unitário"] = custos_base_A[label_nivel].map(df_custos_indexed[col_custo])
+            custos_base_A["Custo Unitário"] = pd.to_numeric(custos_base_A["Custo Unitário"], errors="coerce").fillna(0)
+
+            # --- Período B ---
+            custos_base_B["Custo Unitário"] = custos_base_B[label_nivel].map(df_custos_indexed[col_custo])
+            custos_base_B["Custo Unitário"] = pd.to_numeric(custos_base_B["Custo Unitário"], errors="coerce").fillna(0)
 
         # -------------------------------------------------
         # 💵 Adiciona preço médio real (se não existir)
