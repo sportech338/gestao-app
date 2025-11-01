@@ -4424,7 +4424,8 @@ if menu == "📦 Dashboard – Logística":
         # =====================================================
         def highlight_total(row):
             """Mantém o fundo escuro na linha TOTAL mas preserva verde/vermelho nos números."""
-            if "TOTAL" in str(row.get(f"{label_nivel} A", "")).upper():
+            col_check = f"{label_nivel} A" if f"{label_nivel} A" in comp.columns else label_nivel
+            if "TOTAL" in str(row.get(col_check, "")).upper():
                 styles = []
                 for col, val in row.items():
                     base = 'background-color: #262730; font-weight: bold;'
@@ -4459,17 +4460,29 @@ if menu == "📦 Dashboard – Logística":
                 pass
             return 'color: white;'
 
+        # =====================================================
+        # 📋 Define colunas dinamicamente (produto vs variante)
+        # =====================================================
+        if f"{label_nivel} A" in comp.columns and f"{label_nivel} B" in comp.columns:
+            cols_base = [f"{label_nivel} A", f"{label_nivel} B"]
+        else:
+            cols_base = [label_nivel]
+
+        cols_deltas = [
+            "Δ Qtd.", "Δ Qtd.(%)",
+            "Δ Custo", "Δ Custo(%)",
+            "Δ Lucro B.", "Δ Lucro B.(%)",
+            "Δ Lucro Líq.", "Δ Lucro Líq.(%)",
+            "Δ Receita", "Δ Receita(%)",
+            "Δ Invest.", "Δ Invest.(%)",
+            "Δ ROI", "Δ ROAS", "Δ Part.(p.p)"
+        ]
+
+        # Filtra apenas colunas que realmente existem
+        cols_existentes = [c for c in cols_base + cols_deltas if c in comp.columns]
+
         styled_comp = (
-            comp[[
-                f"{label_nivel} A", f"{label_nivel} B",
-                "Δ Qtd.", "Δ Qtd.(%)",
-                "Δ Custo", "Δ Custo(%)",
-                "Δ Lucro B.", "Δ Lucro B.(%)",
-                "Δ Lucro Líq.", "Δ Lucro Líq.(%)",
-                "Δ Receita", "Δ Receita(%)",
-                "Δ Invest.", "Δ Invest.(%)",
-                "Δ ROI", "Δ ROAS", "Δ Part.(p.p)"
-            ]]
+            comp[cols_existentes]
             .style
             .format({
                 "Δ Qtd.": "{:.0f}",
@@ -4488,15 +4501,7 @@ if menu == "📦 Dashboard – Logística":
                 "Δ ROAS": "{:+.2f}x",
                 "Δ Part.(p.p)": "{:+.1f}"
             })
-            .applymap(highlight_variations, subset=[
-                "Δ Qtd.", "Δ Qtd.(%)",
-                "Δ Custo", "Δ Custo(%)",
-                "Δ Lucro B.", "Δ Lucro B.(%)",
-                "Δ Lucro Líq.", "Δ Lucro Líq.(%)",
-                "Δ Receita", "Δ Receita(%)",
-                "Δ Invest.", "Δ Invest.(%)",
-                "Δ ROI", "Δ ROAS", "Δ Part.(p.p)"
-            ])
+            .applymap(highlight_variations, subset=[c for c in cols_deltas if c in comp.columns])
             .apply(highlight_total, axis=1)
             .set_properties(**{
                 "text-align": "right",
