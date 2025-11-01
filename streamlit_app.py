@@ -4048,21 +4048,37 @@ if menu == "📦 Dashboard – Logística":
                     & (pedidos["created_at"].dt.date <= fim)
                 ].copy()
 
-                # Agrupa direto por produto (sem duplicar variantes)
+                # Agrupa direto por produto (sem duplicar variantes, mas mantendo nomes distintos)
+                df_filtrado["product_title"] = (
+                    df_filtrado["product_title"]
+                    .astype(str)
+                    .str.strip()                        # remove espaços no início/fim
+                    .str.replace(r"\s{2,}", " ", regex=True)  # normaliza espaços duplos
+                )
+
+                # 🔹 Mantém nomes originais em um campo auxiliar para evitar confusões
+                df_filtrado["_produto_normalizado"] = (
+                    df_filtrado["product_title"]
+                    .str.lower()
+                    .str.replace(r"[\s\|_-]+", "", regex=True)
+                )
+
                 agrup = (
-                    df_filtrado.groupby("product_title", as_index=False)
+                    df_filtrado.groupby("_produto_normalizado", as_index=False)
                     .agg({
-                        "quantity": "sum",  # soma todas as quantidades vendidas
+                        "product_title": "first",  # mantém o nome original representativo
+                        "quantity": "sum",
                         "price": lambda x: np.average(
                             x, weights=df_filtrado.loc[x.index, "quantity"]
-                        )  # média ponderada pelo volume vendido
+                        )
                     })
-                    .drop_duplicates(subset=["product_title"])  # garante 1 linha única por produto
                     .rename(columns={
                         "product_title": "Produto",
                         "quantity": f"Qtd {periodo_label}",
                         "price": "Preço Médio"
                     })
+                    .drop_duplicates(subset=["Produto"])
+                    .reset_index(drop=True)
                 )
 
                 # Junta custo unitário real da planilha
