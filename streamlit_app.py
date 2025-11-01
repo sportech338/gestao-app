@@ -3570,11 +3570,11 @@ if menu == "📦 Dashboard – Logística":
             st.warning("⚠️ Nenhum produto encontrado.")
             st.stop()
 
-        pedidos_cached = st.session_state.get("pedidos", pd.DataFrame())
         produtos_unicos = sorted(
-            pedidos_cached.get("product_title", pd.Series(dtype=str)).dropna().unique().tolist()
+            pedidos.get("product_title", pd.Series(dtype=str)).dropna().unique().tolist()
             or produtos["product_title"].dropna().unique().tolist()
         )
+
 
         # =====================================================
         # 🧾 Seleção de produto (com pré-seleção do Flexlive)
