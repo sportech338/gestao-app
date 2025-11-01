@@ -4152,16 +4152,21 @@ if menu == "📦 Dashboard – Logística":
             df_a = add_total(df_a, "A")
             df_b = add_total(df_b, "B")
 
-            # 🧩 Remove linhas TOTAL duplicadas no comparativo
-            comp = comp[
-                ~comp[f"{label_nivel} A"].astype(str).str.contains("TOTAL", case=False, na=False)
-            ]
+            # 🧩 Remove linhas TOTAL duplicadas no comparativo (só se comp já existir)
+            if "comp" in locals() and f"{label_nivel} A" in comp.columns:
+                comp = comp[
+                    ~comp[f"{label_nivel} A"]
+                    .astype(str)
+                    .str.contains("TOTAL", case=False, na=False)
+                ]
 
         def highlight_total(row):
             """Aplica o mesmo fundo do cabeçalho para a linha TOTAL."""
             if str(row[label_nivel]).strip().upper() == "🧾 TOTAL":
-                return ['background-color: #262730; font-weight: bold; color: white;'] * len(row)
-            return [''] * len(row)
+                return [
+                    "background-color: #262730; font-weight: bold; color: white;"
+                ] * len(row)
+            return [""] * len(row)
 
         col1, col2 = st.columns(2)
 
@@ -4271,12 +4276,58 @@ if menu == "📦 Dashboard – Logística":
         df_a_pref = df_a.add_suffix("_A")
         df_b_pref = df_b.add_suffix("_B")
 
-        # --- Faz merge seguro
-        comp = (
-            corresp
-            .merge(df_a_pref, left_on=f"{label_nivel} A", right_on=f"{label_nivel}_A", how="left")
-            .merge(df_b_pref, left_on=f"{label_nivel} B", right_on=f"{label_nivel}_B", how="left")
-        )
+        # =====================================================
+        # 🧩 Cria comparativo adaptativo — Produto vs Variante
+        # =====================================================
+        if produto_escolhido == "(Todos)":
+            # -------------------------------------------------
+            # 🔁 Modo "Todos" → compara produtos consolidados
+            # -------------------------------------------------
+            label_nivel = "Produto"
+
+            comp = pd.merge(
+                df_a, df_b,
+                on="Produto", how="outer",
+                suffixes=("_A", "_B")
+            ).fillna(0)
+
+            comp["Δ Qtd."] = comp["Qtd A"] - comp["Qtd B"]
+            comp["Δ Custo"] = comp["Custo A"] - comp["Custo B"]
+            comp["Δ Receita"] = comp["Receita A"] - comp["Receita B"]
+            comp["Δ Lucro B."] = comp["Lucro Bruto A"] - comp["Lucro Bruto B"]
+            comp["Δ Lucro Líq."] = comp["Lucro Líquido A"] - comp["Lucro Líquido B"]
+            comp["Δ Invest."] = comp["Invest. (R$)_A"] - comp["Invest. (R$)_B"]
+            comp["Δ ROI"] = comp["ROI A"] - comp["ROI B"]
+            comp["Δ ROAS"] = comp["ROAS A"] - comp["ROAS B"]
+            comp["Δ Part.(p.p)"] = comp["Part.A (%)"] - comp["Part.B (%)"]
+
+            comp["Δ Qtd.(%)"] = np.where(
+                comp["Qtd B"] > 0,
+                (comp["Qtd A"] - comp["Qtd B"]) / comp["Qtd B"] * 100,
+                np.nan
+            )
+            comp["Δ Receita(%)"] = np.where(
+                comp["Receita B"] > 0,
+                (comp["Receita A"] - comp["Receita B"]) / comp["Receita B"] * 100,
+                np.nan
+            )
+            comp["Δ Lucro Líq.(%)"] = np.where(
+                comp["Lucro Líquido B"] > 0,
+                (comp["Lucro Líquido A"] - comp["Lucro Líquido B"]) / comp["Lucro Líquido B"] * 100,
+                np.nan
+            )
+
+            st.subheader("📈 Comparativo Entre Produtos (modo Todos)")
+
+        else:
+            # -------------------------------------------------
+            # 🔁 Produto específico → compara variantes
+            # -------------------------------------------------
+            comp = (
+                corresp
+                .merge(df_a_pref, left_on=f"{label_nivel} A", right_on=f"{label_nivel}_A", how="left")
+                .merge(df_b_pref, left_on=f"{label_nivel} B", right_on=f"{label_nivel}_B", how="left")
+            )
         
         # =====================================================
         # 💡 Preenche corretamente nomes de variantes ausentes
@@ -4298,43 +4349,56 @@ if menu == "📦 Dashboard – Logística":
         # =====================================================
         # 📊 Cálculos de diferenças e variações
         # =====================================================
-        # 🔒 Garante que comp já exista antes dos cálculos
-        if "comp" not in locals():
-            st.error("❌ ERRO: A variável 'comp' não foi criada antes deste ponto.")
-            st.stop()
+        if produto_escolhido != "(Todos)":
+            # 🔒 Garante que comp já exista antes dos cálculos
+            if "comp" not in locals():
+                st.error("❌ ERRO: A variável 'comp' não foi criada antes deste ponto.")
+                st.stop()
 
-        # -------------------------------------------------
-        # 📈 Diferenças diretas (valores absolutos)
-        # -------------------------------------------------
-        comp["Δ Qtd."] = comp.get("Qtd A_A", 0) - comp.get("Qtd B_B", 0)
-        comp["Δ Custo"] = comp.get("Custo A_A", 0) - comp.get("Custo B_B", 0)
-        comp["Δ Lucro B."] = comp.get("Lucro Bruto A_A", 0) - comp.get("Lucro Bruto B_B", 0)
-        comp["Δ Lucro Líq."] = comp.get("Lucro Líquido A_A", 0) - comp.get("Lucro Líquido B_B", 0)
-        comp["Δ Receita"] = comp.get("Receita A_A", 0) - comp.get("Receita B_B", 0)
-        comp["Δ Invest."] = comp.get("Invest. (R$)_A", 0) - comp.get("Invest. (R$)_B", 0)
-        comp["Δ ROI"] = comp.get("ROI A_A", 0) - comp.get("ROI B_B", 0)
-        comp["Δ ROAS"] = comp.get("ROAS A_A", 0) - comp.get("ROAS B_B", 0)
-        comp["Δ Part.(p.p)"] = comp.get("Part.A (%)_A", 0) - comp.get("Part.B (%)_B", 0)
+            # -------------------------------------------------
+            # 📈 Diferenças diretas (valores absolutos)
+            # -------------------------------------------------
+            comp["Δ Qtd."] = comp.get("Qtd A_A", 0) - comp.get("Qtd B_B", 0)
+            comp["Δ Custo"] = comp.get("Custo A_A", 0) - comp.get("Custo B_B", 0)
+            comp["Δ Lucro B."] = comp.get("Lucro Bruto A_A", 0) - comp.get("Lucro Bruto B_B", 0)
+            comp["Δ Lucro Líq."] = comp.get("Lucro Líquido A_A", 0) - comp.get("Lucro Líquido B_B", 0)
+            comp["Δ Receita"] = comp.get("Receita A_A", 0) - comp.get("Receita B_B", 0)
+            comp["Δ Invest."] = comp.get("Invest. (R$)_A", 0) - comp.get("Invest. (R$)_B", 0)
+            comp["Δ ROI"] = comp.get("ROI A_A", 0) - comp.get("ROI B_B", 0)
+            comp["Δ ROAS"] = comp.get("ROAS A_A", 0) - comp.get("ROAS B_B", 0)
+            comp["Δ Part.(p.p)"] = comp.get("Part.A (%)_A", 0) - comp.get("Part.B (%)_B", 0)
 
-        # -------------------------------------------------
-        # 📊 Diferenças percentuais (%)
-        # -------------------------------------------------
-        def safe_div(a, b):
-            """Evita divisões por zero e retorna variação percentual"""
-            return np.where(b != 0, (a - b) / b * 100, np.nan)
+            # -------------------------------------------------
+            # 📊 Diferenças percentuais (%)
+            # -------------------------------------------------
+            def safe_div(a, b):
+                """Evita divisões por zero e retorna variação percentual"""
+                return np.where(b != 0, (a - b) / b * 100, np.nan)
 
-        comp["Δ Qtd.(%)"] = safe_div(comp.get("Qtd A_A", 0), comp.get("Qtd B_B", 0))
-        comp["Δ Custo(%)"] = safe_div(comp.get("Custo A_A", 0), comp.get("Custo B_B", 0))
-        comp["Δ Lucro B.(%)"] = safe_div(comp.get("Lucro Bruto A_A", 0), comp.get("Lucro Bruto B_B", 0))
-        comp["Δ Lucro Líq.(%)"] = safe_div(comp.get("Lucro Líquido A_A", 0), comp.get("Lucro Líquido B_B", 0))
-        comp["Δ Receita(%)"] = safe_div(comp.get("Receita A_A", 0), comp.get("Receita B_B", 0))
-        comp["Δ Invest.(%)"] = safe_div(comp.get("Invest. (R$)_A", 0), comp.get("Invest. (R$)_B", 0))
+            comp["Δ Qtd.(%)"] = safe_div(comp.get("Qtd A_A", 0), comp.get("Qtd B_B", 0))
+            comp["Δ Custo(%)"] = safe_div(comp.get("Custo A_A", 0), comp.get("Custo B_B", 0))
+            comp["Δ Lucro B.(%)"] = safe_div(comp.get("Lucro Bruto A_A", 0), comp.get("Lucro Bruto B_B", 0))
+            comp["Δ Lucro Líq.(%)"] = safe_div(comp.get("Lucro Líquido A_A", 0), comp.get("Lucro Líquido B_B", 0))
+            comp["Δ Receita(%)"] = safe_div(comp.get("Receita A_A", 0), comp.get("Receita B_B", 0))
+            comp["Δ Invest.(%)"] = safe_div(comp.get("Invest. (R$)_A", 0), comp.get("Invest. (R$)_B", 0))
 
-        # -------------------------------------------------
-        # 📊 Pontos percentuais (variações absolutas)
-        # -------------------------------------------------
-        comp["Δ ROI(p.p)"] = comp.get("ROI A_A", 0) - comp.get("ROI B_B", 0)
-        comp["Δ ROAS(p.p)"] = comp.get("ROAS A_A", 0) - comp.get("ROAS B_B", 0)
+            # -------------------------------------------------
+            # 📊 Pontos percentuais (variações absolutas)
+            # -------------------------------------------------
+            comp["Δ ROI(p.p)"] = comp.get("ROI A_A", 0) - comp.get("ROI B_B", 0)
+            comp["Δ ROAS(p.p)"] = comp.get("ROAS A_A", 0) - comp.get("ROAS B_B", 0)
+
+        # =====================================================
+        # 🧾 Ajuste de nome da coluna e remoção de TOTAL duplicado
+        # =====================================================
+        if produto_escolhido == "(Todos)":
+            label_nivel = "Produto"
+        else:
+            label_nivel = "Variante"
+
+        # Garante que a linha TOTAL apareça só uma vez
+        comp = comp[~comp[f"{label_nivel} A"].astype(str).str.contains("TOTAL", case=False, na=False)]
+
 
         # =====================================================
         # 📋 Garante que a linha TOTAL fique no final
