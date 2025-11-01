@@ -4019,7 +4019,7 @@ if menu == "📦 Dashboard – Logística":
                 f"Part.{periodo} (%)": 100.0
             }])
 
-            return pd.concat([df, total_row], ignore_index=True)
+            return df
 
         # ✅ Aplica aos dois períodos
         df_a = calcular_roi_roas(df_a, "A")
@@ -4098,21 +4098,8 @@ if menu == "📦 Dashboard – Logística":
                     0
                 )
 
-                # linha TOTAL
-                total_row = pd.DataFrame([{
-                    "Produto": "🧾 TOTAL",
-                    f"Qtd {periodo_label}": agrup[f"Qtd {periodo_label}"].sum(),
-                    f"Custo {periodo_label}": agrup[f"Custo {periodo_label}"].sum(),
-                    f"Receita {periodo_label}": agrup[f"Receita {periodo_label}"].sum(),
-                    f"Lucro Bruto {periodo_label}": agrup[f"Lucro Bruto {periodo_label}"].sum(),
-                    "Invest. (R$)": agrup["Invest. (R$)"].sum(),
-                    f"Lucro Líquido {periodo_label}": agrup[f"Lucro Líquido {periodo_label}"].sum(),
-                    f"ROI {periodo_label}": (agrup[f"Lucro Líquido {periodo_label}"].sum() / agrup["Invest. (R$)"].sum()) if agrup["Invest. (R$)"].sum() > 0 else np.nan,
-                    f"ROAS {periodo_label}": (agrup[f"Receita {periodo_label}"].sum() / agrup["Invest. (R$)"].sum()) if agrup["Invest. (R$)"].sum() > 0 else np.nan,
-                    f"Part.{periodo_label} (%)": 100.0
-                }])
-
-                return pd.concat([agrup, total_row], ignore_index=True)
+                # ✅ NÃO adiciona linha TOTAL aqui — será adicionada depois
+                return agrup
 
             # 🔄 aplica a consolidação corrigida DIRETO NA BASE DE PEDIDOS
             df_a = consolidar_por_produto(pedidos, "A")
@@ -4138,7 +4125,11 @@ if menu == "📦 Dashboard – Logística":
                         np.nan
                     )
 
-            # 🧾 adiciona linha TOTAL
+            # 🧹 Remove linhas TOTAL antigas antes de criar novas
+            df_a = df_a[~df_a["Produto"].astype(str).str.contains("TOTAL", case=False, na=False)]
+            df_b = df_b[~df_b["Produto"].astype(str).str.contains("TOTAL", case=False, na=False)]
+
+            # 🧾 adiciona linha TOTAL (agora única e correta)
             def add_total(df, periodo):
                 total = pd.DataFrame([{
                     "Produto": "🧾 TOTAL",
@@ -4161,7 +4152,10 @@ if menu == "📦 Dashboard – Logística":
             df_a = add_total(df_a, "A")
             df_b = add_total(df_b, "B")
 
-
+            # 🧩 Remove linhas TOTAL duplicadas no comparativo
+            comp = comp[
+                ~comp[f"{label_nivel} A"].astype(str).str.contains("TOTAL", case=False, na=False)
+            ]
 
         def highlight_total(row):
             """Aplica o mesmo fundo do cabeçalho para a linha TOTAL."""
