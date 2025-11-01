@@ -3975,6 +3975,29 @@ if menu == "📦 Dashboard – Logística":
         df_a = calcular_roi_roas(df_a, "A")
         df_b = calcular_roi_roas(df_b, "B")
 
+        # =====================================================
+        # 🧮 Consolida linhas duplicadas quando (Todos) estiver selecionado
+        # =====================================================
+        if produto_escolhido == "(Todos)":
+            def consolidar_por_produto(df, periodo):
+                """Agrupa todas as variantes de um produto em uma única linha consolidada."""
+                cols_quant = [c for c in df.columns if f"Qtd {periodo}" in c]
+                cols_num = [c for c in df.columns if any(x in c for x in [f"Custo {periodo}", f"Receita {periodo}", f"Lucro Bruto {periodo}", f"Lucro Líquido {periodo}", "Invest. (R$)"])]
+                cols_media = [c for c in df.columns if f"ROI {periodo}" in c or f"ROAS {periodo}" in c or f"Part.{periodo}" in c]
+
+                agrupado = df.groupby("Produto", as_index=False).agg(
+                    {**{col: "sum" for col in cols_quant + cols_num},
+                     **{col: "mean" for col in cols_media}}
+                )
+                total_row = df[df["Produto"].astype(str).str.contains("TOTAL", case=False)]
+                if not total_row.empty:
+                    agrupado = pd.concat([agrupado, total_row], ignore_index=True)
+                return agrupado
+
+            df_a = consolidar_por_produto(df_a, "A")
+            df_b = consolidar_por_produto(df_b, "B")
+
+
         def highlight_total(row):
             """Aplica o mesmo fundo do cabeçalho para a linha TOTAL."""
             if str(row[label_nivel]).strip().upper() == "🧾 TOTAL":
