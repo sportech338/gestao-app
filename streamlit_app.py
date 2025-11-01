@@ -3776,33 +3776,49 @@ if menu == "📦 Dashboard – Logística":
 
         col_custo = "Custo AliExpress (R$)" if fornecedor == "AliExpress" else "Custo Estoque (R$)"
 
-        # 🔍 Detecta itens realmente existentes em cada período (variante ou produto)
+        # =====================================================
+        # 🧩 Casamento inteligente: vincula custos pelo número de peças
+        # =====================================================
+        import re
+
+        def extrair_qtd(nome):
+            """Extrai número de peças da variante (ex: '60 peças (Mais Vendido)' -> 60)."""
+            if not isinstance(nome, str):
+                return None
+            match = re.search(r"(\d+)\s*(peças|unid|uni|pçs?)", nome.lower())
+            return int(match.group(1)) if match else None
+
+        # Cria coluna auxiliar de quantidade (normalizada)
+        base_prod["qtd_norm"] = base_prod["variant_title"].apply(extrair_qtd)
+        df_custos["qtd_norm"] = df_custos["Variante"].apply(extrair_qtd)
+
+        # Faz merge inteligente usando qtd_norm como chave principal
+        base_prod = base_prod.merge(
+            df_custos[["qtd_norm", "Produto", col_custo]],
+            on="qtd_norm",
+            how="left"
+        )
+
+        # Ajusta custo unitário
+        base_prod["Custo Unitário"] = pd.to_numeric(base_prod[col_custo], errors="coerce").fillna(0)
+
+        # =====================================================
+        # 🔍 Define os itens e bases por período
+        # =====================================================
         itens_a = base_prod[base_prod["created_at"].dt.date.between(inicio_a, fim_a)][nivel_agrupamento].unique().tolist()
         itens_b = base_prod[base_prod["created_at"].dt.date.between(inicio_b, fim_b)][nivel_agrupamento].unique().tolist()
 
-        # 🔧 Cria base de custos separada para cada período
         custos_base_A = df_custos[df_custos["Variante"].isin(itens_a) | df_custos["Produto"].isin(itens_a)].copy()
         custos_base_B = df_custos[df_custos["Variante"].isin(itens_b) | df_custos["Produto"].isin(itens_b)].copy()
 
-        # 🔗 Adiciona colunas de quantidade correspondentes
-        custos_base_A = custos_base_A.merge(comparativo[[label_nivel, "Qtd A"]], left_on=label_nivel, right_on=label_nivel, how="left")
-        custos_base_B = custos_base_B.merge(comparativo[[label_nivel, "Qtd B"]], left_on=label_nivel, right_on=label_nivel, how="left")
+        custos_base_A = custos_base_A.merge(comparativo[[label_nivel, "Qtd A"]], on=label_nivel, how="left")
+        custos_base_B = custos_base_B.merge(comparativo[[label_nivel, "Qtd B"]], on=label_nivel, how="left")
 
-        # 🔢 Ajusta custos unitários para cada base (dinâmico)
-        if not df_custos.empty:
-            # Escolhe a coluna base para indexar de forma segura
-            col_index = label_nivel if label_nivel in df_custos.columns else "Variante"
+        custos_base_A["Custo Unitário"] = custos_base_A["Variante"].map(df_custos.set_index("Variante")[col_custo])
+        custos_base_B["Custo Unitário"] = custos_base_B["Variante"].map(df_custos.set_index("Variante")[col_custo])
 
-            # Remove duplicados antes de indexar para evitar InvalidIndexError
-            df_custos_indexed = df_custos.drop_duplicates(subset=[col_index]).set_index(col_index)
-
-            # --- Período A ---
-            custos_base_A["Custo Unitário"] = custos_base_A[label_nivel].map(df_custos_indexed[col_custo])
-            custos_base_A["Custo Unitário"] = pd.to_numeric(custos_base_A["Custo Unitário"], errors="coerce").fillna(0)
-
-            # --- Período B ---
-            custos_base_B["Custo Unitário"] = custos_base_B[label_nivel].map(df_custos_indexed[col_custo])
-            custos_base_B["Custo Unitário"] = pd.to_numeric(custos_base_B["Custo Unitário"], errors="coerce").fillna(0)
+        custos_base_A["Custo Unitário"] = pd.to_numeric(custos_base_A["Custo Unitário"], errors="coerce").fillna(0)
+        custos_base_B["Custo Unitário"] = pd.to_numeric(custos_base_B["Custo Unitário"], errors="coerce").fillna(0)
 
         # -------------------------------------------------
         # 💵 Adiciona preço médio real (se não existir)
