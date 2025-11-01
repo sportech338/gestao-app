@@ -3818,24 +3818,35 @@ if menu == "📦 Dashboard – Logística":
         )
         base_prod["Custo Unitário"] = pd.to_numeric(base_prod["Custo Unitário"], errors="coerce").fillna(0)
 
-        # 🔗 Recria as bases de custos com quantidades correspondentes
-        custos_base_A = base_prod[
-            base_prod["created_at"].dt.date.between(inicio_a, fim_a)
-        ][[nivel_agrupamento, "Custo Unitário"]].copy()
+        # 🔧 Consolida por nome "limpo" (sem duplicar linhas)
+        base_a_filtrada = base_prod[base_prod["created_at"].dt.date.between(inicio_a, fim_a)].copy()
+        base_b_filtrada = base_prod[base_prod["created_at"].dt.date.between(inicio_b, fim_b)].copy()
 
-        custos_base_B = base_prod[
-            base_prod["created_at"].dt.date.between(inicio_b, fim_b)
-        ][[nivel_agrupamento, "Custo Unitário"]].copy()
+        # Soma quantidades por variante limpa
+        qtd_a = (
+            base_a_filtrada.groupby("variante_limpa")["quantity"]
+            .sum()
+            .reset_index()
+            .rename(columns={"quantity": "Qtd A"})
+        )
+        qtd_b = (
+            base_b_filtrada.groupby("variante_limpa")["quantity"]
+            .sum()
+            .reset_index()
+            .rename(columns={"quantity": "Qtd B"})
+        )
 
-        # 🔗 Adiciona colunas de quantidade correspondentes
-        custos_base_A = custos_base_A.merge(
-            comparativo[[label_nivel, "Qtd A"]],
-            left_on=nivel_agrupamento, right_on=label_nivel, how="left"
-        )
-        custos_base_B = custos_base_B.merge(
-            comparativo[[label_nivel, "Qtd B"]],
-            left_on=nivel_agrupamento, right_on=label_nivel, how="left"
-        )
+        # Junta custo unitário e quantidade por variante
+        custos_base_A = df_custos[["variante_limpa", "Variante", col_custo]].merge(qtd_a, on="variante_limpa", how="right")
+        custos_base_B = df_custos[["variante_limpa", "Variante", col_custo]].merge(qtd_b, on="variante_limpa", how="right")
+
+        # Aplica custo unitário numérico
+        custos_base_A["Custo Unitário"] = pd.to_numeric(custos_base_A[col_custo], errors="coerce").fillna(0)
+        custos_base_B["Custo Unitário"] = pd.to_numeric(custos_base_B[col_custo], errors="coerce").fillna(0)
+
+        # Mantém a coluna original de exibição
+        custos_base_A[label_nivel] = custos_base_A["Variante"]
+        custos_base_B[label_nivel] = custos_base_B["Variante"]
 
         # -------------------------------------------------
         # 💵 Adiciona preço médio real (se não existir)
