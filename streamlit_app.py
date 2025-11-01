@@ -4404,10 +4404,20 @@ if menu == "📦 Dashboard – Logística":
         comp = comp[~comp[col_ref].astype(str).str.contains("TOTAL", case=False, na=False)]
 
         # =====================================================
-        # 📋 Garante que a linha TOTAL fique no final
+        # 📋 Garante que a linha TOTAL fique no final (modo seguro)
         # =====================================================
-        mask_total = comp.get(f"{label_nivel} A", pd.Series(dtype=str)).astype(str).str.contains("TOTAL", case=False, na=False)
-        comp = pd.concat([comp[~mask_total], comp[mask_total]], ignore_index=True)
+        col_ref = None
+        for col in [f"{label_nivel} A", f"{label_nivel} B", label_nivel]:
+            if col in comp.columns:
+                col_ref = col
+                break
+
+        if col_ref is not None:
+            mask_total = comp[col_ref].astype(str).str.contains("TOTAL", case=False, na=False)
+            comp = pd.concat([comp[~mask_total], comp[mask_total]], ignore_index=True)
+        else:
+            # Fallback: se não encontrar nenhuma coluna válida
+            mask_total = pd.Series([False] * len(comp))
 
         # =====================================================
         # 🎨 Estilo visual da tabela comparativa (com cor na linha TOTAL)
