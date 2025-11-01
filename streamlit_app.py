@@ -3776,111 +3776,33 @@ if menu == "📦 Dashboard – Logística":
 
         col_custo = "Custo AliExpress (R$)" if fornecedor == "AliExpress" else "Custo Estoque (R$)"
 
-        # =====================================================
-        # 🧩 Casamento inteligente: vincula custos pelo número de peças
-        # =====================================================
-        import re
-
-        def extrair_qtd(nome):
-            """Extrai número de peças da variante (ex: '60 peças (Mais Vendido)' -> 60)."""
-            if not isinstance(nome, str):
-                return None
-            match = re.search(r"(\d+)\s*(peças|unid|uni|pçs?)", nome.lower())
-            return int(match.group(1)) if match else None
-
-        # Cria coluna auxiliar de quantidade (normalizada)
-        base_prod["qtd_norm"] = base_prod["variant_title"].apply(extrair_qtd)
-        df_custos["qtd_norm"] = df_custos["Variante"].apply(extrair_qtd)
-
-        # Faz merge inteligente usando qtd_norm como chave principal
-        base_prod = base_prod.merge(
-            df_custos[["qtd_norm", "Produto", col_custo]],
-            on="qtd_norm",
-            how="left"
-        )
-
-        # =====================================================
-        # 🔁 Garante que variantes sem custo pelo merge principal tentem casar por nome
-        # =====================================================
-        base_prod["Custo Unitário"] = pd.to_numeric(base_prod[col_custo], errors="coerce")
-
-        # Se ainda houver NaN, tenta casar pelo nome normalizado da variante
-        if base_prod["Custo Unitário"].isna().any():
-            # Cria colunas normalizadas
-            base_prod["variant_title_norm"] = base_prod["variant_title"].astype(str).str.strip().str.lower()
-            df_custos["Variante_norm"] = df_custos["Variante"].astype(str).str.strip().str.lower()
-            
-            # Merge de fallback por nome parcial
-            base_prod = base_prod.merge(
-                df_custos[["Variante_norm", col_custo]].drop_duplicates("Variante_norm"),
-                left_on="variant_title_norm",
-                right_on="Variante_norm",
-                how="left",
-                suffixes=("", "_nome")
-            )
-
-            # Usa custo do nome quando disponível
-            base_prod["Custo Unitário"] = base_prod["Custo Unitário"].fillna(base_prod[f"{col_custo}_nome"])
-
-        # Se ainda faltar custo, força 0
-        base_prod["Custo Unitário"] = base_prod["Custo Unitário"].fillna(0)
-
-
-        # =====================================================
-        # 🔍 Define os itens e bases por período
-        # =====================================================
+        # 🔍 Detecta itens realmente existentes em cada período (variante ou produto)
         itens_a = base_prod[base_prod["created_at"].dt.date.between(inicio_a, fim_a)][nivel_agrupamento].unique().tolist()
         itens_b = base_prod[base_prod["created_at"].dt.date.between(inicio_b, fim_b)][nivel_agrupamento].unique().tolist()
 
-        # =====================================================
-        # 🧩 Vincula custos mesmo que o nome da variante tenha sufixos diferentes
-        # =====================================================
-        def normalizar_nome(nome):
-            """Remove textos entre parênteses e espaços extras."""
-            if not isinstance(nome, str):
-                return ""
-            return re.sub(r"\(.*?\)", "", nome).strip().lower()
+        # 🔧 Cria base de custos separada para cada período
+        custos_base_A = df_custos[df_custos["Variante"].isin(itens_a) | df_custos["Produto"].isin(itens_a)].copy()
+        custos_base_B = df_custos[df_custos["Variante"].isin(itens_b) | df_custos["Produto"].isin(itens_b)].copy()
 
-        # Normaliza nomes nas duas bases
-        df_custos["Variante_norm"] = df_custos["Variante"].apply(normalizar_nome)
-        base_prod["variant_norm"] = base_prod[nivel_agrupamento].apply(normalizar_nome)
+        # 🔗 Adiciona colunas de quantidade correspondentes
+        custos_base_A = custos_base_A.merge(comparativo[[label_nivel, "Qtd A"]], left_on=label_nivel, right_on=label_nivel, how="left")
+        custos_base_B = custos_base_B.merge(comparativo[[label_nivel, "Qtd B"]], left_on=label_nivel, right_on=label_nivel, how="left")
 
-        # Cria listas normalizadas de itens
-        itens_a_norm = base_prod[
-            base_prod["created_at"].dt.date.between(inicio_a, fim_a)
-        ]["variant_norm"].unique().tolist()
+        # 🔢 Ajusta custos unitários para cada base (dinâmico)
+        if not df_custos.empty:
+            # Escolhe a coluna base para indexar de forma segura
+            col_index = label_nivel if label_nivel in df_custos.columns else "Variante"
 
-        itens_b_norm = base_prod[
-            base_prod["created_at"].dt.date.between(inicio_b, fim_b)
-        ]["variant_norm"].unique().tolist()
+            # Remove duplicados antes de indexar para evitar InvalidIndexError
+            df_custos_indexed = df_custos.drop_duplicates(subset=[col_index]).set_index(col_index)
 
-        # Seleciona custos considerando nomes normalizados
-        custos_base_A = df_custos[
-            df_custos["Variante_norm"].isin(itens_a_norm)
-            | df_custos["Produto"].isin(itens_a_norm)
-        ].copy()
+            # --- Período A ---
+            custos_base_A["Custo Unitário"] = custos_base_A[label_nivel].map(df_custos_indexed[col_custo])
+            custos_base_A["Custo Unitário"] = pd.to_numeric(custos_base_A["Custo Unitário"], errors="coerce").fillna(0)
 
-        custos_base_B = df_custos[
-            df_custos["Variante_norm"].isin(itens_b_norm)
-            | df_custos["Produto"].isin(itens_b_norm)
-        ].copy()
-
-
-        # 🔗 Adiciona colunas de quantidade correspondentes (garante compatibilidade)
-        custos_base_A = custos_base_A.merge(
-            comparativo[[label_nivel, "Qtd A"]], left_on="Variante_norm", right_on=label_nivel, how="left"
-        )
-        custos_base_B = custos_base_B.merge(
-            comparativo[[label_nivel, "Qtd B"]], left_on="Variante_norm", right_on=label_nivel, how="left"
-        )
-
-        # 💰 Puxa o custo correto com base no nome normalizado
-        custos_base_A["Custo Unitário"] = custos_base_A["Variante_norm"].map(df_custos.set_index("Variante_norm")[col_custo])
-        custos_base_B["Custo Unitário"] = custos_base_B["Variante_norm"].map(df_custos.set_index("Variante_norm")[col_custo])
-
-        # 🔢 Converte para número e preenche faltantes
-        custos_base_A["Custo Unitário"] = pd.to_numeric(custos_base_A["Custo Unitário"], errors="coerce").fillna(0)
-        custos_base_B["Custo Unitário"] = pd.to_numeric(custos_base_B["Custo Unitário"], errors="coerce").fillna(0)
+            # --- Período B ---
+            custos_base_B["Custo Unitário"] = custos_base_B[label_nivel].map(df_custos_indexed[col_custo])
+            custos_base_B["Custo Unitário"] = pd.to_numeric(custos_base_B["Custo Unitário"], errors="coerce").fillna(0)
 
         # -------------------------------------------------
         # 💵 Adiciona preço médio real (se não existir)
@@ -3890,13 +3812,6 @@ if menu == "📦 Dashboard – Logística":
                 if "price" in base_prod.columns:
                     precos = base_prod.groupby(nivel_agrupamento)["price"].mean().reset_index()
                     precos.rename(columns={nivel_agrupamento: label_nivel, "price": "Preço Médio"}, inplace=True)
-
-                    # ✅ Garante que a coluna usada no merge exista
-                    if label_nivel not in custos_df.columns:
-                        custos_df[label_nivel] = custos_df["Variante"] if "Variante" in custos_df.columns else (
-                            custos_df["Produto"] if "Produto" in custos_df.columns else ""
-                        )
-
                     custos_df = custos_df.merge(precos, on=label_nivel, how="left")
                 else:
                     custos_df["Preço Médio"] = (custos_df["Custo Unitário"] * 2.5).round(2)
