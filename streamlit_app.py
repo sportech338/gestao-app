@@ -4199,7 +4199,8 @@ if menu == "📦 Dashboard – Logística":
             .apply(highlight_total, axis=1)
         )
 
-        st.dataframe(styled_comp, use_container_width=True)
+        st.write(styled_comp.to_html(), unsafe_allow_html=True)
+
 
 
         # =====================================================
