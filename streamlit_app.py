@@ -4332,15 +4332,18 @@ if menu == "📦 Dashboard – Logística":
         # =====================================================
         # 💡 Preenche corretamente nomes de variantes ausentes
         # =====================================================
-        comp[f"{label_nivel} A"] = np.where(
-            comp[f"{label_nivel} A"].isna() | (comp[f"{label_nivel} A"] == 0),
-            comp[f"{label_nivel} B"],
-            comp[f"{label_nivel} A"]
+        col_a = f"{label_nivel} A" if f"{label_nivel} A" in comp.columns else label_nivel
+        col_b = f"{label_nivel} B" if f"{label_nivel} B" in comp.columns else label_nivel
+
+        comp[col_a] = np.where(
+            comp[col_a].isna() | (comp[col_a] == 0),
+            comp[col_b],
+            comp[col_a]
         )
-        comp[f"{label_nivel} B"] = np.where(
-            comp[f"{label_nivel} B"].isna() | (comp[f"{label_nivel} B"] == 0),
-            comp[f"{label_nivel} A"],
-            comp[f"{label_nivel} B"]
+        comp[col_b] = np.where(
+            comp[col_b].isna() | (comp[col_b] == 0),
+            comp[col_a],
+            comp[col_b]
         )
 
         # Converte valores numéricos vazios em 0 (mantém compatibilidade)
