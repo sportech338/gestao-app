@@ -3577,17 +3577,15 @@ if menu == "📦 Dashboard – Logística":
         )
 
         # =====================================================
-        # 🧾 Seleção de produto (com pré-seleção do Flexlive)
+        # 🧾 Seleção de produto (com opção "(Todos)")
         # =====================================================
         produto_padrao = "Flexlive - Adesivo de Recuperação Natural"
-        if produto_padrao in produtos_unicos:
-            index_padrao = produtos_unicos.index(produto_padrao)
-        else:
-            index_padrao = 0
+        lista_produtos = ["(Todos)"] + sorted(produtos_unicos)
+        index_padrao = lista_produtos.index(produto_padrao) if produto_padrao in lista_produtos else 0
 
         produto_escolhido = st.selectbox(
             "🧾 Selecione o produto:",
-            produtos_unicos,
+            lista_produtos,
             index=index_padrao
         )
 
@@ -3653,7 +3651,17 @@ if menu == "📦 Dashboard – Logística":
         pedidos["created_at"] = pd.to_datetime(pedidos["created_at"], utc=True, errors="coerce")\
                                    .dt.tz_convert(APP_TZ).dt.tz_localize(None)
 
-        base_prod = pedidos[pedidos["product_title"] == produto_escolhido].copy()
+        # =====================================================
+        # 🧩 Base dinâmica — produto específico → variantes | (Todos) → produtos
+        # =====================================================
+        if produto_escolhido == "(Todos)":
+            base_prod = pedidos.copy()
+            nivel_agrupamento = "product_title"
+            label_nivel = "Produto"
+        else:
+            base_prod = pedidos[pedidos["product_title"] == produto_escolhido].copy()
+            nivel_agrupamento = "variant_title"
+            label_nivel = "Variante"
 
         def filtrar_periodo(df, ini, fim):
             return df[(df["created_at"].dt.date >= ini) & (df["created_at"].dt.date <= fim)].copy()
@@ -3661,10 +3669,10 @@ if menu == "📦 Dashboard – Logística":
         df_a = filtrar_periodo(base_prod, inicio_a, fim_a)
         df_b = filtrar_periodo(base_prod, inicio_b, fim_b)
 
-        resumo_a = df_a.groupby("variant_title")["quantity"].sum().reset_index(name="Qtd A")
-        resumo_b = df_b.groupby("variant_title")["quantity"].sum().reset_index(name="Qtd B")
+        resumo_a = df_a.groupby(nivel_agrupamento)["quantity"].sum().reset_index(name="Qtd A")
+        resumo_b = df_b.groupby(nivel_agrupamento)["quantity"].sum().reset_index(name="Qtd B")
 
-        comparativo = pd.merge(resumo_a, resumo_b, on="variant_title", how="outer").fillna(0)
+        comparativo = pd.merge(resumo_a, resumo_b, on=nivel_agrupamento, how="outer").fillna(0)
         comparativo["Diferença (unid.)"] = comparativo["Qtd A"] - comparativo["Qtd B"]
         comparativo["A-B(Qtd.%)"] = np.where(
             comparativo["Qtd B"] > 0,
@@ -3683,7 +3691,7 @@ if menu == "📦 Dashboard – Logística":
         )
         comparativo["A-B(Part. | p.p)"] = comparativo["Part.A (%)"] - comparativo["Part.B (%)"]
 
-        comparativo.rename(columns={"variant_title": "Variante"}, inplace=True)
+        comparativo.rename(columns={nivel_agrupamento: label_nivel}, inplace=True)
         comparativo = comparativo.sort_values("Qtd A", ascending=False).reset_index(drop=True)
 
         # =====================================================
