@@ -4052,10 +4052,17 @@ if menu == "📦 Dashboard – Logística":
                 agrup = (
                     df_filtrado.groupby("product_title", as_index=False)
                     .agg({
-                        "quantity": "sum",
-                        "price": "mean"  # preço médio do produto no período
+                        "quantity": "sum",  # soma todas as quantidades vendidas
+                        "price": lambda x: np.average(
+                            x, weights=df_filtrado.loc[x.index, "quantity"]
+                        )  # média ponderada pelo volume vendido
                     })
-                    .rename(columns={"product_title": "Produto", "quantity": f"Qtd {periodo_label}", "price": "Preço Médio"})
+                    .drop_duplicates(subset=["product_title"])  # garante 1 linha única por produto
+                    .rename(columns={
+                        "product_title": "Produto",
+                        "quantity": f"Qtd {periodo_label}",
+                        "price": "Preço Médio"
+                    })
                 )
 
                 # Junta custo unitário real da planilha
