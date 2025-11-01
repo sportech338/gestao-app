@@ -4056,41 +4056,34 @@ if menu == "📦 Dashboard – Logística":
                     .str.replace(r"\s{2,}", " ", regex=True)
                 )
 
-                # 🔹 Identifica duplicações exatas (mesmo produto, mesmo pedido)
-                df_filtrado = df_filtrado.drop_duplicates(
-                    subset=["product_title", "order_id"], keep="first"
+                # 🔹 Garante que o mesmo produto no mesmo pedido conte apenas uma vez
+                df_filtrado = (
+                    df_filtrado
+                    .sort_values(["order_id", "product_title"])
+                    .drop_duplicates(subset=["order_id", "product_title"], keep="first")
+                    .reset_index(drop=True)
                 )
 
-                # 🔹 Mantém nomes originais mas cria chave normalizada para unir variações
-                df_filtrado["_produto_normalizado"] = (
-                    df_filtrado["product_title"]
-                    .str.lower()
-                    .str.replace(r"[\s\|_-]+", "", regex=True)
-                )
-
+                # 🔹 Agrupa só por produto (sem variantes)
                 agrup = (
-                    df_filtrado.groupby("_produto_normalizado", as_index=False)
+                    df_filtrado.groupby("product_title", as_index=False)
                     .agg({
-                        "product_title": "first",  # nome original
-                        "quantity": "sum",         # soma total de unidades únicas
+                        "quantity": "sum",
                         "price": lambda x: np.average(
                             x, weights=df_filtrado.loc[x.index, "quantity"]
-                        )
+                        ),
                     })
                     .rename(columns={
                         "product_title": "Produto",
                         "quantity": f"Qtd {periodo_label}",
                         "price": "Preço Médio"
                     })
-                    .drop_duplicates(subset=["Produto"])
-                    .reset_index(drop=True)
                 )
 
                 # 🔧 Junta custo real por produto
                 agrup = agrup.merge(
-                    df_custos[["Produto", col_custo]],
-                    on="Produto",
-                    how="left"
+                    df_custos[["Produto", col_custo]].drop_duplicates("Produto"),
+                    on="Produto", how="left"
                 )
 
                 agrup["Custo Unitário"] = pd.to_numeric(agrup[col_custo], errors="coerce").fillna(0)
@@ -4126,8 +4119,8 @@ if menu == "📦 Dashboard – Logística":
                     0
                 )
 
-                # ✅ NÃO adiciona linha TOTAL aqui — será adicionada depois
                 return agrup
+
 
             # 🔄 aplica a consolidação corrigida DIRETO NA BASE DE PEDIDOS
             df_a = consolidar_por_produto(pedidos, "A")
