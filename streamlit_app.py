@@ -4106,9 +4106,9 @@ if menu == "📦 Dashboard – Logística":
             df_b = consolidar_por_produto(pedidos, "B")
 
             # ⚙️ garante que só um registro por produto permaneça
-            df_a = df_a.groupby("Produto", as_index=False).sum(numeric_only=True)
-            df_b = df_b.groupby("Produto", as_index=False).sum(numeric_only=True)
-
+            df_a = df_a.copy()
+            df_b = df_b.copy()
+            
             # 🔧 recalcula métricas depois da soma
             for df, periodo in [(df_a, "A"), (df_b, "B")]:
                 if f"Custo {periodo}" in df.columns and f"Receita {periodo}" in df.columns:
