@@ -4317,8 +4317,6 @@ if menu == "📦 Dashboard – Logística":
                 np.nan
             )
 
-            st.subheader("📈 Comparativo Entre Produtos (modo Todos)")
-
         else:
             # -------------------------------------------------
             # 🔁 Produto específico → compara variantes
