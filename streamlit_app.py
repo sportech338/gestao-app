@@ -3841,31 +3841,60 @@ if menu == "📦 Dashboard – Logística":
         # 💡 Evita dupla agregação (quando "(Todos)" está selecionado)
         # =====================================================
         if produto_escolhido != "(Todos)":
-            # Mantém comportamento normal quando um produto específico é escolhido
+            # 👉 Produto específico → mantém cálculo normal por variante
             df_a = calc_periodo(custos_base_A, "A", "Qtd A")
             df_b = calc_periodo(custos_base_B, "B", "Qtd B")
         else:
-            # Quando "(Todos)" está selecionado, ainda criamos colunas básicas
-            # mas sem agrupar novamente as variantes (mantém estrutura esperada)
-            df_a = calc_periodo(custos_base_A, "A", "Qtd A")
-            df_b = calc_periodo(custos_base_B, "B", "Qtd B")
+            # 👉 "(Todos)" → consolida direto da base de pedidos (sem variantes)
+            def consolidar_direto(df_pedidos, ini, fim, periodo_label):
+                df_filtro = df_pedidos[
+                    (df_pedidos["created_at"].dt.date >= ini)
+                    & (df_pedidos["created_at"].dt.date <= fim)
+                ].copy()
 
-            # Remove possíveis duplicatas de variantes com mesmo produto
-            df_a = df_a.groupby("Produto", as_index=False).agg({
-                "Qtd A": "sum",
-                "Custo A": "sum",
-                "Receita A": "sum",
-                "Lucro Bruto A": "sum",
-                "Part.A (%)": "mean"
-            })
+                if df_filtro.empty:
+                    return pd.DataFrame(columns=[
+                        "Produto", f"Qtd {periodo_label}", f"Receita {periodo_label}",
+                        f"Custo {periodo_label}", f"Lucro Bruto {periodo_label}"
+                    ])
 
-            df_b = df_b.groupby("Produto", as_index=False).agg({
-                "Qtd B": "sum",
-                "Custo B": "sum",
-                "Receita B": "sum",
-                "Lucro Bruto B": "sum",
-                "Part.B (%)": "mean"
-            })
+                # Agrupa direto por produto
+                agrup = (
+                    df_filtro.groupby("product_title", as_index=False)
+                    .agg({
+                        "quantity": "sum",
+                        "price": "mean"
+                    })
+                    .rename(columns={
+                        "product_title": "Produto",
+                        "quantity": f"Qtd {periodo_label}",
+                        "price": "Preço Médio"
+                    })
+                )
+
+                # Adiciona custo unitário real
+                agrup = agrup.merge(
+                    df_custos[["Produto", col_custo]],
+                    on="Produto",
+                    how="left"
+                )
+
+                agrup["Custo Unitário"] = pd.to_numeric(agrup[col_custo], errors="coerce").fillna(0)
+                agrup[f"Custo {periodo_label}"] = agrup["Custo Unitário"] * agrup[f"Qtd {periodo_label}"]
+                agrup[f"Receita {periodo_label}"] = agrup[f"Qtd {periodo_label}"] * agrup["Preço Médio"]
+                agrup[f"Lucro Bruto {periodo_label}"] = agrup[f"Receita {periodo_label}"] - agrup[f"Custo {periodo_label}"]
+
+                # Participação do produto no total
+                total_receita = agrup[f"Receita {periodo_label}"].sum()
+                agrup[f"Part.{periodo_label} (%)"] = np.where(
+                    total_receita > 0,
+                    agrup[f"Receita {periodo_label}"] / total_receita * 100,
+                    0
+                )
+                return agrup
+
+            df_a = consolidar_direto(pedidos, inicio_a, fim_a, "A")
+            df_b = consolidar_direto(pedidos, inicio_b, fim_b, "B")
 
 
         # =====================================================
