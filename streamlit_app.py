@@ -4397,8 +4397,8 @@ if menu == "📦 Dashboard – Logística":
             label_nivel = "Variante"
 
         # Garante que a linha TOTAL apareça só uma vez
-        comp = comp[~comp[f"{label_nivel} A"].astype(str).str.contains("TOTAL", case=False, na=False)]
-
+        col_ref = f"{label_nivel} A" if f"{label_nivel} A" in comp.columns else label_nivel
+        comp = comp[~comp[col_ref].astype(str).str.contains("TOTAL", case=False, na=False)]
 
         # =====================================================
         # 📋 Garante que a linha TOTAL fique no final
