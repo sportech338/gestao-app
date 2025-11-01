@@ -3776,77 +3776,33 @@ if menu == "📦 Dashboard – Logística":
 
         col_custo = "Custo AliExpress (R$)" if fornecedor == "AliExpress" else "Custo Estoque (R$)"
 
-        # =====================================================
-        # 🧩 Normaliza nomes de variantes (remove texto entre parênteses)
-        # =====================================================
-        import re
+        # 🔍 Detecta itens realmente existentes em cada período (variante ou produto)
+        itens_a = base_prod[base_prod["created_at"].dt.date.between(inicio_a, fim_a)][nivel_agrupamento].unique().tolist()
+        itens_b = base_prod[base_prod["created_at"].dt.date.between(inicio_b, fim_b)][nivel_agrupamento].unique().tolist()
 
-        def limpar_nome_variante(nome):
-            """Remove texto entre parênteses e normaliza o nome para comparação."""
-            if not isinstance(nome, str):
-                return ""
-            nome = nome.lower().strip()
-            nome = re.sub(r"\(.*?\)", "", nome)   # remove (Mais Vendido), (Melhor Custo-Benefício), etc.
-            nome = nome.replace("-", " ")         # remove hífens
-            nome = re.sub(r"\s+", " ", nome)      # remove espaços duplicados
-            return nome.strip()
+        # 🔧 Cria base de custos separada para cada período
+        custos_base_A = df_custos[df_custos["Variante"].isin(itens_a) | df_custos["Produto"].isin(itens_a)].copy()
+        custos_base_B = df_custos[df_custos["Variante"].isin(itens_b) | df_custos["Produto"].isin(itens_b)].copy()
 
-        # Cria colunas normalizadas nas bases
-        df_custos["variante_limpa"] = df_custos["Variante"].apply(limpar_nome_variante)
-        base_prod["variante_limpa"] = base_prod[nivel_agrupamento].apply(limpar_nome_variante)
+        # 🔗 Adiciona colunas de quantidade correspondentes
+        custos_base_A = custos_base_A.merge(comparativo[[label_nivel, "Qtd A"]], left_on=label_nivel, right_on=label_nivel, how="left")
+        custos_base_B = custos_base_B.merge(comparativo[[label_nivel, "Qtd B"]], left_on=label_nivel, right_on=label_nivel, how="left")
 
-        # =====================================================
-        # 🔗 Filtra custos com base na versão "limpa" dos nomes
-        # =====================================================
-        itens_a_limpos = base_prod[
-            base_prod["created_at"].dt.date.between(inicio_a, fim_a)
-        ]["variante_limpa"].unique().tolist()
+        # 🔢 Ajusta custos unitários para cada base (dinâmico)
+        if not df_custos.empty:
+            # Escolhe a coluna base para indexar de forma segura
+            col_index = label_nivel if label_nivel in df_custos.columns else "Variante"
 
-        itens_b_limpos = base_prod[
-            base_prod["created_at"].dt.date.between(inicio_b, fim_b)
-        ]["variante_limpa"].unique().tolist()
+            # Remove duplicados antes de indexar para evitar InvalidIndexError
+            df_custos_indexed = df_custos.drop_duplicates(subset=[col_index]).set_index(col_index)
 
-        custos_base_A = df_custos[df_custos["variante_limpa"].isin(itens_a_limpos)].copy()
-        custos_base_B = df_custos[df_custos["variante_limpa"].isin(itens_b_limpos)].copy()
+            # --- Período A ---
+            custos_base_A["Custo Unitário"] = custos_base_A[label_nivel].map(df_custos_indexed[col_custo])
+            custos_base_A["Custo Unitário"] = pd.to_numeric(custos_base_A["Custo Unitário"], errors="coerce").fillna(0)
 
-        # =====================================================
-        # 💰 Aplica custos unitários conforme fornecedor selecionado
-        # =====================================================
-        # Vincula custo unitário usando nome "limpo"
-        base_prod["Custo Unitário"] = base_prod["variante_limpa"].map(
-            df_custos.set_index("variante_limpa")[col_custo]
-        )
-        base_prod["Custo Unitário"] = pd.to_numeric(base_prod["Custo Unitário"], errors="coerce").fillna(0)
-
-        # 🔧 Consolida por nome "limpo" (sem duplicar linhas)
-        base_a_filtrada = base_prod[base_prod["created_at"].dt.date.between(inicio_a, fim_a)].copy()
-        base_b_filtrada = base_prod[base_prod["created_at"].dt.date.between(inicio_b, fim_b)].copy()
-
-        # Soma quantidades por variante limpa
-        qtd_a = (
-            base_a_filtrada.groupby("variante_limpa")["quantity"]
-            .sum()
-            .reset_index()
-            .rename(columns={"quantity": "Qtd A"})
-        )
-        qtd_b = (
-            base_b_filtrada.groupby("variante_limpa")["quantity"]
-            .sum()
-            .reset_index()
-            .rename(columns={"quantity": "Qtd B"})
-        )
-
-        # Junta custo unitário e quantidade por variante
-        custos_base_A = df_custos[["variante_limpa", "Variante", col_custo]].merge(qtd_a, on="variante_limpa", how="right")
-        custos_base_B = df_custos[["variante_limpa", "Variante", col_custo]].merge(qtd_b, on="variante_limpa", how="right")
-
-        # Aplica custo unitário numérico
-        custos_base_A["Custo Unitário"] = pd.to_numeric(custos_base_A[col_custo], errors="coerce").fillna(0)
-        custos_base_B["Custo Unitário"] = pd.to_numeric(custos_base_B[col_custo], errors="coerce").fillna(0)
-
-        # Mantém a coluna original de exibição
-        custos_base_A[label_nivel] = custos_base_A["Variante"]
-        custos_base_B[label_nivel] = custos_base_B["Variante"]
+            # --- Período B ---
+            custos_base_B["Custo Unitário"] = custos_base_B[label_nivel].map(df_custos_indexed[col_custo])
+            custos_base_B["Custo Unitário"] = pd.to_numeric(custos_base_B["Custo Unitário"], errors="coerce").fillna(0)
 
         # -------------------------------------------------
         # 💵 Adiciona preço médio real (se não existir)
@@ -4064,20 +4020,6 @@ if menu == "📦 Dashboard – Logística":
             }])
 
             return df
-
-        # =====================================================
-        # 🧹 Corrige valores None/NaN para evitar "None" nas tabelas
-        # =====================================================
-        for df in [df_a, df_b]:
-            for col in [
-                "Custo Unitário",
-                "Custo A", "Custo B",
-                "Receita A", "Receita B",
-                "Lucro Bruto A", "Lucro Bruto B",
-                "Invest. (R$)"
-            ]:
-                if col in df.columns:
-                    df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
 
         # ✅ Aplica aos dois períodos
         df_a = calcular_roi_roas(df_a, "A")
