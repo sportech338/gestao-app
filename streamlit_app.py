@@ -3838,27 +3838,20 @@ if menu == "📦 Dashboard – Logística":
                        f"Lucro Bruto {periodo_label}", f"Part.{periodo_label} (%)"]]
 
         # =====================================================
-        # 💡 Evita dupla agregação (quando "(Todos)" está selecionado)
+        # 💡 Consolidação correta — evita duplicar produtos no modo "(Todos)"
         # =====================================================
         if produto_escolhido != "(Todos)":
-            # 👉 Produto específico → mantém cálculo normal por variante
+            # Produto específico → mantém cálculo normal por variante
             df_a = calc_periodo(custos_base_A, "A", "Qtd A")
             df_b = calc_periodo(custos_base_B, "B", "Qtd B")
         else:
-            # 👉 "(Todos)" → consolida direto da base de pedidos (sem variantes)
-            def consolidar_direto(df_pedidos, ini, fim, periodo_label):
-                df_filtro = df_pedidos[
-                    (df_pedidos["created_at"].dt.date >= ini)
-                    & (df_pedidos["created_at"].dt.date <= fim)
+            # "(Todos)" → consolida direto da base de pedidos (por produto)
+            def consolidar_por_produto(pedidos, ini, fim, periodo_label):
+                df_filtro = pedidos[
+                    (pedidos["created_at"].dt.date >= ini)
+                    & (pedidos["created_at"].dt.date <= fim)
                 ].copy()
 
-                if df_filtro.empty:
-                    return pd.DataFrame(columns=[
-                        "Produto", f"Qtd {periodo_label}", f"Receita {periodo_label}",
-                        f"Custo {periodo_label}", f"Lucro Bruto {periodo_label}"
-                    ])
-
-                # Agrupa direto por produto
                 agrup = (
                     df_filtro.groupby("product_title", as_index=False)
                     .agg({
@@ -3872,11 +3865,10 @@ if menu == "📦 Dashboard – Logística":
                     })
                 )
 
-                # Adiciona custo unitário real
+                # 🔗 Adiciona custo real por produto (não por variante)
                 agrup = agrup.merge(
-                    df_custos[["Produto", col_custo]],
-                    on="Produto",
-                    how="left"
+                    df_custos[["Produto", col_custo]].drop_duplicates("Produto"),
+                    on="Produto", how="left"
                 )
 
                 agrup["Custo Unitário"] = pd.to_numeric(agrup[col_custo], errors="coerce").fillna(0)
@@ -3884,18 +3876,19 @@ if menu == "📦 Dashboard – Logística":
                 agrup[f"Receita {periodo_label}"] = agrup[f"Qtd {periodo_label}"] * agrup["Preço Médio"]
                 agrup[f"Lucro Bruto {periodo_label}"] = agrup[f"Receita {periodo_label}"] - agrup[f"Custo {periodo_label}"]
 
-                # Participação do produto no total
+                # 🔢 Participação do produto no total
                 total_receita = agrup[f"Receita {periodo_label}"].sum()
                 agrup[f"Part.{periodo_label} (%)"] = np.where(
                     total_receita > 0,
                     agrup[f"Receita {periodo_label}"] / total_receita * 100,
                     0
                 )
+
                 return agrup
 
-            df_a = consolidar_direto(pedidos, inicio_a, fim_a, "A")
-            df_b = consolidar_direto(pedidos, inicio_b, fim_b, "B")
-
+            # 👉 Cria df_a / df_b direto dos pedidos
+            df_a = consolidar_por_produto(pedidos, inicio_a, fim_a, "A")
+            df_b = consolidar_por_produto(pedidos, inicio_b, fim_b, "B")
 
         # =====================================================
         # 💸 Vincular investimento Meta Ads automaticamente
