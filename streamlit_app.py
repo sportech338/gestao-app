@@ -4255,39 +4255,47 @@ if menu == "📦 Dashboard – Logística":
         import re
 
         # =====================================================
-        # 🔍 Pareamento inteligente com base no complemento entre parênteses
+        # 🔍 Pareamento inteligente baseado em quantidade aproximada
         # =====================================================
-        def extrair_identificador(nome):
-            """Extrai o texto entre parênteses — ou usa o nome completo se não houver."""
+        import re
+
+        def extrair_qtd_pecas(nome):
+            """Extrai a quantidade numérica (20, 30, 40, 60, 120...) do nome da variante."""
             if not isinstance(nome, str):
-                return ""
-            nome = nome.strip()
-            match = re.search(r"\((.*?)\)", nome)
-            if match:
-                return match.group(1).strip().lower()
-            else:
-                # fallback: remove números e usa o nome
-                nome = re.sub(r"\d+", "", nome)
-                return nome.lower().strip()
+                return None
+            match = re.search(r"(\d+)\s*(peças|unid|uni|pçs?)", nome.lower())
+            return int(match.group(1)) if match else None
 
-        # Cria identificadores
-        df_a["identificador"] = df_a[label_nivel].apply(extrair_identificador)
-        df_b["identificador"] = df_b[label_nivel].apply(extrair_identificador)
+        # Cria colunas de quantidade
+        df_a["qtd_variante"] = df_a[label_nivel].apply(extrair_qtd_pecas)
+        df_b["qtd_variante"] = df_b[label_nivel].apply(extrair_qtd_pecas)
 
-        # Pareia variantes A ↔ B
+        # ----------------------------------------------
+        # 🔁 Pareia o número mais próximo entre A e B
+        # ----------------------------------------------
         matches = []
         usadas_b = set()
+
         for _, row_a in df_a.iterrows():
-            ident_a = row_a["identificador"]
-            possiveis_b = df_b[df_b["identificador"] == ident_a]
-            if not possiveis_b.empty:
-                match_b = possiveis_b.iloc[0]
-                matches.append((row_a[label_nivel], match_b[label_nivel]))
-                usadas_b.add(match_b[label_nivel])
-            else:
+            qtd_a = row_a["qtd_variante"]
+            if pd.isna(qtd_a):
+                continue
+
+            # encontra a variante B com quantidade mais próxima ainda não usada
+            df_b_valid = df_b[~df_b["qtd_variante"].isna() & (~df_b["variant_title"].isin(usadas_b))]
+            if df_b_valid.empty:
                 matches.append((row_a[label_nivel], None))
+                continue
+
+            idx_min = (df_b_valid["qtd_variante"] - qtd_a).abs().idxmin()
+            match_b = df_b_valid.loc[idx_min]
+
+            matches.append((row_a[label_nivel], match_b[label_nivel]))
+            usadas_b.add(match_b["variant_title"])
+
+        # adiciona variantes B que ficaram sem par
         for _, row_b in df_b.iterrows():
-            if row_b[label_nivel] not in usadas_b:
+            if row_b["variant_title"] not in usadas_b:
                 matches.append((None, row_b[label_nivel]))
 
         # Cria tabela de correspondência
@@ -4347,7 +4355,7 @@ if menu == "📦 Dashboard – Logística":
                 .merge(df_a_pref, left_on=f"{label_nivel} A", right_on=f"{label_nivel}_A", how="left")
                 .merge(df_b_pref, left_on=f"{label_nivel} B", right_on=f"{label_nivel}_B", how="left")
             )
-        
+
         # =====================================================
         # 💡 Preenche corretamente nomes de variantes ausentes
         # =====================================================
@@ -4365,7 +4373,6 @@ if menu == "📦 Dashboard – Logística":
             comp[col_b]
         )
 
-        # Converte valores numéricos vazios em 0 (mantém compatibilidade)
         comp = comp.fillna(0)
 
         # =====================================================
