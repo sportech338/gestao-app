@@ -4048,15 +4048,20 @@ if menu == "📦 Dashboard – Logística":
                     & (pedidos["created_at"].dt.date <= fim)
                 ].copy()
 
-                # Agrupa direto por produto (sem duplicar variantes, mas mantendo nomes distintos)
+                # Agrupa direto por produto (sem duplicar variantes, e sem somar linhas do mesmo pedido)
                 df_filtrado["product_title"] = (
                     df_filtrado["product_title"]
                     .astype(str)
-                    .str.strip()                        # remove espaços no início/fim
-                    .str.replace(r"\s{2,}", " ", regex=True)  # normaliza espaços duplos
+                    .str.strip()
+                    .str.replace(r"\s{2,}", " ", regex=True)
                 )
 
-                # 🔹 Mantém nomes originais em um campo auxiliar para evitar confusões
+                # 🔹 Identifica duplicações exatas (mesmo produto, mesmo pedido)
+                df_filtrado = df_filtrado.drop_duplicates(
+                    subset=["product_title", "order_id"], keep="first"
+                )
+
+                # 🔹 Mantém nomes originais mas cria chave normalizada para unir variações
                 df_filtrado["_produto_normalizado"] = (
                     df_filtrado["product_title"]
                     .str.lower()
@@ -4066,8 +4071,8 @@ if menu == "📦 Dashboard – Logística":
                 agrup = (
                     df_filtrado.groupby("_produto_normalizado", as_index=False)
                     .agg({
-                        "product_title": "first",  # mantém o nome original representativo
-                        "quantity": "sum",
+                        "product_title": "first",  # nome original
+                        "quantity": "sum",         # soma total de unidades únicas
                         "price": lambda x: np.average(
                             x, weights=df_filtrado.loc[x.index, "quantity"]
                         )
@@ -4081,7 +4086,7 @@ if menu == "📦 Dashboard – Logística":
                     .reset_index(drop=True)
                 )
 
-                # Junta custo unitário real da planilha
+                # 🔧 Junta custo real por produto
                 agrup = agrup.merge(
                     df_custos[["Produto", col_custo]],
                     on="Produto",
