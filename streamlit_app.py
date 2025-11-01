@@ -4271,34 +4271,43 @@ if menu == "📦 Dashboard – Logística":
         df_b["qtd_variante"] = df_b[label_nivel].apply(extrair_qtd_pecas)
 
         # ----------------------------------------------
-        # 🔁 Pareia o número mais próximo entre A e B
+        # 🔁 Pareia o número mais próximo entre A e B (sem depender de 'variant_title')
         # ----------------------------------------------
         matches = []
         usadas_b = set()
 
         for _, row_a in df_a.iterrows():
-            qtd_a = row_a["qtd_variante"]
+            qtd_a = row_a.get("qtd_variante", None)
             if pd.isna(qtd_a):
                 continue
 
-            # encontra a variante B com quantidade mais próxima ainda não usada
-            df_b_valid = df_b[~df_b["qtd_variante"].isna() & (~df_b["variant_title"].isin(usadas_b))]
+            # define qual coluna usar como nome-base (Produto ou Variante)
+            col_b_nome = label_nivel if label_nivel in df_b.columns else df_b.columns[0]
+
+            # encontra as linhas B com qtd válida e ainda não pareadas
+            df_b_valid = df_b[
+                (~df_b["qtd_variante"].isna()) &
+                (~df_b[col_b_nome].isin(usadas_b))
+            ]
+
             if df_b_valid.empty:
                 matches.append((row_a[label_nivel], None))
                 continue
 
+            # escolhe o número mais próximo
             idx_min = (df_b_valid["qtd_variante"] - qtd_a).abs().idxmin()
             match_b = df_b_valid.loc[idx_min]
 
-            matches.append((row_a[label_nivel], match_b[label_nivel]))
-            usadas_b.add(match_b["variant_title"])
+            matches.append((row_a[label_nivel], match_b[col_b_nome]))
+            usadas_b.add(match_b[col_b_nome])
 
         # adiciona variantes B que ficaram sem par
+        col_b_nome = label_nivel if label_nivel in df_b.columns else df_b.columns[0]
         for _, row_b in df_b.iterrows():
-            if row_b["variant_title"] not in usadas_b:
-                matches.append((None, row_b[label_nivel]))
+            if row_b[col_b_nome] not in usadas_b:
+                matches.append((None, row_b[col_b_nome]))
 
-        # Cria tabela de correspondência
+        # cria tabela final de correspondência
         corresp = pd.DataFrame(matches, columns=[f"{label_nivel} A", f"{label_nivel} B"])
 
         # --- Renomeia colunas para evitar conflito no merge
