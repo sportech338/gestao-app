@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -4141,24 +4142,6 @@ if menu == "📦 Dashboard – Logística":
                 return ['background-color: #262730; font-weight: bold; color: white;'] * len(row)
             return [''] * len(row)
 
-        def highlight_variations(val):
-            """Aplica verde quando melhora e vermelho quando piora."""
-            try:
-                if isinstance(val, (int, float)):
-                    if val > 0:
-                        return 'color: #00bf63; font-weight: 600;'  # verde
-                    elif val < 0:
-                        return 'color: #ff4d4d; font-weight: 600;'  # vermelho
-                elif isinstance(val, str) and any(ch in val for ch in ['+', '-', '%', 'x']):
-                    num = float(val.replace('%', '').replace('x', '').replace('+', '').replace(',', '.').strip())
-                    if num > 0:
-                        return 'color: #00bf63; font-weight: 600;'
-                    elif num < 0:
-                        return 'color: #ff4d4d; font-weight: 600;'
-            except Exception:
-                pass
-            return 'color: white;'
-
         styled_comp = (
             comp[[
                 "Variante A", "Variante B",
@@ -4190,28 +4173,16 @@ if menu == "📦 Dashboard – Logística":
                 "Δ ROAS": "{:+.2f}x",
                 "Δ Part.(p.p)": "{:+.1f}"
             })
-            .applymap(highlight_variations, subset=[
-                "Δ Qtd.", "Δ Qtd.(%)",
-                "Δ Custo", "Δ Custo(%)",
-                "Δ Lucro B.", "Δ Lucro B.(%)",
-                "Δ Lucro Líq.", "Δ Lucro Líq.(%)",
-                "Δ Receita", "Δ Receita(%)",
-                "Δ Invest.", "Δ Invest.(%)",
-                "Δ ROI", "Δ ROAS", "Δ Part.(p.p)"
-            ])
-            .apply(highlight_total, axis=1)
             .set_properties(**{
+                "color": "white",
                 "text-align": "right",
                 "font-size": "14px",
                 "border-color": "rgba(255,255,255,0.1)"
             })
+            .apply(highlight_total, axis=1)
         )
 
-        st.data_editor(
-            styled_comp,
-            use_container_width=True,
-            disabled=True
-        )
+        st.dataframe(styled_comp, use_container_width=True)
 
 
         # =====================================================
