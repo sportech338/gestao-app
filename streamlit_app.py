@@ -4114,9 +4114,53 @@ if menu == "📦 Dashboard – Logística":
 
                 return pd.concat([agrup, total_row], ignore_index=True)
 
-            # 🔄 aplica a consolidação corrigida
-            df_a = consolidar_por_produto(df_a, "A")
-            df_b = consolidar_por_produto(df_b, "B")
+            # 🔄 aplica a consolidação corrigida DIRETO NA BASE DE PEDIDOS
+            df_a = consolidar_por_produto(pedidos, "A")
+            df_b = consolidar_por_produto(pedidos, "B")
+
+            # ⚙️ garante que só um registro por produto permaneça
+            df_a = df_a.groupby("Produto", as_index=False).sum(numeric_only=True)
+            df_b = df_b.groupby("Produto", as_index=False).sum(numeric_only=True)
+
+            # 🔧 recalcula métricas depois da soma
+            for df, periodo in [(df_a, "A"), (df_b, "B")]:
+                if f"Custo {periodo}" in df.columns and f"Receita {periodo}" in df.columns:
+                    df[f"Lucro Bruto {periodo}"] = df[f"Receita {periodo}"] - df[f"Custo {periodo}"]
+                    df[f"Lucro Líquido {periodo}"] = df[f"Lucro Bruto {periodo}"] - df["Invest. (R$)"]
+                    df[f"ROI {periodo}"] = np.where(
+                        df["Invest. (R$)"] > 0,
+                        df[f"Lucro Líquido {periodo}"] / df["Invest. (R$)"],
+                        np.nan
+                    )
+                    df[f"ROAS {periodo}"] = np.where(
+                        df["Invest. (R$)"] > 0,
+                        df[f"Receita {periodo}"] / df["Invest. (R$)"],
+                        np.nan
+                    )
+
+            # 🧾 adiciona linha TOTAL
+            def add_total(df, periodo):
+                total = pd.DataFrame([{
+                    "Produto": "🧾 TOTAL",
+                    f"Qtd {periodo}": df[f"Qtd {periodo}"].sum(),
+                    f"Custo {periodo}": df[f"Custo {periodo}"].sum(),
+                    f"Receita {periodo}": df[f"Receita {periodo}"].sum(),
+                    f"Lucro Bruto {periodo}": df[f"Lucro Bruto {periodo}"].sum(),
+                    "Invest. (R$)": df["Invest. (R$)"].sum(),
+                    f"Lucro Líquido {periodo}": df[f"Lucro Líquido {periodo}"].sum(),
+                    f"ROI {periodo}": (
+                        df[f"Lucro Líquido {periodo}"].sum() / df["Invest. (R$)"].sum()
+                    ) if df["Invest. (R$)"].sum() > 0 else np.nan,
+                    f"ROAS {periodo}": (
+                        df[f"Receita {periodo}"].sum() / df["Invest. (R$)"].sum()
+                    ) if df["Invest. (R$)"].sum() > 0 else np.nan,
+                    f"Part.{periodo} (%)": 100.0
+                }])
+                return pd.concat([df, total], ignore_index=True)
+
+            df_a = add_total(df_a, "A")
+            df_b = add_total(df_b, "B")
+
 
 
         def highlight_total(row):
