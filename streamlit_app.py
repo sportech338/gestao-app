@@ -4065,6 +4065,20 @@ if menu == "📦 Dashboard – Logística":
 
             return df
 
+        # =====================================================
+        # 🧹 Corrige valores None/NaN para evitar "None" nas tabelas
+        # =====================================================
+        for df in [df_a, df_b]:
+            for col in [
+                "Custo Unitário",
+                "Custo A", "Custo B",
+                "Receita A", "Receita B",
+                "Lucro Bruto A", "Lucro Bruto B",
+                "Invest. (R$)"
+            ]:
+                if col in df.columns:
+                    df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+
         # ✅ Aplica aos dois períodos
         df_a = calcular_roi_roas(df_a, "A")
         df_b = calcular_roi_roas(df_b, "B")
