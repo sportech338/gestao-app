@@ -3799,8 +3799,32 @@ if menu == "📦 Dashboard – Logística":
             how="left"
         )
 
-        # Ajusta custo unitário
-        base_prod["Custo Unitário"] = pd.to_numeric(base_prod[col_custo], errors="coerce").fillna(0)
+        # =====================================================
+        # 🔁 Garante que variantes sem custo pelo merge principal tentem casar por nome
+        # =====================================================
+        base_prod["Custo Unitário"] = pd.to_numeric(base_prod[col_custo], errors="coerce")
+
+        # Se ainda houver NaN, tenta casar pelo nome normalizado da variante
+        if base_prod["Custo Unitário"].isna().any():
+            # Cria colunas normalizadas
+            base_prod["variant_title_norm"] = base_prod["variant_title"].astype(str).str.strip().str.lower()
+            df_custos["Variante_norm"] = df_custos["Variante"].astype(str).str.strip().str.lower()
+            
+            # Merge de fallback por nome parcial
+            base_prod = base_prod.merge(
+                df_custos[["Variante_norm", col_custo]].drop_duplicates("Variante_norm"),
+                left_on="variant_title_norm",
+                right_on="Variante_norm",
+                how="left",
+                suffixes=("", "_nome")
+            )
+
+            # Usa custo do nome quando disponível
+            base_prod["Custo Unitário"] = base_prod["Custo Unitário"].fillna(base_prod[f"{col_custo}_nome"])
+
+        # Se ainda faltar custo, força 0
+        base_prod["Custo Unitário"] = base_prod["Custo Unitário"].fillna(0)
+
 
         # =====================================================
         # 🔍 Define os itens e bases por período
