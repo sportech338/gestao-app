@@ -4133,22 +4133,35 @@ if menu == "📦 Dashboard – Logística":
         comp = pd.concat([comp[~mask_total], comp[mask_total]], ignore_index=True)
 
         # =====================================================
-        # 🎨 Estilo visual da tabela comparativa
+        # 🎨 Estilo visual da tabela comparativa (com cor na linha TOTAL)
         # =====================================================
         def highlight_total(row):
-            """Deixa a linha TOTAL com fundo escuro e texto branco."""
+            """Mantém o fundo escuro na linha TOTAL mas preserva verde/vermelho nos números."""
             if "TOTAL" in str(row.get("Variante A", "")).upper():
-                return ['background-color: #262730; font-weight: bold; color: white;'] * len(row)
+                styles = []
+                for col, val in row.items():
+                    base = 'background-color: #262730; font-weight: bold;'
+                    # Mantém verde/vermelho mesmo na linha TOTAL
+                    if isinstance(val, (int, float)):
+                        if val > 0:
+                            styles.append(base + 'color: #00bf63;')
+                        elif val < 0:
+                            styles.append(base + 'color: #ff4d4d;')
+                        else:
+                            styles.append(base + 'color: white;')
+                    else:
+                        styles.append(base + 'color: white;')
+                return styles
             return [''] * len(row)
 
         def highlight_variations(val):
-            """Aplica verde quando melhora e vermelho quando piora."""
+            """Aplica verde para melhora e vermelho para piora."""
             try:
                 if isinstance(val, (int, float)):
                     if val > 0:
-                        return 'color: #00bf63; font-weight: 600;'  # verde
+                        return 'color: #00bf63; font-weight: 600;'
                     elif val < 0:
-                        return 'color: #ff4d4d; font-weight: 600;'  # vermelho
+                        return 'color: #ff4d4d; font-weight: 600;'
                 elif isinstance(val, str) and any(ch in val for ch in ['+', '-', '%', 'x']):
                     num = float(val.replace('%', '').replace('x', '').replace('+', '').replace(',', '.').strip())
                     if num > 0:
@@ -4168,9 +4181,7 @@ if menu == "📦 Dashboard – Logística":
                 "Δ Lucro Líq.", "Δ Lucro Líq.(%)",
                 "Δ Receita", "Δ Receita(%)",
                 "Δ Invest.", "Δ Invest.(%)",
-                "Δ ROI",
-                "Δ ROAS",
-                "Δ Part.(p.p)"
+                "Δ ROI", "Δ ROAS", "Δ Part.(p.p)"
             ]]
             .style
             .format({
@@ -4207,11 +4218,7 @@ if menu == "📦 Dashboard – Logística":
             })
         )
 
-        st.data_editor(
-            styled_comp,
-            use_container_width=True,
-            disabled=True
-        )
+        st.data_editor(styled_comp, use_container_width=True, disabled=True)
 
 
         # =====================================================
