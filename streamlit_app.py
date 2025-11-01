@@ -3832,15 +3832,53 @@ if menu == "📦 Dashboard – Logística":
         itens_a = base_prod[base_prod["created_at"].dt.date.between(inicio_a, fim_a)][nivel_agrupamento].unique().tolist()
         itens_b = base_prod[base_prod["created_at"].dt.date.between(inicio_b, fim_b)][nivel_agrupamento].unique().tolist()
 
-        custos_base_A = df_custos[df_custos["Variante"].isin(itens_a) | df_custos["Produto"].isin(itens_a)].copy()
-        custos_base_B = df_custos[df_custos["Variante"].isin(itens_b) | df_custos["Produto"].isin(itens_b)].copy()
+        # =====================================================
+        # 🧩 Vincula custos mesmo que o nome da variante tenha sufixos diferentes
+        # =====================================================
+        def normalizar_nome(nome):
+            """Remove textos entre parênteses e espaços extras."""
+            if not isinstance(nome, str):
+                return ""
+            return re.sub(r"\(.*?\)", "", nome).strip().lower()
 
-        custos_base_A = custos_base_A.merge(comparativo[[label_nivel, "Qtd A"]], on=label_nivel, how="left")
-        custos_base_B = custos_base_B.merge(comparativo[[label_nivel, "Qtd B"]], on=label_nivel, how="left")
+        # Normaliza nomes nas duas bases
+        df_custos["Variante_norm"] = df_custos["Variante"].apply(normalizar_nome)
+        base_prod["variant_norm"] = base_prod[nivel_agrupamento].apply(normalizar_nome)
 
-        custos_base_A["Custo Unitário"] = custos_base_A["Variante"].map(df_custos.set_index("Variante")[col_custo])
-        custos_base_B["Custo Unitário"] = custos_base_B["Variante"].map(df_custos.set_index("Variante")[col_custo])
+        # Cria listas normalizadas de itens
+        itens_a_norm = base_prod[
+            base_prod["created_at"].dt.date.between(inicio_a, fim_a)
+        ]["variant_norm"].unique().tolist()
 
+        itens_b_norm = base_prod[
+            base_prod["created_at"].dt.date.between(inicio_b, fim_b)
+        ]["variant_norm"].unique().tolist()
+
+        # Seleciona custos considerando nomes normalizados
+        custos_base_A = df_custos[
+            df_custos["Variante_norm"].isin(itens_a_norm)
+            | df_custos["Produto"].isin(itens_a_norm)
+        ].copy()
+
+        custos_base_B = df_custos[
+            df_custos["Variante_norm"].isin(itens_b_norm)
+            | df_custos["Produto"].isin(itens_b_norm)
+        ].copy()
+
+
+        # 🔗 Adiciona colunas de quantidade correspondentes (garante compatibilidade)
+        custos_base_A = custos_base_A.merge(
+            comparativo[[label_nivel, "Qtd A"]], left_on="Variante_norm", right_on=label_nivel, how="left"
+        )
+        custos_base_B = custos_base_B.merge(
+            comparativo[[label_nivel, "Qtd B"]], left_on="Variante_norm", right_on=label_nivel, how="left"
+        )
+
+        # 💰 Puxa o custo correto com base no nome normalizado
+        custos_base_A["Custo Unitário"] = custos_base_A["Variante_norm"].map(df_custos.set_index("Variante_norm")[col_custo])
+        custos_base_B["Custo Unitário"] = custos_base_B["Variante_norm"].map(df_custos.set_index("Variante_norm")[col_custo])
+
+        # 🔢 Converte para número e preenche faltantes
         custos_base_A["Custo Unitário"] = pd.to_numeric(custos_base_A["Custo Unitário"], errors="coerce").fillna(0)
         custos_base_B["Custo Unitário"] = pd.to_numeric(custos_base_B["Custo Unitário"], errors="coerce").fillna(0)
 
