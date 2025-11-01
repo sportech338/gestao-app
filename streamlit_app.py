@@ -3622,23 +3622,41 @@ if menu == "📦 Dashboard – Logística":
         inicio_b, fim_b = periodo_b
 
         # =====================================================
-        # 📦 Garantir pedidos atualizados
+        # 📦 Garantir pedidos atualizados (modo rápido e em tempo real)
         # =====================================================
-        def ensure_orders_for_range(start_date, end_date):
+
+        def ensure_orders_for_range(start_date, end_date, force_reload=False):
+            """Carrega pedidos da Shopify, forçando atualização se necessário."""
             loaded_range = st.session_state.get("periodo_atual")
             pedidos_cached = st.session_state.get("pedidos", pd.DataFrame())
 
             def range_covers(loaded, start_, end_):
                 return loaded and (loaded[0] <= start_ and loaded[1] >= end_)
 
-            if pedidos_cached.empty or (not range_covers(loaded_range, start_date, end_date)):
-                with st.spinner(f"🔄 Carregando pedidos da Shopify de {start_date:%d/%m/%Y} a {end_date:%d/%m/%Y}..."):
+            if force_reload or pedidos_cached.empty or not range_covers(loaded_range, start_date, end_date):
+                with st.spinner(f"🔄 Atualizando pedidos da Shopify ({start_date:%d/%m/%Y} → {end_date:%d/%m/%Y})..."):
                     pedidos_new = get_orders(start_date=start_date, end_date=end_date, only_paid=True)
                     st.session_state["pedidos"] = pedidos_new
                     st.session_state["periodo_atual"] = (start_date, end_date)
                     return pedidos_new
+
             return pedidos_cached
 
+        # =====================================================
+        # 🔁 Botão de atualização manual instantânea
+        # =====================================================
+        col_btn, _ = st.columns([1, 4])
+        with col_btn:
+            if st.button("🔄 Atualizar pedidos da Shopify agora", type="primary"):
+                periodo_min = min(inicio_a, inicio_b)
+                periodo_max = max(fim_a, fim_b)
+                st.cache_data.clear()  # limpa caches de planilhas
+                ensure_orders_for_range(periodo_min, periodo_max, force_reload=True)
+                st.rerun()
+
+        # =====================================================
+        # 🧭 Carregamento principal de pedidos (com refresh mais rápido)
+        # =====================================================
         periodo_min = min(inicio_a, inicio_b)
         periodo_max = max(fim_a, fim_b)
         pedidos = ensure_orders_for_range(periodo_min, periodo_max)
