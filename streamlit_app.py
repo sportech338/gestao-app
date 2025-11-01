@@ -3669,10 +3669,28 @@ if menu == "📦 Dashboard – Logística":
         df_a = filtrar_periodo(base_prod, inicio_a, fim_a)
         df_b = filtrar_periodo(base_prod, inicio_b, fim_b)
 
-        resumo_a = df_a.groupby(nivel_agrupamento)["quantity"].sum().reset_index(name="Qtd A")
-        resumo_b = df_b.groupby(nivel_agrupamento)["quantity"].sum().reset_index(name="Qtd B")
+        # =====================================================
+        # 📊 Consolida vendas por produto ou variante sem duplicar linhas
+        # =====================================================
+        resumo_a = (
+            df_a.groupby(nivel_agrupamento, as_index=False)["quantity"]
+            .sum()
+            .rename(columns={"quantity": "Qtd A"})
+        )
+        resumo_b = (
+            df_b.groupby(nivel_agrupamento, as_index=False)["quantity"]
+            .sum()
+            .rename(columns={"quantity": "Qtd B"})
+        )
 
-        comparativo = pd.merge(resumo_a, resumo_b, on=nivel_agrupamento, how="outer").fillna(0)
+        # 🔗 Faz merge sem duplicar nomes idênticos
+        comparativo = (
+            pd.merge(resumo_a, resumo_b, on=nivel_agrupamento, how="outer")
+            .groupby(nivel_agrupamento, as_index=False)
+            .sum(numeric_only=True)
+            .fillna(0)
+        )
+
         comparativo["Diferença (unid.)"] = comparativo["Qtd A"] - comparativo["Qtd B"]
         comparativo["A-B(Qtd.%)"] = np.where(
             comparativo["Qtd B"] > 0,
