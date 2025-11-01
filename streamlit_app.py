@@ -3758,31 +3758,33 @@ if menu == "📦 Dashboard – Logística":
 
         col_custo = "Custo AliExpress (R$)" if fornecedor == "AliExpress" else "Custo Estoque (R$)"
 
-        # 🔍 Detecta variantes realmente existentes em cada período
-        variantes_a = base_prod[base_prod["created_at"].dt.date.between(inicio_a, fim_a)]["variant_title"].unique().tolist()
-        variantes_b = base_prod[base_prod["created_at"].dt.date.between(inicio_b, fim_b)]["variant_title"].unique().tolist()
+        # 🔍 Detecta itens realmente existentes em cada período (variante ou produto)
+        itens_a = base_prod[base_prod["created_at"].dt.date.between(inicio_a, fim_a)][nivel_agrupamento].unique().tolist()
+        itens_b = base_prod[base_prod["created_at"].dt.date.between(inicio_b, fim_b)][nivel_agrupamento].unique().tolist()
 
         # 🔧 Cria base de custos separada para cada período
-        custos_base_A = df_custos[df_custos["Variante"].isin(variantes_a)].copy()
-        custos_base_B = df_custos[df_custos["Variante"].isin(variantes_b)].copy()
+        custos_base_A = df_custos[df_custos["Variante"].isin(itens_a) | df_custos["Produto"].isin(itens_a)].copy()
+        custos_base_B = df_custos[df_custos["Variante"].isin(itens_b) | df_custos["Produto"].isin(itens_b)].copy()
 
         # 🔗 Adiciona colunas de quantidade correspondentes
-        custos_base_A = custos_base_A.merge(comparativo[["Variante", "Qtd A"]], on="Variante", how="left")
-        custos_base_B = custos_base_B.merge(comparativo[["Variante", "Qtd B"]], on="Variante", how="left")
+        custos_base_A = custos_base_A.merge(comparativo[[label_nivel, "Qtd A"]], left_on=label_nivel, right_on=label_nivel, how="left")
+        custos_base_B = custos_base_B.merge(comparativo[[label_nivel, "Qtd B"]], left_on=label_nivel, right_on=label_nivel, how="left")
 
-        # 🔢 Ajusta custos unitários para cada base
+        # 🔢 Ajusta custos unitários para cada base (dinâmico)
         if not df_custos.empty:
-            df_custos_indexed = df_custos.set_index("Variante")
+            # Índices possíveis: Variante e Produto
+            if label_nivel in ["Variante", "Produto"]:
+                df_custos_indexed = df_custos.set_index(label_nivel if label_nivel in df_custos.columns else "Variante")
 
-            # Preenche custo unitário para A
-            custos_base_A[col_custo] = custos_base_A["Variante"].map(df_custos_indexed[col_custo])
-            custos_base_A.rename(columns={col_custo: "Custo Unitário"}, inplace=True)
-            custos_base_A["Custo Unitário"] = pd.to_numeric(custos_base_A["Custo Unitário"], errors="coerce").fillna(0)
+                # Preenche custo unitário para A
+                custos_base_A[col_custo] = custos_base_A[label_nivel].map(df_custos_indexed[col_custo])
+                custos_base_A.rename(columns={col_custo: "Custo Unitário"}, inplace=True)
+                custos_base_A["Custo Unitário"] = pd.to_numeric(custos_base_A["Custo Unitário"], errors="coerce").fillna(0)
 
-            # Preenche custo unitário para B
-            custos_base_B[col_custo] = custos_base_B["Variante"].map(df_custos_indexed[col_custo])
-            custos_base_B.rename(columns={col_custo: "Custo Unitário"}, inplace=True)
-            custos_base_B["Custo Unitário"] = pd.to_numeric(custos_base_B["Custo Unitário"], errors="coerce").fillna(0)
+                # Preenche custo unitário para B
+                custos_base_B[col_custo] = custos_base_B[label_nivel].map(df_custos_indexed[col_custo])
+                custos_base_B.rename(columns={col_custo: "Custo Unitário"}, inplace=True)
+                custos_base_B["Custo Unitário"] = pd.to_numeric(custos_base_B["Custo Unitário"], errors="coerce").fillna(0)
 
         # -------------------------------------------------
         # 💵 Adiciona preço médio real (se não existir)
@@ -3790,9 +3792,9 @@ if menu == "📦 Dashboard – Logística":
         def add_preco_medio(custos_df):
             if "Preço Médio" not in custos_df.columns:
                 if "price" in base_prod.columns:
-                    precos = base_prod.groupby("variant_title")["price"].mean().reset_index()
-                    precos.rename(columns={"variant_title": "Variante", "price": "Preço Médio"}, inplace=True)
-                    custos_df = custos_df.merge(precos, on="Variante", how="left")
+                    precos = base_prod.groupby(nivel_agrupamento)["price"].mean().reset_index()
+                    precos.rename(columns={nivel_agrupamento: label_nivel, "price": "Preço Médio"}, inplace=True)
+                    custos_df = custos_df.merge(precos, on=label_nivel, how="left")
                 else:
                     custos_df["Preço Médio"] = (custos_df["Custo Unitário"] * 2.5).round(2)
             return custos_df
@@ -3814,7 +3816,7 @@ if menu == "📦 Dashboard – Logística":
             df[f"Part.{periodo_label} (%)"] = np.where(
                 total_receita > 0, df[f"Receita {periodo_label}"] / total_receita * 100, 0
             )
-            return df[["Variante", qtd_col, f"Custo {periodo_label}", f"Receita {periodo_label}",
+            return df[[label_nivel, qtd_col, f"Custo {periodo_label}", f"Receita {periodo_label}",
                        f"Lucro Bruto {periodo_label}", f"Part.{periodo_label} (%)"]]
 
         df_a = calc_periodo(custos_base_A, "A", "Qtd A")
@@ -3937,7 +3939,7 @@ if menu == "📦 Dashboard – Logística":
                 roi_total, roas_total = np.nan, np.nan
 
             total_row = pd.DataFrame([{
-                "Variante": "🧾 TOTAL",
+                label_nivel: "🧾 TOTAL",
                 f"Qtd {periodo}": total_qtd,
                 f"Custo {periodo}": total_custo,
                 f"Receita {periodo}": total_receita,
@@ -3957,7 +3959,7 @@ if menu == "📦 Dashboard – Logística":
 
         def highlight_total(row):
             """Aplica o mesmo fundo do cabeçalho para a linha TOTAL."""
-            if str(row["Variante"]).strip().upper() == "🧾 TOTAL":
+            if str(row[label_nivel]).strip().upper() == "🧾 TOTAL":
                 return ['background-color: #262730; font-weight: bold; color: white;'] * len(row)
             return [''] * len(row)
 
@@ -3970,7 +3972,7 @@ if menu == "📦 Dashboard – Logística":
             st.markdown("### 📆 Período A")
             styled_a = (
                 df_a[[
-                    "Variante", "Qtd A", "Receita A", "Custo A",
+                    label_nivel, "Qtd A", "Receita A", "Custo A",
                     "Lucro Bruto A", "Invest. (R$)", "Lucro Líquido A",
                     "ROI A", "ROAS A", "Part.A (%)"
                 ]]
@@ -3998,7 +4000,7 @@ if menu == "📦 Dashboard – Logística":
             st.markdown("### 📆 Período B")
             styled_b = (
                 df_b[[
-                    "Variante", "Qtd B", "Receita B", "Custo B",
+                    label_nivel, "Qtd B", "Receita B", "Custo B",
                     "Lucro Bruto B", "Invest. (R$)", "Lucro Líquido B",
                     "ROI B", "ROAS B", "Part.B (%)"
                 ]]
@@ -4020,9 +4022,9 @@ if menu == "📦 Dashboard – Logística":
             st.dataframe(styled_b, use_container_width=True)
 
         # -------------------------------------------------
-        # 📈 Comparativo geral entre períodos (por função da variante)
+        # 📈 Comparativo geral entre períodos
         # -------------------------------------------------
-        st.subheader("📈 Comparativo Entre Períodos (por função da variante)")
+        st.subheader(f"📈 Comparativo Entre Períodos (por {label_nivel.lower()})")
 
         import re
 
@@ -4043,8 +4045,8 @@ if menu == "📦 Dashboard – Logística":
                 return nome.lower().strip()
 
         # Cria identificadores
-        df_a["identificador"] = df_a["Variante"].apply(extrair_identificador)
-        df_b["identificador"] = df_b["Variante"].apply(extrair_identificador)
+        df_a["identificador"] = df_a[label_nivel].apply(extrair_identificador)
+        df_b["identificador"] = df_b[label_nivel].apply(extrair_identificador)
 
         # Pareia variantes A ↔ B
         matches = []
@@ -4054,16 +4056,16 @@ if menu == "📦 Dashboard – Logística":
             possiveis_b = df_b[df_b["identificador"] == ident_a]
             if not possiveis_b.empty:
                 match_b = possiveis_b.iloc[0]
-                matches.append((row_a["Variante"], match_b["Variante"]))
-                usadas_b.add(match_b["Variante"])
+                matches.append((row_a[label_nivel], match_b[label_nivel]))
+                usadas_b.add(match_b[label_nivel])
             else:
-                matches.append((row_a["Variante"], None))
+                matches.append((row_a[label_nivel], None))
         for _, row_b in df_b.iterrows():
-            if row_b["Variante"] not in usadas_b:
-                matches.append((None, row_b["Variante"]))
+            if row_b[label_nivel] not in usadas_b:
+                matches.append((None, row_b[label_nivel]))
 
         # Cria tabela de correspondência
-        corresp = pd.DataFrame(matches, columns=["Variante A", "Variante B"])
+        corresp = pd.DataFrame(matches, columns=[f"{label_nivel} A", f"{label_nivel} B"])
 
         # --- Renomeia colunas para evitar conflito no merge
         df_a_pref = df_a.add_suffix("_A")
@@ -4072,22 +4074,22 @@ if menu == "📦 Dashboard – Logística":
         # --- Faz merge seguro
         comp = (
             corresp
-            .merge(df_a_pref, left_on="Variante A", right_on="Variante_A", how="left")
-            .merge(df_b_pref, left_on="Variante B", right_on="Variante_B", how="left")
+            .merge(df_a_pref, left_on=f"{label_nivel} A", right_on=f"{label_nivel}_A", how="left")
+            .merge(df_b_pref, left_on=f"{label_nivel} B", right_on=f"{label_nivel}_B", how="left")
         )
         
         # =====================================================
         # 💡 Preenche corretamente nomes de variantes ausentes
         # =====================================================
-        comp["Variante A"] = np.where(
-            comp["Variante A"].isna() | (comp["Variante A"] == 0),
-            comp["Variante B"],
-            comp["Variante A"]
+        comp[f"{label_nivel} A"] = np.where(
+            comp[f"{label_nivel} A"].isna() | (comp[f"{label_nivel} A"] == 0),
+            comp[f"{label_nivel} B"],
+            comp[f"{label_nivel} A"]
         )
-        comp["Variante B"] = np.where(
-            comp["Variante B"].isna() | (comp["Variante B"] == 0),
-            comp["Variante A"],
-            comp["Variante B"]
+        comp[f"{label_nivel} B"] = np.where(
+            comp[f"{label_nivel} B"].isna() | (comp[f"{label_nivel} B"] == 0),
+            comp[f"{label_nivel} A"],
+            comp[f"{label_nivel} B"]
         )
 
         # Converte valores numéricos vazios em 0 (mantém compatibilidade)
@@ -4137,7 +4139,7 @@ if menu == "📦 Dashboard – Logística":
         # =====================================================
         # 📋 Garante que a linha TOTAL fique no final
         # =====================================================
-        mask_total = comp.get("Variante A", pd.Series(dtype=str)).astype(str).str.contains("TOTAL", case=False, na=False)
+        mask_total = comp.get(f"{label_nivel} A", pd.Series(dtype=str)).astype(str).str.contains("TOTAL", case=False, na=False)
         comp = pd.concat([comp[~mask_total], comp[mask_total]], ignore_index=True)
 
         # =====================================================
@@ -4145,7 +4147,7 @@ if menu == "📦 Dashboard – Logística":
         # =====================================================
         def highlight_total(row):
             """Mantém o fundo escuro na linha TOTAL mas preserva verde/vermelho nos números."""
-            if "TOTAL" in str(row.get("Variante A", "")).upper():
+            if "TOTAL" in str(row.get(f"{label_nivel} A", "")).upper():
                 styles = []
                 for col, val in row.items():
                     base = 'background-color: #262730; font-weight: bold;'
@@ -4182,7 +4184,7 @@ if menu == "📦 Dashboard – Logística":
 
         styled_comp = (
             comp[[
-                "Variante A", "Variante B",
+                f"{label_nivel} A", f"{label_nivel} B",
                 "Δ Qtd.", "Δ Qtd.(%)",
                 "Δ Custo", "Δ Custo(%)",
                 "Δ Lucro B.", "Δ Lucro B.(%)",
