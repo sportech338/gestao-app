@@ -3845,10 +3845,27 @@ if menu == "📦 Dashboard – Logística":
             df_a = calc_periodo(custos_base_A, "A", "Qtd A")
             df_b = calc_periodo(custos_base_B, "B", "Qtd B")
         else:
-            # Quando "(Todos)" está selecionado, evita somar duas vezes as variantes
-            # Passa a base bruta com custos e quantidades diretamente para consolidação
-            df_a = custos_base_A.copy()
-            df_b = custos_base_B.copy()
+            # Quando "(Todos)" está selecionado, ainda criamos colunas básicas
+            # mas sem agrupar novamente as variantes (mantém estrutura esperada)
+            df_a = calc_periodo(custos_base_A, "A", "Qtd A")
+            df_b = calc_periodo(custos_base_B, "B", "Qtd B")
+
+            # Remove possíveis duplicatas de variantes com mesmo produto
+            df_a = df_a.groupby("Produto", as_index=False).agg({
+                "Qtd A": "sum",
+                "Custo A": "sum",
+                "Receita A": "sum",
+                "Lucro Bruto A": "sum",
+                "Part.A (%)": "mean"
+            })
+
+            df_b = df_b.groupby("Produto", as_index=False).agg({
+                "Qtd B": "sum",
+                "Custo B": "sum",
+                "Receita B": "sum",
+                "Lucro Bruto B": "sum",
+                "Part.B (%)": "mean"
+            })
 
 
         # =====================================================
