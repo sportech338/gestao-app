@@ -3976,26 +3976,72 @@ if menu == "📦 Dashboard – Logística":
         df_b = calcular_roi_roas(df_b, "B")
 
         # =====================================================
-        # 🧮 Consolida linhas duplicadas quando (Todos) estiver selecionado
+        # 🧮 Consolida por produto quando (Todos) estiver selecionado (sem duplicar TOTAL)
         # =====================================================
         if produto_escolhido == "(Todos)":
-            def consolidar_por_produto(df, periodo):
-                """Agrupa todas as variantes de um produto em uma única linha consolidada."""
-                cols_quant = [c for c in df.columns if f"Qtd {periodo}" in c]
-                cols_num = [c for c in df.columns if any(x in c for x in [f"Custo {periodo}", f"Receita {periodo}", f"Lucro Bruto {periodo}", f"Lucro Líquido {periodo}", "Invest. (R$)"])]
-                cols_media = [c for c in df.columns if f"ROI {periodo}" in c or f"ROAS {periodo}" in c or f"Part.{periodo}" in c]
+            def consolidar_por_produto(df, periodo: str):
+                # remove TOTAL para não "contaminar" o agrupamento
+                mask_total = df[label_nivel].astype(str).str.contains("TOTAL", case=False, na=False)
+                dados = df[~mask_total].copy()
 
-                agrupado = df.groupby("Produto", as_index=False).agg(
-                    {**{col: "sum" for col in cols_quant + cols_num},
-                     **{col: "mean" for col in cols_media}}
+                # soma por produto
+                agrup = (
+                    dados.groupby("Produto", as_index=False)
+                    .agg({
+                        f"Qtd {periodo}": "sum",
+                        f"Custo {periodo}": "sum",
+                        f"Receita {periodo}": "sum",
+                        f"Lucro Bruto {periodo}": "sum",
+                        "Invest. (R$)": "sum",
+                    })
                 )
-                total_row = df[df["Produto"].astype(str).str.contains("TOTAL", case=False)]
-                if not total_row.empty:
-                    agrupado = pd.concat([agrupado, total_row], ignore_index=True)
-                return agrupado
 
+                # recalcula métricas derivadas
+                agrup[f"Lucro Líquido {periodo}"] = agrup[f"Lucro Bruto {periodo}"] - agrup["Invest. (R$)"]
+                agrup[f"ROI {periodo}"] = np.where(
+                    agrup["Invest. (R$)"] > 0,
+                    agrup[f"Lucro Bruto {periodo}"] / agrup["Invest. (R$)"],
+                    np.nan
+                )
+                agrup[f"ROAS {periodo}"] = np.where(
+                    agrup["Invest. (R$)"] > 0,
+                    agrup[f"Receita {periodo}"] / agrup["Invest. (R$)"],
+                    np.nan
+                )
+
+                receita_total = agrup[f"Receita {periodo}"].sum()
+                agrup[f"Part.{periodo} (%)"] = np.where(
+                    receita_total > 0,
+                    agrup[f"Receita {periodo}"] / receita_total * 100,
+                    0
+                )
+
+                # cria linha TOTAL única
+                total_row = pd.DataFrame([{
+                    "Produto": "🧾 TOTAL",
+                    f"Qtd {periodo}": agrup[f"Qtd {periodo}"].sum(),
+                    f"Custo {periodo}": agrup[f"Custo {periodo}"].sum(),
+                    f"Receita {periodo}": agrup[f"Receita {periodo}"].sum(),
+                    f"Lucro Bruto {periodo}": agrup[f"Lucro Bruto {periodo}"].sum(),
+                    "Invest. (R$)": agrup["Invest. (R$)"].sum(),
+                    f"Lucro Líquido {periodo}": agrup[f"Lucro Bruto {periodo}"].sum() - agrup["Invest. (R$)"].sum(),
+                    f"ROI {periodo}": (
+                        (agrup[f"Lucro Bruto {periodo}"].sum() / agrup["Invest. (R$)"].sum())
+                        if agrup["Invest. (R$)"].sum() > 0 else np.nan
+                    ),
+                    f"ROAS {periodo}": (
+                        (agrup[f"Receita {periodo}"].sum() / agrup["Invest. (R$)"].sum())
+                        if agrup["Invest. (R$)"].sum() > 0 else np.nan
+                    ),
+                    f"Part.{periodo} (%)": 100.0
+                }])
+
+                return pd.concat([agrup, total_row], ignore_index=True)
+
+            # aplica
             df_a = consolidar_por_produto(df_a, "A")
             df_b = consolidar_por_produto(df_b, "B")
+
 
 
         def highlight_total(row):
