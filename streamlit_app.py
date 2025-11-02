@@ -3866,41 +3866,41 @@ if menu == "📦 Dashboard – Logística":
             return custos_df
 
         # -------------------------------------------------
-        # 🧮 Cálculos por período (independentes)
+        # 🧮 Cálculos por período (independentes) — versão blindada
         # -------------------------------------------------
         def calc_periodo(df, periodo_label, qtd_col):
             df = df.copy()
 
-            # Garante que o label_nivel exista
+            # 🧱 Garante que o label_nivel exista
             if label_nivel not in df.columns:
-                # Se não tiver 'Variante' ou 'Produto', cria uma coluna nome-base
-                if "Variante" in df_custos.columns:
+                if "Variante" in df.columns:
                     df[label_nivel] = df["Variante"]
-                elif "Produto" in df_custos.columns:
+                elif "Produto" in df.columns:
                     df[label_nivel] = df["Produto"]
-                else:
+                elif "Qtd_Pecas" in df.columns:
                     df[label_nivel] = df["Qtd_Pecas"].astype(str) + " peças"
+                else:
+                    # fallback total — cria coluna genérica
+                    df[label_nivel] = "Sem nome"
 
-            # Cálculos principais
-            df[f"Custo {periodo_label}"] = df["Custo Unitário"] * df.get(qtd_col, 0)
+            # 🧮 Cálculos principais
+            df[f"Custo {periodo_label}"] = df.get("Custo Unitário", 0) * df.get(qtd_col, 0)
             df[f"Receita {periodo_label}"] = (
                 df.get(qtd_col, 0) * df.get("Preço Médio", np.nan)
                 if "Preço Médio" in df.columns else np.nan
             )
-            df[f"Lucro Bruto {periodo_label}"] = df[f"Receita {periodo_label}"] - df[f"Custo {periodo_label}"]
-
-            total_receita = (
-                df[f"Receita {periodo_label}"].sum()
-                if df[f"Receita {periodo_label}"].notna().any() else 0
+            df[f"Lucro Bruto {periodo_label}"] = (
+                df[f"Receita {periodo_label}"] - df[f"Custo {periodo_label}"]
             )
 
+            total_receita = df[f"Receita {periodo_label}"].sum(skipna=True)
             df[f"Part.{periodo_label} (%)"] = np.where(
                 total_receita > 0,
                 df[f"Receita {periodo_label}"] / total_receita * 100,
                 0
             )
 
-            # Garante que todas as colunas existam antes de retornar
+            # 🔍 Retorna apenas colunas realmente existentes
             cols_existentes = [
                 c for c in [
                     label_nivel, qtd_col,
@@ -3912,7 +3912,6 @@ if menu == "📦 Dashboard – Logística":
                 if c in df.columns
             ]
             return df[cols_existentes]
-
 
         # =====================================================
         # 💡 Consolidação correta — evita duplicar produtos no modo "(Todos)"
