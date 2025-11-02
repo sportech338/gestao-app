@@ -3822,20 +3822,27 @@ if menu == "📦 Dashboard – Logística":
             on="Qtd_Pecas", how="left"
         )
 
-        # 🔢 Ajusta custos unitários para cada base (dinâmico)
+        # 🔢 Ajusta custos unitários para cada base (dinâmico e seguro)
         if not df_custos.empty:
-            # Escolhe a coluna base para indexar de forma segura
-            col_index = label_nivel if label_nivel in df_custos.columns else "Variante"
+            # Usa sempre a coluna 'Variante' como base principal
+            df_custos_indexed = df_custos.drop_duplicates(subset=["Variante"]).set_index("Variante")
 
-            # Remove duplicados antes de indexar para evitar InvalidIndexError
-            df_custos_indexed = df_custos.drop_duplicates(subset=[col_index]).set_index(col_index)
+            def buscar_custo(row):
+                nome = row.get("Variante", None)
+                if pd.notna(nome) and nome in df_custos_indexed.index:
+                    return df_custos_indexed.loc[nome, col_custo]
+                # tenta também comparar por quantidade (ex: 30 peças)
+                qtd = row.get("Qtd_Pecas", None)
+                if pd.notna(qtd):
+                    match = df_custos[df_custos["Qtd_Pecas"] == qtd]
+                    if not match.empty:
+                        return match.iloc[0][col_custo]
+                return 0
 
-            # --- Período A ---
-            custos_base_A["Custo Unitário"] = custos_base_A[label_nivel].map(df_custos_indexed[col_custo])
+            custos_base_A["Custo Unitário"] = custos_base_A.apply(buscar_custo, axis=1)
+            custos_base_B["Custo Unitário"] = custos_base_B.apply(buscar_custo, axis=1)
+
             custos_base_A["Custo Unitário"] = pd.to_numeric(custos_base_A["Custo Unitário"], errors="coerce").fillna(0)
-
-            # --- Período B ---
-            custos_base_B["Custo Unitário"] = custos_base_B[label_nivel].map(df_custos_indexed[col_custo])
             custos_base_B["Custo Unitário"] = pd.to_numeric(custos_base_B["Custo Unitário"], errors="coerce").fillna(0)
 
         # -------------------------------------------------
