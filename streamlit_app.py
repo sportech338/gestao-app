@@ -3763,6 +3763,60 @@ if menu == "📦 Dashboard – Logística":
                     .astype(float)
                 )
 
+        # =====================================================
+        # 🔗 Associação automática entre variantes da Planilha e Shopify
+        # =====================================================
+        from difflib import get_close_matches
+        import re
+
+        def normalizar_nome(nome):
+            """Remove sufixos e normaliza nome para comparação."""
+            if not isinstance(nome, str):
+                return ""
+            nome = nome.lower().strip()
+            nome = re.sub(r"\(.*?\)", "", nome)  # remove textos entre parênteses
+            nome = re.sub(r"\s{2,}", " ", nome)  # remove espaços duplos
+            return nome
+
+        def criar_mapa_planilha_shopify(df_custos, df_shopify):
+            """
+            Cria um dicionário associando as variantes da planilha
+            com as correspondentes da Shopify (mesmo se tiverem sufixos).
+            """
+            mapa = {}
+            variantes_planilha = df_custos["Variante"].dropna().unique().tolist()
+            variantes_shopify = df_shopify["variant_title"].dropna().unique().tolist()
+
+            # normaliza tudo pra comparação
+            variantes_shopify_norm = {normalizar_nome(v): v for v in variantes_shopify}
+
+            for var_planilha in variantes_planilha:
+                var_norm = normalizar_nome(var_planilha)
+
+                # tenta encontrar correspondência exata (ex: “30 peças” == “30 peças (Mais Vendido)”)
+                match = [v for n, v in variantes_shopify_norm.items() if var_norm in n]
+
+                if not match:
+                    # tenta fuzzy match se não achou substring direta
+                    nomes_norm = list(variantes_shopify_norm.keys())
+                    sugestao = get_close_matches(var_norm, nomes_norm, n=1, cutoff=0.6)
+                    if sugestao:
+                        match = [variantes_shopify_norm[sugestao[0]]]
+
+                mapa[var_planilha] = match[0] if match else var_planilha  # fallback
+
+            return mapa
+
+        # cria o mapa de equivalência
+        mapa_var = criar_mapa_planilha_shopify(df_custos, produtos)
+
+        # aplica o mapeamento no DataFrame de custos
+        df_custos["Variante Original"] = df_custos["Variante"]
+        df_custos["Variante"] = df_custos["Variante"].map(mapa_var)
+
+        st.info("✅ Variantes da planilha associadas automaticamente às variantes da Shopify.")
+
+
         # -------------------------------------------------
         # 💼 Análise de Custos e Lucros por Fornecedor
         # -------------------------------------------------
