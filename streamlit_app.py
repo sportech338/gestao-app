@@ -3717,7 +3717,6 @@ if menu == "📦 Dashboard – Logística":
         # =====================================================
         import gspread
         from google.oauth2.service_account import Credentials
-        import re
 
         def get_gsheet_client():
             scopes = [
@@ -3746,16 +3745,8 @@ if menu == "📦 Dashboard – Logística":
             df.rename(columns=mapa_colunas, inplace=True)
             return df
 
-        # 🧠 Função para extrair apenas o número de peças (para padronizar comparações)
-        def extrair_qtd_pecas(nome):
-            if not isinstance(nome, str):
-                return None
-            match = re.search(r"(\d+)\s*(peças?|unid|uni|pçs?)", nome.lower())
-            return int(match.group(1)) if match else None
-
         try:
             df_custos = carregar_planilha_custos()
-            df_custos["Qtd_Pecas"] = df_custos["Variante"].apply(extrair_qtd_pecas)
         except Exception as e:
             st.error(f"❌ Erro ao carregar planilha de custos: {e}")
             st.stop()
@@ -3793,56 +3784,24 @@ if menu == "📦 Dashboard – Logística":
         custos_base_A = df_custos[df_custos["Variante"].isin(itens_a) | df_custos["Produto"].isin(itens_a)].copy()
         custos_base_B = df_custos[df_custos["Variante"].isin(itens_b) | df_custos["Produto"].isin(itens_b)].copy()
 
-        # -------------------------------------------------
-        # 🔗 Associa custos com base no número de peças (sem precisar nome idêntico)
-        # -------------------------------------------------
+        # 🔗 Adiciona colunas de quantidade correspondentes
+        custos_base_A = custos_base_A.merge(comparativo[[label_nivel, "Qtd A"]], left_on=label_nivel, right_on=label_nivel, how="left")
+        custos_base_B = custos_base_B.merge(comparativo[[label_nivel, "Qtd B"]], left_on=label_nivel, right_on=label_nivel, how="left")
 
-        # Cria colunas auxiliares com número de peças nas bases Shopify e planilha
-        base_prod["Qtd_Pecas"] = base_prod[nivel_agrupamento].apply(extrair_qtd_pecas)
-        comparativo["Qtd_Pecas"] = comparativo[label_nivel].apply(extrair_qtd_pecas)
-
-        # Filtra variantes com quantidade válida
-        df_custos = df_custos[df_custos["Qtd_Pecas"].notna()]
-        comparativo = comparativo[comparativo["Qtd_Pecas"].notna()]
-
-        # Refaz as bases de custos com base na quantidade (não no nome)
-        itens_a = base_prod[base_prod["created_at"].dt.date.between(inicio_a, fim_a)]["Qtd_Pecas"].unique().tolist()
-        itens_b = base_prod[base_prod["created_at"].dt.date.between(inicio_b, fim_b)]["Qtd_Pecas"].unique().tolist()
-
-        custos_base_A = df_custos[df_custos["Qtd_Pecas"].isin(itens_a) | df_custos["Produto"].isin(itens_a)].copy()
-        custos_base_B = df_custos[df_custos["Qtd_Pecas"].isin(itens_b) | df_custos["Produto"].isin(itens_b)].copy()
-
-        # Junta quantidades por número de peças
-        custos_base_A = custos_base_A.merge(
-            comparativo[[label_nivel, "Qtd A", "Qtd_Pecas"]],
-            on="Qtd_Pecas", how="left"
-        )
-        custos_base_B = custos_base_B.merge(
-            comparativo[[label_nivel, "Qtd B", "Qtd_Pecas"]],
-            on="Qtd_Pecas", how="left"
-        )
-
-        # 🔢 Ajusta custos unitários para cada base (dinâmico e seguro)
+        # 🔢 Ajusta custos unitários para cada base (dinâmico)
         if not df_custos.empty:
-            # Usa sempre a coluna 'Variante' como base principal
-            df_custos_indexed = df_custos.drop_duplicates(subset=["Variante"]).set_index("Variante")
+            # Escolhe a coluna base para indexar de forma segura
+            col_index = label_nivel if label_nivel in df_custos.columns else "Variante"
 
-            def buscar_custo(row):
-                nome = row.get("Variante", None)
-                if pd.notna(nome) and nome in df_custos_indexed.index:
-                    return df_custos_indexed.loc[nome, col_custo]
-                # tenta também comparar por quantidade (ex: 30 peças)
-                qtd = row.get("Qtd_Pecas", None)
-                if pd.notna(qtd):
-                    match = df_custos[df_custos["Qtd_Pecas"] == qtd]
-                    if not match.empty:
-                        return match.iloc[0][col_custo]
-                return 0
+            # Remove duplicados antes de indexar para evitar InvalidIndexError
+            df_custos_indexed = df_custos.drop_duplicates(subset=[col_index]).set_index(col_index)
 
-            custos_base_A["Custo Unitário"] = custos_base_A.apply(buscar_custo, axis=1)
-            custos_base_B["Custo Unitário"] = custos_base_B.apply(buscar_custo, axis=1)
-
+            # --- Período A ---
+            custos_base_A["Custo Unitário"] = custos_base_A[label_nivel].map(df_custos_indexed[col_custo])
             custos_base_A["Custo Unitário"] = pd.to_numeric(custos_base_A["Custo Unitário"], errors="coerce").fillna(0)
+
+            # --- Período B ---
+            custos_base_B["Custo Unitário"] = custos_base_B[label_nivel].map(df_custos_indexed[col_custo])
             custos_base_B["Custo Unitário"] = pd.to_numeric(custos_base_B["Custo Unitário"], errors="coerce").fillna(0)
 
         # -------------------------------------------------
@@ -3853,65 +3812,30 @@ if menu == "📦 Dashboard – Logística":
                 if "price" in base_prod.columns:
                     precos = base_prod.groupby(nivel_agrupamento)["price"].mean().reset_index()
                     precos.rename(columns={nivel_agrupamento: label_nivel, "price": "Preço Médio"}, inplace=True)
-
-                    # 🧠 Só faz o merge se a coluna existir em ambos
-                    if label_nivel in custos_df.columns and label_nivel in precos.columns:
-                        custos_df = custos_df.merge(precos, on=label_nivel, how="left")
-                    else:
-                        # ⚙️ Fallback: adiciona manualmente se coluna não existir
-                        custos_df["Preço Médio"] = np.nan
+                    custos_df = custos_df.merge(precos, on=label_nivel, how="left")
                 else:
-                    # Caso não haja preço médio disponível, usa custo * 2.5 como estimativa
                     custos_df["Preço Médio"] = (custos_df["Custo Unitário"] * 2.5).round(2)
             return custos_df
 
+        custos_base_A = add_preco_medio(custos_base_A)
+        custos_base_B = add_preco_medio(custos_base_B)
+
         # -------------------------------------------------
-        # 🧮 Cálculos por período (independentes) — versão blindada
+        # 🧮 Cálculos por período (independentes)
         # -------------------------------------------------
         def calc_periodo(df, periodo_label, qtd_col):
             df = df.copy()
-
-            # 🧱 Garante que o label_nivel exista
-            if label_nivel not in df.columns:
-                if "Variante" in df.columns:
-                    df[label_nivel] = df["Variante"]
-                elif "Produto" in df.columns:
-                    df[label_nivel] = df["Produto"]
-                elif "Qtd_Pecas" in df.columns:
-                    df[label_nivel] = df["Qtd_Pecas"].astype(str) + " peças"
-                else:
-                    # fallback total — cria coluna genérica
-                    df[label_nivel] = "Sem nome"
-
-            # 🧮 Cálculos principais
-            df[f"Custo {periodo_label}"] = df.get("Custo Unitário", 0) * df.get(qtd_col, 0)
+            df[f"Custo {periodo_label}"] = df["Custo Unitário"] * df[qtd_col]
             df[f"Receita {periodo_label}"] = (
-                df.get(qtd_col, 0) * df.get("Preço Médio", np.nan)
-                if "Preço Médio" in df.columns else np.nan
+                df[qtd_col] * df["Preço Médio"] if "Preço Médio" in df.columns else np.nan
             )
-            df[f"Lucro Bruto {periodo_label}"] = (
-                df[f"Receita {periodo_label}"] - df[f"Custo {periodo_label}"]
-            )
-
-            total_receita = df[f"Receita {periodo_label}"].sum(skipna=True)
+            df[f"Lucro Bruto {periodo_label}"] = df[f"Receita {periodo_label}"] - df[f"Custo {periodo_label}"]
+            total_receita = df[f"Receita {periodo_label}"].sum() if df[f"Receita {periodo_label}"].notna().any() else 0
             df[f"Part.{periodo_label} (%)"] = np.where(
-                total_receita > 0,
-                df[f"Receita {periodo_label}"] / total_receita * 100,
-                0
+                total_receita > 0, df[f"Receita {periodo_label}"] / total_receita * 100, 0
             )
-
-            # 🔍 Retorna apenas colunas realmente existentes
-            cols_existentes = [
-                c for c in [
-                    label_nivel, qtd_col,
-                    f"Custo {periodo_label}",
-                    f"Receita {periodo_label}",
-                    f"Lucro Bruto {periodo_label}",
-                    f"Part.{periodo_label} (%)"
-                ]
-                if c in df.columns
-            ]
-            return df[cols_existentes]
+            return df[[label_nivel, qtd_col, f"Custo {periodo_label}", f"Receita {periodo_label}",
+                       f"Lucro Bruto {periodo_label}", f"Part.{periodo_label} (%)"]]
 
         # =====================================================
         # 💡 Consolidação correta — evita duplicar produtos no modo "(Todos)"
