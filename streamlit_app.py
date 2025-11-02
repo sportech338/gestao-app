@@ -4146,9 +4146,9 @@ if menu == "📦 Dashboard – Logística":
                 return agrup
 
 
-            # 🔄 aplica a consolidação corrigida DIRETO NA BASE DE PEDIDOS
-            df_a = consolidar_por_produto(pedidos, "A")
-            df_b = consolidar_por_produto(pedidos, "B")
+            # ✅ aplica consolidação respeitando os períodos filtrados
+            df_a = consolidar_por_produto(pedidos, inicio_a, fim_a, "A")
+            df_b = consolidar_por_produto(pedidos, inicio_b, fim_b, "B")
 
             # ⚙️ garante que só um registro por produto permaneça
             df_a = df_a.copy()
