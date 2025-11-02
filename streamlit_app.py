@@ -4458,13 +4458,15 @@ if menu == "📦 Dashboard – Logística":
         # 🎨 Estilo visual da tabela comparativa (com cor na linha TOTAL)
         # =====================================================
         def highlight_total(row):
-            """Mantém o fundo escuro na linha TOTAL mas preserva verde/vermelho nos números."""
+            """Mantém o fundo escuro tanto na linha TOTAL quanto na Δ TOTAL."""
             col_check = f"{label_nivel} A" if f"{label_nivel} A" in comp.columns else label_nivel
-            if "TOTAL" in str(row.get(col_check, "")).upper():
+            nome = str(row.get(col_check, "")).upper()
+
+            if "TOTAL" in nome:  # cobre 🧾 TOTAL e 🧾 Δ TOTAL
                 styles = []
                 for col, val in row.items():
                     base = 'background-color: #262730; font-weight: bold;'
-                    # Mantém verde/vermelho mesmo na linha TOTAL
+                    # Mantém verde/vermelho mesmo na linha TOTAL ou Δ TOTAL
                     if isinstance(val, (int, float)):
                         if val > 0:
                             styles.append(base + 'color: #00bf63;')
@@ -4475,6 +4477,7 @@ if menu == "📦 Dashboard – Logística":
                     else:
                         styles.append(base + 'color: white;')
                 return styles
+
             return [''] * len(row)
 
         def highlight_variations(val):
@@ -4515,6 +4518,46 @@ if menu == "📦 Dashboard – Logística":
 
         # Filtra apenas colunas que realmente existem
         cols_existentes = [c for c in cols_base + cols_deltas if c in comp.columns]
+
+        # =====================================================
+        # 🧾 Adiciona linha Δ TOTAL consolidada (comparativo A vs B)
+        # =====================================================
+        if not comp.empty:
+            total_cols_sum = [
+                "Δ Qtd.", "Δ Custo", "Δ Lucro B.", "Δ Lucro Líq.",
+                "Δ Receita", "Δ Invest."
+            ]
+            total_cols_media = [
+                "Δ Qtd.(%)", "Δ Custo(%)", "Δ Lucro B.(%)",
+                "Δ Lucro Líq.(%)", "Δ Receita(%)", "Δ Invest.(%)",
+                "Δ ROI", "Δ ROAS", "Δ Part.(p.p)"
+            ]
+
+            # Soma direta dos valores absolutos
+            total_data = {
+                col: comp[col].sum() if col in comp.columns else np.nan
+                for col in total_cols_sum
+            }
+
+            # Média ponderada ou simples (dependendo da disponibilidade)
+            for col in total_cols_media:
+                if col in comp.columns:
+                    if "Receita A_A" in comp.columns and comp["Receita A_A"].sum() > 0:
+                        pesos = comp["Receita A_A"] / comp["Receita A_A"].sum()
+                        total_data[col] = np.average(comp[col], weights=pesos)
+                    else:
+                        total_data[col] = np.nanmean(comp[col])
+
+            # Define o rótulo (Produto ou Variante conforme o modo atual)
+            col_label = (
+                f"{label_nivel} A" if f"{label_nivel} A" in comp.columns
+                else (f"{label_nivel} B" if f"{label_nivel} B" in comp.columns else label_nivel)
+            )
+            total_data[col_label] = "🧾 Δ TOTAL"
+
+            # Adiciona linha Δ TOTAL no final
+            comp = pd.concat([comp, pd.DataFrame([total_data])], ignore_index=True)
+        
 
         styled_comp = (
             comp[cols_existentes]
