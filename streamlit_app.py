@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -3763,60 +3764,6 @@ if menu == "📦 Dashboard – Logística":
                     .astype(float)
                 )
 
-        # =====================================================
-        # 🔗 Associação automática entre variantes da Planilha e Shopify
-        # =====================================================
-        from difflib import get_close_matches
-        import re
-
-        def normalizar_nome(nome):
-            """Remove sufixos e normaliza nome para comparação."""
-            if not isinstance(nome, str):
-                return ""
-            nome = nome.lower().strip()
-            nome = re.sub(r"\(.*?\)", "", nome)  # remove textos entre parênteses
-            nome = re.sub(r"\s{2,}", " ", nome)  # remove espaços duplos
-            return nome
-
-        def criar_mapa_planilha_shopify(df_custos, df_shopify):
-            """
-            Cria um dicionário associando as variantes da planilha
-            com as correspondentes da Shopify (mesmo se tiverem sufixos).
-            """
-            mapa = {}
-            variantes_planilha = df_custos["Variante"].dropna().unique().tolist()
-            variantes_shopify = df_shopify["variant_title"].dropna().unique().tolist()
-
-            # normaliza tudo pra comparação
-            variantes_shopify_norm = {normalizar_nome(v): v for v in variantes_shopify}
-
-            for var_planilha in variantes_planilha:
-                var_norm = normalizar_nome(var_planilha)
-
-                # tenta encontrar correspondência exata (ex: “30 peças” == “30 peças (Mais Vendido)”)
-                match = [v for n, v in variantes_shopify_norm.items() if var_norm in n]
-
-                if not match:
-                    # tenta fuzzy match se não achou substring direta
-                    nomes_norm = list(variantes_shopify_norm.keys())
-                    sugestao = get_close_matches(var_norm, nomes_norm, n=1, cutoff=0.6)
-                    if sugestao:
-                        match = [variantes_shopify_norm[sugestao[0]]]
-
-                mapa[var_planilha] = match[0] if match else var_planilha  # fallback
-
-            return mapa
-
-        # cria o mapa de equivalência
-        mapa_var = criar_mapa_planilha_shopify(df_custos, produtos)
-
-        # aplica o mapeamento no DataFrame de custos
-        df_custos["Variante Original"] = df_custos["Variante"]
-        df_custos["Variante"] = df_custos["Variante"].map(mapa_var)
-
-        st.info("✅ Variantes da planilha associadas automaticamente às variantes da Shopify.")
-
-
         # -------------------------------------------------
         # 💼 Análise de Custos e Lucros por Fornecedor
         # -------------------------------------------------
@@ -4311,55 +4258,59 @@ if menu == "📦 Dashboard – Logística":
         import re
 
         # =====================================================
-        # 🔍 Pareamento direto baseado no nome real da variante (Shopify)
+        # 🔍 Pareamento inteligente baseado em quantidade aproximada
         # =====================================================
+        import re
 
-        # Garante que ambos os DataFrames tenham a mesma coluna de referência
-        col_a_nome = label_nivel if label_nivel in df_a.columns else df_a.columns[0]
-        col_b_nome = label_nivel if label_nivel in df_b.columns else df_b.columns[0]
-
-        # Cria lista de variantes únicas em cada período
-        variantes_a = df_a[col_a_nome].dropna().unique().tolist()
-        variantes_b = df_b[col_b_nome].dropna().unique().tolist()
-
-        # Pareamento 1:1 por nome normalizado (sem sufixo)
-        def normalizar_nome(nome):
-            import re
+        def extrair_qtd_pecas(nome):
+            """Extrai a quantidade numérica (20, 30, 40, 60, 120...) do nome da variante."""
             if not isinstance(nome, str):
-                return ""
-            nome = nome.lower().strip()
-            nome = re.sub(r"\(.*?\)", "", nome)  # remove parênteses
-            nome = re.sub(r"\s{2,}", " ", nome)
-            return nome
+                return None
+            match = re.search(r"(\d+)\s*(peças|unid|uni|pçs?)", nome.lower())
+            return int(match.group(1)) if match else None
 
+        # Cria colunas de quantidade
+        df_a["qtd_variante"] = df_a[label_nivel].apply(extrair_qtd_pecas)
+        df_b["qtd_variante"] = df_b[label_nivel].apply(extrair_qtd_pecas)
+
+        # ----------------------------------------------
+        # 🔁 Pareia o número mais próximo entre A e B (sem depender de 'variant_title')
+        # ----------------------------------------------
         matches = []
         usadas_b = set()
 
-        for var_a in variantes_a:
-            base_a = normalizar_nome(var_a)
-            candidatos = [(b, normalizar_nome(b)) for b in variantes_b if b not in usadas_b]
-            
-            # tenta achar correspondência exata
-            match = next((b for b, norm in candidatos if base_a == norm), None)
-            
-            # se não achar, tenta similaridade textual
-            if not match:
-                from difflib import get_close_matches
-                nomes_norm_b = [norm for _, norm in candidatos]
-                similar = get_close_matches(base_a, nomes_norm_b, n=1, cutoff=0.7)
-                if similar:
-                    match = next((b for b, norm in candidatos if norm == similar[0]), None)
-            
-            matches.append((var_a, match))
-            if match:
-                usadas_b.add(match)
+        for _, row_a in df_a.iterrows():
+            qtd_a = row_a.get("qtd_variante", None)
+            if pd.isna(qtd_a):
+                continue
 
-        # adiciona variantes de B que ficaram sem par
-        for var_b in variantes_b:
-            if var_b not in usadas_b:
-                matches.append((None, var_b))
+            # define qual coluna usar como nome-base (Produto ou Variante)
+            col_b_nome = label_nivel if label_nivel in df_b.columns else df_b.columns[0]
 
-        # Cria DataFrame de correspondência
+            # encontra as linhas B com qtd válida e ainda não pareadas
+            df_b_valid = df_b[
+                (~df_b["qtd_variante"].isna()) &
+                (~df_b[col_b_nome].isin(usadas_b))
+            ]
+
+            if df_b_valid.empty:
+                matches.append((row_a[label_nivel], None))
+                continue
+
+            # escolhe o número mais próximo
+            idx_min = (df_b_valid["qtd_variante"] - qtd_a).abs().idxmin()
+            match_b = df_b_valid.loc[idx_min]
+
+            matches.append((row_a[label_nivel], match_b[col_b_nome]))
+            usadas_b.add(match_b[col_b_nome])
+
+        # adiciona variantes B que ficaram sem par
+        col_b_nome = label_nivel if label_nivel in df_b.columns else df_b.columns[0]
+        for _, row_b in df_b.iterrows():
+            if row_b[col_b_nome] not in usadas_b:
+                matches.append((None, row_b[col_b_nome]))
+
+        # cria tabela final de correspondência
         corresp = pd.DataFrame(matches, columns=[f"{label_nivel} A", f"{label_nivel} B"])
 
         # --- Renomeia colunas para evitar conflito no merge
