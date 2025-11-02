@@ -4550,12 +4550,12 @@ if menu == "📦 Dashboard – Logística":
                     else:
                         total_data[col] = np.nanmean(comp[col])
 
-            # Define o rótulo (Produto ou Variante conforme o modo atual)
-            col_label = (
-                f"{label_nivel} A" if f"{label_nivel} A" in comp.columns
-                else (f"{label_nivel} B" if f"{label_nivel} B" in comp.columns else label_nivel)
-            )
-            total_data[col_label] = "🧾 Δ TOTAL"
+            # Corrige rótulo (preenche tanto col_A quanto col_B)
+            col_a = f"{label_nivel} A" if f"{label_nivel} A" in comp.columns else label_nivel
+            col_b = f"{label_nivel} B" if f"{label_nivel} B" in comp.columns else label_nivel
+
+            total_data[col_a] = "🧾 Δ TOTAL"
+            total_data[col_b] = "🧾 Δ TOTAL"
 
             # Adiciona linha Δ TOTAL no final
             comp = pd.concat([comp, pd.DataFrame([total_data])], ignore_index=True)
