@@ -3909,8 +3909,8 @@ if menu == "📦 Dashboard – Logística":
                 return agrup
 
             # 👉 Cria df_a / df_b direto dos pedidos
-            df_a = consolidar_por_produto(pedidos, inicio_a, fim_a, "A")
-            df_b = consolidar_por_produto(pedidos, inicio_b, fim_b, "B")
+            df_a = consolidar_por_produto(pedidos, "A")
+            df_b = consolidar_por_produto(pedidos, "B")
 
         # =====================================================
         # 💸 Vincular investimento Meta Ads automaticamente
