@@ -3870,17 +3870,49 @@ if menu == "📦 Dashboard – Logística":
         # -------------------------------------------------
         def calc_periodo(df, periodo_label, qtd_col):
             df = df.copy()
-            df[f"Custo {periodo_label}"] = df["Custo Unitário"] * df[qtd_col]
+
+            # Garante que o label_nivel exista
+            if label_nivel not in df.columns:
+                # Se não tiver 'Variante' ou 'Produto', cria uma coluna nome-base
+                if "Variante" in df_custos.columns:
+                    df[label_nivel] = df["Variante"]
+                elif "Produto" in df_custos.columns:
+                    df[label_nivel] = df["Produto"]
+                else:
+                    df[label_nivel] = df["Qtd_Pecas"].astype(str) + " peças"
+
+            # Cálculos principais
+            df[f"Custo {periodo_label}"] = df["Custo Unitário"] * df.get(qtd_col, 0)
             df[f"Receita {periodo_label}"] = (
-                df[qtd_col] * df["Preço Médio"] if "Preço Médio" in df.columns else np.nan
+                df.get(qtd_col, 0) * df.get("Preço Médio", np.nan)
+                if "Preço Médio" in df.columns else np.nan
             )
             df[f"Lucro Bruto {periodo_label}"] = df[f"Receita {periodo_label}"] - df[f"Custo {periodo_label}"]
-            total_receita = df[f"Receita {periodo_label}"].sum() if df[f"Receita {periodo_label}"].notna().any() else 0
-            df[f"Part.{periodo_label} (%)"] = np.where(
-                total_receita > 0, df[f"Receita {periodo_label}"] / total_receita * 100, 0
+
+            total_receita = (
+                df[f"Receita {periodo_label}"].sum()
+                if df[f"Receita {periodo_label}"].notna().any() else 0
             )
-            return df[[label_nivel, qtd_col, f"Custo {periodo_label}", f"Receita {periodo_label}",
-                       f"Lucro Bruto {periodo_label}", f"Part.{periodo_label} (%)"]]
+
+            df[f"Part.{periodo_label} (%)"] = np.where(
+                total_receita > 0,
+                df[f"Receita {periodo_label}"] / total_receita * 100,
+                0
+            )
+
+            # Garante que todas as colunas existam antes de retornar
+            cols_existentes = [
+                c for c in [
+                    label_nivel, qtd_col,
+                    f"Custo {periodo_label}",
+                    f"Receita {periodo_label}",
+                    f"Lucro Bruto {periodo_label}",
+                    f"Part.{periodo_label} (%)"
+                ]
+                if c in df.columns
+            ]
+            return df[cols_existentes]
+
 
         # =====================================================
         # 💡 Consolidação correta — evita duplicar produtos no modo "(Todos)"
