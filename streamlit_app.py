@@ -3642,6 +3642,30 @@ if menu == "📦 Dashboard – Logística":
         periodo_max = max(fim_a, fim_b)
         pedidos = ensure_orders_for_range(periodo_min, periodo_max)
 
+        # =====================================================
+        # 🧩 Normaliza nomes de variantes — unifica por quantidade de peças
+        # =====================================================
+        import re
+
+        def extrair_qtd_pecas(nome):
+            """Extrai o número de peças do nome da variante (ex: '60 peças (Mais Vendido)' -> 60)."""
+            if not isinstance(nome, str):
+                return None
+            match = re.search(r"(\d+)\s*(peças|pçs?|unidades|unid|uni)", nome.lower())
+            return int(match.group(1)) if match else None
+
+        # Cria nova coluna auxiliar (só pra conferência)
+        pedidos["Qtd Base"] = pedidos["variant_title"].apply(extrair_qtd_pecas)
+
+        # Substitui o próprio variant_title por nome padronizado "XX peças"
+        pedidos["variant_title"] = pedidos["Qtd Base"].apply(
+            lambda x: f"{int(x)} peças" if pd.notna(x) else None
+        )
+
+        st.info("✅ Variantes normalizadas — nomes antigos e novos agora são tratados como iguais.")
+        st.dataframe(pedidos[["variant_title", "Qtd Base"]].head(10))
+
+        
         if pedidos.empty:
             st.warning("⚠️ Nenhum pedido encontrado no intervalo selecionado.")
             st.stop()
