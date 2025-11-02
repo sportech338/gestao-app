@@ -3717,6 +3717,7 @@ if menu == "📦 Dashboard – Logística":
         # =====================================================
         import gspread
         from google.oauth2.service_account import Credentials
+        import re
 
         def get_gsheet_client():
             scopes = [
@@ -3745,8 +3746,16 @@ if menu == "📦 Dashboard – Logística":
             df.rename(columns=mapa_colunas, inplace=True)
             return df
 
+        # 🧠 Função para extrair apenas o número de peças (para padronizar comparações)
+        def extrair_qtd_pecas(nome):
+            if not isinstance(nome, str):
+                return None
+            match = re.search(r"(\d+)\s*(peças?|unid|uni|pçs?)", nome.lower())
+            return int(match.group(1)) if match else None
+
         try:
             df_custos = carregar_planilha_custos()
+            df_custos["Qtd_Pecas"] = df_custos["Variante"].apply(extrair_qtd_pecas)
         except Exception as e:
             st.error(f"❌ Erro ao carregar planilha de custos: {e}")
             st.stop()
@@ -3784,9 +3793,34 @@ if menu == "📦 Dashboard – Logística":
         custos_base_A = df_custos[df_custos["Variante"].isin(itens_a) | df_custos["Produto"].isin(itens_a)].copy()
         custos_base_B = df_custos[df_custos["Variante"].isin(itens_b) | df_custos["Produto"].isin(itens_b)].copy()
 
-        # 🔗 Adiciona colunas de quantidade correspondentes
-        custos_base_A = custos_base_A.merge(comparativo[[label_nivel, "Qtd A"]], left_on=label_nivel, right_on=label_nivel, how="left")
-        custos_base_B = custos_base_B.merge(comparativo[[label_nivel, "Qtd B"]], left_on=label_nivel, right_on=label_nivel, how="left")
+        # -------------------------------------------------
+        # 🔗 Associa custos com base no número de peças (sem precisar nome idêntico)
+        # -------------------------------------------------
+
+        # Cria colunas auxiliares com número de peças nas bases Shopify e planilha
+        base_prod["Qtd_Pecas"] = base_prod[nivel_agrupamento].apply(extrair_qtd_pecas)
+        comparativo["Qtd_Pecas"] = comparativo[label_nivel].apply(extrair_qtd_pecas)
+
+        # Filtra variantes com quantidade válida
+        df_custos = df_custos[df_custos["Qtd_Pecas"].notna()]
+        comparativo = comparativo[comparativo["Qtd_Pecas"].notna()]
+
+        # Refaz as bases de custos com base na quantidade (não no nome)
+        itens_a = base_prod[base_prod["created_at"].dt.date.between(inicio_a, fim_a)]["Qtd_Pecas"].unique().tolist()
+        itens_b = base_prod[base_prod["created_at"].dt.date.between(inicio_b, fim_b)]["Qtd_Pecas"].unique().tolist()
+
+        custos_base_A = df_custos[df_custos["Qtd_Pecas"].isin(itens_a) | df_custos["Produto"].isin(itens_a)].copy()
+        custos_base_B = df_custos[df_custos["Qtd_Pecas"].isin(itens_b) | df_custos["Produto"].isin(itens_b)].copy()
+
+        # Junta quantidades por número de peças
+        custos_base_A = custos_base_A.merge(
+            comparativo[[label_nivel, "Qtd A", "Qtd_Pecas"]],
+            on="Qtd_Pecas", how="left"
+        )
+        custos_base_B = custos_base_B.merge(
+            comparativo[[label_nivel, "Qtd B", "Qtd_Pecas"]],
+            on="Qtd_Pecas", how="left"
+        )
 
         # 🔢 Ajusta custos unitários para cada base (dinâmico)
         if not df_custos.empty:
