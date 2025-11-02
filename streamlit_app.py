@@ -3967,7 +3967,7 @@ if menu == "📦 Dashboard – Logística":
         # 💰 Exibir tabelas lado a lado (com formatação monetária)
         # -------------------------------------------------
         def calcular_roi_roas(df, periodo):
-            """Calcula ROI, ROAS, Lucro Bruto e Lucro Líquido com base no investimento e adiciona linha TOTAL."""
+            """Calcula ROI, ROAS, Lucro Bruto e Lucro Líquido e adiciona linha TOTAL (produto ou variantes)."""
             df = df.copy()
 
             # -------------------------------------------------
@@ -3991,7 +3991,7 @@ if menu == "📦 Dashboard – Logística":
             df[f"Lucro Líquido {periodo}"] = df[f"Lucro Bruto {periodo}"] - df["Invest. (R$)"]
 
             # -------------------------------------------------
-            # 📊 Totais consolidados
+            # 🧾 Linha TOTAL consolidada (sempre mostrada)
             # -------------------------------------------------
             total_qtd = df[f"Qtd {periodo}"].sum()
             total_custo = df[f"Custo {periodo}"].sum()
@@ -4001,7 +4001,7 @@ if menu == "📦 Dashboard – Logística":
             total_invest = df["Invest. (R$)"].sum()
 
             if total_invest > 0:
-                roi_total = total_lucro / total_invest
+                roi_total = total_lucro_liq / total_invest
                 roas_total = total_receita / total_invest
             else:
                 roi_total, roas_total = np.nan, np.nan
@@ -4019,6 +4019,8 @@ if menu == "📦 Dashboard – Logística":
                 f"Part.{periodo} (%)": 100.0
             }])
 
+            # Junta o total no final
+            df = pd.concat([df, total_row], ignore_index=True)
             return df
 
         # ✅ Aplica aos dois períodos
