@@ -3853,13 +3853,17 @@ if menu == "📦 Dashboard – Logística":
                 if "price" in base_prod.columns:
                     precos = base_prod.groupby(nivel_agrupamento)["price"].mean().reset_index()
                     precos.rename(columns={nivel_agrupamento: label_nivel, "price": "Preço Médio"}, inplace=True)
-                    custos_df = custos_df.merge(precos, on=label_nivel, how="left")
+
+                    # 🧠 Só faz o merge se a coluna existir em ambos
+                    if label_nivel in custos_df.columns and label_nivel in precos.columns:
+                        custos_df = custos_df.merge(precos, on=label_nivel, how="left")
+                    else:
+                        # ⚙️ Fallback: adiciona manualmente se coluna não existir
+                        custos_df["Preço Médio"] = np.nan
                 else:
+                    # Caso não haja preço médio disponível, usa custo * 2.5 como estimativa
                     custos_df["Preço Médio"] = (custos_df["Custo Unitário"] * 2.5).round(2)
             return custos_df
-
-        custos_base_A = add_preco_medio(custos_base_A)
-        custos_base_B = add_preco_medio(custos_base_B)
 
         # -------------------------------------------------
         # 🧮 Cálculos por período (independentes)
