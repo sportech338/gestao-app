@@ -3909,8 +3909,8 @@ if menu == "📦 Dashboard – Logística":
                 return agrup
 
             # 👉 Cria df_a / df_b direto dos pedidos
-            df_a = consolidar_por_produto(pedidos, "A")
-            df_b = consolidar_por_produto(pedidos, "B")
+            df_a = consolidar_por_produto_todos(pedidos, "A")
+            df_b = consolidar_por_produto_todos(pedidos, "B")
 
         # =====================================================
         # 💸 Vincular investimento Meta Ads automaticamente
@@ -4053,7 +4053,7 @@ if menu == "📦 Dashboard – Logística":
         # 🧮 Consolida por produto quando (Todos) estiver selecionado (sem duplicar variantes)
         # =====================================================
         if produto_escolhido == "(Todos)":
-            def consolidar_por_produto(periodo_df, periodo_label):
+            def consolidar_por_produto_todos(periodo_df, periodo_label):
                 """
                 Consolida diretamente da base de pedidos (sem somar novamente variantes).
                 Usa as quantidades e preços reais de cada pedido.
