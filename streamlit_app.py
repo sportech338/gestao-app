@@ -3662,8 +3662,6 @@ if menu == "📦 Dashboard – Logística":
         )
 
         st.info("✅ Variantes normalizadas — nomes antigos e novos agora são tratados como iguais.")
-        st.dataframe(pedidos[["variant_title", "Qtd Base"]].head(10))
-
         
         if pedidos.empty:
             st.warning("⚠️ Nenhum pedido encontrado no intervalo selecionado.")
