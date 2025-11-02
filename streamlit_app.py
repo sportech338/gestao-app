@@ -3868,17 +3868,41 @@ if menu == "📦 Dashboard – Logística":
             df_b = calc_periodo(custos_base_B, "B", "Qtd B")
         else:
             # "(Todos)" → consolida direto da base de pedidos (por produto)
-            def consolidar_por_produto(pedidos, ini, fim, periodo_label):
+
+            def consolidar_por_produto_todos(pedidos, ini, fim, periodo_label):
+                """
+                Consolida pedidos por produto (sem duplicar variantes).
+                Usa quantidades reais da Shopify e calcula custos, receita e lucro por produto.
+                """
                 df_filtro = pedidos[
                     (pedidos["created_at"].dt.date >= ini)
                     & (pedidos["created_at"].dt.date <= fim)
                 ].copy()
 
+                # 🔹 Normaliza nome do produto
+                df_filtro["product_title"] = (
+                    df_filtro["product_title"]
+                    .astype(str)
+                    .str.strip()
+                    .str.replace(r"\s{2,}", " ", regex=True)
+                )
+
+                # 🔹 Garante que o mesmo produto dentro de um mesmo pedido não duplique
+                df_filtro = (
+                    df_filtro
+                    .sort_values(["order_id", "product_title"])
+                    .drop_duplicates(subset=["order_id", "product_title"], keep="first")
+                    .reset_index(drop=True)
+                )
+
+                # 🔹 Agrupa direto por produto
                 agrup = (
                     df_filtro.groupby("product_title", as_index=False)
                     .agg({
                         "quantity": "sum",
-                        "price": "mean"
+                        "price": lambda x: np.average(
+                            x, weights=df_filtro.loc[x.index, "quantity"]
+                        ),
                     })
                     .rename(columns={
                         "product_title": "Produto",
@@ -3887,7 +3911,7 @@ if menu == "📦 Dashboard – Logística":
                     })
                 )
 
-                # 🔗 Adiciona custo real por produto (não por variante)
+                # 🔗 Junta custo real por produto
                 agrup = agrup.merge(
                     df_custos[["Produto", col_custo]].drop_duplicates("Produto"),
                     on="Produto", how="left"
@@ -3898,19 +3922,40 @@ if menu == "📦 Dashboard – Logística":
                 agrup[f"Receita {periodo_label}"] = agrup[f"Qtd {periodo_label}"] * agrup["Preço Médio"]
                 agrup[f"Lucro Bruto {periodo_label}"] = agrup[f"Receita {periodo_label}"] - agrup[f"Custo {periodo_label}"]
 
-                # 🔢 Participação do produto no total
-                total_receita = agrup[f"Receita {periodo_label}"].sum()
+                # 💰 Distribui investimento proporcional
+                invest_total = invest_total_a if periodo_label == "A" else invest_total_b
+                total_qtd = agrup[f"Qtd {periodo_label}"].sum()
+                agrup["Invest. (R$)"] = np.where(
+                    total_qtd > 0,
+                    (agrup[f"Qtd {periodo_label}"] / total_qtd) * invest_total,
+                    0
+                )
+
+                agrup[f"Lucro Líquido {periodo_label}"] = agrup[f"Lucro Bruto {periodo_label}"] - agrup["Invest. (R$)"]
+                agrup[f"ROI {periodo_label}"] = np.where(
+                    agrup["Invest. (R$)"] > 0,
+                    agrup[f"Lucro Líquido {periodo_label}"] / agrup["Invest. (R$)"],
+                    np.nan
+                )
+                agrup[f"ROAS {periodo_label}"] = np.where(
+                    agrup["Invest. (R$)"] > 0,
+                    agrup[f"Receita {periodo_label}"] / agrup["Invest. (R$)"],
+                    np.nan
+                )
+
+                receita_total = agrup[f"Receita {periodo_label}"].sum()
                 agrup[f"Part.{periodo_label} (%)"] = np.where(
-                    total_receita > 0,
-                    agrup[f"Receita {periodo_label}"] / total_receita * 100,
+                    receita_total > 0,
+                    agrup[f"Receita {periodo_label}"] / receita_total * 100,
                     0
                 )
 
                 return agrup
 
             # 👉 Cria df_a / df_b direto dos pedidos
-            df_a = consolidar_por_produto_todos(pedidos, "A")
-            df_b = consolidar_por_produto_todos(pedidos, "B")
+            df_a = consolidar_por_produto_todos(pedidos, inicio_a, fim_a, "A")
+            df_b = consolidar_por_produto_todos(pedidos, inicio_b, fim_b, "B")
+
 
         # =====================================================
         # 💸 Vincular investimento Meta Ads automaticamente
@@ -4147,8 +4192,8 @@ if menu == "📦 Dashboard – Logística":
 
 
             # ✅ aplica consolidação respeitando os períodos filtrados
-            df_a = consolidar_por_produto(pedidos, inicio_a, fim_a, "A")
-            df_b = consolidar_por_produto(pedidos, inicio_b, fim_b, "B")
+            df_a = consolidar_por_produto_todos(pedidos, inicio_a, fim_a, "A")
+            df_b = consolidar_por_produto_todos(pedidos, inicio_b, fim_b, "B")
 
             # ⚙️ garante que só um registro por produto permaneça
             df_a = df_a.copy()
