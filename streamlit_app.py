@@ -1245,16 +1245,14 @@ if menu == "📊 Dashboard – Tráfego Pago":
         )
 
         # =====================================================
-        # 🧾 Seleção de produto (com opção "(Todos)")
+        # 🧾 Seleção de produto (com opção "(Todos)" pré-selecionada)
         # =====================================================
-        produto_padrao = "Flexlive - Adesivo de Recuperação Natural"
         lista_produtos = ["(Todos)"] + sorted(produtos_unicos)
-        index_padrao = lista_produtos.index(produto_padrao) if produto_padrao in lista_produtos else 0
 
         produto_escolhido = st.selectbox(
             "🧾 Selecione o produto:",
             lista_produtos,
-            index=index_padrao
+            index=0  # 🔹 Sempre começa com "(Todos)" selecionado
         )
 
         # =====================================================
