@@ -3859,15 +3859,6 @@ if menu == "📦 Dashboard – Logística":
             return df[[label_nivel, qtd_col, f"Custo {periodo_label}", f"Receita {periodo_label}",
                        f"Lucro Bruto {periodo_label}", f"Part.{periodo_label} (%)"]]
 
-        # =====================================================
-        # 💡 Consolidação correta — evita duplicar produtos no modo "(Todos)"
-        # =====================================================
-        if produto_escolhido != "(Todos)":
-            # Produto específico → mantém cálculo normal por variante
-            df_a = calc_periodo(custos_base_A, "A", "Qtd A")
-            df_b = calc_periodo(custos_base_B, "B", "Qtd B")
-        else:
-            # "(Todos)" → consolida direto da base de pedidos (por produto)
             def consolidar_por_produto_todos(pedidos, ini, fim, periodo_label):
                 """
                 Consolida pedidos por produto (sem duplicar variantes).
@@ -3923,8 +3914,17 @@ if menu == "📦 Dashboard – Logística":
                     agrup[f"Receita {periodo_label}"] - agrup[f"Custo {periodo_label}"]
                 )
 
+                # 🔹 Calcula participação (%) do produto no total de receita
+                total_receita = agrup[f"Receita {periodo_label}"].sum()
+                agrup[f"Part.{periodo_label} (%)"] = np.where(
+                    total_receita > 0,
+                    (agrup[f"Receita {periodo_label}"] / total_receita) * 100,
+                    0
+                )
+
                 # 💡 Investimento será distribuído mais adiante, no bloco Meta Ads
                 return agrup
+
 
             # 👉 Cria df_a / df_b direto dos pedidos (sem investimento ainda)
             df_a = consolidar_por_produto_todos(pedidos, inicio_a, fim_a, "A")
