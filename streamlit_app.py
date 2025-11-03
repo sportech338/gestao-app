@@ -1462,6 +1462,7 @@ if menu == "📊 Dashboard – Tráfego Pago":
             horizontal=True
         )
 
+        # 🔹 Apenas define qual coluna de custo usar
         col_custo = "Custo AliExpress (R$)" if fornecedor == "AliExpress" else "Custo Estoque (R$)"
 
         # 🔍 Detecta itens realmente existentes em cada período (variante ou produto)
@@ -1470,42 +1471,41 @@ if menu == "📊 Dashboard – Tráfego Pago":
 
         # 🔧 Cria base de custos separada para cada período
         if produto_escolhido == "(Todos)":
-            # 👉 Quando o filtro está em "(Todos)", compara apenas por produto
             custos_base_A = df_custos[df_custos["Produto"].isin(itens_a)].copy()
             custos_base_B = df_custos[df_custos["Produto"].isin(itens_b)].copy()
         else:
-            # 👉 Quando o produto específico está selecionado, compara apenas por variante
             custos_base_A = df_custos[df_custos["Variante"].isin(itens_a)].copy()
             custos_base_B = df_custos[df_custos["Variante"].isin(itens_b)].copy()
 
         # 🔗 Adiciona colunas de quantidade correspondentes
         custos_base_A = custos_base_A.merge(
             comparativo[[label_nivel, "Qtd A"]],
-            left_on=label_nivel, right_on=label_nivel, how="left"
+            on=label_nivel,
+            how="left"
         )
         custos_base_B = custos_base_B.merge(
             comparativo[[label_nivel, "Qtd B"]],
-            left_on=label_nivel, right_on=label_nivel, how="left"
+            on=label_nivel,
+            how="left"
         )
 
-        # 🔢 Ajusta custos unitários para cada base (dinâmico)
+        # 🔢 Atualiza somente o custo unitário conforme o fornecedor ativo
         if not df_custos.empty:
-            # Escolhe a coluna base para indexar de forma segura
-            col_index = label_nivel if label_nivel in df_custos.columns else "Variante"
-
-            # Remove duplicados antes de indexar para evitar InvalidIndexError
-            df_custos_indexed = df_custos.drop_duplicates(subset=[col_index]).set_index(col_index)
+            df_custos_indexed = (
+                df_custos.drop_duplicates(subset=[label_nivel])
+                         .set_index(label_nivel)
+            )
 
             # --- Período A ---
-            custos_base_A["Custo Unitário"] = custos_base_A[label_nivel].map(df_custos_indexed[col_custo])
             custos_base_A["Custo Unitário"] = pd.to_numeric(
-                custos_base_A["Custo Unitário"], errors="coerce"
+                custos_base_A[label_nivel].map(df_custos_indexed[col_custo]),
+                errors="coerce"
             ).fillna(0)
 
             # --- Período B ---
-            custos_base_B["Custo Unitário"] = custos_base_B[label_nivel].map(df_custos_indexed[col_custo])
             custos_base_B["Custo Unitário"] = pd.to_numeric(
-                custos_base_B["Custo Unitário"], errors="coerce"
+                custos_base_B[label_nivel].map(df_custos_indexed[col_custo]),
+                errors="coerce"
             ).fillna(0)
 
         # -------------------------------------------------
