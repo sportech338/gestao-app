@@ -3852,12 +3852,38 @@ if menu == "📦 Dashboard – Logística":
                 df[qtd_col] * df["Preço Médio"] if "Preço Médio" in df.columns else np.nan
             )
             df[f"Lucro Bruto {periodo_label}"] = df[f"Receita {periodo_label}"] - df[f"Custo {periodo_label}"]
-            total_receita = df[f"Receita {periodo_label}"].sum() if df[f"Receita {periodo_label}"].notna().any() else 0
-            df[f"Part.{periodo_label} (%)"] = np.where(
-                total_receita > 0, df[f"Receita {periodo_label}"] / total_receita * 100, 0
-            )
+
+            # =====================================================
+            # 📊 Correção: participação global no modo "(Todos)"
+            # =====================================================
+            if produto_escolhido == "(Todos)":
+                # Calcula o total de receita global de todos os produtos
+                total_receita_global = (
+                    pedidos.assign(receita_total=pedidos["price"] * pedidos["quantity"])
+                    .groupby("product_title")["receita_total"]
+                    .sum()
+                    .sum()
+                )
+
+                # Se houver receita global válida, calcula a % global
+                df[f"Part.{periodo_label} (%)"] = np.where(
+                    total_receita_global > 0,
+                    df[f"Receita {periodo_label}"] / total_receita_global * 100,
+                    0
+                )
+
+            else:
+                # Mantém o comportamento atual (por variantes dentro do produto)
+                total_receita = df[f"Receita {periodo_label}"].sum() if df[f"Receita {periodo_label}"].notna().any() else 0
+                df[f"Part.{periodo_label} (%)"] = np.where(
+                    total_receita > 0,
+                    df[f"Receita {periodo_label}"] / total_receita * 100,
+                    0
+                )
+
             return df[[label_nivel, qtd_col, f"Custo {periodo_label}", f"Receita {periodo_label}",
                        f"Lucro Bruto {periodo_label}", f"Part.{periodo_label} (%)"]]
+
 
         # =====================================================
         # 💡 Consolidação correta — evita duplicar produtos no modo "(Todos)"
