@@ -1299,9 +1299,11 @@ if menu == "📊 Dashboard – Tráfego Pago":
         inicio_b, fim_b = periodo_b
 
         # =====================================================
-        # 📦 Garantir pedidos atualizados
+        # 📦 Garantir pedidos atualizados (dinâmico por produto)
         # =====================================================
-        def ensure_orders_for_range(start_date, end_date):
+        @st.cache_data(ttl=300)
+        def ensure_orders_for_range(start_date, end_date, produto):
+            """Busca pedidos da Shopify e mantém cache separado por produto."""
             loaded_range = st.session_state.get("periodo_atual")
             pedidos_cached = st.session_state.get("pedidos", pd.DataFrame())
 
@@ -1309,21 +1311,23 @@ if menu == "📊 Dashboard – Tráfego Pago":
                 return loaded and (loaded[0] <= start_ and loaded[1] >= end_)
 
             if pedidos_cached.empty or (not range_covers(loaded_range, start_date, end_date)):
-                with st.spinner(f"🔄 Carregando pedidos da Shopify de {start_date:%d/%m/%Y} a {end_date:%d/%m/%Y}..."):
+                with st.spinner(f"🔄 Carregando pedidos de {produto} de {start_date:%d/%m/%Y} a {end_date:%d/%m/%Y}..."):
                     pedidos_new = get_orders(start_date=start_date, end_date=end_date, only_paid=True)
+                    pedidos_new["ProdutoFiltro"] = produto  # 👈 cache separado por produto
                     st.session_state["pedidos"] = pedidos_new
                     st.session_state["periodo_atual"] = (start_date, end_date)
                     return pedidos_new
+
             return pedidos_cached
 
         periodo_min = min(inicio_a, inicio_b)
         periodo_max = max(fim_a, fim_b)
-        pedidos = ensure_orders_for_range(periodo_min, periodo_max)
+        pedidos = ensure_orders_for_range(periodo_min, periodo_max, produto_escolhido)
 
-        # 🧩 Remove duplicados e normaliza datas (garante consistência)
         pedidos = pedidos.drop_duplicates(subset=["order_id", "variant_title", "created_at"], keep="first")
         pedidos["created_at"] = pd.to_datetime(pedidos["created_at"], utc=True, errors="coerce")\
                                    .dt.tz_convert(APP_TZ).dt.tz_localize(None)
+
 
         # =====================================================
         # 🧩 Normaliza nomes de variantes — unifica por quantidade de peças
@@ -1419,7 +1423,7 @@ if menu == "📊 Dashboard – Tráfego Pago":
         comparativo = comparativo.sort_values("Qtd A", ascending=False).reset_index(drop=True)
 
         # =====================================================
-        # 💰 Carregar planilha de custos (Google Sheets)
+        # 💰 Carregar planilha de custos (dinâmica por fornecedor)
         # =====================================================
         import gspread
         from google.oauth2.service_account import Credentials
@@ -1437,22 +1441,26 @@ if menu == "📊 Dashboard – Tráfego Pago":
             return client
 
         @st.cache_data(ttl=600)
-        def carregar_planilha_custos():
+        def carregar_planilha_custos(fornecedor):
+            """Carrega a planilha de custos e cria cache separado por fornecedor."""
             client = get_gsheet_client()
             sheet = client.open_by_key(st.secrets["sheets"]["spreadsheet_id"]).sheet1
             df = pd.DataFrame(sheet.get_all_records())
             df.columns = df.columns.str.strip()
+
             mapa_colunas = {
                 "Produto": "Produto",
                 "Variantes": "Variante",
                 "Custo | Aliexpress": "Custo AliExpress (R$)",
                 "Custo | Estoque": "Custo Estoque (R$)",
             }
+
             df.rename(columns=mapa_colunas, inplace=True)
+            df["Fornecedor"] = fornecedor  # 👈 cache separado pra cada fornecedor
             return df
 
         try:
-            df_custos = carregar_planilha_custos()
+            df_custos = carregar_planilha_custos(fornecedor)
         except Exception as e:
             st.error(f"❌ Erro ao carregar planilha de custos: {e}")
             st.stop()
@@ -1469,6 +1477,7 @@ if menu == "📊 Dashboard – Tráfego Pago":
                     .astype(float)
                 )
 
+
         # -------------------------------------------------
         # 💼 Análise de Custos e Lucros por Fornecedor
         # -------------------------------------------------
@@ -1480,22 +1489,6 @@ if menu == "📊 Dashboard – Tráfego Pago":
             horizontal=True
         )
 
-        # =====================================================
-        # 🔄 Se trocar produto, fornecedor ou período → limpa cache e recarrega
-        # =====================================================
-        if (
-            produto_escolhido != st.session_state["produto_atual"]
-            or fornecedor != st.session_state["fornecedor_atual"]
-            or periodo_a != st.session_state["periodo_a_atual"]
-            or periodo_b != st.session_state["periodo_b_atual"]
-        ):
-            st.cache_data.clear()  # limpa planilhas e funções cacheadas
-            st.session_state["produto_atual"] = produto_escolhido
-            st.session_state["fornecedor_atual"] = fornecedor
-            st.session_state["periodo_a_atual"] = periodo_a
-            st.session_state["periodo_b_atual"] = periodo_b
-            st.rerun()
-        
 
         col_custo = "Custo AliExpress (R$)" if fornecedor == "AliExpress" else "Custo Estoque (R$)"
 
