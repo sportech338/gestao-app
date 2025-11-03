@@ -1256,6 +1256,19 @@ if menu == "📊 Dashboard – Tráfego Pago":
         )
 
         # =====================================================
+        # 🔁 Controle de atualização automática ao trocar filtros
+        # =====================================================
+        if "produto_atual" not in st.session_state:
+            st.session_state["produto_atual"] = produto_escolhido
+        if "fornecedor_atual" not in st.session_state:
+            st.session_state["fornecedor_atual"] = None
+        if "periodo_a_atual" not in st.session_state:
+            st.session_state["periodo_a_atual"] = None
+        if "periodo_b_atual" not in st.session_state:
+            st.session_state["periodo_b_atual"] = None
+
+
+        # =====================================================
         # 🗓️ Seleção de períodos para comparação (hoje vs ontem)
         # =====================================================
         hoje = datetime.now(APP_TZ).date()
@@ -1306,6 +1319,11 @@ if menu == "📊 Dashboard – Tráfego Pago":
         periodo_min = min(inicio_a, inicio_b)
         periodo_max = max(fim_a, fim_b)
         pedidos = ensure_orders_for_range(periodo_min, periodo_max)
+
+        # 🧩 Remove duplicados e normaliza datas (garante consistência)
+        pedidos = pedidos.drop_duplicates(subset=["order_id", "variant_title", "created_at"], keep="first")
+        pedidos["created_at"] = pd.to_datetime(pedidos["created_at"], utc=True, errors="coerce")\
+                                   .dt.tz_convert(APP_TZ).dt.tz_localize(None)
 
         # =====================================================
         # 🧩 Normaliza nomes de variantes — unifica por quantidade de peças
@@ -1461,6 +1479,23 @@ if menu == "📊 Dashboard – Tráfego Pago":
             ["AliExpress", "Estoque"],
             horizontal=True
         )
+
+        # =====================================================
+        # 🔄 Se trocar produto, fornecedor ou período → limpa cache e recarrega
+        # =====================================================
+        if (
+            produto_escolhido != st.session_state["produto_atual"]
+            or fornecedor != st.session_state["fornecedor_atual"]
+            or periodo_a != st.session_state["periodo_a_atual"]
+            or periodo_b != st.session_state["periodo_b_atual"]
+        ):
+            st.cache_data.clear()  # limpa planilhas e funções cacheadas
+            st.session_state["produto_atual"] = produto_escolhido
+            st.session_state["fornecedor_atual"] = fornecedor
+            st.session_state["periodo_a_atual"] = periodo_a
+            st.session_state["periodo_b_atual"] = periodo_b
+            st.rerun()
+        
 
         col_custo = "Custo AliExpress (R$)" if fornecedor == "AliExpress" else "Custo Estoque (R$)"
 
