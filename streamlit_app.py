@@ -4604,6 +4604,44 @@ if menu == "📦 Dashboard – Logística":
         st.subheader("Comparativo de Saídas e Custos por Variante:")
 
         # =====================================================
+        # 📥 Carregar planilha de custos (garantir existência de df_custos)
+        # =====================================================
+        import gspread
+        from google.oauth2.service_account import Credentials
+
+        def get_gsheet_client():
+            scopes = [
+                "https://www.googleapis.com/auth/spreadsheets",
+                "https://www.googleapis.com/auth/drive"
+            ]
+            gcp_info = dict(st.secrets["gcp_service_account"])
+            if isinstance(gcp_info.get("private_key"), str):
+                gcp_info["private_key"] = gcp_info["private_key"].replace("\\n", "\n")
+            creds = Credentials.from_service_account_info(gcp_info, scopes=scopes)
+            return gspread.authorize(creds)
+
+        @st.cache_data(ttl=600)
+        def carregar_planilha_custos():
+            client = get_gsheet_client()
+            sheet = client.open_by_key(st.secrets["sheets"]["spreadsheet_id"]).sheet1
+            df = pd.DataFrame(sheet.get_all_records())
+            df.columns = df.columns.str.strip()
+            mapa_colunas = {
+                "Produto": "Produto",
+                "Variantes": "Variante",
+                "Custo | Aliexpress": "Custo AliExpress (R$)",
+                "Custo | Estoque": "Custo Estoque (R$)",
+            }
+            df.rename(columns=mapa_colunas, inplace=True)
+            return df
+
+        try:
+            df_custos = carregar_planilha_custos()
+        except Exception as e:
+            st.error(f"❌ Erro ao carregar planilha de custos: {e}")
+            df_custos = pd.DataFrame(columns=["Produto", "Variante", "Custo AliExpress (R$)", "Custo Estoque (R$)"])
+
+        # =====================================================
         # 🧾 Cria versão formatada da planilha para edição
         # =====================================================
         df_display = df_custos.copy()
@@ -4619,20 +4657,8 @@ if menu == "📦 Dashboard – Logística":
         # -------------------------------------------------
         def atualizar_planilha_custos(df):
             """Atualiza dados na planilha de custos no Google Sheets"""
-            import gspread
-            from google.oauth2.service_account import Credentials
-
             try:
-                scopes = [
-                    "https://www.googleapis.com/auth/spreadsheets",
-                    "https://www.googleapis.com/auth/drive"
-                ]
-                gcp_info = dict(st.secrets["gcp_service_account"])
-                if isinstance(gcp_info.get("private_key"), str):
-                    gcp_info["private_key"] = gcp_info["private_key"].replace("\\n", "\n")
-
-                creds = Credentials.from_service_account_info(gcp_info, scopes=scopes)
-                client = gspread.authorize(creds)
+                client = get_gsheet_client()
                 sheet = client.open_by_key(st.secrets["sheets"]["spreadsheet_id"]).sheet1
 
                 df_safe = (
