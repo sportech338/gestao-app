@@ -1470,18 +1470,13 @@ if menu == "📊 Dashboard – Tráfego Pago":
 
         # 🔧 Cria base de custos separada para cada período
         if produto_escolhido == "(Todos)":
-            # 👉 Quando o filtro está em "(Todos)", mantém toda a base de custos sem remover linhas
-            custos_base_A = df_custos.copy()
-            custos_base_B = df_custos.copy()
+            # 👉 Quando o filtro está em "(Todos)", compara apenas por produto
+            custos_base_A = df_custos[df_custos["Produto"].isin(itens_a)].copy()
+            custos_base_B = df_custos[df_custos["Produto"].isin(itens_b)].copy()
         else:
-            # 👉 Quando o produto específico está selecionado, mantém apenas as variantes do produto escolhido
-            # Normaliza espaços e letras antes de filtrar
-            df_custos["Produto"] = df_custos["Produto"].astype(str).str.strip().str.lower()
-            df_custos["Variante"] = df_custos["Variante"].astype(str).str.strip().str.lower()
-            produto_normalizado = str(produto_escolhido).strip().lower()
-
-            custos_base_A = df_custos[df_custos["Produto"] == produto_normalizado].copy()
-            custos_base_B = df_custos[df_custos["Produto"] == produto_normalizado].copy()
+            # 👉 Quando o produto específico está selecionado, compara apenas por variante
+            custos_base_A = df_custos[df_custos["Variante"].isin(itens_a)].copy()
+            custos_base_B = df_custos[df_custos["Variante"].isin(itens_b)].copy()
 
         # 🔗 Adiciona colunas de quantidade correspondentes
         custos_base_A = custos_base_A.merge(
@@ -1493,10 +1488,6 @@ if menu == "📊 Dashboard – Tráfego Pago":
             left_on=label_nivel, right_on=label_nivel, how="left"
         )
 
-        # 🚑 Garante que nenhuma linha se perca por falhas de mapeamento
-        custos_base_A[label_nivel] = custos_base_A[label_nivel].fillna("").astype(str).str.strip().str.lower()
-        custos_base_B[label_nivel] = custos_base_B[label_nivel].fillna("").astype(str).str.strip().str.lower()
-
         # 🔢 Ajusta custos unitários para cada base (dinâmico)
         if not df_custos.empty:
             # Escolhe a coluna base para indexar de forma segura
@@ -1504,7 +1495,6 @@ if menu == "📊 Dashboard – Tráfego Pago":
 
             # Remove duplicados antes de indexar para evitar InvalidIndexError
             df_custos_indexed = df_custos.drop_duplicates(subset=[col_index]).set_index(col_index)
-            df_custos_indexed.index = df_custos_indexed.index.astype(str).str.strip().str.lower()
 
             # --- Período A ---
             custos_base_A["Custo Unitário"] = custos_base_A[label_nivel].map(df_custos_indexed[col_custo])
@@ -1517,7 +1507,6 @@ if menu == "📊 Dashboard – Tráfego Pago":
             custos_base_B["Custo Unitário"] = pd.to_numeric(
                 custos_base_B["Custo Unitário"], errors="coerce"
             ).fillna(0)
-
 
         # -------------------------------------------------
         # 💵 Adiciona preço médio real (se não existir)
