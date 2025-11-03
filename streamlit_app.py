@@ -1225,6 +1225,8 @@ if menu == "📊 Dashboard – Tráfego Pago":
         "📊 Detalhamento"
     ])
 
+    # -------------------- ABA 1: VISÃO DIÁRIA --------------------
+
     with tab_daily:
         st.subheader("Comparativo de Saídas e Custos por Variante:")
         
@@ -2265,7 +2267,7 @@ if menu == "📊 Dashboard – Tráfego Pago":
             st.cache_data.clear()
             st.rerun()
     
-    # -------------------- ABA 1: VISÃO DIÁRIA --------------------
+    # -------------------- ABA 2: FUNIL --------------------
     with tab_funnel:
         # === Moeda detectada e override opcional ===
         currency_detected = (df_daily["currency"].dropna().iloc[0]
@@ -4618,16 +4620,14 @@ if menu == "📦 Dashboard – Logística":
         )
 
         # =====================================================
-        # 🧾 Seleção de produto (com opção "(Todos)")
+        # 🧾 Seleção de produto (com opção "(Todos)" pré-selecionada)
         # =====================================================
-        produto_padrao = "Flexlive - Adesivo de Recuperação Natural"
         lista_produtos = ["(Todos)"] + sorted(produtos_unicos)
-        index_padrao = lista_produtos.index(produto_padrao) if produto_padrao in lista_produtos else 0
 
         produto_escolhido = st.selectbox(
             "🧾 Selecione o produto:",
             lista_produtos,
-            index=index_padrao
+            index=0  # 🔹 Sempre começa com "(Todos)" selecionado
         )
 
         # =====================================================
