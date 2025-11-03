@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -332,72 +331,72 @@ def search_orders_shopify(query: str, limit=100):
 
 
 # =====================================================
-# Fulfillment (processar pedido)
+# Fulfillment (processar pedido) — versão com fallback 422 DSers
 # =====================================================
-def _get(url, **kwargs):
-    s = _get_session()
-    r = s.get(url, headers=HEADERS, timeout=60, **kwargs)
-    r.raise_for_status()
-    return r.json()
+def create_fulfillment(order_id, tracking_number=None, tracking_company="Correios"):
+    """
+    Cria fulfillment pela API da Shopify, mesmo para pedidos DSers.
+    Se ocorrer erro 422, reatribui automaticamente o fulfillment_order e tenta novamente.
+    """
 
-def _post(url, payload, idempotency_key=None, **kwargs):
-    s = _get_session()
-    headers = dict(HEADERS)
-    if idempotency_key:
-        headers["Idempotency-Key"] = idempotency_key
-    r = s.post(url, headers=headers, json=payload, timeout=60, **kwargs)
-    try:
-        r.raise_for_status()
-    except requests.exceptions.HTTPError:
-        st.error(f"Erro ao enviar requisição: {r.status_code} - {r.text}")
-        raise
-    return r.json()
+    headers = {
+        "Content-Type": "application/json",
+        "X-Shopify-Access-Token": ACCESS_TOKEN
+    }
 
-def list_fulfillment_orders(order_id: int):
-    url = f"{BASE_URL}/orders/{order_id}/fulfillment_orders.json"
-    data = _get(url)
-    return data.get("fulfillment_orders", [])
+    # 1️⃣ Buscar fulfillment orders do pedido
+    f_orders_url = f"{BASE_URL}/orders/{order_id}/fulfillment_orders.json"
+    f_orders_resp = requests.get(f_orders_url, headers=headers)
+    f_orders_resp.raise_for_status()
+    f_orders = f_orders_resp.json()
 
-def create_fulfillment(order_id: int,
-                       tracking_number: Optional[str] = None,
-                       tracking_company: Optional[str] = None,
-                       tracking_url: Optional[str] = None,
-                       notify_customer: bool = True):
-    """Cria o fulfillment manualmente (processa o pedido)."""
-    fos = list_fulfillment_orders(order_id)
-    if not fos:
-        raise RuntimeError("Pedido sem Fulfillment Orders elegíveis.")
+    if "fulfillment_orders" not in f_orders or not f_orders["fulfillment_orders"]:
+        raise Exception(f"⚠️ Nenhum fulfillment order encontrado para o pedido {order_id}")
 
-    line_items_by_fo = []
-    for fo in fos:
-        items = []
-        for li in fo.get("line_items", []):
-            rem = li.get("remaining_quantity") or li.get("quantity") or 0
-            if rem > 0:
-                items.append({"id": li["id"], "quantity": rem})
-        if items:
-            line_items_by_fo.append({
-                "fulfillment_order_id": fo["id"],
-                "fulfillment_order_line_items": items
-            })
+    fulfillment_orders = f_orders["fulfillment_orders"]
 
-    if not line_items_by_fo:
-        raise RuntimeError("Nada a cumprir (pedido já está totalmente processado).")
+    # 2️⃣ Tentar criar fulfillment para cada fulfillment_order encontrado
+    for f_order in fulfillment_orders:
+        fulfillment_order_id = f_order["id"]
 
-    payload = {"fulfillment": {
-        "line_items_by_fulfillment_order": line_items_by_fo,
-        "notify_customer": bool(notify_customer)
-    }}
+        payload = {
+            "fulfillment": {
+                "line_items_by_fulfillment_order": [
+                    {"fulfillment_order_id": fulfillment_order_id}
+                ],
+                "tracking_info": {
+                    "number": tracking_number or "",
+                    "company": tracking_company
+                },
+                "notify_customer": True
+            }
+        }
 
-    if tracking_number or tracking_company or tracking_url:
-        ti = {}
-        if tracking_number: ti["number"] = tracking_number
-        if tracking_company: ti["company"] = tracking_company
-        if tracking_url: ti["url"] = tracking_url
-        if ti: payload["fulfillment"]["tracking_info"] = ti
+        url_fulfillment = f"{BASE_URL}/fulfillments.json"
+        resp = requests.post(url_fulfillment, headers=headers, json=payload)
 
-    resp = _post(f"{BASE_URL}/fulfillments.json", payload, idempotency_key=str(time.time()))
-    return resp.get("fulfillment")
+        # 3️⃣ Se der erro 422 → reatribui o fulfillment order para o seu location e tenta novamente
+        if resp.status_code == 422:
+            try:
+                new_location_id = f_order.get("assigned_location_id")
+                if new_location_id:
+                    move_url = f"{BASE_URL}/fulfillment_orders/{fulfillment_order_id}/move.json"
+                    move_payload = {"fulfillment_order": {"new_location_id": new_location_id}}
+                    move_resp = requests.post(move_url, headers=headers, json=move_payload)
+                    if move_resp.status_code in [200, 201]:
+                        # tenta novamente após mover
+                        resp = requests.post(url_fulfillment, headers=headers, json=payload)
+            except Exception as err:
+                print(f"⚠️ Erro ao reatribuir fulfillment order: {err}")
+
+        # 4️⃣ Se funcionar, retorna o resultado
+        if resp.status_code in [200, 201]:
+            return resp.json()
+        else:
+            print(f"❌ Falha ao criar fulfillment (Pedido {order_id}): {resp.status_code} → {resp.text}")
+
+    # 5️⃣ Se nenhuma tentativa funcionar, lança erro
+    raise Exception(f"❌ Não foi possível criar fulfillment para o pedido {order_id}")
 
 # =====================================================
 # 🚀 LOGGING (opcional)
@@ -1219,14 +1218,1071 @@ if menu == "📊 Dashboard – Tráfego Pago":
         st.stop()
 
 
-    tab_daily, tab_daypart, tab_detail = st.tabs([
+    tab_daily, tab_funnel, tab_daypart, tab_detail = st.tabs([
         "📅 Visão diária",
+        "🔄 Funil",
         "⏱️ Horários (principal)",
         "📊 Detalhamento"
     ])
 
     # -------------------- ABA 1: VISÃO DIÁRIA --------------------
+
     with tab_daily:
+        st.subheader("Comparativo de Saídas e Custos por Variante:")
+        
+        # =====================================================
+        # 🔄 Carregamento de produtos e pedidos
+        # =====================================================
+        produtos = st.session_state.get("produtos", get_products_with_variants())
+        if produtos.empty:
+            st.warning("⚠️ Nenhum produto encontrado.")
+            st.stop()
+
+        pedidos_cached = st.session_state.get("pedidos", pd.DataFrame())
+        produtos_unicos = sorted(
+            pedidos_cached.get("product_title", pd.Series(dtype=str)).dropna().unique().tolist()
+            or produtos["product_title"].dropna().unique().tolist()
+        )
+
+        # =====================================================
+        # 🧾 Seleção de produto (com opção "(Todos)" pré-selecionada)
+        # =====================================================
+        lista_produtos = ["(Todos)"] + sorted(produtos_unicos)
+
+        produto_escolhido = st.selectbox(
+            "🧾 Selecione o produto:",
+            lista_produtos,
+            index=0  # 🔹 Sempre começa com "(Todos)" selecionado
+        )
+
+        # =====================================================
+        # 🗓️ Seleção de períodos para comparação (hoje vs ontem)
+        # =====================================================
+        hoje = datetime.now(APP_TZ).date()
+        ontem = hoje - timedelta(days=1)
+
+        col1, col2 = st.columns(2)
+        with col1:
+            periodo_a = st.date_input(
+                "📅 Período A (mais recente):",
+                (hoje, hoje),
+                format="DD/MM/YYYY"
+            )
+        with col2:
+            periodo_b = st.date_input(
+                "📅 Período B (comparar):",
+                (ontem, ontem),
+                format="DD/MM/YYYY"
+            )
+
+        if not (isinstance(periodo_a, tuple) and len(periodo_a) == 2):
+            st.warning("⚠️ Selecione um intervalo completo para o Período A.")
+            st.stop()
+        if not (isinstance(periodo_b, tuple) and len(periodo_b) == 2):
+            st.warning("⚠️ Selecione um intervalo completo para o Período B.")
+            st.stop()
+
+        inicio_a, fim_a = periodo_a
+        inicio_b, fim_b = periodo_b
+
+        # =====================================================
+        # 📦 Garantir pedidos atualizados
+        # =====================================================
+        def ensure_orders_for_range(start_date, end_date):
+            loaded_range = st.session_state.get("periodo_atual")
+            pedidos_cached = st.session_state.get("pedidos", pd.DataFrame())
+
+            def range_covers(loaded, start_, end_):
+                return loaded and (loaded[0] <= start_ and loaded[1] >= end_)
+
+            if pedidos_cached.empty or (not range_covers(loaded_range, start_date, end_date)):
+                with st.spinner(f"🔄 Carregando pedidos da Shopify de {start_date:%d/%m/%Y} a {end_date:%d/%m/%Y}..."):
+                    pedidos_new = get_orders(start_date=start_date, end_date=end_date, only_paid=True)
+                    st.session_state["pedidos"] = pedidos_new
+                    st.session_state["periodo_atual"] = (start_date, end_date)
+                    return pedidos_new
+            return pedidos_cached
+
+        periodo_min = min(inicio_a, inicio_b)
+        periodo_max = max(fim_a, fim_b)
+        pedidos = ensure_orders_for_range(periodo_min, periodo_max)
+
+        # =====================================================
+        # 🧩 Normaliza nomes de variantes — unifica por quantidade de peças
+        # =====================================================
+        import re
+
+        def extrair_qtd_pecas(nome):
+            """Extrai o número de peças do nome da variante (ex: '60 peças (Mais Vendido)' -> 60)."""
+            if not isinstance(nome, str):
+                return None
+            match = re.search(r"(\d+)\s*(peças|pçs?|unidades|unid|uni)", nome.lower())
+            return int(match.group(1)) if match else None
+
+        # Cria nova coluna auxiliar (só pra conferência)
+        pedidos["Qtd Base"] = pedidos["variant_title"].apply(extrair_qtd_pecas)
+
+        # Substitui o próprio variant_title por nome padronizado "XX peças"
+        pedidos["variant_title"] = pedidos["Qtd Base"].apply(
+            lambda x: f"{int(x)} peças" if pd.notna(x) else None
+        )
+
+        st.info("✅ Variantes normalizadas — nomes antigos e novos agora são tratados como iguais.")
+        
+        if pedidos.empty:
+            st.warning("⚠️ Nenhum pedido encontrado no intervalo selecionado.")
+            st.stop()
+
+        # =====================================================
+        # 🧮 Análise de saídas por produto
+        # =====================================================
+        pedidos["created_at"] = pd.to_datetime(pedidos["created_at"], utc=True, errors="coerce")\
+                                   .dt.tz_convert(APP_TZ).dt.tz_localize(None)
+
+        # =====================================================
+        # 🧩 Base dinâmica — produto específico → variantes | (Todos) → produtos
+        # =====================================================
+        if produto_escolhido == "(Todos)":
+            base_prod = pedidos.copy()
+            nivel_agrupamento = "product_title"
+            label_nivel = "Produto"
+        else:
+            base_prod = pedidos[pedidos["product_title"] == produto_escolhido].copy()
+            nivel_agrupamento = "variant_title"
+            label_nivel = "Variante"
+
+        def filtrar_periodo(df, ini, fim):
+            return df[(df["created_at"].dt.date >= ini) & (df["created_at"].dt.date <= fim)].copy()
+
+        df_a = filtrar_periodo(base_prod, inicio_a, fim_a)
+        df_b = filtrar_periodo(base_prod, inicio_b, fim_b)
+
+        # =====================================================
+        # 📊 Consolida vendas por produto ou variante sem duplicar linhas
+        # =====================================================
+        resumo_a = (
+            df_a.groupby(nivel_agrupamento, as_index=False)["quantity"]
+            .sum()
+            .rename(columns={"quantity": "Qtd A"})
+        )
+        resumo_b = (
+            df_b.groupby(nivel_agrupamento, as_index=False)["quantity"]
+            .sum()
+            .rename(columns={"quantity": "Qtd B"})
+        )
+
+        # 🔗 Faz merge sem duplicar nomes idênticos
+        comparativo = (
+            pd.merge(resumo_a, resumo_b, on=nivel_agrupamento, how="outer")
+            .groupby(nivel_agrupamento, as_index=False)
+            .sum(numeric_only=True)
+            .fillna(0)
+        )
+
+        comparativo["Diferença (unid.)"] = comparativo["Qtd A"] - comparativo["Qtd B"]
+        comparativo["A-B(Qtd.%)"] = np.where(
+            comparativo["Qtd B"] > 0,
+            (comparativo["Qtd A"] - comparativo["Qtd B"]) / comparativo["Qtd B"] * 100,
+            np.nan
+        )
+        comparativo["Part.A (%)"] = np.where(
+            comparativo["Qtd A"].sum() > 0,
+            comparativo["Qtd A"] / comparativo["Qtd A"].sum() * 100,
+            0
+        )
+        comparativo["Part.B (%)"] = np.where(
+            comparativo["Qtd B"].sum() > 0,
+            comparativo["Qtd B"] / comparativo["Qtd B"].sum() * 100,
+            0
+        )
+        comparativo["A-B(Part. | p.p)"] = comparativo["Part.A (%)"] - comparativo["Part.B (%)"]
+
+        comparativo.rename(columns={nivel_agrupamento: label_nivel}, inplace=True)
+        comparativo = comparativo.sort_values("Qtd A", ascending=False).reset_index(drop=True)
+
+        # =====================================================
+        # 💰 Carregar planilha de custos (Google Sheets)
+        # =====================================================
+        import gspread
+        from google.oauth2.service_account import Credentials
+
+        def get_gsheet_client():
+            scopes = [
+                "https://www.googleapis.com/auth/spreadsheets",
+                "https://www.googleapis.com/auth/drive"
+            ]
+            gcp_info = dict(st.secrets["gcp_service_account"])
+            if isinstance(gcp_info.get("private_key"), str):
+                gcp_info["private_key"] = gcp_info["private_key"].replace("\\n", "\n")
+            creds = Credentials.from_service_account_info(gcp_info, scopes=scopes)
+            client = gspread.authorize(creds)
+            return client
+
+        @st.cache_data(ttl=600)
+        def carregar_planilha_custos():
+            client = get_gsheet_client()
+            sheet = client.open_by_key(st.secrets["sheets"]["spreadsheet_id"]).sheet1
+            df = pd.DataFrame(sheet.get_all_records())
+            df.columns = df.columns.str.strip()
+            mapa_colunas = {
+                "Produto": "Produto",
+                "Variantes": "Variante",
+                "Custo | Aliexpress": "Custo AliExpress (R$)",
+                "Custo | Estoque": "Custo Estoque (R$)",
+            }
+            df.rename(columns=mapa_colunas, inplace=True)
+            return df
+
+        try:
+            df_custos = carregar_planilha_custos()
+        except Exception as e:
+            st.error(f"❌ Erro ao carregar planilha de custos: {e}")
+            st.stop()
+
+        for col in ["Custo AliExpress (R$)", "Custo Estoque (R$)"]:
+            if col in df_custos.columns:
+                df_custos[col] = (
+                    df_custos[col]
+                    .astype(str)
+                    .str.replace("R$", "", regex=False)
+                    .str.replace(",", ".")
+                    .str.strip()
+                    .replace(["inexistente", ""], np.nan)
+                    .astype(float)
+                )
+
+        # -------------------------------------------------
+        # 💼 Análise de Custos e Lucros por Fornecedor
+        # -------------------------------------------------
+        st.subheader("💼 Análise de Custos e Lucros por Fornecedor")
+
+        fornecedor = st.radio(
+            "Selecione o fornecedor para cálculo de custos e lucros:",
+            ["AliExpress", "Estoque"],
+            horizontal=True
+        )
+
+        col_custo = "Custo AliExpress (R$)" if fornecedor == "AliExpress" else "Custo Estoque (R$)"
+
+        # 🔍 Detecta itens realmente existentes em cada período (variante ou produto)
+        itens_a = base_prod[base_prod["created_at"].dt.date.between(inicio_a, fim_a)][nivel_agrupamento].unique().tolist()
+        itens_b = base_prod[base_prod["created_at"].dt.date.between(inicio_b, fim_b)][nivel_agrupamento].unique().tolist()
+
+        # 🔧 Cria base de custos separada para cada período
+        if produto_escolhido == "(Todos)":
+            # 👉 Quando o filtro está em "(Todos)", mantém toda a base de custos sem remover linhas
+            custos_base_A = df_custos.copy()
+            custos_base_B = df_custos.copy()
+        else:
+            # 👉 Quando o produto específico está selecionado, mantém apenas as variantes do produto escolhido
+            custos_base_A = df_custos[df_custos["Produto"] == produto_escolhido].copy()
+            custos_base_B = df_custos[df_custos["Produto"] == produto_escolhido].copy()
+
+        # 🔗 Adiciona colunas de quantidade correspondentes
+        custos_base_A = custos_base_A.merge(
+            comparativo[[label_nivel, "Qtd A"]],
+            left_on=label_nivel, right_on=label_nivel, how="left"
+        )
+        custos_base_B = custos_base_B.merge(
+            comparativo[[label_nivel, "Qtd B"]],
+            left_on=label_nivel, right_on=label_nivel, how="left"
+        )
+
+        # 🔢 Ajusta custos unitários para cada base (dinâmico)
+        if not df_custos.empty:
+            # Escolhe a coluna base para indexar de forma segura
+            col_index = label_nivel if label_nivel in df_custos.columns else "Variante"
+
+            # Remove duplicados antes de indexar para evitar InvalidIndexError
+            df_custos_indexed = df_custos.drop_duplicates(subset=[col_index]).set_index(col_index)
+
+            # --- Período A ---
+            custos_base_A["Custo Unitário"] = custos_base_A[label_nivel].map(df_custos_indexed[col_custo])
+            custos_base_A["Custo Unitário"] = pd.to_numeric(
+                custos_base_A["Custo Unitário"], errors="coerce"
+            ).fillna(0)
+
+            # --- Período B ---
+            custos_base_B["Custo Unitário"] = custos_base_B[label_nivel].map(df_custos_indexed[col_custo])
+            custos_base_B["Custo Unitário"] = pd.to_numeric(
+                custos_base_B["Custo Unitário"], errors="coerce"
+            ).fillna(0)
+
+        # -------------------------------------------------
+        # 💵 Adiciona preço médio real (se não existir)
+        # -------------------------------------------------
+        def add_preco_medio(custos_df):
+            if "Preço Médio" not in custos_df.columns:
+                if "price" in base_prod.columns:
+                    precos = base_prod.groupby(nivel_agrupamento)["price"].mean().reset_index()
+                    precos.rename(columns={nivel_agrupamento: label_nivel, "price": "Preço Médio"}, inplace=True)
+                    custos_df = custos_df.merge(precos, on=label_nivel, how="left")
+                else:
+                    custos_df["Preço Médio"] = (custos_df["Custo Unitário"] * 2.5).round(2)
+            return custos_df
+
+        custos_base_A = add_preco_medio(custos_base_A)
+        custos_base_B = add_preco_medio(custos_base_B)
+
+        # -------------------------------------------------
+        # 🧮 Cálculos por período (independentes)
+        # -------------------------------------------------
+        def calc_periodo(df, periodo_label, qtd_col):
+            df = df.copy()
+            df[f"Custo {periodo_label}"] = df["Custo Unitário"] * df[qtd_col]
+            df[f"Receita {periodo_label}"] = (
+                df[qtd_col] * df["Preço Médio"] if "Preço Médio" in df.columns else np.nan
+            )
+            df[f"Lucro Bruto {periodo_label}"] = df[f"Receita {periodo_label}"] - df[f"Custo {periodo_label}"]
+
+            # =====================================================
+            # 📊 Correção: participação global no modo "(Todos)"
+            # =====================================================
+            if produto_escolhido == "(Todos)":
+                # Calcula o total de receita global de todos os produtos
+                total_receita_global = (
+                    pedidos.assign(receita_total=pedidos["price"] * pedidos["quantity"])
+                    .groupby("product_title")["receita_total"]
+                    .sum()
+                    .sum()
+                )
+
+                # Se houver receita global válida, calcula a % global
+                df[f"Part.{periodo_label} (%)"] = np.where(
+                    total_receita_global > 0,
+                    df[f"Receita {periodo_label}"] / total_receita_global * 100,
+                    0
+                )
+
+            else:
+                # Mantém o comportamento atual (por variantes dentro do produto)
+                total_receita = df[f"Receita {periodo_label}"].sum() if df[f"Receita {periodo_label}"].notna().any() else 0
+                df[f"Part.{periodo_label} (%)"] = np.where(
+                    total_receita > 0,
+                    df[f"Receita {periodo_label}"] / total_receita * 100,
+                    0
+                )
+
+            return df[[label_nivel, qtd_col, f"Custo {periodo_label}", f"Receita {periodo_label}",
+                       f"Lucro Bruto {periodo_label}", f"Part.{periodo_label} (%)"]]
+
+
+        # =====================================================
+        # 💡 Consolidação correta — evita duplicar produtos no modo "(Todos)"
+        # =====================================================
+        if produto_escolhido != "(Todos)":
+            # Produto específico → mantém cálculo normal por variante
+            df_a = calc_periodo(custos_base_A, "A", "Qtd A")
+            df_b = calc_periodo(custos_base_B, "B", "Qtd B")
+        else:
+            # "(Todos)" → consolida direto da base de pedidos (por produto)
+            def consolidar_por_produto_todos(pedidos, ini, fim, periodo_label):
+                """
+                Consolida pedidos por produto (sem duplicar variantes).
+                Usa quantidades reais da Shopify e calcula custos, receita e lucro por produto.
+                """
+                df_filtro = pedidos[
+                    (pedidos["created_at"].dt.date >= ini)
+                    & (pedidos["created_at"].dt.date <= fim)
+                ].copy()
+
+                # 🔹 Normaliza nome do produto
+                df_filtro["product_title"] = (
+                    df_filtro["product_title"]
+                    .astype(str)
+                    .str.strip()
+                    .str.replace(r"\s{2,}", " ", regex=True)
+                )
+
+                # 🔹 Garante que o mesmo produto dentro de um mesmo pedido não duplique
+                df_filtro = (
+                    df_filtro
+                    .sort_values(["order_id", "product_title"])
+                    .drop_duplicates(subset=["order_id", "product_title"], keep="first")
+                    .reset_index(drop=True)
+                )
+
+                # 🔹 Agrupa direto por produto
+                agrup = (
+                    df_filtro.groupby("product_title", as_index=False)
+                    .agg({
+                        "quantity": "sum",
+                        "price": lambda x: np.average(
+                            x, weights=df_filtro.loc[x.index, "quantity"]
+                        ),
+                    })
+                    .rename(columns={
+                        "product_title": "Produto",
+                        "quantity": f"Qtd {periodo_label}",
+                        "price": "Preço Médio"
+                    })
+                )
+
+                # 🔗 Junta custo real por produto
+                agrup = agrup.merge(
+                    df_custos[["Produto", col_custo]].drop_duplicates("Produto"),
+                    on="Produto", how="left"
+                )
+
+                agrup["Custo Unitário"] = pd.to_numeric(agrup[col_custo], errors="coerce").fillna(0)
+                agrup[f"Custo {periodo_label}"] = agrup["Custo Unitário"] * agrup[f"Qtd {periodo_label}"]
+                agrup[f"Receita {periodo_label}"] = agrup[f"Qtd {periodo_label}"] * agrup["Preço Médio"]
+                agrup[f"Lucro Bruto {periodo_label}"] = (
+                    agrup[f"Receita {periodo_label}"] - agrup[f"Custo {periodo_label}"]
+                )
+
+                # 💡 Investimento será distribuído mais adiante, no bloco Meta Ads
+                return agrup
+
+            # 👉 Cria df_a / df_b direto dos pedidos (sem investimento ainda)
+            df_a = consolidar_por_produto_todos(pedidos, inicio_a, fim_a, "A")
+            df_b = consolidar_por_produto_todos(pedidos, inicio_b, fim_b, "B")
+
+            # =====================================================
+            # 📊 Calcula participação global correta no modo "(Todos)"
+            # =====================================================
+            total_receita_global_a = df_a["Receita A"].sum()
+            total_receita_global_b = df_b["Receita B"].sum()
+
+            df_a["Part.A (%)"] = np.where(
+                total_receita_global_a > 0,
+                df_a["Receita A"] / total_receita_global_a * 100,
+                0
+            )
+            df_b["Part.B (%)"] = np.where(
+                total_receita_global_b > 0,
+                df_b["Receita B"] / total_receita_global_b * 100,
+                0
+            )
+
+
+        # =====================================================
+        # 💸 Vincular investimento Meta Ads automaticamente
+        # =====================================================
+        from datetime import datetime
+
+        # Datas formatadas para API Meta
+        since_a, until_a = inicio_a.strftime("%Y-%m-%d"), fim_a.strftime("%Y-%m-%d")
+        since_b, until_b = inicio_b.strftime("%Y-%m-%d"), fim_b.strftime("%Y-%m-%d")
+
+        # Nome base do produto (ex.: "Flexlive", "KneePro", etc.)
+        produto_nome = produto_escolhido.split(" - ")[0]
+
+        try:
+            # Busca investimento Meta por produto e período (usando credenciais automáticas)
+            ads_a = fetch_insights_daily(
+                act_id=act_id,
+                token=token,
+                api_version="v23.0",
+                since_str=since_a,
+                until_str=until_a,
+                level="campaign",
+                product_name=produto_nome
+            )
+
+            ads_b = fetch_insights_daily(
+                act_id=act_id,
+                token=token,
+                api_version="v23.0",
+                since_str=since_b,
+                until_str=until_b,
+                level="campaign",
+                product_name=produto_nome
+            )
+
+            # Soma total de investimento de cada período
+            invest_total_a = ads_a["spend"].sum() if not ads_a.empty else 0
+            invest_total_b = ads_b["spend"].sum() if not ads_b.empty else 0
+
+            # Função para distribuir investimento proporcional às vendas
+            def distribuir_investimento(df, invest_total, qtd_col):
+                total_qtd = df[qtd_col].sum()
+                if total_qtd == 0:
+                    df["Invest. (R$)"] = 0
+                else:
+                    df["Invest. (R$)"] = (df[qtd_col] / total_qtd) * invest_total
+                return df
+
+            # Aplica para os dois períodos
+            df_a = distribuir_investimento(df_a, invest_total_a, "Qtd A")
+            df_b = distribuir_investimento(df_b, invest_total_b, "Qtd B")
+
+            # Feedback visual
+            st.success(
+                f"✅ Investimentos distribuídos automaticamente com base no gasto de anúncios Meta Ads ({produto_nome})"
+            )
+
+        except Exception as e:
+            st.warning(f"⚠️ Não foi possível calcular investimento automático via Meta Ads. Detalhe: {e}")
+            df_a["Invest. (R$)"] = 0
+            df_b["Invest. (R$)"] = 0
+        
+        # -------------------------------------------------
+        # 💲 Função auxiliar para formatar valores monetários
+        # -------------------------------------------------
+        def fmt_moeda(valor):
+            """Formata número como moeda brasileira."""
+            try:
+                return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            except Exception:
+                return valor
+
+        # -------------------------------------------------
+        # 💰 Exibir tabelas lado a lado (com formatação monetária)
+        # -------------------------------------------------
+        def calcular_roi_roas(df, periodo):
+            """Calcula ROI, ROAS, Lucro Bruto e Lucro Líquido e adiciona linha TOTAL (produto ou variantes)."""
+            df = df.copy()
+
+            # -------------------------------------------------
+            # 💸 ROI e ROAS individuais
+            # -------------------------------------------------
+            if "Invest. (R$)" in df.columns:
+                df[f"ROI {periodo}"] = np.where(
+                    df["Invest. (R$)"] > 0,
+                    df[f"Lucro Bruto {periodo}"] / df["Invest. (R$)"],
+                    np.nan
+                )
+                df[f"ROAS {periodo}"] = np.where(
+                    df["Invest. (R$)"] > 0,
+                    df[f"Receita {periodo}"] / df["Invest. (R$)"],
+                    np.nan
+                )
+
+            # -------------------------------------------------
+            # ✅ Calcula Lucro Líquido (abatendo investimento)
+            # -------------------------------------------------
+            df[f"Lucro Líquido {periodo}"] = df[f"Lucro Bruto {periodo}"] - df["Invest. (R$)"]
+
+            # -------------------------------------------------
+            # 🧾 Linha TOTAL consolidada (sempre mostrada)
+            # -------------------------------------------------
+            total_qtd = df[f"Qtd {periodo}"].sum()
+            total_custo = df[f"Custo {periodo}"].sum()
+            total_receita = df[f"Receita {periodo}"].sum()
+            total_lucro = df[f"Lucro Bruto {periodo}"].sum()
+            total_lucro_liq = df[f"Lucro Líquido {periodo}"].sum()
+            total_invest = df["Invest. (R$)"].sum()
+
+            if total_invest > 0:
+                roi_total = total_lucro_liq / total_invest
+                roas_total = total_receita / total_invest
+            else:
+                roi_total, roas_total = np.nan, np.nan
+
+            total_row = pd.DataFrame([{
+                label_nivel: "🧾 TOTAL",
+                f"Qtd {periodo}": total_qtd,
+                f"Custo {periodo}": total_custo,
+                f"Receita {periodo}": total_receita,
+                f"Lucro Bruto {periodo}": total_lucro,
+                f"Lucro Líquido {periodo}": total_lucro_liq,
+                "Invest. (R$)": total_invest,
+                f"ROI {periodo}": roi_total,
+                f"ROAS {periodo}": roas_total,
+                f"Part.{periodo} (%)": 100.0
+            }])
+
+            # Junta o total no final
+            df = pd.concat([df, total_row], ignore_index=True)
+            return df
+
+        # ✅ Aplica aos dois períodos
+        df_a = calcular_roi_roas(df_a, "A")
+        df_b = calcular_roi_roas(df_b, "B")
+
+
+        # -------------------------------------------------
+        # 🎨 Destaque visual da linha TOTAL
+        # -------------------------------------------------
+        def highlight_total(row):
+            """Aplica o mesmo fundo do cabeçalho para a linha TOTAL."""
+            if str(row[label_nivel]).strip().upper() == "🧾 TOTAL":
+                return [
+                    "background-color: #262730; font-weight: bold; color: white;"
+                ] * len(row)
+            return [""] * len(row)
+
+
+        # -------------------------------------------------
+        # 📆 Tabela Período A
+        # -------------------------------------------------
+        with col1:
+            st.markdown("### 📆 Período A")
+            styled_a = (
+                df_a[[
+                    label_nivel, "Qtd A", "Receita A", "Custo A",
+                    "Lucro Bruto A", "Invest. (R$)", "Lucro Líquido A",
+                    "ROI A", "ROAS A", "Part.A (%)"
+                ]]
+                .style
+                .format({
+                    "Qtd A": "{:.0f}",
+                    "Custo A": fmt_moeda,
+                    "Receita A": fmt_moeda,
+                    "Lucro Bruto A": fmt_moeda,
+                    "Lucro Líquido A": fmt_moeda,
+                    "Invest. (R$)": fmt_moeda,
+                    "ROI A": "{:.2f}x",
+                    "ROAS A": "{:.2f}x",
+                    "Part.A (%)": "{:.1f}%"
+                })
+                .set_properties(**{"text-align": "right"})
+                .apply(highlight_total, axis=1)
+            )
+            st.dataframe(styled_a, use_container_width=True)
+
+        # -------------------------------------------------
+        # 📆 Tabela Período B
+        # -------------------------------------------------
+        with col2:
+            st.markdown("### 📆 Período B")
+            styled_b = (
+                df_b[[
+                    label_nivel, "Qtd B", "Receita B", "Custo B",
+                    "Lucro Bruto B", "Invest. (R$)", "Lucro Líquido B",
+                    "ROI B", "ROAS B", "Part.B (%)"
+                ]]
+                .style
+                .format({
+                    "Qtd B": "{:.0f}",
+                    "Custo B": fmt_moeda,
+                    "Receita B": fmt_moeda,
+                    "Lucro Bruto B": fmt_moeda,
+                    "Lucro Líquido B": fmt_moeda,
+                    "Invest. (R$)": fmt_moeda,
+                    "ROI B": "{:.2f}x",
+                    "ROAS B": "{:.2f}x",
+                    "Part.B (%)": "{:.1f}%"
+                })
+                .set_properties(**{"text-align": "right"})
+                .apply(highlight_total, axis=1)
+            )
+            st.dataframe(styled_b, use_container_width=True)
+
+        # -------------------------------------------------
+        # 📈 Comparativo geral entre períodos
+        # -------------------------------------------------
+        st.subheader(f"📈 Comparativo entre Períodos (por {label_nivel.lower()})")
+
+        import re
+
+        # =====================================================
+        # 🔍 Pareamento inteligente baseado em quantidade aproximada
+        # =====================================================
+        import re
+
+        def extrair_qtd_pecas(nome):
+            """Extrai a quantidade numérica (20, 30, 40, 60, 120...) do nome da variante."""
+            if not isinstance(nome, str):
+                return None
+            match = re.search(r"(\d+)\s*(peças|unid|uni|pçs?)", nome.lower())
+            return int(match.group(1)) if match else None
+
+        # Cria colunas de quantidade
+        df_a["qtd_variante"] = df_a[label_nivel].apply(extrair_qtd_pecas)
+        df_b["qtd_variante"] = df_b[label_nivel].apply(extrair_qtd_pecas)
+
+        # ----------------------------------------------
+        # 🔁 Pareia o número mais próximo entre A e B (sem depender de 'variant_title')
+        # ----------------------------------------------
+        matches = []
+        usadas_b = set()
+
+        for _, row_a in df_a.iterrows():
+            qtd_a = row_a.get("qtd_variante", None)
+            if pd.isna(qtd_a):
+                continue
+
+            # define qual coluna usar como nome-base (Produto ou Variante)
+            col_b_nome = label_nivel if label_nivel in df_b.columns else df_b.columns[0]
+
+            # encontra as linhas B com qtd válida e ainda não pareadas
+            df_b_valid = df_b[
+                (~df_b["qtd_variante"].isna()) &
+                (~df_b[col_b_nome].isin(usadas_b))
+            ]
+
+            if df_b_valid.empty:
+                matches.append((row_a[label_nivel], None))
+                continue
+
+            # escolhe o número mais próximo
+            idx_min = (df_b_valid["qtd_variante"] - qtd_a).abs().idxmin()
+            match_b = df_b_valid.loc[idx_min]
+
+            matches.append((row_a[label_nivel], match_b[col_b_nome]))
+            usadas_b.add(match_b[col_b_nome])
+
+        # adiciona variantes B que ficaram sem par
+        col_b_nome = label_nivel if label_nivel in df_b.columns else df_b.columns[0]
+        for _, row_b in df_b.iterrows():
+            if row_b[col_b_nome] not in usadas_b:
+                matches.append((None, row_b[col_b_nome]))
+
+        # cria tabela final de correspondência
+        corresp = pd.DataFrame(matches, columns=[f"{label_nivel} A", f"{label_nivel} B"])
+
+        # --- Renomeia colunas para evitar conflito no merge
+        df_a_pref = df_a.add_suffix("_A")
+        df_b_pref = df_b.add_suffix("_B")
+
+        # =====================================================
+        # 🧩 Cria comparativo adaptativo — Produto vs Variante
+        # =====================================================
+        if produto_escolhido == "(Todos)":
+            # -------------------------------------------------
+            # 🔁 Modo "Todos" → compara produtos consolidados
+            # -------------------------------------------------
+            label_nivel = "Produto"
+
+            comp = pd.merge(
+                df_a, df_b,
+                on="Produto", how="outer",
+                suffixes=("_A", "_B")
+            ).fillna(0)
+
+            comp["Δ Qtd."] = comp["Qtd A"] - comp["Qtd B"]
+            comp["Δ Custo"] = comp["Custo A"] - comp["Custo B"]
+            comp["Δ Receita"] = comp["Receita A"] - comp["Receita B"]
+            comp["Δ Lucro B."] = comp["Lucro Bruto A"] - comp["Lucro Bruto B"]
+            comp["Δ Lucro Líq."] = comp["Lucro Líquido A"] - comp["Lucro Líquido B"]
+            comp["Δ Invest."] = comp["Invest. (R$)_A"] - comp["Invest. (R$)_B"]
+            comp["Δ ROI"] = comp["ROI A"] - comp["ROI B"]
+            comp["Δ ROAS"] = comp["ROAS A"] - comp["ROAS B"]
+            comp["Δ Part.(p.p)"] = comp["Part.A (%)"] - comp["Part.B (%)"]
+
+            comp["Δ Qtd.(%)"] = np.where(
+                comp["Qtd B"] > 0,
+                (comp["Qtd A"] - comp["Qtd B"]) / comp["Qtd B"] * 100,
+                np.nan
+            )
+            comp["Δ Receita(%)"] = np.where(
+                comp["Receita B"] > 0,
+                (comp["Receita A"] - comp["Receita B"]) / comp["Receita B"] * 100,
+                np.nan
+            )
+            comp["Δ Lucro Líq.(%)"] = np.where(
+                comp["Lucro Líquido B"] > 0,
+                (comp["Lucro Líquido A"] - comp["Lucro Líquido B"]) / comp["Lucro Líquido B"] * 100,
+                np.nan
+            )
+
+        else:
+            # -------------------------------------------------
+            # 🔁 Produto específico → compara variantes
+            # -------------------------------------------------
+            comp = (
+                corresp
+                .merge(df_a_pref, left_on=f"{label_nivel} A", right_on=f"{label_nivel}_A", how="left")
+                .merge(df_b_pref, left_on=f"{label_nivel} B", right_on=f"{label_nivel}_B", how="left")
+            )
+
+        # =====================================================
+        # 💡 Preenche corretamente nomes de variantes ausentes
+        # =====================================================
+        col_a = f"{label_nivel} A" if f"{label_nivel} A" in comp.columns else label_nivel
+        col_b = f"{label_nivel} B" if f"{label_nivel} B" in comp.columns else label_nivel
+
+        comp[col_a] = np.where(
+            comp[col_a].isna() | (comp[col_a] == 0),
+            comp[col_b],
+            comp[col_a]
+        )
+        comp[col_b] = np.where(
+            comp[col_b].isna() | (comp[col_b] == 0),
+            comp[col_a],
+            comp[col_b]
+        )
+
+        comp = comp.fillna(0)
+
+        # =====================================================
+        # 📊 Cálculos de diferenças e variações
+        # =====================================================
+        if produto_escolhido != "(Todos)":
+            # 🔒 Garante que comp já exista antes dos cálculos
+            if "comp" not in locals():
+                st.error("❌ ERRO: A variável 'comp' não foi criada antes deste ponto.")
+                st.stop()
+
+            # -------------------------------------------------
+            # 📈 Diferenças diretas (valores absolutos)
+            # -------------------------------------------------
+            comp["Δ Qtd."] = comp.get("Qtd A_A", 0) - comp.get("Qtd B_B", 0)
+            comp["Δ Custo"] = comp.get("Custo A_A", 0) - comp.get("Custo B_B", 0)
+            comp["Δ Lucro B."] = comp.get("Lucro Bruto A_A", 0) - comp.get("Lucro Bruto B_B", 0)
+            comp["Δ Lucro Líq."] = comp.get("Lucro Líquido A_A", 0) - comp.get("Lucro Líquido B_B", 0)
+            comp["Δ Receita"] = comp.get("Receita A_A", 0) - comp.get("Receita B_B", 0)
+            comp["Δ Invest."] = comp.get("Invest. (R$)_A", 0) - comp.get("Invest. (R$)_B", 0)
+            comp["Δ ROI"] = comp.get("ROI A_A", 0) - comp.get("ROI B_B", 0)
+            comp["Δ ROAS"] = comp.get("ROAS A_A", 0) - comp.get("ROAS B_B", 0)
+            comp["Δ Part.(p.p)"] = comp.get("Part.A (%)_A", 0) - comp.get("Part.B (%)_B", 0)
+
+            # -------------------------------------------------
+            # 📊 Diferenças percentuais (%)
+            # -------------------------------------------------
+            def safe_div(a, b):
+                """Evita divisões por zero e retorna variação percentual"""
+                return np.where(b != 0, (a - b) / b * 100, np.nan)
+
+            comp["Δ Qtd.(%)"] = safe_div(comp.get("Qtd A_A", 0), comp.get("Qtd B_B", 0))
+            comp["Δ Custo(%)"] = safe_div(comp.get("Custo A_A", 0), comp.get("Custo B_B", 0))
+            comp["Δ Lucro B.(%)"] = safe_div(comp.get("Lucro Bruto A_A", 0), comp.get("Lucro Bruto B_B", 0))
+            comp["Δ Lucro Líq.(%)"] = safe_div(comp.get("Lucro Líquido A_A", 0), comp.get("Lucro Líquido B_B", 0))
+            comp["Δ Receita(%)"] = safe_div(comp.get("Receita A_A", 0), comp.get("Receita B_B", 0))
+            comp["Δ Invest.(%)"] = safe_div(comp.get("Invest. (R$)_A", 0), comp.get("Invest. (R$)_B", 0))
+
+            # -------------------------------------------------
+            # 📊 Pontos percentuais (variações absolutas)
+            # -------------------------------------------------
+            comp["Δ ROI(p.p)"] = comp.get("ROI A_A", 0) - comp.get("ROI B_B", 0)
+            comp["Δ ROAS(p.p)"] = comp.get("ROAS A_A", 0) - comp.get("ROAS B_B", 0)
+
+        # =====================================================
+        # 🧾 Ajuste de nome da coluna e remoção de TOTAL duplicado
+        # =====================================================
+        if produto_escolhido == "(Todos)":
+            label_nivel = "Produto"
+        else:
+            label_nivel = "Variante"
+
+        # Garante que a linha TOTAL apareça só uma vez
+        col_ref = f"{label_nivel} A" if f"{label_nivel} A" in comp.columns else label_nivel
+        comp = comp[~comp[col_ref].astype(str).str.contains("TOTAL", case=False, na=False)]
+
+        # =====================================================
+        # 📋 Garante que a linha TOTAL fique no final (modo seguro)
+        # =====================================================
+        col_ref = None
+        for col in [f"{label_nivel} A", f"{label_nivel} B", label_nivel]:
+            if col in comp.columns:
+                col_ref = col
+                break
+
+        if col_ref is not None:
+            mask_total = comp[col_ref].astype(str).str.contains("TOTAL", case=False, na=False)
+            comp = pd.concat([comp[~mask_total], comp[mask_total]], ignore_index=True)
+        else:
+            # Fallback: se não encontrar nenhuma coluna válida
+            mask_total = pd.Series([False] * len(comp))
+
+        # =====================================================
+        # 🎨 Estilo visual da tabela comparativa (com cor na linha TOTAL)
+        # =====================================================
+        def highlight_total(row):
+            """Mantém o fundo escuro tanto na linha TOTAL quanto na Δ TOTAL."""
+            col_check = f"{label_nivel} A" if f"{label_nivel} A" in comp.columns else label_nivel
+            nome = str(row.get(col_check, "")).upper()
+
+            if "TOTAL" in nome:  # cobre 🧾 TOTAL e 🧾 Δ TOTAL
+                styles = []
+                for col, val in row.items():
+                    base = 'background-color: #262730; font-weight: bold;'
+                    # Mantém verde/vermelho mesmo na linha TOTAL ou Δ TOTAL
+                    if isinstance(val, (int, float)):
+                        if val > 0:
+                            styles.append(base + 'color: #00bf63;')
+                        elif val < 0:
+                            styles.append(base + 'color: #ff4d4d;')
+                        else:
+                            styles.append(base + 'color: white;')
+                    else:
+                        styles.append(base + 'color: white;')
+                return styles
+
+            return [''] * len(row)
+
+        def highlight_variations(val):
+            """Aplica verde para melhora e vermelho para piora."""
+            try:
+                if isinstance(val, (int, float)):
+                    if val > 0:
+                        return 'color: #00bf63; font-weight: 600;'
+                    elif val < 0:
+                        return 'color: #ff4d4d; font-weight: 600;'
+                elif isinstance(val, str) and any(ch in val for ch in ['+', '-', '%', 'x']):
+                    num = float(val.replace('%', '').replace('x', '').replace('+', '').replace(',', '.').strip())
+                    if num > 0:
+                        return 'color: #00bf63; font-weight: 600;'
+                    elif num < 0:
+                        return 'color: #ff4d4d; font-weight: 600;'
+            except Exception:
+                pass
+            return 'color: white;'
+
+        # =====================================================
+        # 📋 Define colunas dinamicamente (produto vs variante)
+        # =====================================================
+        if f"{label_nivel} A" in comp.columns and f"{label_nivel} B" in comp.columns:
+            cols_base = [f"{label_nivel} A", f"{label_nivel} B"]
+        else:
+            cols_base = [label_nivel]
+
+        cols_deltas = [
+            "Δ Qtd.", "Δ Qtd.(%)",
+            "Δ Custo", "Δ Custo(%)",
+            "Δ Lucro B.", "Δ Lucro B.(%)",
+            "Δ Lucro Líq.", "Δ Lucro Líq.(%)",
+            "Δ Receita", "Δ Receita(%)",
+            "Δ Invest.", "Δ Invest.(%)",
+            "Δ ROI", "Δ ROAS", "Δ Part.(p.p)"
+        ]
+
+        # Filtra apenas colunas que realmente existem
+        cols_existentes = [c for c in cols_base + cols_deltas if c in comp.columns]
+
+        # =====================================================
+        # 🧾 Adiciona linha Δ TOTAL consolidada (comparativo A vs B)
+        # =====================================================
+        if not comp.empty:
+            total_cols_sum = [
+                "Δ Qtd.", "Δ Custo", "Δ Lucro B.", "Δ Lucro Líq.",
+                "Δ Receita", "Δ Invest."
+            ]
+            total_cols_media = [
+                "Δ Qtd.(%)", "Δ Custo(%)", "Δ Lucro B.(%)",
+                "Δ Lucro Líq.(%)", "Δ Receita(%)", "Δ Invest.(%)",
+                "Δ ROI", "Δ ROAS", "Δ Part.(p.p)"
+            ]
+
+            # Soma direta dos valores absolutos
+            total_data = {
+                col: comp[col].sum() if col in comp.columns else np.nan
+                for col in total_cols_sum
+            }
+
+            # Média ponderada ou simples (dependendo da disponibilidade)
+            for col in total_cols_media:
+                if col in comp.columns:
+                    if "Receita A_A" in comp.columns and comp["Receita A_A"].sum() > 0:
+                        pesos = comp["Receita A_A"] / comp["Receita A_A"].sum()
+                        total_data[col] = np.average(comp[col], weights=pesos)
+                    else:
+                        total_data[col] = np.nanmean(comp[col])
+
+            # Corrige rótulo (preenche tanto col_A quanto col_B)
+            col_a = f"{label_nivel} A" if f"{label_nivel} A" in comp.columns else label_nivel
+            col_b = f"{label_nivel} B" if f"{label_nivel} B" in comp.columns else label_nivel
+
+            total_data[col_a] = "🧾 Δ TOTAL"
+            total_data[col_b] = "🧾 Δ TOTAL"
+
+            # Adiciona linha Δ TOTAL no final
+            comp = pd.concat([comp, pd.DataFrame([total_data])], ignore_index=True)
+        
+
+        styled_comp = (
+            comp[cols_existentes]
+            .style
+            .format({
+                "Δ Qtd.": "{:.0f}",
+                "Δ Qtd.(%)": "{:+.1f}%",
+                "Δ Custo": fmt_moeda,
+                "Δ Custo(%)": "{:+.1f}%",
+                "Δ Lucro B.": fmt_moeda,
+                "Δ Lucro B.(%)": "{:+.1f}%",
+                "Δ Lucro Líq.": fmt_moeda,
+                "Δ Lucro Líq.(%)": "{:+.1f}%",
+                "Δ Receita": fmt_moeda,
+                "Δ Receita(%)": "{:+.1f}%",
+                "Δ Invest.": fmt_moeda,
+                "Δ Invest.(%)": "{:+.1f}%",
+                "Δ ROI": "{:+.2f}x",
+                "Δ ROAS": "{:+.2f}x",
+                "Δ Part.(p.p)": "{:+.1f}"
+            })
+            .applymap(highlight_variations, subset=[c for c in cols_deltas if c in comp.columns])
+            .apply(highlight_total, axis=1)
+            .set_properties(**{
+                "text-align": "right",
+                "font-size": "14px",
+                "border-color": "rgba(255,255,255,0.1)"
+            })
+        )
+
+        st.data_editor(styled_comp, use_container_width=True, disabled=True)
+
+
+        # =====================================================
+        # 🧾 Cria versão formatada da planilha para edição
+        # =====================================================
+        df_display = df_custos.copy()
+        for col in ["Custo AliExpress (R$)", "Custo Estoque (R$)"]:
+            if col in df_display.columns:
+                df_display[col] = df_display[col].apply(
+                    lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                    if pd.notna(x) else ""
+                )
+
+        # -------------------------------------------------
+        # 🔄 Função para atualizar planilha de custos
+        # -------------------------------------------------
+        def atualizar_planilha_custos(df):
+            """Atualiza dados na planilha de custos no Google Sheets"""
+            import gspread
+            from google.oauth2.service_account import Credentials
+
+            try:
+                scopes = [
+                    "https://www.googleapis.com/auth/spreadsheets",
+                    "https://www.googleapis.com/auth/drive"
+                ]
+                gcp_info = dict(st.secrets["gcp_service_account"])
+                if isinstance(gcp_info.get("private_key"), str):
+                    gcp_info["private_key"] = gcp_info["private_key"].replace("\\n", "\n")
+
+                creds = Credentials.from_service_account_info(gcp_info, scopes=scopes)
+                client = gspread.authorize(creds)
+                sheet = client.open_by_key(st.secrets["sheets"]["spreadsheet_id"]).sheet1
+
+                df_safe = (
+                    df.copy()
+                    .fillna("")
+                    .astype(str)
+                    .replace("nan", "", regex=False)
+                )
+
+                body = [df_safe.columns.values.tolist()] + df_safe.values.tolist()
+                sheet.batch_clear(["A:Z"])
+                sheet.update(body)
+
+                st.success("✅ Planilha atualizada com sucesso!")
+            except Exception as e:
+                st.error(f"❌ Erro ao atualizar planilha: {e}")
+
+        # =====================================================
+        # 📝 Edição direta da planilha no app
+        # =====================================================
+        st.subheader("📝 Custos por Variante")
+
+        edit_df = st.data_editor(
+            df_display,
+            num_rows="dynamic",
+            use_container_width=True
+        )
+
+        if st.button("💾 Salvar alterações na planilha"):
+            # ⚙️ Converte R$ 25,00 → 25.00 antes de enviar
+            for col in ["Custo AliExpress (R$)", "Custo Estoque (R$)"]:
+                if col in edit_df.columns:
+                    edit_df[col] = (
+                        edit_df[col]
+                        .astype(str)
+                        .str.replace("R$", "", regex=False)
+                        .str.replace(".", "", regex=False)
+                        .str.replace(",", ".", regex=False)
+                        .str.strip()
+                        .replace("", np.nan)
+                        .astype(float)
+                    )
+
+            atualizar_planilha_custos(edit_df)
+            st.cache_data.clear()
+            st.rerun()
+    
+    # -------------------- ABA 2: FUNIL --------------------
+    with tab_funnel:
         # === Moeda detectada e override opcional ===
         currency_detected = (df_daily["currency"].dropna().iloc[0]
                              if "currency" in df_daily.columns and not df_daily["currency"].dropna().empty else "BRL")
@@ -3562,159 +4618,9 @@ if menu == "📦 Dashboard – Logística":
     # =====================================================
     with aba2:
         st.subheader("Comparativo de Saídas e Custos por Variante:")
-        
-        # =====================================================
-        # 🔄 Carregamento de produtos e pedidos
-        # =====================================================
-        produtos = st.session_state.get("produtos", get_products_with_variants())
-        if produtos.empty:
-            st.warning("⚠️ Nenhum produto encontrado.")
-            st.stop()
-
-        pedidos_cached = st.session_state.get("pedidos", pd.DataFrame())
-        produtos_unicos = sorted(
-            pedidos_cached.get("product_title", pd.Series(dtype=str)).dropna().unique().tolist()
-            or produtos["product_title"].dropna().unique().tolist()
-        )
 
         # =====================================================
-        # 🧾 Seleção de produto (com opção "(Todos)")
-        # =====================================================
-        produto_padrao = "Flexlive - Adesivo de Recuperação Natural"
-        lista_produtos = ["(Todos)"] + sorted(produtos_unicos)
-        index_padrao = lista_produtos.index(produto_padrao) if produto_padrao in lista_produtos else 0
-
-        produto_escolhido = st.selectbox(
-            "🧾 Selecione o produto:",
-            lista_produtos,
-            index=index_padrao
-        )
-
-        # =====================================================
-        # 🗓️ Seleção de períodos para comparação (hoje vs ontem)
-        # =====================================================
-        hoje = datetime.now(APP_TZ).date()
-        ontem = hoje - timedelta(days=1)
-
-        col1, col2 = st.columns(2)
-        with col1:
-            periodo_a = st.date_input(
-                "📅 Período A (mais recente):",
-                (hoje, hoje),
-                format="DD/MM/YYYY"
-            )
-        with col2:
-            periodo_b = st.date_input(
-                "📅 Período B (comparar):",
-                (ontem, ontem),
-                format="DD/MM/YYYY"
-            )
-
-        if not (isinstance(periodo_a, tuple) and len(periodo_a) == 2):
-            st.warning("⚠️ Selecione um intervalo completo para o Período A.")
-            st.stop()
-        if not (isinstance(periodo_b, tuple) and len(periodo_b) == 2):
-            st.warning("⚠️ Selecione um intervalo completo para o Período B.")
-            st.stop()
-
-        inicio_a, fim_a = periodo_a
-        inicio_b, fim_b = periodo_b
-
-        # =====================================================
-        # 📦 Garantir pedidos atualizados
-        # =====================================================
-        def ensure_orders_for_range(start_date, end_date):
-            loaded_range = st.session_state.get("periodo_atual")
-            pedidos_cached = st.session_state.get("pedidos", pd.DataFrame())
-
-            def range_covers(loaded, start_, end_):
-                return loaded and (loaded[0] <= start_ and loaded[1] >= end_)
-
-            if pedidos_cached.empty or (not range_covers(loaded_range, start_date, end_date)):
-                with st.spinner(f"🔄 Carregando pedidos da Shopify de {start_date:%d/%m/%Y} a {end_date:%d/%m/%Y}..."):
-                    pedidos_new = get_orders(start_date=start_date, end_date=end_date, only_paid=True)
-                    st.session_state["pedidos"] = pedidos_new
-                    st.session_state["periodo_atual"] = (start_date, end_date)
-                    return pedidos_new
-            return pedidos_cached
-
-        periodo_min = min(inicio_a, inicio_b)
-        periodo_max = max(fim_a, fim_b)
-        pedidos = ensure_orders_for_range(periodo_min, periodo_max)
-
-        if pedidos.empty:
-            st.warning("⚠️ Nenhum pedido encontrado no intervalo selecionado.")
-            st.stop()
-
-        # =====================================================
-        # 🧮 Análise de saídas por produto
-        # =====================================================
-        pedidos["created_at"] = pd.to_datetime(pedidos["created_at"], utc=True, errors="coerce")\
-                                   .dt.tz_convert(APP_TZ).dt.tz_localize(None)
-
-        # =====================================================
-        # 🧩 Base dinâmica — produto específico → variantes | (Todos) → produtos
-        # =====================================================
-        if produto_escolhido == "(Todos)":
-            base_prod = pedidos.copy()
-            nivel_agrupamento = "product_title"
-            label_nivel = "Produto"
-        else:
-            base_prod = pedidos[pedidos["product_title"] == produto_escolhido].copy()
-            nivel_agrupamento = "variant_title"
-            label_nivel = "Variante"
-
-        def filtrar_periodo(df, ini, fim):
-            return df[(df["created_at"].dt.date >= ini) & (df["created_at"].dt.date <= fim)].copy()
-
-        df_a = filtrar_periodo(base_prod, inicio_a, fim_a)
-        df_b = filtrar_periodo(base_prod, inicio_b, fim_b)
-
-        # =====================================================
-        # 📊 Consolida vendas por produto ou variante sem duplicar linhas
-        # =====================================================
-        resumo_a = (
-            df_a.groupby(nivel_agrupamento, as_index=False)["quantity"]
-            .sum()
-            .rename(columns={"quantity": "Qtd A"})
-        )
-        resumo_b = (
-            df_b.groupby(nivel_agrupamento, as_index=False)["quantity"]
-            .sum()
-            .rename(columns={"quantity": "Qtd B"})
-        )
-
-        # 🔗 Faz merge sem duplicar nomes idênticos
-        comparativo = (
-            pd.merge(resumo_a, resumo_b, on=nivel_agrupamento, how="outer")
-            .groupby(nivel_agrupamento, as_index=False)
-            .sum(numeric_only=True)
-            .fillna(0)
-        )
-
-        comparativo["Diferença (unid.)"] = comparativo["Qtd A"] - comparativo["Qtd B"]
-        comparativo["A-B(Qtd.%)"] = np.where(
-            comparativo["Qtd B"] > 0,
-            (comparativo["Qtd A"] - comparativo["Qtd B"]) / comparativo["Qtd B"] * 100,
-            np.nan
-        )
-        comparativo["Part.A (%)"] = np.where(
-            comparativo["Qtd A"].sum() > 0,
-            comparativo["Qtd A"] / comparativo["Qtd A"].sum() * 100,
-            0
-        )
-        comparativo["Part.B (%)"] = np.where(
-            comparativo["Qtd B"].sum() > 0,
-            comparativo["Qtd B"] / comparativo["Qtd B"].sum() * 100,
-            0
-        )
-        comparativo["A-B(Part. | p.p)"] = comparativo["Part.A (%)"] - comparativo["Part.B (%)"]
-
-        comparativo.rename(columns={nivel_agrupamento: label_nivel}, inplace=True)
-        comparativo = comparativo.sort_values("Qtd A", ascending=False).reset_index(drop=True)
-
-        # =====================================================
-        # 💰 Carregar planilha de custos (Google Sheets)
+        # 📥 Carregar planilha de custos (garantir existência de df_custos)
         # =====================================================
         import gspread
         from google.oauth2.service_account import Credentials
@@ -3728,8 +4634,7 @@ if menu == "📦 Dashboard – Logística":
             if isinstance(gcp_info.get("private_key"), str):
                 gcp_info["private_key"] = gcp_info["private_key"].replace("\\n", "\n")
             creds = Credentials.from_service_account_info(gcp_info, scopes=scopes)
-            client = gspread.authorize(creds)
-            return client
+            return gspread.authorize(creds)
 
         @st.cache_data(ttl=600)
         def carregar_planilha_custos():
@@ -3750,804 +4655,7 @@ if menu == "📦 Dashboard – Logística":
             df_custos = carregar_planilha_custos()
         except Exception as e:
             st.error(f"❌ Erro ao carregar planilha de custos: {e}")
-            st.stop()
-
-        for col in ["Custo AliExpress (R$)", "Custo Estoque (R$)"]:
-            if col in df_custos.columns:
-                df_custos[col] = (
-                    df_custos[col]
-                    .astype(str)
-                    .str.replace("R$", "", regex=False)
-                    .str.replace(",", ".")
-                    .str.strip()
-                    .replace(["inexistente", ""], np.nan)
-                    .astype(float)
-                )
-
-        # -------------------------------------------------
-        # 💼 Análise de Custos e Lucros por Fornecedor
-        # -------------------------------------------------
-        st.subheader("💼 Análise de Custos e Lucros por Fornecedor")
-
-        fornecedor = st.radio(
-            "Selecione o fornecedor para cálculo de custos e lucros:",
-            ["AliExpress", "Estoque"],
-            horizontal=True
-        )
-
-        col_custo = "Custo AliExpress (R$)" if fornecedor == "AliExpress" else "Custo Estoque (R$)"
-
-        # 🔍 Detecta itens realmente existentes em cada período (variante ou produto)
-        itens_a = base_prod[base_prod["created_at"].dt.date.between(inicio_a, fim_a)][nivel_agrupamento].unique().tolist()
-        itens_b = base_prod[base_prod["created_at"].dt.date.between(inicio_b, fim_b)][nivel_agrupamento].unique().tolist()
-
-        # 🔧 Cria base de custos separada para cada período
-        custos_base_A = df_custos[df_custos["Variante"].isin(itens_a) | df_custos["Produto"].isin(itens_a)].copy()
-        custos_base_B = df_custos[df_custos["Variante"].isin(itens_b) | df_custos["Produto"].isin(itens_b)].copy()
-
-        # 🔗 Adiciona colunas de quantidade correspondentes
-        custos_base_A = custos_base_A.merge(comparativo[[label_nivel, "Qtd A"]], left_on=label_nivel, right_on=label_nivel, how="left")
-        custos_base_B = custos_base_B.merge(comparativo[[label_nivel, "Qtd B"]], left_on=label_nivel, right_on=label_nivel, how="left")
-
-        # 🔢 Ajusta custos unitários para cada base (dinâmico)
-        if not df_custos.empty:
-            # Escolhe a coluna base para indexar de forma segura
-            col_index = label_nivel if label_nivel in df_custos.columns else "Variante"
-
-            # Remove duplicados antes de indexar para evitar InvalidIndexError
-            df_custos_indexed = df_custos.drop_duplicates(subset=[col_index]).set_index(col_index)
-
-            # --- Período A ---
-            custos_base_A["Custo Unitário"] = custos_base_A[label_nivel].map(df_custos_indexed[col_custo])
-            custos_base_A["Custo Unitário"] = pd.to_numeric(custos_base_A["Custo Unitário"], errors="coerce").fillna(0)
-
-            # --- Período B ---
-            custos_base_B["Custo Unitário"] = custos_base_B[label_nivel].map(df_custos_indexed[col_custo])
-            custos_base_B["Custo Unitário"] = pd.to_numeric(custos_base_B["Custo Unitário"], errors="coerce").fillna(0)
-
-        # -------------------------------------------------
-        # 💵 Adiciona preço médio real (se não existir)
-        # -------------------------------------------------
-        def add_preco_medio(custos_df):
-            if "Preço Médio" not in custos_df.columns:
-                if "price" in base_prod.columns:
-                    precos = base_prod.groupby(nivel_agrupamento)["price"].mean().reset_index()
-                    precos.rename(columns={nivel_agrupamento: label_nivel, "price": "Preço Médio"}, inplace=True)
-                    custos_df = custos_df.merge(precos, on=label_nivel, how="left")
-                else:
-                    custos_df["Preço Médio"] = (custos_df["Custo Unitário"] * 2.5).round(2)
-            return custos_df
-
-        custos_base_A = add_preco_medio(custos_base_A)
-        custos_base_B = add_preco_medio(custos_base_B)
-
-        # -------------------------------------------------
-        # 🧮 Cálculos por período (independentes)
-        # -------------------------------------------------
-        def calc_periodo(df, periodo_label, qtd_col):
-            df = df.copy()
-            df[f"Custo {periodo_label}"] = df["Custo Unitário"] * df[qtd_col]
-            df[f"Receita {periodo_label}"] = (
-                df[qtd_col] * df["Preço Médio"] if "Preço Médio" in df.columns else np.nan
-            )
-            df[f"Lucro Bruto {periodo_label}"] = df[f"Receita {periodo_label}"] - df[f"Custo {periodo_label}"]
-            total_receita = df[f"Receita {periodo_label}"].sum() if df[f"Receita {periodo_label}"].notna().any() else 0
-            df[f"Part.{periodo_label} (%)"] = np.where(
-                total_receita > 0, df[f"Receita {periodo_label}"] / total_receita * 100, 0
-            )
-            return df[[label_nivel, qtd_col, f"Custo {periodo_label}", f"Receita {periodo_label}",
-                       f"Lucro Bruto {periodo_label}", f"Part.{periodo_label} (%)"]]
-
-        # =====================================================
-        # 💡 Consolidação correta — evita duplicar produtos no modo "(Todos)"
-        # =====================================================
-        if produto_escolhido != "(Todos)":
-            # Produto específico → mantém cálculo normal por variante
-            df_a = calc_periodo(custos_base_A, "A", "Qtd A")
-            df_b = calc_periodo(custos_base_B, "B", "Qtd B")
-        else:
-            # "(Todos)" → consolida direto da base de pedidos (por produto)
-            def consolidar_por_produto(pedidos, ini, fim, periodo_label):
-                df_filtro = pedidos[
-                    (pedidos["created_at"].dt.date >= ini)
-                    & (pedidos["created_at"].dt.date <= fim)
-                ].copy()
-
-                agrup = (
-                    df_filtro.groupby("product_title", as_index=False)
-                    .agg({
-                        "quantity": "sum",
-                        "price": "mean"
-                    })
-                    .rename(columns={
-                        "product_title": "Produto",
-                        "quantity": f"Qtd {periodo_label}",
-                        "price": "Preço Médio"
-                    })
-                )
-
-                # 🔗 Adiciona custo real por produto (não por variante)
-                agrup = agrup.merge(
-                    df_custos[["Produto", col_custo]].drop_duplicates("Produto"),
-                    on="Produto", how="left"
-                )
-
-                agrup["Custo Unitário"] = pd.to_numeric(agrup[col_custo], errors="coerce").fillna(0)
-                agrup[f"Custo {periodo_label}"] = agrup["Custo Unitário"] * agrup[f"Qtd {periodo_label}"]
-                agrup[f"Receita {periodo_label}"] = agrup[f"Qtd {periodo_label}"] * agrup["Preço Médio"]
-                agrup[f"Lucro Bruto {periodo_label}"] = agrup[f"Receita {periodo_label}"] - agrup[f"Custo {periodo_label}"]
-
-                # 🔢 Participação do produto no total
-                total_receita = agrup[f"Receita {periodo_label}"].sum()
-                agrup[f"Part.{periodo_label} (%)"] = np.where(
-                    total_receita > 0,
-                    agrup[f"Receita {periodo_label}"] / total_receita * 100,
-                    0
-                )
-
-                return agrup
-
-            # 👉 Cria df_a / df_b direto dos pedidos
-            df_a = consolidar_por_produto(pedidos, inicio_a, fim_a, "A")
-            df_b = consolidar_por_produto(pedidos, inicio_b, fim_b, "B")
-
-        # =====================================================
-        # 💸 Vincular investimento Meta Ads automaticamente
-        # =====================================================
-        from datetime import datetime
-        from zoneinfo import ZoneInfo
-        APP_TZ = ZoneInfo("America/Sao_Paulo")
-
-        # Datas formatadas para API Meta
-        since_a, until_a = inicio_a.strftime("%Y-%m-%d"), fim_a.strftime("%Y-%m-%d")
-        since_b, until_b = inicio_b.strftime("%Y-%m-%d"), fim_b.strftime("%Y-%m-%d")
-
-        # Nome base do produto (ex.: "Flexlive", "KneePro", etc.)
-        produto_nome = produto_escolhido.split(" - ")[0]
-
-        try:
-            # Busca investimento Meta por produto e período (usando credenciais automáticas)
-            ads_a = fetch_insights_daily(
-                act_id=act_id,
-                token=token,
-                api_version="v23.0",
-                since_str=since_a,
-                until_str=until_a,
-                level="campaign",
-                product_name=produto_nome
-            )
-
-            ads_b = fetch_insights_daily(
-                act_id=act_id,
-                token=token,
-                api_version="v23.0",
-                since_str=since_b,
-                until_str=until_b,
-                level="campaign",
-                product_name=produto_nome
-            )
-
-            # Soma total de investimento de cada período
-            invest_total_a = ads_a["spend"].sum() if not ads_a.empty else 0
-            invest_total_b = ads_b["spend"].sum() if not ads_b.empty else 0
-
-            # Função para distribuir investimento proporcional às vendas
-            def distribuir_investimento(df, invest_total, qtd_col):
-                total_qtd = df[qtd_col].sum()
-                if total_qtd == 0:
-                    df["Invest. (R$)"] = 0
-                else:
-                    df["Invest. (R$)"] = (df[qtd_col] / total_qtd) * invest_total
-                return df
-
-            # Aplica para os dois períodos
-            df_a = distribuir_investimento(df_a, invest_total_a, "Qtd A")
-            df_b = distribuir_investimento(df_b, invest_total_b, "Qtd B")
-
-            # Feedback visual
-            st.success(
-                f"✅ Investimentos distribuídos automaticamente com base no gasto de anúncios Meta Ads ({produto_nome})"
-            )
-
-        except Exception as e:
-            st.warning(f"⚠️ Não foi possível calcular investimento automático via Meta Ads. Detalhe: {e}")
-            df_a["Invest. (R$)"] = 0
-            df_b["Invest. (R$)"] = 0
-        
-        # -------------------------------------------------
-        # 💲 Função auxiliar para formatar valores monetários
-        # -------------------------------------------------
-        def fmt_moeda(valor):
-            """Formata número como moeda brasileira."""
-            try:
-                return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-            except Exception:
-                return valor
-
-        # -------------------------------------------------
-        # 💰 Exibir tabelas lado a lado (com formatação monetária)
-        # -------------------------------------------------
-        def calcular_roi_roas(df, periodo):
-            """Calcula ROI, ROAS, Lucro Bruto e Lucro Líquido com base no investimento e adiciona linha TOTAL."""
-            df = df.copy()
-
-            # -------------------------------------------------
-            # 💸 ROI e ROAS individuais
-            # -------------------------------------------------
-            if "Invest. (R$)" in df.columns:
-                df[f"ROI {periodo}"] = np.where(
-                    df["Invest. (R$)"] > 0,
-                    df[f"Lucro Bruto {periodo}"] / df["Invest. (R$)"],
-                    np.nan
-                )
-                df[f"ROAS {periodo}"] = np.where(
-                    df["Invest. (R$)"] > 0,
-                    df[f"Receita {periodo}"] / df["Invest. (R$)"],
-                    np.nan
-                )
-
-            # -------------------------------------------------
-            # ✅ Calcula Lucro Líquido (abatendo investimento)
-            # -------------------------------------------------
-            df[f"Lucro Líquido {periodo}"] = df[f"Lucro Bruto {periodo}"] - df["Invest. (R$)"]
-
-            # -------------------------------------------------
-            # 📊 Totais consolidados
-            # -------------------------------------------------
-            total_qtd = df[f"Qtd {periodo}"].sum()
-            total_custo = df[f"Custo {periodo}"].sum()
-            total_receita = df[f"Receita {periodo}"].sum()
-            total_lucro = df[f"Lucro Bruto {periodo}"].sum()
-            total_lucro_liq = df[f"Lucro Líquido {periodo}"].sum()
-            total_invest = df["Invest. (R$)"].sum()
-
-            if total_invest > 0:
-                roi_total = total_lucro / total_invest
-                roas_total = total_receita / total_invest
-            else:
-                roi_total, roas_total = np.nan, np.nan
-
-            total_row = pd.DataFrame([{
-                label_nivel: "🧾 TOTAL",
-                f"Qtd {periodo}": total_qtd,
-                f"Custo {periodo}": total_custo,
-                f"Receita {periodo}": total_receita,
-                f"Lucro Bruto {periodo}": total_lucro,
-                f"Lucro Líquido {periodo}": total_lucro_liq,
-                "Invest. (R$)": total_invest,
-                f"ROI {periodo}": roi_total,
-                f"ROAS {periodo}": roas_total,
-                f"Part.{periodo} (%)": 100.0
-            }])
-
-            return df
-
-        # ✅ Aplica aos dois períodos
-        df_a = calcular_roi_roas(df_a, "A")
-        df_b = calcular_roi_roas(df_b, "B")
-
-        # =====================================================
-        # 🧮 Consolida por produto quando (Todos) estiver selecionado (sem duplicar variantes)
-        # =====================================================
-        if produto_escolhido == "(Todos)":
-            def consolidar_por_produto(periodo_df, periodo_label):
-                """
-                Consolida diretamente da base de pedidos (sem somar novamente variantes).
-                Usa as quantidades e preços reais de cada pedido.
-                """
-                # Garante colunas esperadas
-                required_cols = ["product_title", "quantity", "price"]
-                if not all(col in pedidos.columns for col in required_cols):
-                    st.warning("⚠️ Colunas de pedidos incompletas para consolidação.")
-                    return periodo_df
-
-                # Filtra pedidos no período exato
-                inicio = inicio_a if periodo_label == "A" else inicio_b
-                fim = fim_a if periodo_label == "A" else fim_b
-                df_filtrado = pedidos[
-                    (pedidos["created_at"].dt.date >= inicio)
-                    & (pedidos["created_at"].dt.date <= fim)
-                ].copy()
-
-                # Agrupa direto por produto (sem duplicar variantes, e sem somar linhas do mesmo pedido)
-                df_filtrado["product_title"] = (
-                    df_filtrado["product_title"]
-                    .astype(str)
-                    .str.strip()
-                    .str.replace(r"\s{2,}", " ", regex=True)
-                )
-
-                # 🔹 Garante que o mesmo produto no mesmo pedido conte apenas uma vez
-                df_filtrado = (
-                    df_filtrado
-                    .sort_values(["order_id", "product_title"])
-                    .drop_duplicates(subset=["order_id", "product_title"], keep="first")
-                    .reset_index(drop=True)
-                )
-
-                # 🔹 Agrupa só por produto (sem variantes)
-                agrup = (
-                    df_filtrado.groupby("product_title", as_index=False)
-                    .agg({
-                        "quantity": "sum",
-                        "price": lambda x: np.average(
-                            x, weights=df_filtrado.loc[x.index, "quantity"]
-                        ),
-                    })
-                    .rename(columns={
-                        "product_title": "Produto",
-                        "quantity": f"Qtd {periodo_label}",
-                        "price": "Preço Médio"
-                    })
-                )
-
-                # 🔧 Junta custo real por produto
-                agrup = agrup.merge(
-                    df_custos[["Produto", col_custo]].drop_duplicates("Produto"),
-                    on="Produto", how="left"
-                )
-
-                agrup["Custo Unitário"] = pd.to_numeric(agrup[col_custo], errors="coerce").fillna(0)
-                agrup[f"Custo {periodo_label}"] = agrup["Custo Unitário"] * agrup[f"Qtd {periodo_label}"]
-                agrup[f"Receita {periodo_label}"] = agrup[f"Qtd {periodo_label}"] * agrup["Preço Médio"]
-                agrup[f"Lucro Bruto {periodo_label}"] = agrup[f"Receita {periodo_label}"] - agrup[f"Custo {periodo_label}"]
-
-                # Distribui investimento proporcional
-                invest_total = invest_total_a if periodo_label == "A" else invest_total_b
-                total_qtd = agrup[f"Qtd {periodo_label}"].sum()
-                agrup["Invest. (R$)"] = np.where(
-                    total_qtd > 0,
-                    (agrup[f"Qtd {periodo_label}"] / total_qtd) * invest_total,
-                    0
-                )
-
-                agrup[f"Lucro Líquido {periodo_label}"] = agrup[f"Lucro Bruto {periodo_label}"] - agrup["Invest. (R$)"]
-                agrup[f"ROI {periodo_label}"] = np.where(
-                    agrup["Invest. (R$)"] > 0,
-                    agrup[f"Lucro Líquido {periodo_label}"] / agrup["Invest. (R$)"],
-                    np.nan
-                )
-                agrup[f"ROAS {periodo_label}"] = np.where(
-                    agrup["Invest. (R$)"] > 0,
-                    agrup[f"Receita {periodo_label}"] / agrup["Invest. (R$)"],
-                    np.nan
-                )
-
-                receita_total = agrup[f"Receita {periodo_label}"].sum()
-                agrup[f"Part.{periodo_label} (%)"] = np.where(
-                    receita_total > 0,
-                    agrup[f"Receita {periodo_label}"] / receita_total * 100,
-                    0
-                )
-
-                return agrup
-
-
-            # 🔄 aplica a consolidação corrigida DIRETO NA BASE DE PEDIDOS
-            df_a = consolidar_por_produto(pedidos, "A")
-            df_b = consolidar_por_produto(pedidos, "B")
-
-            # ⚙️ garante que só um registro por produto permaneça
-            df_a = df_a.copy()
-            df_b = df_b.copy()
-            
-            # 🔧 recalcula métricas depois da soma
-            for df, periodo in [(df_a, "A"), (df_b, "B")]:
-                if f"Custo {periodo}" in df.columns and f"Receita {periodo}" in df.columns:
-                    df[f"Lucro Bruto {periodo}"] = df[f"Receita {periodo}"] - df[f"Custo {periodo}"]
-                    df[f"Lucro Líquido {periodo}"] = df[f"Lucro Bruto {periodo}"] - df["Invest. (R$)"]
-                    df[f"ROI {periodo}"] = np.where(
-                        df["Invest. (R$)"] > 0,
-                        df[f"Lucro Líquido {periodo}"] / df["Invest. (R$)"],
-                        np.nan
-                    )
-                    df[f"ROAS {periodo}"] = np.where(
-                        df["Invest. (R$)"] > 0,
-                        df[f"Receita {periodo}"] / df["Invest. (R$)"],
-                        np.nan
-                    )
-
-            # 🧹 Remove linhas TOTAL antigas antes de criar novas
-            df_a = df_a[~df_a["Produto"].astype(str).str.contains("TOTAL", case=False, na=False)]
-            df_b = df_b[~df_b["Produto"].astype(str).str.contains("TOTAL", case=False, na=False)]
-
-            # 🧾 adiciona linha TOTAL (agora única e correta)
-            def add_total(df, periodo):
-                total = pd.DataFrame([{
-                    "Produto": "🧾 TOTAL",
-                    f"Qtd {periodo}": df[f"Qtd {periodo}"].sum(),
-                    f"Custo {periodo}": df[f"Custo {periodo}"].sum(),
-                    f"Receita {periodo}": df[f"Receita {periodo}"].sum(),
-                    f"Lucro Bruto {periodo}": df[f"Lucro Bruto {periodo}"].sum(),
-                    "Invest. (R$)": df["Invest. (R$)"].sum(),
-                    f"Lucro Líquido {periodo}": df[f"Lucro Líquido {periodo}"].sum(),
-                    f"ROI {periodo}": (
-                        df[f"Lucro Líquido {periodo}"].sum() / df["Invest. (R$)"].sum()
-                    ) if df["Invest. (R$)"].sum() > 0 else np.nan,
-                    f"ROAS {periodo}": (
-                        df[f"Receita {periodo}"].sum() / df["Invest. (R$)"].sum()
-                    ) if df["Invest. (R$)"].sum() > 0 else np.nan,
-                    f"Part.{periodo} (%)": 100.0
-                }])
-                return pd.concat([df, total], ignore_index=True)
-
-            df_a = add_total(df_a, "A")
-            df_b = add_total(df_b, "B")
-
-            # 🧩 Remove linhas TOTAL duplicadas no comparativo (só se comp já existir)
-            if "comp" in locals() and f"{label_nivel} A" in comp.columns:
-                comp = comp[
-                    ~comp[f"{label_nivel} A"]
-                    .astype(str)
-                    .str.contains("TOTAL", case=False, na=False)
-                ]
-
-        def highlight_total(row):
-            """Aplica o mesmo fundo do cabeçalho para a linha TOTAL."""
-            if str(row[label_nivel]).strip().upper() == "🧾 TOTAL":
-                return [
-                    "background-color: #262730; font-weight: bold; color: white;"
-                ] * len(row)
-            return [""] * len(row)
-
-        col1, col2 = st.columns(2)
-
-        # -------------------------------------------------
-        # 📆 Tabela Período A
-        # -------------------------------------------------
-        with col1:
-            st.markdown("### 📆 Período A")
-            styled_a = (
-                df_a[[
-                    label_nivel, "Qtd A", "Receita A", "Custo A",
-                    "Lucro Bruto A", "Invest. (R$)", "Lucro Líquido A",
-                    "ROI A", "ROAS A", "Part.A (%)"
-                ]]
-                .style
-                .format({
-                    "Qtd A": "{:.0f}",
-                    "Custo A": fmt_moeda,
-                    "Receita A": fmt_moeda,
-                    "Lucro Bruto A": fmt_moeda,
-                    "Lucro Líquido A": fmt_moeda,
-                    "Invest. (R$)": fmt_moeda,
-                    "ROI A": "{:.2f}x",
-                    "ROAS A": "{:.2f}x",
-                    "Part.A (%)": "{:.1f}%"
-                })
-                .set_properties(**{"text-align": "right"})
-                .apply(highlight_total, axis=1)
-            )
-            st.dataframe(styled_a, use_container_width=True)
-
-        # -------------------------------------------------
-        # 📆 Tabela Período B
-        # -------------------------------------------------
-        with col2:
-            st.markdown("### 📆 Período B")
-            styled_b = (
-                df_b[[
-                    label_nivel, "Qtd B", "Receita B", "Custo B",
-                    "Lucro Bruto B", "Invest. (R$)", "Lucro Líquido B",
-                    "ROI B", "ROAS B", "Part.B (%)"
-                ]]
-                .style
-                .format({
-                    "Qtd B": "{:.0f}",
-                    "Custo B": fmt_moeda,
-                    "Receita B": fmt_moeda,
-                    "Lucro Bruto B": fmt_moeda,
-                    "Lucro Líquido B": fmt_moeda,
-                    "Invest. (R$)": fmt_moeda,
-                    "ROI B": "{:.2f}x",
-                    "ROAS B": "{:.2f}x",
-                    "Part.B (%)": "{:.1f}%"
-                })
-                .set_properties(**{"text-align": "right"})
-                .apply(highlight_total, axis=1)
-            )
-            st.dataframe(styled_b, use_container_width=True)
-
-        # -------------------------------------------------
-        # 📈 Comparativo geral entre períodos
-        # -------------------------------------------------
-        st.subheader(f"📈 Comparativo entre Períodos (por {label_nivel.lower()})")
-
-        import re
-
-        # =====================================================
-        # 🔍 Pareamento inteligente baseado em quantidade aproximada
-        # =====================================================
-        import re
-
-        def extrair_qtd_pecas(nome):
-            """Extrai a quantidade numérica (20, 30, 40, 60, 120...) do nome da variante."""
-            if not isinstance(nome, str):
-                return None
-            match = re.search(r"(\d+)\s*(peças|unid|uni|pçs?)", nome.lower())
-            return int(match.group(1)) if match else None
-
-        # Cria colunas de quantidade
-        df_a["qtd_variante"] = df_a[label_nivel].apply(extrair_qtd_pecas)
-        df_b["qtd_variante"] = df_b[label_nivel].apply(extrair_qtd_pecas)
-
-        # ----------------------------------------------
-        # 🔁 Pareia o número mais próximo entre A e B (sem depender de 'variant_title')
-        # ----------------------------------------------
-        matches = []
-        usadas_b = set()
-
-        for _, row_a in df_a.iterrows():
-            qtd_a = row_a.get("qtd_variante", None)
-            if pd.isna(qtd_a):
-                continue
-
-            # define qual coluna usar como nome-base (Produto ou Variante)
-            col_b_nome = label_nivel if label_nivel in df_b.columns else df_b.columns[0]
-
-            # encontra as linhas B com qtd válida e ainda não pareadas
-            df_b_valid = df_b[
-                (~df_b["qtd_variante"].isna()) &
-                (~df_b[col_b_nome].isin(usadas_b))
-            ]
-
-            if df_b_valid.empty:
-                matches.append((row_a[label_nivel], None))
-                continue
-
-            # escolhe o número mais próximo
-            idx_min = (df_b_valid["qtd_variante"] - qtd_a).abs().idxmin()
-            match_b = df_b_valid.loc[idx_min]
-
-            matches.append((row_a[label_nivel], match_b[col_b_nome]))
-            usadas_b.add(match_b[col_b_nome])
-
-        # adiciona variantes B que ficaram sem par
-        col_b_nome = label_nivel if label_nivel in df_b.columns else df_b.columns[0]
-        for _, row_b in df_b.iterrows():
-            if row_b[col_b_nome] not in usadas_b:
-                matches.append((None, row_b[col_b_nome]))
-
-        # cria tabela final de correspondência
-        corresp = pd.DataFrame(matches, columns=[f"{label_nivel} A", f"{label_nivel} B"])
-
-        # --- Renomeia colunas para evitar conflito no merge
-        df_a_pref = df_a.add_suffix("_A")
-        df_b_pref = df_b.add_suffix("_B")
-
-        # =====================================================
-        # 🧩 Cria comparativo adaptativo — Produto vs Variante
-        # =====================================================
-        if produto_escolhido == "(Todos)":
-            # -------------------------------------------------
-            # 🔁 Modo "Todos" → compara produtos consolidados
-            # -------------------------------------------------
-            label_nivel = "Produto"
-
-            comp = pd.merge(
-                df_a, df_b,
-                on="Produto", how="outer",
-                suffixes=("_A", "_B")
-            ).fillna(0)
-
-            comp["Δ Qtd."] = comp["Qtd A"] - comp["Qtd B"]
-            comp["Δ Custo"] = comp["Custo A"] - comp["Custo B"]
-            comp["Δ Receita"] = comp["Receita A"] - comp["Receita B"]
-            comp["Δ Lucro B."] = comp["Lucro Bruto A"] - comp["Lucro Bruto B"]
-            comp["Δ Lucro Líq."] = comp["Lucro Líquido A"] - comp["Lucro Líquido B"]
-            comp["Δ Invest."] = comp["Invest. (R$)_A"] - comp["Invest. (R$)_B"]
-            comp["Δ ROI"] = comp["ROI A"] - comp["ROI B"]
-            comp["Δ ROAS"] = comp["ROAS A"] - comp["ROAS B"]
-            comp["Δ Part.(p.p)"] = comp["Part.A (%)"] - comp["Part.B (%)"]
-
-            comp["Δ Qtd.(%)"] = np.where(
-                comp["Qtd B"] > 0,
-                (comp["Qtd A"] - comp["Qtd B"]) / comp["Qtd B"] * 100,
-                np.nan
-            )
-            comp["Δ Receita(%)"] = np.where(
-                comp["Receita B"] > 0,
-                (comp["Receita A"] - comp["Receita B"]) / comp["Receita B"] * 100,
-                np.nan
-            )
-            comp["Δ Lucro Líq.(%)"] = np.where(
-                comp["Lucro Líquido B"] > 0,
-                (comp["Lucro Líquido A"] - comp["Lucro Líquido B"]) / comp["Lucro Líquido B"] * 100,
-                np.nan
-            )
-
-        else:
-            # -------------------------------------------------
-            # 🔁 Produto específico → compara variantes
-            # -------------------------------------------------
-            comp = (
-                corresp
-                .merge(df_a_pref, left_on=f"{label_nivel} A", right_on=f"{label_nivel}_A", how="left")
-                .merge(df_b_pref, left_on=f"{label_nivel} B", right_on=f"{label_nivel}_B", how="left")
-            )
-
-        # =====================================================
-        # 💡 Preenche corretamente nomes de variantes ausentes
-        # =====================================================
-        col_a = f"{label_nivel} A" if f"{label_nivel} A" in comp.columns else label_nivel
-        col_b = f"{label_nivel} B" if f"{label_nivel} B" in comp.columns else label_nivel
-
-        comp[col_a] = np.where(
-            comp[col_a].isna() | (comp[col_a] == 0),
-            comp[col_b],
-            comp[col_a]
-        )
-        comp[col_b] = np.where(
-            comp[col_b].isna() | (comp[col_b] == 0),
-            comp[col_a],
-            comp[col_b]
-        )
-
-        comp = comp.fillna(0)
-
-        # =====================================================
-        # 📊 Cálculos de diferenças e variações
-        # =====================================================
-        if produto_escolhido != "(Todos)":
-            # 🔒 Garante que comp já exista antes dos cálculos
-            if "comp" not in locals():
-                st.error("❌ ERRO: A variável 'comp' não foi criada antes deste ponto.")
-                st.stop()
-
-            # -------------------------------------------------
-            # 📈 Diferenças diretas (valores absolutos)
-            # -------------------------------------------------
-            comp["Δ Qtd."] = comp.get("Qtd A_A", 0) - comp.get("Qtd B_B", 0)
-            comp["Δ Custo"] = comp.get("Custo A_A", 0) - comp.get("Custo B_B", 0)
-            comp["Δ Lucro B."] = comp.get("Lucro Bruto A_A", 0) - comp.get("Lucro Bruto B_B", 0)
-            comp["Δ Lucro Líq."] = comp.get("Lucro Líquido A_A", 0) - comp.get("Lucro Líquido B_B", 0)
-            comp["Δ Receita"] = comp.get("Receita A_A", 0) - comp.get("Receita B_B", 0)
-            comp["Δ Invest."] = comp.get("Invest. (R$)_A", 0) - comp.get("Invest. (R$)_B", 0)
-            comp["Δ ROI"] = comp.get("ROI A_A", 0) - comp.get("ROI B_B", 0)
-            comp["Δ ROAS"] = comp.get("ROAS A_A", 0) - comp.get("ROAS B_B", 0)
-            comp["Δ Part.(p.p)"] = comp.get("Part.A (%)_A", 0) - comp.get("Part.B (%)_B", 0)
-
-            # -------------------------------------------------
-            # 📊 Diferenças percentuais (%)
-            # -------------------------------------------------
-            def safe_div(a, b):
-                """Evita divisões por zero e retorna variação percentual"""
-                return np.where(b != 0, (a - b) / b * 100, np.nan)
-
-            comp["Δ Qtd.(%)"] = safe_div(comp.get("Qtd A_A", 0), comp.get("Qtd B_B", 0))
-            comp["Δ Custo(%)"] = safe_div(comp.get("Custo A_A", 0), comp.get("Custo B_B", 0))
-            comp["Δ Lucro B.(%)"] = safe_div(comp.get("Lucro Bruto A_A", 0), comp.get("Lucro Bruto B_B", 0))
-            comp["Δ Lucro Líq.(%)"] = safe_div(comp.get("Lucro Líquido A_A", 0), comp.get("Lucro Líquido B_B", 0))
-            comp["Δ Receita(%)"] = safe_div(comp.get("Receita A_A", 0), comp.get("Receita B_B", 0))
-            comp["Δ Invest.(%)"] = safe_div(comp.get("Invest. (R$)_A", 0), comp.get("Invest. (R$)_B", 0))
-
-            # -------------------------------------------------
-            # 📊 Pontos percentuais (variações absolutas)
-            # -------------------------------------------------
-            comp["Δ ROI(p.p)"] = comp.get("ROI A_A", 0) - comp.get("ROI B_B", 0)
-            comp["Δ ROAS(p.p)"] = comp.get("ROAS A_A", 0) - comp.get("ROAS B_B", 0)
-
-        # =====================================================
-        # 🧾 Ajuste de nome da coluna e remoção de TOTAL duplicado
-        # =====================================================
-        if produto_escolhido == "(Todos)":
-            label_nivel = "Produto"
-        else:
-            label_nivel = "Variante"
-
-        # Garante que a linha TOTAL apareça só uma vez
-        col_ref = f"{label_nivel} A" if f"{label_nivel} A" in comp.columns else label_nivel
-        comp = comp[~comp[col_ref].astype(str).str.contains("TOTAL", case=False, na=False)]
-
-        # =====================================================
-        # 📋 Garante que a linha TOTAL fique no final (modo seguro)
-        # =====================================================
-        col_ref = None
-        for col in [f"{label_nivel} A", f"{label_nivel} B", label_nivel]:
-            if col in comp.columns:
-                col_ref = col
-                break
-
-        if col_ref is not None:
-            mask_total = comp[col_ref].astype(str).str.contains("TOTAL", case=False, na=False)
-            comp = pd.concat([comp[~mask_total], comp[mask_total]], ignore_index=True)
-        else:
-            # Fallback: se não encontrar nenhuma coluna válida
-            mask_total = pd.Series([False] * len(comp))
-
-        # =====================================================
-        # 🎨 Estilo visual da tabela comparativa (com cor na linha TOTAL)
-        # =====================================================
-        def highlight_total(row):
-            """Mantém o fundo escuro na linha TOTAL mas preserva verde/vermelho nos números."""
-            col_check = f"{label_nivel} A" if f"{label_nivel} A" in comp.columns else label_nivel
-            if "TOTAL" in str(row.get(col_check, "")).upper():
-                styles = []
-                for col, val in row.items():
-                    base = 'background-color: #262730; font-weight: bold;'
-                    # Mantém verde/vermelho mesmo na linha TOTAL
-                    if isinstance(val, (int, float)):
-                        if val > 0:
-                            styles.append(base + 'color: #00bf63;')
-                        elif val < 0:
-                            styles.append(base + 'color: #ff4d4d;')
-                        else:
-                            styles.append(base + 'color: white;')
-                    else:
-                        styles.append(base + 'color: white;')
-                return styles
-            return [''] * len(row)
-
-        def highlight_variations(val):
-            """Aplica verde para melhora e vermelho para piora."""
-            try:
-                if isinstance(val, (int, float)):
-                    if val > 0:
-                        return 'color: #00bf63; font-weight: 600;'
-                    elif val < 0:
-                        return 'color: #ff4d4d; font-weight: 600;'
-                elif isinstance(val, str) and any(ch in val for ch in ['+', '-', '%', 'x']):
-                    num = float(val.replace('%', '').replace('x', '').replace('+', '').replace(',', '.').strip())
-                    if num > 0:
-                        return 'color: #00bf63; font-weight: 600;'
-                    elif num < 0:
-                        return 'color: #ff4d4d; font-weight: 600;'
-            except Exception:
-                pass
-            return 'color: white;'
-
-        # =====================================================
-        # 📋 Define colunas dinamicamente (produto vs variante)
-        # =====================================================
-        if f"{label_nivel} A" in comp.columns and f"{label_nivel} B" in comp.columns:
-            cols_base = [f"{label_nivel} A", f"{label_nivel} B"]
-        else:
-            cols_base = [label_nivel]
-
-        cols_deltas = [
-            "Δ Qtd.", "Δ Qtd.(%)",
-            "Δ Custo", "Δ Custo(%)",
-            "Δ Lucro B.", "Δ Lucro B.(%)",
-            "Δ Lucro Líq.", "Δ Lucro Líq.(%)",
-            "Δ Receita", "Δ Receita(%)",
-            "Δ Invest.", "Δ Invest.(%)",
-            "Δ ROI", "Δ ROAS", "Δ Part.(p.p)"
-        ]
-
-        # Filtra apenas colunas que realmente existem
-        cols_existentes = [c for c in cols_base + cols_deltas if c in comp.columns]
-
-        styled_comp = (
-            comp[cols_existentes]
-            .style
-            .format({
-                "Δ Qtd.": "{:.0f}",
-                "Δ Qtd.(%)": "{:+.1f}%",
-                "Δ Custo": fmt_moeda,
-                "Δ Custo(%)": "{:+.1f}%",
-                "Δ Lucro B.": fmt_moeda,
-                "Δ Lucro B.(%)": "{:+.1f}%",
-                "Δ Lucro Líq.": fmt_moeda,
-                "Δ Lucro Líq.(%)": "{:+.1f}%",
-                "Δ Receita": fmt_moeda,
-                "Δ Receita(%)": "{:+.1f}%",
-                "Δ Invest.": fmt_moeda,
-                "Δ Invest.(%)": "{:+.1f}%",
-                "Δ ROI": "{:+.2f}x",
-                "Δ ROAS": "{:+.2f}x",
-                "Δ Part.(p.p)": "{:+.1f}"
-            })
-            .applymap(highlight_variations, subset=[c for c in cols_deltas if c in comp.columns])
-            .apply(highlight_total, axis=1)
-            .set_properties(**{
-                "text-align": "right",
-                "font-size": "14px",
-                "border-color": "rgba(255,255,255,0.1)"
-            })
-        )
-
-        st.data_editor(styled_comp, use_container_width=True, disabled=True)
-
+            df_custos = pd.DataFrame(columns=["Produto", "Variante", "Custo AliExpress (R$)", "Custo Estoque (R$)"])
 
         # =====================================================
         # 🧾 Cria versão formatada da planilha para edição
@@ -4565,20 +4673,8 @@ if menu == "📦 Dashboard – Logística":
         # -------------------------------------------------
         def atualizar_planilha_custos(df):
             """Atualiza dados na planilha de custos no Google Sheets"""
-            import gspread
-            from google.oauth2.service_account import Credentials
-
             try:
-                scopes = [
-                    "https://www.googleapis.com/auth/spreadsheets",
-                    "https://www.googleapis.com/auth/drive"
-                ]
-                gcp_info = dict(st.secrets["gcp_service_account"])
-                if isinstance(gcp_info.get("private_key"), str):
-                    gcp_info["private_key"] = gcp_info["private_key"].replace("\\n", "\n")
-
-                creds = Credentials.from_service_account_info(gcp_info, scopes=scopes)
-                client = gspread.authorize(creds)
+                client = get_gsheet_client()
                 sheet = client.open_by_key(st.secrets["sheets"]["spreadsheet_id"]).sheet1
 
                 df_safe = (
