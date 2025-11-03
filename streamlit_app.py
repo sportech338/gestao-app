@@ -1308,10 +1308,9 @@ if menu == "📊 Dashboard – Tráfego Pago":
         pedidos = ensure_orders_for_range(periodo_min, periodo_max)
 
         # =====================================================
-        # 🧩 Normaliza nomes de variantes — cria coluna padronizada
+        # 🧩 Normaliza nomes de variantes — unifica por quantidade de peças
         # =====================================================
         import re
-        import numpy as np
 
         def extrair_qtd_pecas(nome):
             """Extrai o número de peças do nome da variante (ex: '60 peças (Mais Vendido)' -> 60)."""
@@ -1320,35 +1319,15 @@ if menu == "📊 Dashboard – Tráfego Pago":
             match = re.search(r"(\d+)\s*(peças|pçs?|unidades|unid|uni)", nome.lower())
             return int(match.group(1)) if match else None
 
-        # 🔹 Cria coluna auxiliar com número de peças
+        # Cria nova coluna auxiliar (só pra conferência)
         pedidos["Qtd Base"] = pedidos["variant_title"].apply(extrair_qtd_pecas)
 
-        # 🔹 Cria coluna padronizada para comparação com planilha de custos
-        pedidos["Variante Normalizada"] = pedidos["Qtd Base"].apply(
-            lambda x: f"{int(x)} peças" if pd.notna(x) else np.nan
+        # Substitui o próprio variant_title por nome padronizado "XX peças"
+        pedidos["variant_title"] = pedidos["Qtd Base"].apply(
+            lambda x: f"{int(x)} peças" if pd.notna(x) else None
         )
 
-        # 🔹 Se não encontrar número, usa o nome original (sem parenteses nem espaços extras)
-        pedidos["Variante Normalizada"] = np.where(
-            pedidos["Variante Normalizada"].isna(),
-            pedidos["variant_title"]
-            .astype(str)
-            .str.replace(r"\(.*?\)", "", regex=True)
-            .str.strip()
-            .str.lower(),
-            pedidos["Variante Normalizada"]
-        )
-
-        # 🔹 Padroniza formato (ex: tudo minúsculo, 1 espaço só)
-        pedidos["Variante Normalizada"] = (
-            pedidos["Variante Normalizada"]
-            .str.strip()
-            .str.lower()
-            .str.replace(r"\s{2,}", " ", regex=True)
-        )
-
-        st.info("✅ Coluna 'Variante Normalizada' criada — nomes no mesmo formato da planilha (ex: '60 peças').")
-
+        st.info("✅ Variantes normalizadas — nomes antigos e novos agora são tratados como iguais.")
         
         if pedidos.empty:
             st.warning("⚠️ Nenhum pedido encontrado no intervalo selecionado.")
@@ -1369,7 +1348,7 @@ if menu == "📊 Dashboard – Tráfego Pago":
             label_nivel = "Produto"
         else:
             base_prod = pedidos[pedidos["product_title"] == produto_escolhido].copy()
-            nivel_agrupamento = "Variante Normalizada"
+            nivel_agrupamento = "variant_title"
             label_nivel = "Variante"
 
         def filtrar_periodo(df, ini, fim):
@@ -1454,19 +1433,12 @@ if menu == "📊 Dashboard – Tráfego Pago":
             df.rename(columns=mapa_colunas, inplace=True)
             return df
 
-        # 🔹 Carrega a planilha antes de padronizar
-        df_custos = carregar_planilha_custos()
+        try:
+            df_custos = carregar_planilha_custos()
+        except Exception as e:
+            st.error(f"❌ Erro ao carregar planilha de custos: {e}")
+            st.stop()
 
-        # ✅ Padroniza nomes da planilha para garantir match 1:1
-        df_custos["Variante"] = (
-            df_custos["Variante"]
-            .astype(str)
-            .str.strip()
-            .str.lower()
-            .str.replace(r"\s{2,}", " ", regex=True)
-        )
-
-        # ✅ Converte custos para número
         for col in ["Custo AliExpress (R$)", "Custo Estoque (R$)"]:
             if col in df_custos.columns:
                 df_custos[col] = (
@@ -4237,9 +4209,10 @@ if menu == "📦 Dashboard – Logística":
     # =====================================================
     # 🗂️ Abas principais da Logística
     # =====================================================
-    aba1, aba2 = st.tabs([
+    aba1, aba2, aba3 = st.tabs([
         "📋 Controle Operacional",
-        "📦 Estoque"
+        "📦 Estoque",
+        "🚚 Entregas"
     ])
 
     # =====================================================
@@ -4640,9 +4613,117 @@ if menu == "📦 Dashboard – Logística":
                     else:
                         st.info(msg)
     
-
     # =====================================================
-    # 🚚 ABA 2 — ENTREGAS
+    # 📦 ABA 2 — ESTOQUE
     # =====================================================
     with aba2:
+        st.subheader("Comparativo de Saídas e Custos por Variante:")
+
+        # =====================================================
+        # 📥 Carregar planilha de custos (garantir existência de df_custos)
+        # =====================================================
+        import gspread
+        from google.oauth2.service_account import Credentials
+
+        def get_gsheet_client():
+            scopes = [
+                "https://www.googleapis.com/auth/spreadsheets",
+                "https://www.googleapis.com/auth/drive"
+            ]
+            gcp_info = dict(st.secrets["gcp_service_account"])
+            if isinstance(gcp_info.get("private_key"), str):
+                gcp_info["private_key"] = gcp_info["private_key"].replace("\\n", "\n")
+            creds = Credentials.from_service_account_info(gcp_info, scopes=scopes)
+            return gspread.authorize(creds)
+
+        @st.cache_data(ttl=600)
+        def carregar_planilha_custos():
+            client = get_gsheet_client()
+            sheet = client.open_by_key(st.secrets["sheets"]["spreadsheet_id"]).sheet1
+            df = pd.DataFrame(sheet.get_all_records())
+            df.columns = df.columns.str.strip()
+            mapa_colunas = {
+                "Produto": "Produto",
+                "Variantes": "Variante",
+                "Custo | Aliexpress": "Custo AliExpress (R$)",
+                "Custo | Estoque": "Custo Estoque (R$)",
+            }
+            df.rename(columns=mapa_colunas, inplace=True)
+            return df
+
+        try:
+            df_custos = carregar_planilha_custos()
+        except Exception as e:
+            st.error(f"❌ Erro ao carregar planilha de custos: {e}")
+            df_custos = pd.DataFrame(columns=["Produto", "Variante", "Custo AliExpress (R$)", "Custo Estoque (R$)"])
+
+        # =====================================================
+        # 🧾 Cria versão formatada da planilha para edição
+        # =====================================================
+        df_display = df_custos.copy()
+        for col in ["Custo AliExpress (R$)", "Custo Estoque (R$)"]:
+            if col in df_display.columns:
+                df_display[col] = df_display[col].apply(
+                    lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                    if pd.notna(x) else ""
+                )
+
+        # -------------------------------------------------
+        # 🔄 Função para atualizar planilha de custos
+        # -------------------------------------------------
+        def atualizar_planilha_custos(df):
+            """Atualiza dados na planilha de custos no Google Sheets"""
+            try:
+                client = get_gsheet_client()
+                sheet = client.open_by_key(st.secrets["sheets"]["spreadsheet_id"]).sheet1
+
+                df_safe = (
+                    df.copy()
+                    .fillna("")
+                    .astype(str)
+                    .replace("nan", "", regex=False)
+                )
+
+                body = [df_safe.columns.values.tolist()] + df_safe.values.tolist()
+                sheet.batch_clear(["A:Z"])
+                sheet.update(body)
+
+                st.success("✅ Planilha atualizada com sucesso!")
+            except Exception as e:
+                st.error(f"❌ Erro ao atualizar planilha: {e}")
+
+        # =====================================================
+        # 📝 Edição direta da planilha no app
+        # =====================================================
+        st.subheader("📝 Custos por Variante")
+
+        edit_df = st.data_editor(
+            df_display,
+            num_rows="dynamic",
+            use_container_width=True
+        )
+
+        if st.button("💾 Salvar alterações na planilha"):
+            # ⚙️ Converte R$ 25,00 → 25.00 antes de enviar
+            for col in ["Custo AliExpress (R$)", "Custo Estoque (R$)"]:
+                if col in edit_df.columns:
+                    edit_df[col] = (
+                        edit_df[col]
+                        .astype(str)
+                        .str.replace("R$", "", regex=False)
+                        .str.replace(".", "", regex=False)
+                        .str.replace(",", ".", regex=False)
+                        .str.strip()
+                        .replace("", np.nan)
+                        .astype(float)
+                    )
+
+            atualizar_planilha_custos(edit_df)
+            st.cache_data.clear()
+            st.rerun()
+
+    # =====================================================
+    # 🚚 ABA 3 — ENTREGAS
+    # =====================================================
+    with aba3:
         st.info("📍 Em breve: status de fretes, prazos e devoluções.")
