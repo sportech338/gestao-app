@@ -1422,6 +1422,19 @@ if menu == "📊 Dashboard – Tráfego Pago":
         comparativo.rename(columns={nivel_agrupamento: label_nivel}, inplace=True)
         comparativo = comparativo.sort_values("Qtd A", ascending=False).reset_index(drop=True)
 
+
+        # -------------------------------------------------
+        # 💼 Análise de Custos e Lucros por Fornecedor
+        # -------------------------------------------------
+        st.subheader("💼 Análise de Custos e Lucros por Fornecedor")
+
+        fornecedor = st.radio(
+            "Selecione o fornecedor para cálculo de custos e lucros:",
+            ["AliExpress", "Estoque"],
+            horizontal=True
+        )
+          
+
         # =====================================================
         # 💰 Carregar planilha de custos (dinâmica por fornecedor)
         # =====================================================
@@ -1476,18 +1489,6 @@ if menu == "📊 Dashboard – Tráfego Pago":
                     .replace(["inexistente", ""], np.nan)
                     .astype(float)
                 )
-
-
-        # -------------------------------------------------
-        # 💼 Análise de Custos e Lucros por Fornecedor
-        # -------------------------------------------------
-        st.subheader("💼 Análise de Custos e Lucros por Fornecedor")
-
-        fornecedor = st.radio(
-            "Selecione o fornecedor para cálculo de custos e lucros:",
-            ["AliExpress", "Estoque"],
-            horizontal=True
-        )
 
 
         col_custo = "Custo AliExpress (R$)" if fornecedor == "AliExpress" else "Custo Estoque (R$)"
