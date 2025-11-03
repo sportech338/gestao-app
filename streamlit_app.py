@@ -1462,6 +1462,11 @@ if menu == "📊 Dashboard – Tráfego Pago":
             horizontal=True
         )
 
+        if "df_custos_original" not in st.session_state:
+            st.session_state["df_custos_original"] = df_custos.copy()
+
+        df_custos = st.session_state["df_custos_original"].copy()
+
         col_custo = "Custo AliExpress (R$)" if fornecedor == "AliExpress" else "Custo Estoque (R$)"
 
         # 🔍 Detecta itens realmente existentes em cada período (variante ou produto)
