@@ -331,72 +331,72 @@ def search_orders_shopify(query: str, limit=100):
 
 
 # =====================================================
-# Fulfillment (processar pedido)
+# Fulfillment (processar pedido) — versão com fallback 422 DSers
 # =====================================================
-def _get(url, **kwargs):
-    s = _get_session()
-    r = s.get(url, headers=HEADERS, timeout=60, **kwargs)
-    r.raise_for_status()
-    return r.json()
+def create_fulfillment(order_id, tracking_number=None, tracking_company="Correios"):
+    """
+    Cria fulfillment pela API da Shopify, mesmo para pedidos DSers.
+    Se ocorrer erro 422, reatribui automaticamente o fulfillment_order e tenta novamente.
+    """
 
-def _post(url, payload, idempotency_key=None, **kwargs):
-    s = _get_session()
-    headers = dict(HEADERS)
-    if idempotency_key:
-        headers["Idempotency-Key"] = idempotency_key
-    r = s.post(url, headers=headers, json=payload, timeout=60, **kwargs)
-    try:
-        r.raise_for_status()
-    except requests.exceptions.HTTPError:
-        st.error(f"Erro ao enviar requisição: {r.status_code} - {r.text}")
-        raise
-    return r.json()
+    headers = {
+        "Content-Type": "application/json",
+        "X-Shopify-Access-Token": ACCESS_TOKEN
+    }
 
-def list_fulfillment_orders(order_id: int):
-    url = f"{BASE_URL}/orders/{order_id}/fulfillment_orders.json"
-    data = _get(url)
-    return data.get("fulfillment_orders", [])
+    # 1️⃣ Buscar fulfillment orders do pedido
+    f_orders_url = f"{BASE_URL}/orders/{order_id}/fulfillment_orders.json"
+    f_orders_resp = requests.get(f_orders_url, headers=headers)
+    f_orders_resp.raise_for_status()
+    f_orders = f_orders_resp.json()
 
-def create_fulfillment(order_id: int,
-                       tracking_number: Optional[str] = None,
-                       tracking_company: Optional[str] = None,
-                       tracking_url: Optional[str] = None,
-                       notify_customer: bool = True):
-    """Cria o fulfillment manualmente (processa o pedido)."""
-    fos = list_fulfillment_orders(order_id)
-    if not fos:
-        raise RuntimeError("Pedido sem Fulfillment Orders elegíveis.")
+    if "fulfillment_orders" not in f_orders or not f_orders["fulfillment_orders"]:
+        raise Exception(f"⚠️ Nenhum fulfillment order encontrado para o pedido {order_id}")
 
-    line_items_by_fo = []
-    for fo in fos:
-        items = []
-        for li in fo.get("line_items", []):
-            rem = li.get("remaining_quantity") or li.get("quantity") or 0
-            if rem > 0:
-                items.append({"id": li["id"], "quantity": rem})
-        if items:
-            line_items_by_fo.append({
-                "fulfillment_order_id": fo["id"],
-                "fulfillment_order_line_items": items
-            })
+    fulfillment_orders = f_orders["fulfillment_orders"]
 
-    if not line_items_by_fo:
-        raise RuntimeError("Nada a cumprir (pedido já está totalmente processado).")
+    # 2️⃣ Tentar criar fulfillment para cada fulfillment_order encontrado
+    for f_order in fulfillment_orders:
+        fulfillment_order_id = f_order["id"]
 
-    payload = {"fulfillment": {
-        "line_items_by_fulfillment_order": line_items_by_fo,
-        "notify_customer": bool(notify_customer)
-    }}
+        payload = {
+            "fulfillment": {
+                "line_items_by_fulfillment_order": [
+                    {"fulfillment_order_id": fulfillment_order_id}
+                ],
+                "tracking_info": {
+                    "number": tracking_number or "",
+                    "company": tracking_company
+                },
+                "notify_customer": True
+            }
+        }
 
-    if tracking_number or tracking_company or tracking_url:
-        ti = {}
-        if tracking_number: ti["number"] = tracking_number
-        if tracking_company: ti["company"] = tracking_company
-        if tracking_url: ti["url"] = tracking_url
-        if ti: payload["fulfillment"]["tracking_info"] = ti
+        url_fulfillment = f"{BASE_URL}/fulfillments.json"
+        resp = requests.post(url_fulfillment, headers=headers, json=payload)
 
-    resp = _post(f"{BASE_URL}/fulfillments.json", payload, idempotency_key=str(time.time()))
-    return resp.get("fulfillment")
+        # 3️⃣ Se der erro 422 → reatribui o fulfillment order para o seu location e tenta novamente
+        if resp.status_code == 422:
+            try:
+                new_location_id = f_order.get("assigned_location_id")
+                if new_location_id:
+                    move_url = f"{BASE_URL}/fulfillment_orders/{fulfillment_order_id}/move.json"
+                    move_payload = {"fulfillment_order": {"new_location_id": new_location_id}}
+                    move_resp = requests.post(move_url, headers=headers, json=move_payload)
+                    if move_resp.status_code in [200, 201]:
+                        # tenta novamente após mover
+                        resp = requests.post(url_fulfillment, headers=headers, json=payload)
+            except Exception as err:
+                print(f"⚠️ Erro ao reatribuir fulfillment order: {err}")
+
+        # 4️⃣ Se funcionar, retorna o resultado
+        if resp.status_code in [200, 201]:
+            return resp.json()
+        else:
+            print(f"❌ Falha ao criar fulfillment (Pedido {order_id}): {resp.status_code} → {resp.text}")
+
+    # 5️⃣ Se nenhuma tentativa funcionar, lança erro
+    raise Exception(f"❌ Não foi possível criar fulfillment para o pedido {order_id}")
 
 # =====================================================
 # 🚀 LOGGING (opcional)
