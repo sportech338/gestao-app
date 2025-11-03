@@ -1504,22 +1504,39 @@ if menu == "📊 Dashboard – Tráfego Pago":
             custos_base_B["Custo Unitário"] = custos_base_B["Variante"].map(df_custos_indexed[col_custo])
             custos_base_B["Custo Unitário"] = pd.to_numeric(custos_base_B["Custo Unitário"], errors="coerce").fillna(0)
 
-
         # -------------------------------------------------
         # 💵 Adiciona preço médio real (se não existir)
         # -------------------------------------------------
         def add_preco_medio(custos_df):
+            """Adiciona a coluna 'Preço Médio' com base no base_prod (por produto ou variante)."""
             if "Preço Médio" not in custos_df.columns:
                 if "price" in base_prod.columns:
-                    precos = base_prod.groupby(nivel_agrupamento)["price"].mean().reset_index()
-                    precos.rename(columns={nivel_agrupamento: label_nivel, "price": "Preço Médio"}, inplace=True)
-                    custos_df = custos_df.merge(precos, on=label_nivel, how="left")
+                    # Detecta qual coluna usar como chave
+                    chave_merge = (
+                        "product_title"
+                        if produto_escolhido == "(Todos)"
+                        else "Variante Normalizada"
+                    )
+                    precos = (
+                        base_prod.groupby(chave_merge)["price"]
+                        .mean()
+                        .reset_index()
+                        .rename(columns={
+                            chave_merge: "Variante" if chave_merge == "Variante Normalizada" else "Produto",
+                            "price": "Preço Médio"
+                        })
+                    )
+
+                    # Faz o merge usando a coluna correta (Produto ou Variante)
+                    col_merge = "Produto" if produto_escolhido == "(Todos)" else "Variante"
+                    custos_df = custos_df.merge(precos, on=col_merge, how="left")
                 else:
                     custos_df["Preço Médio"] = (custos_df["Custo Unitário"] * 2.5).round(2)
             return custos_df
 
         custos_base_A = add_preco_medio(custos_base_A)
         custos_base_B = add_preco_medio(custos_base_B)
+
 
         # -------------------------------------------------
         # 🧮 Cálculos por período (independentes)
