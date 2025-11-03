@@ -1505,33 +1505,49 @@ if menu == "📊 Dashboard – Tráfego Pago":
             custos_base_B["Custo Unitário"] = pd.to_numeric(custos_base_B["Custo Unitário"], errors="coerce").fillna(0)
 
         # -------------------------------------------------
-        # 💵 Adiciona preço médio real (se não existir)
+        # 💵 Adiciona preço médio real (compatível com Produto ou Variante)
         # -------------------------------------------------
         def add_preco_medio(custos_df):
-            """Adiciona a coluna 'Preço Médio' com base no base_prod (por produto ou variante)."""
+            """
+            Adiciona a coluna 'Preço Médio' com base no base_prod.
+            Detecta automaticamente se a base usa Produto ou Variante.
+            """
             if "Preço Médio" not in custos_df.columns:
                 if "price" in base_prod.columns:
-                    # Detecta qual coluna usar como chave
-                    chave_merge = (
-                        "product_title"
-                        if produto_escolhido == "(Todos)"
-                        else "Variante Normalizada"
-                    )
+                    # Detecta se estamos analisando todas as variantes ou produtos
+                    if produto_escolhido == "(Todos)":
+                        chave_merge = "product_title"
+                        col_destino = "Produto"
+                    else:
+                        chave_merge = "Variante Normalizada"
+                        col_destino = "Variante"
+
+                    # Calcula o preço médio real por chave
                     precos = (
-                        base_prod.groupby(chave_merge)["price"]
+                        base_prod.groupby(chave_merge, as_index=False)["price"]
                         .mean()
-                        .reset_index()
                         .rename(columns={
-                            chave_merge: "Variante" if chave_merge == "Variante Normalizada" else "Produto",
+                            chave_merge: col_destino,
                             "price": "Preço Médio"
                         })
                     )
 
-                    # Faz o merge usando a coluna correta (Produto ou Variante)
-                    col_merge = "Produto" if produto_escolhido == "(Todos)" else "Variante"
-                    custos_df = custos_df.merge(precos, on=col_merge, how="left")
+                    # 🧩 Garante que a coluna de merge exista antes de tentar unir
+                    if col_destino not in custos_df.columns:
+                        # Corrige nome automaticamente se vier diferente do esperado
+                        for c in custos_df.columns:
+                            if c.lower().startswith(col_destino.lower()[0:5]):
+                                custos_df.rename(columns={c: col_destino}, inplace=True)
+                                break
+
+                    if col_destino in custos_df.columns:
+                        custos_df = custos_df.merge(precos, on=col_destino, how="left")
+                    else:
+                        st.warning(f"⚠️ Coluna '{col_destino}' não encontrada na planilha de custos. Merge ignorado.")
+                        custos_df["Preço Médio"] = (custos_df["Custo Unitário"] * 2.5).round(2)
                 else:
                     custos_df["Preço Médio"] = (custos_df["Custo Unitário"] * 2.5).round(2)
+
             return custos_df
 
         custos_base_A = add_preco_medio(custos_base_A)
