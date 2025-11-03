@@ -1319,18 +1319,15 @@ if menu == "📊 Dashboard – Tráfego Pago":
             match = re.search(r"(\d+)\s*(peças|pçs?|unidades|unid|uni)", nome.lower())
             return int(match.group(1)) if match else None
 
-        # Cria coluna auxiliar com número base
+        # Cria nova coluna auxiliar (só pra conferência)
         pedidos["Qtd Base"] = pedidos["variant_title"].apply(extrair_qtd_pecas)
 
-        # ✅ Cria coluna normalizada (sem sobrescrever a original)
-        pedidos["Variante Normalizada"] = pedidos["Qtd Base"].apply(
-            lambda x: f"{int(x)} peças" if pd.notna(x) else pedidos["variant_title"]
+        # Substitui o próprio variant_title por nome padronizado "XX peças"
+        pedidos["variant_title"] = pedidos["Qtd Base"].apply(
+            lambda x: f"{int(x)} peças" if pd.notna(x) else None
         )
 
-        # Padroniza para minúsculas e remove espaços extras
-        pedidos["Variante Normalizada"] = pedidos["Variante Normalizada"].str.strip().str.lower()
-
-        st.info("✅ Variantes normalizadas — agora usando a coluna 'Variante Normalizada' para casar com a planilha.")
+        st.info("✅ Variantes normalizadas — nomes antigos e novos agora são tratados como iguais.")
         
         if pedidos.empty:
             st.warning("⚠️ Nenhum pedido encontrado no intervalo selecionado.")
@@ -1351,7 +1348,7 @@ if menu == "📊 Dashboard – Tráfego Pago":
             label_nivel = "Produto"
         else:
             base_prod = pedidos[pedidos["product_title"] == produto_escolhido].copy()
-            nivel_agrupamento = "Variante Normalizada"  # ✅ usa a coluna normalizada
+            nivel_agrupamento = "variant_title"
             label_nivel = "Variante"
 
         def filtrar_periodo(df, ini, fim):
@@ -1467,9 +1464,9 @@ if menu == "📊 Dashboard – Tráfego Pago":
 
         col_custo = "Custo AliExpress (R$)" if fornecedor == "AliExpress" else "Custo Estoque (R$)"
 
-        # 🔍 Detecta itens realmente existentes em cada período (usando a variante normalizada)
-        itens_a = base_prod[base_prod["created_at"].dt.date.between(inicio_a, fim_a)]["Variante Normalizada"].unique().tolist()
-        itens_b = base_prod[base_prod["created_at"].dt.date.between(inicio_b, fim_b)]["Variante Normalizada"].unique().tolist()
+        # 🔍 Detecta itens realmente existentes em cada período (variante ou produto)
+        itens_a = base_prod[base_prod["created_at"].dt.date.between(inicio_a, fim_a)][nivel_agrupamento].unique().tolist()
+        itens_b = base_prod[base_prod["created_at"].dt.date.between(inicio_b, fim_b)][nivel_agrupamento].unique().tolist()
 
         # 🔧 Cria base de custos separada para cada período
         if produto_escolhido == "(Todos)":
@@ -1477,82 +1474,55 @@ if menu == "📊 Dashboard – Tráfego Pago":
             custos_base_A = df_custos[df_custos["Produto"].isin(itens_a)].copy()
             custos_base_B = df_custos[df_custos["Produto"].isin(itens_b)].copy()
         else:
-            # 👉 Quando o produto específico está selecionado, compara apenas por variante (usando nomes normalizados)
-            df_custos["Variante"] = df_custos["Variante"].str.strip().str.lower()
+            # 👉 Quando o produto específico está selecionado, compara apenas por variante
             custos_base_A = df_custos[df_custos["Variante"].isin(itens_a)].copy()
             custos_base_B = df_custos[df_custos["Variante"].isin(itens_b)].copy()
 
         # 🔗 Adiciona colunas de quantidade correspondentes
         custos_base_A = custos_base_A.merge(
             comparativo[[label_nivel, "Qtd A"]],
-            left_on="Variante", right_on=label_nivel, how="left"
+            left_on=label_nivel, right_on=label_nivel, how="left"
         )
         custos_base_B = custos_base_B.merge(
             comparativo[[label_nivel, "Qtd B"]],
-            left_on="Variante", right_on=label_nivel, how="left"
+            left_on=label_nivel, right_on=label_nivel, how="left"
         )
 
-        # 🔢 Ajusta custos unitários corretamente
+        # 🔢 Ajusta custos unitários para cada base (dinâmico)
         if not df_custos.empty:
-            df_custos_indexed = df_custos.drop_duplicates(subset=["Variante"]).set_index("Variante")
+            # Escolhe a coluna base para indexar de forma segura
+            col_index = label_nivel if label_nivel in df_custos.columns else "Variante"
+
+            # Remove duplicados antes de indexar para evitar InvalidIndexError
+            df_custos_indexed = df_custos.drop_duplicates(subset=[col_index]).set_index(col_index)
 
             # --- Período A ---
-            custos_base_A["Custo Unitário"] = custos_base_A["Variante"].map(df_custos_indexed[col_custo])
-            custos_base_A["Custo Unitário"] = pd.to_numeric(custos_base_A["Custo Unitário"], errors="coerce").fillna(0)
+            custos_base_A["Custo Unitário"] = custos_base_A[label_nivel].map(df_custos_indexed[col_custo])
+            custos_base_A["Custo Unitário"] = pd.to_numeric(
+                custos_base_A["Custo Unitário"], errors="coerce"
+            ).fillna(0)
 
             # --- Período B ---
-            custos_base_B["Custo Unitário"] = custos_base_B["Variante"].map(df_custos_indexed[col_custo])
-            custos_base_B["Custo Unitário"] = pd.to_numeric(custos_base_B["Custo Unitário"], errors="coerce").fillna(0)
+            custos_base_B["Custo Unitário"] = custos_base_B[label_nivel].map(df_custos_indexed[col_custo])
+            custos_base_B["Custo Unitário"] = pd.to_numeric(
+                custos_base_B["Custo Unitário"], errors="coerce"
+            ).fillna(0)
 
         # -------------------------------------------------
-        # 💵 Adiciona preço médio real (compatível com Produto ou Variante)
+        # 💵 Adiciona preço médio real (se não existir)
         # -------------------------------------------------
         def add_preco_medio(custos_df):
-            """
-            Adiciona a coluna 'Preço Médio' com base no base_prod.
-            Detecta automaticamente se a base usa Produto ou Variante.
-            """
             if "Preço Médio" not in custos_df.columns:
                 if "price" in base_prod.columns:
-                    # Detecta se estamos analisando todas as variantes ou produtos
-                    if produto_escolhido == "(Todos)":
-                        chave_merge = "product_title"
-                        col_destino = "Produto"
-                    else:
-                        chave_merge = "Variante Normalizada"
-                        col_destino = "Variante"
-
-                    # Calcula o preço médio real por chave
-                    precos = (
-                        base_prod.groupby(chave_merge, as_index=False)["price"]
-                        .mean()
-                        .rename(columns={
-                            chave_merge: col_destino,
-                            "price": "Preço Médio"
-                        })
-                    )
-
-                    # 🧩 Garante que a coluna de merge exista antes de tentar unir
-                    if col_destino not in custos_df.columns:
-                        # Corrige nome automaticamente se vier diferente do esperado
-                        for c in custos_df.columns:
-                            if c.lower().startswith(col_destino.lower()[0:5]):
-                                custos_df.rename(columns={c: col_destino}, inplace=True)
-                                break
-
-                    if col_destino in custos_df.columns:
-                        custos_df = custos_df.merge(precos, on=col_destino, how="left")
-                    else:
-                        st.warning(f"⚠️ Coluna '{col_destino}' não encontrada na planilha de custos. Merge ignorado.")
-                        custos_df["Preço Médio"] = (custos_df["Custo Unitário"] * 2.5).round(2)
+                    precos = base_prod.groupby(nivel_agrupamento)["price"].mean().reset_index()
+                    precos.rename(columns={nivel_agrupamento: label_nivel, "price": "Preço Médio"}, inplace=True)
+                    custos_df = custos_df.merge(precos, on=label_nivel, how="left")
                 else:
                     custos_df["Preço Médio"] = (custos_df["Custo Unitário"] * 2.5).round(2)
-
             return custos_df
 
         custos_base_A = add_preco_medio(custos_base_A)
         custos_base_B = add_preco_medio(custos_base_B)
-
 
         # -------------------------------------------------
         # 🧮 Cálculos por período (independentes)
