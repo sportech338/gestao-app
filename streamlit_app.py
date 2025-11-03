@@ -1468,25 +1468,32 @@ if menu == "📊 Dashboard – Tráfego Pago":
         itens_a = base_prod[base_prod["created_at"].dt.date.between(inicio_a, fim_a)][nivel_agrupamento].unique().tolist()
         itens_b = base_prod[base_prod["created_at"].dt.date.between(inicio_b, fim_b)][nivel_agrupamento].unique().tolist()
 
-        # 🔧 Cria base de custos separada para cada período
-        if produto_escolhido == "(Todos)":
-            # 👉 Quando o filtro está em "(Todos)", compara apenas por produto
-            custos_base_A = df_custos[df_custos["Produto"].isin(itens_a)].copy()
-            custos_base_B = df_custos[df_custos["Produto"].isin(itens_b)].copy()
-        else:
-            # 👉 Quando o produto específico está selecionado, compara apenas por variante
-            custos_base_A = df_custos[df_custos["Variante"].isin(itens_a)].copy()
-            custos_base_B = df_custos[df_custos["Variante"].isin(itens_b)].copy()
+        # =====================================================
+        # 🧩 Criação robusta da base de custos — sem perder vendas
+        # =====================================================
+        chave = "Produto" if produto_escolhido == "(Todos)" else "Variante"
 
-        # 🔗 Adiciona colunas de quantidade correspondentes
+        # Mantém todas as linhas da planilha de custos (sem filtrar por itens)
+        custos_base_A = df_custos.copy()
+        custos_base_B = df_custos.copy()
+
+        # Adiciona as quantidades reais de cada período
         custos_base_A = custos_base_A.merge(
             comparativo[[label_nivel, "Qtd A"]],
-            left_on=label_nivel, right_on=label_nivel, how="left"
+            left_on=chave, right_on=label_nivel, how="left"
         )
         custos_base_B = custos_base_B.merge(
             comparativo[[label_nivel, "Qtd B"]],
-            left_on=label_nivel, right_on=label_nivel, how="left"
+            left_on=chave, right_on=label_nivel, how="left"
         )
+
+        # Preenche NaN com zero para evitar sumiço de linhas
+        for df_ in [custos_base_A, custos_base_B]:
+            for col in [c for c in df_.columns if "Qtd" in c]:
+                df_[col] = df_[col].fillna(0)
+
+        # Exibe o fornecedor ativo para conferência visual
+        st.info(f"📦 Cálculos baseados em custos de **{fornecedor}** ({col_custo})")
 
         # 🔢 Ajusta custos unitários para cada base (dinâmico)
         if not df_custos.empty:
