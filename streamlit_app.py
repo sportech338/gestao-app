@@ -3956,6 +3956,23 @@ if menu == "📦 Dashboard – Logística":
             df_a = consolidar_por_produto_todos(pedidos, inicio_a, fim_a, "A")
             df_b = consolidar_por_produto_todos(pedidos, inicio_b, fim_b, "B")
 
+            # =====================================================
+            # 📊 Calcula participação global correta no modo "(Todos)"
+            # =====================================================
+            total_receita_global_a = df_a["Receita A"].sum()
+            total_receita_global_b = df_b["Receita B"].sum()
+
+            df_a["Part.A (%)"] = np.where(
+                total_receita_global_a > 0,
+                df_a["Receita A"] / total_receita_global_a * 100,
+                0
+            )
+            df_b["Part.B (%)"] = np.where(
+                total_receita_global_b > 0,
+                df_b["Receita B"] / total_receita_global_b * 100,
+                0
+            )
+
 
         # =====================================================
         # 💸 Vincular investimento Meta Ads automaticamente
