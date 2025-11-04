@@ -4604,15 +4604,15 @@ if menu == "📦 Dashboard – Logística":
         # -------------------------------------------------
         def cor_celula(row):
             if row["grupo_verde"]:
-                return "rgba(0,255,128,0.20)"
+                return "rgba(0,255,128,0.20)"  # verde translúcido
             elif row["duplicado"]:
-                return "rgba(0,123,255,0.15)"
+                return "rgba(0,123,255,0.15)"  # azul translúcido
             elif row["is_sedex"]:
-                return "rgba(255,215,0,0.20)"
+                return "rgba(255,215,0,0.20)"  # amarelo translúcido
             elif row["Status"] == "Feito":
-                return "rgba(40,167,69,0.15)"
+                return "rgba(40,167,69,0.15)"  # verde claro
             elif row["Status"] == "Aguardando":
-                return "rgba(255,215,0,0.15)"
+                return "rgba(255,215,0,0.15)"  # amarelo claro
             return "transparent"
 
         tabela_ag["rowColor"] = tabela_ag.apply(cor_celula, axis=1)
@@ -4650,13 +4650,17 @@ if menu == "📦 Dashboard – Logística":
                 },
             )
 
+        # -------------------------------------------------
+        # 🎨 Ajuste visual — layout compacto e limpo
+        # -------------------------------------------------
         gb.configure_pagination(paginationAutoPageSize=True)
         gb.configure_default_column(
             resizable=True,
             filter=True,
             sortable=True,
-            wrapText=True,
-            autoHeight=True,
+            wrapText=False,        # ❌ evita linhas altas
+            autoHeight=False,      # ❌ impede células esticadas
+            cellStyle={"lineHeight": "28px", "padding": "2px 6px"}  # ✅ mais compacto
         )
 
         grid_options = gb.build()
@@ -4670,8 +4674,9 @@ if menu == "📦 Dashboard – Logística":
             update_mode=GridUpdateMode.VALUE_CHANGED,
             allow_unsafe_jscode=False,
             fit_columns_on_grid_load=True,
-            theme="balham",  # seguro e compatível
-            height=520,
+            theme="balham",     # compatível e limpo
+            height=480,         # altura ajustada
+            reload_data=True,   # força atualização visual
         )
 
         # -------------------------------------------------
@@ -4680,6 +4685,7 @@ if menu == "📦 Dashboard – Logística":
         df_editado = grid_response["data"]
         for pid, status in zip(df_editado["Pedido"], df_editado["Status"]):
             st.session_state["status_pedidos"][pid] = status
+
 
         # -------------------------------------------------
         # 🎛️ Filtros adicionais
