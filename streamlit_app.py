@@ -4589,25 +4589,29 @@ if menu == "📦 Dashboard – Logística":
                 display: flex;
                 flex-direction: row;
                 align-items: flex-start;
-                gap: 8px;
-                margin-top: 8px;
-                max-height: 650px;
+                gap: 6px;
+                margin-top: 6px;
+                max-height: 700px;
                 overflow-y: auto;
             }
             .coluna-faixas {
                 display: flex;
                 flex-direction: column;
-                align-items: center;
+                align-items: stretch;
                 justify-content: flex-start;
-                margin-top: 30px;
-                padding-right: 6px;
+                margin-top: 37px;  /* alinha com o cabeçalho da tabela */
+                padding-right: 4px;
             }
             .faixa {
                 width: 10px;
-                height: 31px;
-                border-radius: 4px;
-                margin-bottom: 3px;
-                transition: background 0.2s ease;
+                height: 34px;  /* altura sincronizada com as linhas da tabela */
+                border-radius: 3px;
+                margin-bottom: 2px;
+                transition: all 0.2s ease;
+            }
+            .faixa:hover {
+                transform: scaleX(1.3);
+                filter: brightness(1.2);
             }
             .coluna-tabela {
                 flex: 1;
