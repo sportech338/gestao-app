@@ -4567,65 +4567,41 @@ if menu == "📦 Dashboard – Logística":
         tabela_exibir = tabela[colunas_visiveis + ["duplicado", "is_sedex", "grupo_verde", "grupo_id"]].copy()
 
         # -------------------------------------------------
-        # 🟡 Coluna manual de Status (Aguardando / Feito)
+        # 🟢 Coluna de Status (primeira da tabela de baixo)
         # -------------------------------------------------
         if "status_pedidos" not in st.session_state:
             st.session_state["status_pedidos"] = {}
 
-        # Cria coluna Status inicial
-        tabela_exibir["Status"] = tabela_exibir["Pedido"].apply(
-            lambda pid: st.session_state["status_pedidos"].get(pid, "Aguardando")
-        )
-
-        # -------------------------------------------------
-        # 🟩 Editor direto na tabela (Aguardando / Feito)
-        # -------------------------------------------------
-        st.markdown("### 🗂️ Controle de Status — direto na tabela")
-
-        # Se ainda não existir a coluna "Status", cria com padrão "Aguardando"
+        # Se não existir a coluna Status, cria padrão “Aguardando”
         if "Status" not in tabela_exibir.columns:
-            tabela_exibir["Status"] = [
+            tabela_exibir.insert(0, "Status", [
                 st.session_state["status_pedidos"].get(pid, "Aguardando")
                 for pid in tabela_exibir["Pedido"]
-            ]
-
-        # Editor direto (permite mudar o valor dentro da célula)
-        tabela_editada = st.data_editor(
-            tabela_exibir,
-            hide_index=True,
-            use_container_width=True,
-            column_config={
-                "Status": st.column_config.SelectboxColumn(
-                    "Status",
-                    help="Marque se o pedido foi feito ou está aguardando",
-                    options=["Aguardando", "Feito"],
-                    required=True
-                )
-            },
-            key="editor_status"
-        )
-
-        # Atualiza o estado de cada pedido com o valor editado
-        for _, row in tabela_editada.iterrows():
-            pid = row["Pedido"]
-            st.session_state["status_pedidos"][pid] = row["Status"]
-
-        # Substitui a tabela original pela editada
-        tabela_exibir = tabela_editada
+            ])
+        else:
+            # Garante que Status fica sempre na primeira posição
+            cols = ["Status"] + [c for c in tabela_exibir.columns if c != "Status"]
+            tabela_exibir = tabela_exibir[cols]
 
         # -------------------------------------------------
-        # 🎨 Aplicar cor condicional combinada (SEDEX + Status)
+        # 🎨 Aplicar cor condicional (baseado no Status)
         # -------------------------------------------------
         def highlight_prioridades_com_status(row):
-            base_style = highlight_prioridades(row)
             if "Status" in row:
                 if row["Status"] == "Aguardando":
-                    base_style = ['background-color: rgba(255, 215, 0, 0.25)'] * len(row)
+                    return ['background-color: rgba(255, 215, 0, 0.25)'] * len(row)
                 elif row["Status"] == "Feito":
-                    base_style = ['background-color: rgba(40, 167, 69, 0.25)'] * len(row)
-            return base_style
+                    return ['background-color: rgba(40, 167, 69, 0.25)'] * len(row)
+            return [''] * len(row)
 
         tabela_estilizada = tabela_exibir.style.apply(highlight_prioridades_com_status, axis=1)
+
+        # ✅ Exibe tabela com Status como primeira coluna
+        st.markdown("### 📋 Tabela de pedidos com controle de Status")
+        st.write(
+            tabela_estilizada.hide(axis="columns", subset=["duplicado", "is_sedex", "grupo_verde", "grupo_id"]),
+            unsafe_allow_html=True
+        )
 
 
         # ✅ Remove colunas técnicas antes de exibir (só da visualização)
