@@ -4492,6 +4492,31 @@ if menu == "📦 Dashboard – Logística":
             lambda x: "✅ Processado" if str(x).lower() in ["fulfilled", "shipped", "complete"] else "🟡 Não processado"
         )
 
+        # -------------------------------------------------
+        # 🔁 Identificação de duplicados (recolocada)
+        # -------------------------------------------------
+        def identificar_duplicado(row, df_ref):
+            nome = str(row.get("Cliente", "")).strip().lower()
+            email = str(row.get("E-mail", "")).strip().lower()
+            cpf = str(row.get("CPF", "")).strip()
+            tel = str(row.get("Telefone", "")).strip()
+            end = str(row.get("Endereço", "")).strip().lower()
+
+            ignorar = ["(sem cpf)", "(sem email)", "(sem telefone)", "(sem endereço)", "(sem bairro)"]
+
+            if cpf and cpf not in ignorar and df_ref["CPF"].eq(cpf).sum() > 1:
+                return True
+            if email and email not in ignorar and df_ref["E-mail"].str.lower().eq(email).sum() > 1:
+                return True
+            if nome and df_ref["Cliente"].str.lower().eq(nome).sum() > 1:
+                return True
+            if tel and tel not in ignorar and df_ref["Telefone"].eq(tel).sum() > 1:
+                return True
+            if end and end not in ignorar and df_ref["Endereço"].str.lower().eq(end).sum() > 1:
+                return True
+            return False
+
+        
         # Mantém suas lógicas de duplicado e cores
         tabela["duplicado"] = tabela.apply(lambda row: identificar_duplicado(row, tabela), axis=1)
         tabela["is_sedex"] = tabela["Frete"].astype(str).str.contains("SEDEX", case=False, na=False) if "Frete" in tabela.columns else False
