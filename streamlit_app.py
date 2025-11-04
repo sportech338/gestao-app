@@ -4523,15 +4523,23 @@ if menu == "📦 Dashboard – Logística":
             return styles
 
         # -------------------------------------------------
-        # 📊 Montagem final
+        # 📊 Montagem final segura (sem KeyError)
         # -------------------------------------------------
         colunas_visiveis = [
             "Pedido", "Status de processamento", "Cliente", "Produto", 
             "Variante", "Qtd", "Data do pedido", "Frete", "E-mail"
         ]
         colunas_visiveis_existentes = [c for c in colunas_visiveis if c in tabela.columns]
+
+        # 🔒 Garante que as colunas técnicas existam, mesmo que vazias
+        for col in ["duplicado", "is_sedex", "grupo_verde", "grupo_id"]:
+            if col not in tabela.columns:
+                tabela[col] = False if col != "grupo_id" else ""
+
+        # Cria a versão final sem risco de KeyError
         tabela_exibir = tabela[colunas_visiveis_existentes + ["duplicado", "is_sedex", "grupo_verde", "grupo_id"]].copy()
 
+        # Aplica estilo
         tabela_estilizada = tabela_exibir.style.apply(highlight_prioridades, axis=1)
 
         # ✅ Exibe com HTML liberado (para mostrar os badges)
