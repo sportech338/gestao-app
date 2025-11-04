@@ -4599,7 +4599,7 @@ if menu == "📦 Dashboard – Logística":
                 flex-direction: column;
                 align-items: stretch;
                 justify-content: flex-start;
-                margin-top: 50px;  /* alinha com o cabeçalho da tabela */
+                margin-top: 60px;  /* alinha com o cabeçalho da tabela */
                 padding-right: 4px;
             }
             .faixa {
