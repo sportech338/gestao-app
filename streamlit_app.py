@@ -4560,72 +4560,95 @@ if menu == "📦 Dashboard – Logística":
         )
 
         # -------------------------------------------------
-        # 🟩 Marcador lateral de status por linha (Aguardando / Feito)
+        # 🎯 Indicadores laterais independentes da tabela (fora dela)
         # -------------------------------------------------
-        st.markdown("### 🟢 Marcar status visual de cada pedido")
+        st.markdown("### 🎯 Indicadores de status (fora da tabela)")
 
-        # Inicializa dicionário persistente
-        if "status_pedidos" not in st.session_state:
-            st.session_state["status_pedidos"] = {}
+        # Inicializa o dicionário persistente (guarda o status de cada pedido)
+        if "status_visuais" not in st.session_state:
+            st.session_state["status_visuais"] = {}
 
-        # Função auxiliar para definir cor da faixa
-        def cor_status(etq):
+        # Lista dos pedidos atuais
+        pedidos_lista = tabela["Pedido"].astype(str).tolist()
+
+        # Função de cor do status
+        def cor_status(status):
             cores = {
                 "Aguardando": "#FFD700",  # amarelo
                 "Feito": "#00BF63",       # verde
-                "Revisar": "#FF4444",     # vermelho
                 "Pendente": "#FF9900",    # laranja
-                "": "#666666"             # neutro
+                "Revisar": "#FF4444",     # vermelho
+                "": "#555555"             # neutro
             }
-            return cores.get(etq, "#666666")
+            return cores.get(status, "#555555")
 
-        # Layout de colunas lado a lado: faixa + seletor + info
+        # CSS do layout (lado a lado: faixas + tabela)
         st.markdown("""
             <style>
-            .linha-status {
+            .bloco-lateral {
                 display: flex;
+                flex-direction: row;
+                align-items: flex-start;
+                gap: 8px;
+                margin-top: 8px;
+                max-height: 650px;
+                overflow-y: auto;
+            }
+            .coluna-faixas {
+                display: flex;
+                flex-direction: column;
                 align-items: center;
-                gap: 10px;
-                margin-bottom: 6px;
-                padding: 4px 8px;
-                border-bottom: 1px solid rgba(255,255,255,0.05);
+                justify-content: flex-start;
+                margin-top: 30px;
+                padding-right: 6px;
             }
-            .faixa-status {
-                width: 8px;
-                height: 28px;
+            .faixa {
+                width: 10px;
+                height: 31px;
                 border-radius: 4px;
-                flex-shrink: 0;
+                margin-bottom: 3px;
+                transition: background 0.2s ease;
             }
-            .texto-status {
-                color: #EEE;
-                font-size: 14px;
+            .coluna-tabela {
+                flex: 1;
+                overflow-x: auto;
             }
             </style>
         """, unsafe_allow_html=True)
 
-        st.markdown("#### 🧾 Selecione o status de cada pedido:")
+        # Gera as faixas HTML com base no status salvo
+        faixas_html = ""
+        for pedido in pedidos_lista:
+            status = st.session_state["status_visuais"].get(pedido, "")
+            cor = cor_status(status)
+            faixas_html += f"<div class='faixa' style='background:{cor}' title='{pedido} — {status or '-'}'></div>"
 
-        for i, row in tabela.iterrows():
-            pedido = str(row.get("Pedido", ""))
-            cliente = str(row.get("Cliente", ""))
-            atual = st.session_state["status_pedidos"].get(pedido, "")
+        # Converte a tabela pandas estilizada em HTML
+        tabela_html = tabela_estilizada.hide(
+            axis="columns", subset=["duplicado", "is_sedex", "grupo_verde", "grupo_id"]
+        ).to_html()
 
-            col1, col2, col3 = st.columns([0.2, 1, 1.5])
-            with col1:
-                st.markdown(
-                    f"<div class='faixa-status' style='background:{cor_status(atual)}'></div>",
-                    unsafe_allow_html=True
-                )
-            with col2:
-                novo_status = st.selectbox(
-                    f"{pedido} — {cliente}",
-                    ["", "Aguardando", "Feito", "Pendente", "Revisar"],
-                    index=["", "Aguardando", "Feito", "Pendente", "Revisar"].index(atual) if atual in ["Aguardando", "Feito", "Pendente", "Revisar"] else 0,
-                    key=f"status_{pedido}"
-                )
-            with col3:
-                if novo_status != atual:
-                    st.session_state["status_pedidos"][pedido] = novo_status
+        # Junta faixas + tabela num container flex
+        st.markdown(f"""
+            <div class="bloco-lateral">
+                <div class="coluna-faixas">{faixas_html}</div>
+                <div class="coluna-tabela">{tabela_html}</div>
+            </div>
+        """, unsafe_allow_html=True)
+
+        # -------------------------------------------------
+        # ✏️ Editor visual de faixas (não altera tabela)
+        # -------------------------------------------------
+        st.markdown("#### ✏️ Atualizar status visual (faixas coloridas)")
+        col1, col2, col3 = st.columns([2, 1, 1])
+        with col1:
+            pedido_sel = st.selectbox("Pedido:", pedidos_lista)
+        with col2:
+            novo_status = st.selectbox("Status:", ["", "Aguardando", "Feito", "Pendente", "Revisar"])
+        with col3:
+            if st.button("💾 Aplicar"):
+                st.session_state["status_visuais"][pedido_sel] = novo_status
+                st.experimental_rerun()
 
     
         # -------------------------------------------------
