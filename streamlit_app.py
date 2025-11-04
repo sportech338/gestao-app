@@ -4584,37 +4584,20 @@ if menu == "📦 Dashboard – Logística":
             tabela_exibir = tabela_exibir[cols]
 
         # -------------------------------------------------
-        # 📋 Tabela interativa — controle de Status + cores condicionais (estilo elegante)
+        # 📋 Tabela única com edição de Status + cores condicionais
         # -------------------------------------------------
         st.markdown("### 📋 Tabela de pedidos com controle de Status")
 
         status_options = ["Aguardando", "Feito"]
-        tabela_view = tabela_exibir.copy()
 
-        # Atualiza o Status com base na sessão
+        # 🔄 Garante que os status salvos em sessão sejam aplicados
+        tabela_view = tabela_exibir.copy()
         tabela_view["Status"] = [
             st.session_state["status_pedidos"].get(pid, "Aguardando")
             for pid in tabela_view["Pedido"]
         ]
 
-        # Função de cor condicional (igual ao exemplo bonito)
-        def cor_linha(row):
-            if row.get("grupo_verde"):
-                return ["background-color: rgba(0,255,128,0.25);"] * len(row)
-            elif row.get("duplicado"):
-                return ["background-color: rgba(0,123,255,0.15);"] * len(row)
-            elif row.get("is_sedex"):
-                return ["background-color: rgba(255,215,0,0.20);"] * len(row)
-            elif row.get("Status") == "Feito":
-                return ["background-color: rgba(40,167,69,0.15);"] * len(row)
-            elif row.get("Status") == "Aguardando":
-                return ["background-color: rgba(255,215,0,0.15);"] * len(row)
-            else:
-                return [""] * len(row)
-
-        # -------------------------------------------------
-        # ✏️ Editor apenas da coluna Status
-        # -------------------------------------------------
+        # ✏️ Editor: apenas a coluna “Status” é editável
         edited_df = st.data_editor(
             tabela_view,
             hide_index=True,
@@ -4628,26 +4611,39 @@ if menu == "📦 Dashboard – Logística":
                 )
             },
             disabled=[c for c in tabela_view.columns if c != "Status"],
-            key="tabela_status_edit",
+            key="tabela_status_unica",
         )
 
-        # -------------------------------------------------
-        # 🔄 Atualiza session_state
-        # -------------------------------------------------
+        # 🔄 Atualiza session_state com novos valores editados
         for pid, status in zip(edited_df["Pedido"], edited_df["Status"]):
             st.session_state["status_pedidos"][pid] = status
 
         # -------------------------------------------------
-        # 🎨 Aplica as cores de linha (estilo bonito)
+        # 🎨 Aplica cores diretamente sobre o DataFrame editado
         # -------------------------------------------------
+        def cor_linha(row):
+            if row.get("grupo_verde"):
+                return ['background-color: rgba(0,255,128,0.25);'] * len(row)
+            elif row.get("duplicado"):
+                return ['background-color: rgba(0,123,255,0.15);'] * len(row)
+            elif row.get("is_sedex"):
+                return ['background-color: rgba(255,215,0,0.20);'] * len(row)
+            elif row.get("Status") == "Feito":
+                return ['background-color: rgba(40,167,69,0.15);'] * len(row)
+            elif row.get("Status") == "Aguardando":
+                return ['background-color: rgba(255,215,0,0.15);'] * len(row)
+            else:
+                return [''] * len(row)
+
+        # Cria versão colorida (já com o status editado)
         tabela_colorida = edited_df.style.apply(cor_linha, axis=1)
 
+        # 🧩 Mostra tabela estilizada (única e interativa)
         st.dataframe(
             tabela_colorida,
             use_container_width=True,
-            height=480
+            height=600
         )
-
 
         # -------------------------------------------------
         # 🎛️ Filtros adicionais
