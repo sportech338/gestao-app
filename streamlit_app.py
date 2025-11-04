@@ -4559,33 +4559,7 @@ if menu == "📦 Dashboard – Logística":
         col_tabela, col_status = st.columns([4, 1], gap="medium")
 
         with col_tabela:
-            # -------------------------------------------------
-            # 💅 Ajuste de estilo da tabela (tamanho e aparência dos números)
-            # -------------------------------------------------
-            tabela_estilizada = (
-                tabela_exibir.style
-                .apply(highlight_prioridades, axis=1)
-                .set_table_styles([
-                    {'selector': 'th', 'props': [
-                        ('font-size', '12px'),
-                        ('text-align', 'center')
-                    ]},  # cabeçalho menor
-
-                    {'selector': 'td', 'props': [
-                        ('font-size', '11px'),
-                        ('padding', '4px 6px')
-                    ]},  # células gerais
-
-                    {'selector': 'td:first-child', 'props': [
-                        ('font-size', '10px'),       # 🔹 tamanho do número
-                        ('font-weight', '600'),
-                        ('color', '#BBBBBB'),        # cinza suave
-                        ('text-align', 'center')     # centraliza o número
-                    ]},
-                ])
-            )
-
-            # ✅ Exibe a tabela com estilo ajustado
+            # ✅ Exibe a tabela com estilo
             st.write(
                 tabela_estilizada.hide(
                     axis="columns", subset=["duplicado", "is_sedex", "grupo_verde", "grupo_id"]
@@ -4677,6 +4651,31 @@ if menu == "📦 Dashboard – Logística":
                             st.info(msg)
 
         with col_status:
+            # -------------------------------------------------
+            # 💅 Ajuste visual dos botões de pedidos (lado direito)
+            # -------------------------------------------------
+            st.markdown("""
+                <style>
+                /* Botões compactos e discretos do painel de status */
+                div.stButton > button {
+                    font-size: 11px !important;        /* 🔹 Tamanho do número */
+                    padding: 2px 0px !important;       /* Reduz altura */
+                    height: 26px !important;           /* Compacta verticalmente */
+                    border-radius: 6px !important;     /* Bordas suaves */
+                    border: 1px solid #333 !important; /* Contorno sutil */
+                    background-color: #1e1e1e !important; /* Fundo escuro */
+                    color: #cccccc !important;         /* Texto cinza claro */
+                    width: 100% !important;            /* Largura total */
+                    transition: 0.2s ease-in-out;
+                }
+                div.stButton > button:hover {
+                    background-color: #2a2a2a !important; /* Hover mais claro */
+                    color: white !important;               /* Texto branco */
+                    border-color: #555 !important;
+                }
+                </style>
+            """, unsafe_allow_html=True)
+
             # Inicializa o dicionário de status persistente
             if "status_visuais" not in st.session_state:
                 st.session_state["status_visuais"] = {}
