@@ -4559,13 +4559,96 @@ if menu == "📦 Dashboard – Logística":
         col_tabela, col_status = st.columns([2, 1], gap="medium")
 
         with col_tabela:
-            # Exibe a tabela normalmente (sem alterar nada)
+            # ✅ Exibe a tabela com estilo
             st.write(
                 tabela_estilizada.hide(
                     axis="columns", subset=["duplicado", "is_sedex", "grupo_verde", "grupo_id"]
                 ),
                 unsafe_allow_html=True
             )
+
+            # -------------------------------------------------
+            # 🎛️ Filtros adicionais
+            # -------------------------------------------------
+            st.subheader("🎛️ Filtros adicionais")
+            col1, col2 = st.columns(2)
+            with col1:
+                escolha_prod = st.selectbox("Produto", ["(Todos)"] + sorted(base["product_title"].dropna().unique().tolist()))
+            with col2:
+                escolha_var = st.selectbox("Variante", ["(Todas)"] + sorted(base["variant_title"].dropna().unique().tolist()))
+
+            if escolha_prod != "(Todos)":
+                df = df[df["product_title"] == escolha_prod]
+            if escolha_var != "(Todas)":
+                df = df[df["variant_title"] == escolha_var]
+
+            if df.empty:
+                st.warning("⚠️ Nenhum pedido encontrado com os filtros selecionados.")
+            else:
+                st.success(f"✅ {len(df)} registros após aplicação dos filtros.")
+
+            # -------------------------------------------------
+            # 🚚 Processamento de pedidos
+            # -------------------------------------------------
+            pendentes = df[df["fulfillment_status"].isin(["unfulfilled", None, "null"])]
+            if not pendentes.empty:
+                if st.button("🚀 Processar TODOS os pedidos pendentes"):
+                    progress = st.progress(0)
+                    total = len(pendentes)
+                    for i, row in enumerate(pendentes.itertuples(), start=1):
+                        try:
+                            create_fulfillment(row.order_id)
+                        except Exception as e:
+                            st.error(f"❌ Erro ao processar pedido {row.order_id}: {str(e)}")
+                            continue
+                        progress.progress(i / total)
+                    st.success("✅ Todos os pedidos pendentes foram processados com sucesso!")
+            else:
+                st.info("✅ Nenhum pedido pendente para processar.")
+
+            # -------------------------------------------------
+            # 📦 Processar individualmente
+            # -------------------------------------------------
+            st.markdown("### 📦 Processar individualmente")
+            for idx, row in df.iterrows():
+                if str(row["fulfillment_status"]).lower() in ["fulfilled", "shipped", "complete"]:
+                    continue
+                order_display = int(float(row[order_col])) if pd.notna(row[order_col]) else row["order_id"]
+                status_key = f"status_{row.order_id}_{idx}"
+                form_key = f"form_{row.order_id}_{idx}"
+                track_key = f"track_{row.order_id}_{idx}"
+                if status_key not in st.session_state:
+                    st.session_state[status_key] = ""
+
+                with st.container(border=True):
+                    st.markdown(f"#### Pedido #{order_display} — {row['customer_name']}")
+                    st.caption(f"Produto: {row['product_title']} — Variante: {row['variant_title']}")
+                    with st.form(key=form_key, clear_on_submit=True):
+                        tracking_number = st.text_input("📦 Código de rastreio (opcional)", key=track_key)
+                        submitted = st.form_submit_button("✅ Processar pedido")
+                        if submitted:
+                            try:
+                                with st.spinner(f"Processando pedido #{order_display}..."):
+                                    result = create_fulfillment(
+                                        row.order_id,
+                                        tracking_number=tracking_number or None,
+                                        tracking_company="Correios"
+                                    )
+                                    log_fulfillment(row.order_id)
+                                st.session_state[status_key] = f"✅ Pedido #{order_display} processado com sucesso!"
+                                if tracking_number:
+                                    st.session_state[status_key] += f"\n📬 Código de rastreio: `{tracking_number}`"
+                            except Exception as e:
+                                st.session_state[status_key] = f"❌ Erro ao processar pedido #{order_display}: {e}"
+
+                    msg = st.session_state[status_key]
+                    if msg:
+                        if msg.startswith("✅"):
+                            st.success(msg)
+                        elif msg.startswith("❌"):
+                            st.error(msg)
+                        else:
+                            st.info(msg)
 
         with col_status:
             st.markdown("### 🎯 Status dos pedidos")
@@ -4616,90 +4699,6 @@ if menu == "📦 Dashboard – Logística":
                     f"</div>",
                     unsafe_allow_html=True,
                 )
-
-
-        # -------------------------------------------------
-        # 🎛️ Filtros adicionais
-        # -------------------------------------------------
-        st.subheader("🎛️ Filtros adicionais")
-        col1, col2 = st.columns(2)
-        with col1:
-            escolha_prod = st.selectbox("Produto", ["(Todos)"] + sorted(base["product_title"].dropna().unique().tolist()))
-        with col2:
-            escolha_var = st.selectbox("Variante", ["(Todas)"] + sorted(base["variant_title"].dropna().unique().tolist()))
-
-        if escolha_prod != "(Todos)":
-            df = df[df["product_title"] == escolha_prod]
-        if escolha_var != "(Todas)":
-            df = df[df["variant_title"] == escolha_var]
-
-        if df.empty:
-            st.warning("⚠️ Nenhum pedido encontrado com os filtros selecionados.")
-        else:
-            st.success(f"✅ {len(df)} registros após aplicação dos filtros.")
-            
-        # -------------------------------------------------
-        # 🚚 Processamento de pedidos
-        # -------------------------------------------------
-        pendentes = df[df["fulfillment_status"].isin(["unfulfilled", None, "null"])]
-        if not pendentes.empty:
-            if st.button("🚀 Processar TODOS os pedidos pendentes"):
-                progress = st.progress(0)
-                total = len(pendentes)
-                for i, row in enumerate(pendentes.itertuples(), start=1):
-                    try:
-                        create_fulfillment(row.order_id)
-                    except Exception as e:
-                        st.error(f"❌ Erro ao processar pedido {row.order_id}: {str(e)}")
-                        continue
-                    progress.progress(i / total)
-                st.success("✅ Todos os pedidos pendentes foram processados com sucesso!")
-        else:
-            st.info("✅ Nenhum pedido pendente para processar.")
-
-        # -------------------------------------------------
-        # 📦 Processar individualmente
-        # -------------------------------------------------
-        st.markdown("### 📦 Processar individualmente")
-        for idx, row in df.iterrows():
-            if str(row["fulfillment_status"]).lower() in ["fulfilled", "shipped", "complete"]:
-                continue
-            order_display = int(float(row[order_col])) if pd.notna(row[order_col]) else row["order_id"]
-            status_key = f"status_{row.order_id}_{idx}"
-            form_key = f"form_{row.order_id}_{idx}"
-            track_key = f"track_{row.order_id}_{idx}"
-            if status_key not in st.session_state:
-                st.session_state[status_key] = ""
-
-            with st.container(border=True):
-                st.markdown(f"#### Pedido #{order_display} — {row['customer_name']}")
-                st.caption(f"Produto: {row['product_title']} — Variante: {row['variant_title']}")
-                with st.form(key=form_key, clear_on_submit=True):
-                    tracking_number = st.text_input("📦 Código de rastreio (opcional)", key=track_key)
-                    submitted = st.form_submit_button("✅ Processar pedido")
-                    if submitted:
-                        try:
-                            with st.spinner(f"Processando pedido #{order_display}..."):
-                                result = create_fulfillment(
-                                    row.order_id,
-                                    tracking_number=tracking_number or None,
-                                    tracking_company="Correios"
-                                )
-                                log_fulfillment(row.order_id)
-                            st.session_state[status_key] = f"✅ Pedido #{order_display} processado com sucesso!"
-                            if tracking_number:
-                                st.session_state[status_key] += f"\n📬 Código de rastreio: `{tracking_number}`"
-                        except Exception as e:
-                            st.session_state[status_key] = f"❌ Erro ao processar pedido #{order_display}: {e}"
-
-                msg = st.session_state[status_key]
-                if msg:
-                    if msg.startswith("✅"):
-                        st.success(msg)
-                    elif msg.startswith("❌"):
-                        st.error(msg)
-                    else:
-                        st.info(msg)
     
     # =====================================================
     # 📦 ABA 2 — ESTOQUE
