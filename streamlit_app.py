@@ -4584,33 +4584,14 @@ if menu == "📦 Dashboard – Logística":
             tabela_exibir = tabela_exibir[cols]
 
         # -------------------------------------------------
-        # 🟢 Tabela interativa — única versão oficial com cores condicionais
+        # 🟢 Tabela interativa — controle de Status + cores condicionais
         # -------------------------------------------------
         st.markdown("### 📋 Tabela de pedidos com controle de Status")
 
-        # Define as opções possíveis
         status_options = ["Aguardando", "Feito"]
-
-        # Cria cópia editável só das colunas visíveis
         tabela_editavel = tabela_exibir.copy()
 
-        # 🟦 Gera uma coluna auxiliar com a cor de fundo conforme condições
-        def cor_linha(row):
-            # 🟢 Grupo duplicado com SEDEX → Verde translúcido
-            if row.get("grupo_verde"):
-                return "rgba(0, 255, 128, 0.15)"
-            # 🔵 Duplicado → Azul translúcido
-            elif row.get("duplicado"):
-                return "rgba(0, 123, 255, 0.15)"
-            # 🟡 SEDEX → Amarelo translúcido
-            elif row.get("is_sedex"):
-                return "rgba(255, 215, 0, 0.15)"
-            else:
-                return "transparent"
-
-        tabela_editavel["row_color"] = tabela_editavel.apply(cor_linha, axis=1)
-
-        # Mostra editor de tabela com coluna de status editável — exibição única
+        # Editor de status (sem cor)
         edited_df = st.data_editor(
             tabela_editavel,
             hide_index=True,
@@ -4627,26 +4608,37 @@ if menu == "📦 Dashboard – Logística":
             key="tabela_logistica"
         )
 
-        # Atualiza valores no session_state (mantém seleção entre recarregamentos)
+        # Atualiza o estado de sessão
         for pid, status in zip(edited_df["Pedido"], edited_df["Status"]):
             st.session_state["status_pedidos"][pid] = status
 
         # -------------------------------------------------
-        # 🎨 CSS dinâmico — aplica as cores diretamente no st.data_editor (correção 2025)
+        # 🎨 Exibição colorida (visualmente destacada)
         # -------------------------------------------------
-        linhas_css = "\n".join(
-            [
-                f"""
-                <style>
-                [data-testid="stDataEditorGrid"] div[data-testid="stDataFrameRow"]:nth-child({i+1}) {{
-                    background-color: {cor} !important;
-                }}
-                </style>
-                """
-                for i, cor in enumerate(tabela_editavel["row_color"])
-            ]
+        st.markdown("### 🎨 Visualização colorida de prioridades")
+
+        def highlight_condicoes(row):
+            # 🟢 Grupo duplicado com SEDEX → Verde
+            if row.get("grupo_verde"):
+                return ['background-color: rgba(0, 255, 128, 0.15)'] * len(row)
+            # 🔵 Duplicado → Azul
+            elif row.get("duplicado"):
+                return ['background-color: rgba(0, 123, 255, 0.15)'] * len(row)
+            # 🟡 SEDEX → Amarelo
+            elif row.get("is_sedex"):
+                return ['background-color: rgba(255, 215, 0, 0.15)'] * len(row)
+            # 🟩 Feito → Verde claro
+            elif row["Status"] == "Feito":
+                return ['background-color: rgba(40, 167, 69, 0.25)'] * len(row)
+            # 🟨 Aguardando → Amarelo claro
+            elif row["Status"] == "Aguardando":
+                return ['background-color: rgba(255, 215, 0, 0.25)'] * len(row)
+            return [''] * len(row)
+
+        st.dataframe(
+            edited_df.style.apply(highlight_condicoes, axis=1),
+            use_container_width=True
         )
-        st.markdown(linhas_css, unsafe_allow_html=True)
 
 
         # -------------------------------------------------
