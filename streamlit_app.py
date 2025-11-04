@@ -4559,7 +4559,33 @@ if menu == "📦 Dashboard – Logística":
         col_tabela, col_status = st.columns([4, 1], gap="medium")
 
         with col_tabela:
-            # ✅ Exibe a tabela com estilo
+            # -------------------------------------------------
+            # 💅 Ajuste de estilo da tabela (tamanho e aparência dos números)
+            # -------------------------------------------------
+            tabela_estilizada = (
+                tabela_exibir.style
+                .apply(highlight_prioridades, axis=1)
+                .set_table_styles([
+                    {'selector': 'th', 'props': [
+                        ('font-size', '12px'),
+                        ('text-align', 'center')
+                    ]},  # cabeçalho menor
+
+                    {'selector': 'td', 'props': [
+                        ('font-size', '11px'),
+                        ('padding', '4px 6px')
+                    ]},  # células gerais
+
+                    {'selector': 'td:first-child', 'props': [
+                        ('font-size', '10px'),       # 🔹 tamanho do número
+                        ('font-weight', '600'),
+                        ('color', '#BBBBBB'),        # cinza suave
+                        ('text-align', 'center')     # centraliza o número
+                    ]},
+                ])
+            )
+
+            # ✅ Exibe a tabela com estilo ajustado
             st.write(
                 tabela_estilizada.hide(
                     axis="columns", subset=["duplicado", "is_sedex", "grupo_verde", "grupo_id"]
