@@ -4584,7 +4584,7 @@ if menu == "📦 Dashboard – Logística":
             tabela_exibir = tabela_exibir[cols]
 
         # -------------------------------------------------
-        # 🟢 Tabela interativa — permite trocar Status
+        # 🟢 Tabela interativa — única versão oficial
         # -------------------------------------------------
         st.markdown("### 📋 Tabela de pedidos com controle de Status")
 
@@ -4622,10 +4622,12 @@ if menu == "📦 Dashboard – Logística":
                 return ['background-color: rgba(255, 215, 0, 0.25)'] * len(row)
             return [''] * len(row)
 
+        # Exibe apenas UMA tabela — com as cores certas e edição habilitada
         st.dataframe(
             edited_df.style.apply(highlight_status, axis=1),
             use_container_width=True
         )
+
 
         # -------------------------------------------------
         # 🎛️ Filtros adicionais
