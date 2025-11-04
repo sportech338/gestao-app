@@ -4594,39 +4594,25 @@ if menu == "📦 Dashboard – Logística":
         # Cria cópia editável só das colunas visíveis
         tabela_editavel = tabela_exibir.copy()
 
-        # Mostra editor de tabela com coluna de status editável
-        edited_df = st.data_editor(
-            tabela_editavel,
-            hide_index=True,
-            use_container_width=True,
-            column_config={
-                "Status": st.column_config.SelectboxColumn(
-                    "Status",
-                    help="Altere o status do pedido",
-                    options=status_options,
-                    required=True
-                )
-            },
-            disabled=[c for c in tabela_editavel.columns if c != "Status"]
+# Mostra editor de tabela com coluna de status editável — exibição única
+edited_df = st.data_editor(
+    tabela_editavel,
+    hide_index=True,
+    use_container_width=True,
+    column_config={
+        "Status": st.column_config.SelectboxColumn(
+            "Status",
+            help="Altere o status do pedido",
+            options=status_options,
+            required=True
         )
+    },
+    disabled=[c for c in tabela_editavel.columns if c != "Status"]
+)
 
-        # Atualiza valores no session_state
-        for pid, status in zip(edited_df["Pedido"], edited_df["Status"]):
-            st.session_state["status_pedidos"][pid] = status
-
-        # 🔁 Mantém cores conforme o status escolhido
-        def highlight_status(row):
-            if row["Status"] == "Feito":
-                return ['background-color: rgba(40, 167, 69, 0.25)'] * len(row)
-            elif row["Status"] == "Aguardando":
-                return ['background-color: rgba(255, 215, 0, 0.25)'] * len(row)
-            return [''] * len(row)
-
-        # Exibe apenas UMA tabela — com as cores certas e edição habilitada
-        st.dataframe(
-            edited_df.style.apply(highlight_status, axis=1),
-            use_container_width=True
-        )
+# Atualiza valores no session_state (mantém seleção entre recarregamentos)
+for pid, status in zip(edited_df["Pedido"], edited_df["Status"]):
+    st.session_state["status_pedidos"][pid] = status
 
 
         # -------------------------------------------------
