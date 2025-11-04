@@ -4584,6 +4584,50 @@ if menu == "📦 Dashboard – Logística":
             tabela_exibir = tabela_exibir[cols]
 
         # -------------------------------------------------
+        # 🟢 Tabela interativa — permite trocar Status
+        # -------------------------------------------------
+        st.markdown("### 📋 Tabela de pedidos com controle de Status")
+
+        # Define as opções possíveis
+        status_options = ["Aguardando", "Feito"]
+
+        # Cria cópia editável só das colunas visíveis
+        tabela_editavel = tabela_exibir.copy()
+
+        # Mostra editor de tabela com coluna de status editável
+        edited_df = st.data_editor(
+            tabela_editavel,
+            hide_index=True,
+            use_container_width=True,
+            column_config={
+                "Status": st.column_config.SelectboxColumn(
+                    "Status",
+                    help="Altere o status do pedido",
+                    options=status_options,
+                    required=True
+                )
+            },
+            disabled=[c for c in tabela_editavel.columns if c != "Status"]
+        )
+
+        # Atualiza valores no session_state
+        for pid, status in zip(edited_df["Pedido"], edited_df["Status"]):
+            st.session_state["status_pedidos"][pid] = status
+
+        # 🔁 Mantém cores conforme o status escolhido
+        def highlight_status(row):
+            if row["Status"] == "Feito":
+                return ['background-color: rgba(40, 167, 69, 0.25)'] * len(row)
+            elif row["Status"] == "Aguardando":
+                return ['background-color: rgba(255, 215, 0, 0.25)'] * len(row)
+            return [''] * len(row)
+
+        st.dataframe(
+            edited_df.style.apply(highlight_status, axis=1),
+            use_container_width=True
+        )
+
+        # -------------------------------------------------
         # 🎛️ Filtros adicionais
         # -------------------------------------------------
         st.subheader("🎛️ Filtros adicionais")
