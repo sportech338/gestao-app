@@ -4648,8 +4648,7 @@ if menu == "📦 Dashboard – Logística":
         with col3:
             if st.button("💾 Aplicar"):
                 st.session_state["status_visuais"][pedido_sel] = novo_status
-                st.experimental_rerun()
-
+                st.rerun()
     
         # -------------------------------------------------
         # 🎛️ Filtros adicionais
