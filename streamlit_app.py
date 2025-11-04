@@ -4662,11 +4662,9 @@ if menu == "📦 Dashboard – Logística":
             # Função de cor do status
             def cor_status(status):
                 cores = {
+                    "": "#555555"             # neutro
                     "Aguardando": "#FFD700",  # amarelo
                     "Feito": "#00BF63",       # verde
-                    "Pendente": "#FF9900",    # laranja
-                    "Revisar": "#FF4444",     # vermelho
-                    "": "#555555"             # neutro
                 }
                 return cores.get(status, "#555555")
 
@@ -4676,7 +4674,7 @@ if menu == "📦 Dashboard – Logística":
             # Campo para escolher novo status
             novo_status = st.radio(
                 "Novo status:",
-                ["", "Aguardando", "Feito", "Pendente", "Revisar"],
+                ["", "Aguardando", "Feito"],
                 horizontal=True,
             )
 
