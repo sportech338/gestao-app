@@ -4556,7 +4556,7 @@ if menu == "📦 Dashboard – Logística":
         # -------------------------------------------------
         # 🧱 Layout: tabela (2/3) + painel lateral de status (1/3)
         # -------------------------------------------------
-        col_tabela, col_status = st.columns([2, 1], gap="medium")
+        col_tabela, col_status = st.columns([4, 1], gap="medium")
 
         with col_tabela:
             # ✅ Exibe a tabela com estilo
