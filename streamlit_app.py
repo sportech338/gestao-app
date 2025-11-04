@@ -4604,7 +4604,7 @@ if menu == "📦 Dashboard – Logística":
             }
             .faixa {
                 width: 15px;
-                height: 120px;  /* altura sincronizada com as linhas da tabela */
+                height: 115px;  /* altura sincronizada com as linhas da tabela */
                 border-radius: 3px;
                 margin-bottom: 2px;
                 transition: all 0.2s ease;
