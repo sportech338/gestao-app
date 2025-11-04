@@ -4651,8 +4651,6 @@ if menu == "📦 Dashboard – Logística":
                             st.info(msg)
 
         with col_status:
-            st.markdown("### 🎯 Status dos pedidos")
-
             # Inicializa o dicionário de status persistente
             if "status_visuais" not in st.session_state:
                 st.session_state["status_visuais"] = {}
