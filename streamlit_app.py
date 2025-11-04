@@ -4686,15 +4686,17 @@ if menu == "📦 Dashboard – Logística":
 
             st.markdown("---")
 
-            # Mostra uma mini listagem de status atuais (dividida em duas colunas)
+            # Mostra uma mini listagem de status atuais (dividida em três colunas)
             st.markdown("#### 📋 Situação atual")
 
-            # Divide a lista em duas partes quase iguais
-            metade = len(pedidos_lista) // 2
-            col_esq, col_dir = st.columns(2)
+            # Divide a lista de pedidos em 3 partes quase iguais
+            total = len(pedidos_lista)
+            terco = (total + 2) // 3  # arredonda pra cima pra evitar perda de itens
 
-            with col_esq:
-                for pedido in pedidos_lista[:metade]:
+            col1, col2, col3 = st.columns(3)
+
+            with col1:
+                for pedido in pedidos_lista[:terco]:
                     status = st.session_state["status_visuais"].get(pedido, "")
                     st.markdown(
                         f"<div style='display:flex;align-items:center;gap:6px;margin-bottom:4px;'>"
@@ -4704,8 +4706,19 @@ if menu == "📦 Dashboard – Logística":
                         unsafe_allow_html=True,
                     )
 
-            with col_dir:
-                for pedido in pedidos_lista[metade:]:
+            with col2:
+                for pedido in pedidos_lista[terco:2*terco]:
+                    status = st.session_state["status_visuais"].get(pedido, "")
+                    st.markdown(
+                        f"<div style='display:flex;align-items:center;gap:6px;margin-bottom:4px;'>"
+                        f"<div style='width:12px;height:12px;border-radius:50%;background:{cor_status(status)};'></div>"
+                        f"<span style='font-size:14px;'>{pedido} — <b>{status or '-'}</b></span>"
+                        f"</div>",
+                        unsafe_allow_html=True,
+                    )
+
+            with col3:
+                for pedido in pedidos_lista[2*terco:]:
                     status = st.session_state["status_visuais"].get(pedido, "")
                     st.markdown(
                         f"<div style='display:flex;align-items:center;gap:6px;margin-bottom:4px;'>"
