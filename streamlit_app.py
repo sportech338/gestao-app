@@ -4553,25 +4553,12 @@ if menu == "📦 Dashboard – Logística":
         # ✅ Converte valores para string (evita erro React no front-end)
         tabela_exibir[colunas_visiveis] = tabela_exibir[colunas_visiveis].fillna("").astype(str)
 
-        # ✅ Exibe tabela com estilo (mantém cores sem quebrar)
-        st.write(
-            tabela_estilizada.hide(axis="columns", subset=["duplicado", "is_sedex", "grupo_verde", "grupo_id"]),
-            unsafe_allow_html=True
-        )
-
         # -------------------------------------------------
-        # 🎯 Indicadores laterais independentes da tabela (fora dela)
+        # 🎨 Tabela principal com faixa lateral embutida
         # -------------------------------------------------
-        st.markdown("### 🎯 Indicadores de status (fora da tabela)")
-
-        # Inicializa o dicionário persistente (guarda o status de cada pedido)
         if "status_visuais" not in st.session_state:
             st.session_state["status_visuais"] = {}
 
-        # Lista dos pedidos atuais
-        pedidos_lista = tabela["Pedido"].astype(str).tolist()
-
-        # Função de cor do status
         def cor_status(status):
             cores = {
                 "Aguardando": "#FFD700",  # amarelo
@@ -4582,78 +4569,24 @@ if menu == "📦 Dashboard – Logística":
             }
             return cores.get(status, "#555555")
 
-        # CSS do layout (lado a lado: faixas + tabela)
-        st.markdown("""
-            <style>
-            .bloco-lateral {
-                display: flex;
-                flex-direction: row;
-                align-items: flex-start;
-                gap: 6px;
-                margin-top: 6px;
-                max-height: 700px;
-                overflow-y: auto;
-            }
-            .coluna-faixas {
-                display: grid;
-                grid-auto-rows: 1fr; /* cada faixa ocupa a mesma altura da linha */
-                align-items: stretch;
-                justify-items: center;
-                margin-top: 65px;  /* alinha com o cabeçalho da tabela */
-                padding-right: 4px;
-            }
-            .faixa {
-                width: 16px;               /* espessura lateral da faixa */
-                border-radius: 4px;
-                margin-bottom: 1px;
-                transition: all 0.2s ease;
-                aspect-ratio: 1 / 7;       /* ajusta proporção da altura */
-            }
-            .faixa:hover {
-                transform: scaleX(1.2);
-                filter: brightness(1.2);
-            }
-            .coluna-tabela {
-                flex: 1;
-                overflow-x: auto;
-            }
-            </style>
-        """, unsafe_allow_html=True)
+        # Adiciona coluna de faixa colorida (HTML inline)
+        tabela_exibir["Faixa"] = tabela_exibir["Pedido"].astype(str).apply(
+            lambda p: f"<div style='width:10px;height:100%;background:{cor_status(st.session_state['status_visuais'].get(p,''))};border-radius:3px;margin:auto'></div>"
+        )
 
-        # Gera as faixas HTML com base no status salvo
-        faixas_html = ""
-        for pedido in pedidos_lista:
-            status = st.session_state["status_visuais"].get(pedido, "")
-            cor = cor_status(status)
-            faixas_html += f"<div class='faixa' style='background:{cor}' title='{pedido} — {status or '-'}'></div>"
+        # Reordena as colunas — faixa vem primeiro
+        colunas_final = ["Faixa"] + [c for c in tabela_exibir.columns if c != "Faixa"]
 
-        # Converte a tabela pandas estilizada em HTML
-        tabela_html = tabela_estilizada.hide(
-            axis="columns", subset=["duplicado", "is_sedex", "grupo_verde", "grupo_id"]
-        ).to_html()
+        # Gera HTML da tabela com faixas e destaque visual
+        tabela_html = (
+            tabela_exibir[colunas_final]
+            .style.apply(highlight_prioridades, axis=1)
+            .hide(axis="columns", subset=["duplicado", "is_sedex", "grupo_verde", "grupo_id"])
+            .to_html(escape=False)
+        )
 
-        # Junta faixas + tabela num container flex
-        st.markdown(f"""
-            <div class="bloco-lateral">
-                <div class="coluna-faixas">{faixas_html}</div>
-                <div class="coluna-tabela">{tabela_html}</div>
-            </div>
-        """, unsafe_allow_html=True)
-
-        # -------------------------------------------------
-        # ✏️ Editor visual de faixas (não altera tabela)
-        # -------------------------------------------------
-        st.markdown("#### ✏️ Atualizar status visual (faixas coloridas)")
-        col1, col2, col3 = st.columns([2, 1, 1])
-        with col1:
-            pedido_sel = st.selectbox("Pedido:", pedidos_lista)
-        with col2:
-            novo_status = st.selectbox("Status:", ["", "Aguardando", "Feito", "Pendente", "Revisar"])
-        with col3:
-            if st.button("💾 Aplicar"):
-                st.session_state["status_visuais"][pedido_sel] = novo_status
-                st.rerun()
-
+        # Exibe tabela principal (faixas já dentro da tabela)
+        st.markdown(tabela_html, unsafe_allow_html=True)
     
         # -------------------------------------------------
         # 🎛️ Filtros adicionais
