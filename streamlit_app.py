@@ -4445,13 +4445,6 @@ if menu == "📦 Dashboard – Logística":
         colunas = [c for c in colunas if c in df.columns]
         tabela = df[colunas].sort_values("created_at", ascending=False).copy()
 
-        # 🏷️ Adiciona coluna de etiqueta manual
-        tabela["Etiqueta"] = ""
-
-        # Exemplo: marque pedidos específicos manualmente
-        tabela.loc[tabela["Pedido"].isin(["36797", "36798"]), "Etiqueta"] = "Aguardando"
-        tabela.loc[tabela["Pedido"].isin(["36801", "36802"]), "Etiqueta"] = "Feito"
-
         tabela.rename(columns={
             order_col: "Pedido", "created_at": "Data do pedido", "customer_name": "Cliente", "customer_email": "E-mail", "customer_phone": "Telefone", "customer_cpf": "CPF",
             "endereco": "Endereço", "bairro": "Bairro", "cep": "CEP", "quantity": "Qtd", "product_title": "Produto", "variant_title": "Variante", 
@@ -4551,23 +4544,30 @@ if menu == "📦 Dashboard – Logística":
         # Aplica estilo condicional
         tabela_estilizada = tabela_exibir.style.apply(highlight_prioridades, axis=1)
 
-        # ✅ Remove colunas técnicas antes de exibir (só da visualização)
-        colunas_visiveis = [
-            "Etiqueta", "Pedido", "Status de processamento", "Cliente", "Produto", 
-            "Variante", "Qtd", "Data do pedido", "Frete", "E-mail"
-        ]
-
-        # 🏷️ Adiciona coluna de etiqueta manual
-        tabela["Etiqueta"] = ""
+        # 🏷️ Adiciona coluna de etiqueta manual (depois do rename)
+        if "Etiqueta" not in tabela.columns:
+            tabela["Etiqueta"] = ""
 
         # Exemplo: marque pedidos específicos manualmente
         tabela.loc[tabela["Pedido"].isin(["36797", "36798"]), "Etiqueta"] = "Aguardando"
         tabela.loc[tabela["Pedido"].isin(["36801", "36802"]), "Etiqueta"] = "Feito"
 
-        # ✅ Converte valores para string (evita erro React no front-end)
-        tabela_exibir[colunas_visiveis] = tabela_exibir[colunas_visiveis].fillna("").astype(str)
+        # Cria a tabela final de exibição
+        colunas_visiveis = [
+            "Etiqueta", "Pedido", "Status de processamento", "Cliente", "Produto", 
+            "Variante", "Qtd", "Data do pedido", "Frete", "E-mail"
+        ]
+        colunas_visiveis_existentes = [c for c in colunas_visiveis if c in tabela.columns]
 
-        # ✅ Exibe tabela com estilo (mantém cores sem quebrar)
+        tabela_exibir = tabela[colunas_visiveis_existentes + ["duplicado", "is_sedex", "grupo_verde", "grupo_id"]].copy()
+
+        # Aplica estilo condicional (mantém cores da tabela)
+        tabela_estilizada = tabela_exibir.style.apply(highlight_prioridades, axis=1)
+
+        # ✅ Converte valores para string (evita erro React no front-end)
+        tabela_exibir[colunas_visiveis_existentes] = tabela_exibir[colunas_visiveis_existentes].fillna("").astype(str)
+
+        # ✅ Exibe tabela com estilo
         st.write(
             tabela_estilizada.hide(axis="columns", subset=["duplicado", "is_sedex", "grupo_verde", "grupo_id"]),
             unsafe_allow_html=True
