@@ -4510,57 +4510,48 @@ if menu == "📦 Dashboard – Logística":
         if colunas_ordem:
             tabela = tabela.sort_values(by=colunas_ordem, ascending=[False, True, False][:len(colunas_ordem)])
 
-        # 🎨 Regras de cores
+        # -------------------------------------------------
+        # 🎨 Regras de cores + etiquetas visuais
+        # -------------------------------------------------
         def highlight_prioridades(row):
+            styles = [''] * len(row)
+
+            # Cores originais
             if row["grupo_verde"]:
-                return ['background-color: rgba(0, 255, 128, 0.15)'] * len(row)
+                styles = ['background-color: rgba(0, 255, 128, 0.15);'] * len(row)
             elif row["duplicado"]:
-                return ['background-color: rgba(0, 123, 255, 0.15)'] * len(row)
+                styles = ['background-color: rgba(0, 123, 255, 0.15);'] * len(row)
             elif row["is_sedex"]:
-                return ['background-color: rgba(255, 215, 0, 0.15)'] * len(row)
-            else:
-                return [''] * len(row)
+                styles = ['background-color: rgba(255, 215, 0, 0.15);'] * len(row)
 
-        # 🏷️ Garante coluna "Etiqueta"
-        if "Etiqueta" not in tabela.columns:
-            tabela["Etiqueta"] = ""
+            # Etiquetas visuais manuais (sem alterar o DF)
+            pedido = str(row.get("Pedido", ""))
+            if pedido in ["36797", "36798"]:
+                # 🟡 Aguardando → borda lateral amarela
+                styles[0] += "box-shadow: inset 4px 0 0 0 #FFD700;"
+            elif pedido in ["36801", "36802"]:
+                # 🟢 Feito → borda lateral verde
+                styles[0] += "box-shadow: inset 4px 0 0 0 #00BF63;"
+            return styles
 
-        # Cria tabela base para exibição
+        # -------------------------------------------------
+        # 📊 Montagem final
+        # -------------------------------------------------
         colunas_visiveis = [
-            "Etiqueta", "Pedido", "Status de processamento", "Cliente", "Produto", 
+            "Pedido", "Status de processamento", "Cliente", "Produto", 
             "Variante", "Qtd", "Data do pedido", "Frete", "E-mail"
         ]
         colunas_visiveis_existentes = [c for c in colunas_visiveis if c in tabela.columns]
         tabela_exibir = tabela[colunas_visiveis_existentes + ["duplicado", "is_sedex", "grupo_verde", "grupo_id"]].copy()
 
-        # Aplica cores
+        # Aplica as cores + etiquetas visuais
         tabela_estilizada = tabela_exibir.style.apply(highlight_prioridades, axis=1)
 
-        # ✅ Exibe tabela com estilo
+        # ✅ Exibe tabela estilizada
         st.write(
             tabela_estilizada.hide(axis="columns", subset=["duplicado", "is_sedex", "grupo_verde", "grupo_id"]),
             unsafe_allow_html=True
         )
-
-        # -------------------------------------------------
-        # ✏️ Editor de etiquetas manual
-        # -------------------------------------------------
-        st.markdown("### ✏️ Atualizar etiquetas manualmente")
-        col1, col2, col3 = st.columns([1.5, 2, 1])
-        with col1:
-            pedido_edit = st.text_input("Número do pedido:")
-        with col2:
-            nova_etiqueta = st.selectbox("Nova etiqueta:", ["", "Aguardando", "Feito", "Pendente", "Revisar"])
-        with col3:
-            salvar = st.button("Salvar etiqueta")
-
-        if salvar and pedido_edit:
-            if pedido_edit in tabela["Pedido"].values:
-                tabela.loc[tabela["Pedido"] == pedido_edit, "Etiqueta"] = nova_etiqueta
-                st.session_state["tabela_editada"] = tabela
-                st.success(f"✅ Etiqueta do pedido {pedido_edit} atualizada para '{nova_etiqueta}'")
-            else:
-                st.warning(f"⚠️ Pedido {pedido_edit} não encontrado na tabela.")
 
             
         # -------------------------------------------------
