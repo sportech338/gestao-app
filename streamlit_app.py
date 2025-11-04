@@ -4560,6 +4560,75 @@ if menu == "📦 Dashboard – Logística":
         )
 
         # -------------------------------------------------
+        # 🟩 Marcador lateral de status por linha (Aguardando / Feito)
+        # -------------------------------------------------
+        st.markdown("### 🟢 Marcar status visual de cada pedido")
+
+        # Inicializa dicionário persistente
+        if "status_pedidos" not in st.session_state:
+            st.session_state["status_pedidos"] = {}
+
+        # Função auxiliar para definir cor da faixa
+        def cor_status(etq):
+            cores = {
+                "Aguardando": "#FFD700",  # amarelo
+                "Feito": "#00BF63",       # verde
+                "Revisar": "#FF4444",     # vermelho
+                "Pendente": "#FF9900",    # laranja
+                "": "#666666"             # neutro
+            }
+            return cores.get(etq, "#666666")
+
+        # Layout de colunas lado a lado: faixa + seletor + info
+        st.markdown("""
+            <style>
+            .linha-status {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                margin-bottom: 6px;
+                padding: 4px 8px;
+                border-bottom: 1px solid rgba(255,255,255,0.05);
+            }
+            .faixa-status {
+                width: 8px;
+                height: 28px;
+                border-radius: 4px;
+                flex-shrink: 0;
+            }
+            .texto-status {
+                color: #EEE;
+                font-size: 14px;
+            }
+            </style>
+        """, unsafe_allow_html=True)
+
+        st.markdown("#### 🧾 Selecione o status de cada pedido:")
+
+        for i, row in tabela.iterrows():
+            pedido = str(row.get("Pedido", ""))
+            cliente = str(row.get("Cliente", ""))
+            atual = st.session_state["status_pedidos"].get(pedido, "")
+
+            col1, col2, col3 = st.columns([0.2, 1, 1.5])
+            with col1:
+                st.markdown(
+                    f"<div class='faixa-status' style='background:{cor_status(atual)}'></div>",
+                    unsafe_allow_html=True
+                )
+            with col2:
+                novo_status = st.selectbox(
+                    f"{pedido} — {cliente}",
+                    ["", "Aguardando", "Feito", "Pendente", "Revisar"],
+                    index=["", "Aguardando", "Feito", "Pendente", "Revisar"].index(atual) if atual in ["Aguardando", "Feito", "Pendente", "Revisar"] else 0,
+                    key=f"status_{pedido}"
+                )
+            with col3:
+                if novo_status != atual:
+                    st.session_state["status_pedidos"][pedido] = novo_status
+
+    
+        # -------------------------------------------------
         # 🎛️ Filtros adicionais
         # -------------------------------------------------
         st.subheader("🎛️ Filtros adicionais")
