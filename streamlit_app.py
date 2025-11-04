@@ -4584,73 +4584,90 @@ if menu == "📦 Dashboard – Logística":
             tabela_exibir = tabela_exibir[cols]
 
         # -------------------------------------------------
-        # 🟢 Tabela interativa — controle de Status + cores condicionais (versão única)
+        # 📋 Tabela interativa — controle de Status + cores condicionais (AgGrid)
         # -------------------------------------------------
+        from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
+
         st.markdown("### 📋 Tabela de pedidos com controle de Status")
 
+        # 🔹 Opções de status
         status_options = ["Aguardando", "Feito"]
-        tabela_editavel = tabela_exibir.copy()
+        tabela_ag = tabela_exibir.copy()
 
-        # Atualiza Status com o que já estiver salvo na sessão
-        tabela_editavel["Status"] = [
+        # Atualiza o Status inicial com o que já está salvo
+        tabela_ag["Status"] = [
             st.session_state["status_pedidos"].get(pid, "Aguardando")
-            for pid in tabela_editavel["Pedido"]
+            for pid in tabela_ag["Pedido"]
         ]
 
-        # Cria uma coluna auxiliar de cor condicional
-        def cor_linha(row):
-            if row.get("grupo_verde"):
-                return "rgba(0, 255, 128, 0.25)"  # verde translúcido
-            elif row.get("duplicado"):
-                return "rgba(0, 123, 255, 0.20)"  # azul translúcido
-            elif row.get("is_sedex"):
-                return "rgba(255, 215, 0, 0.25)"  # amarelo translúcido
-            elif row["Status"] == "Feito":
-                return "rgba(40, 167, 69, 0.20)"  # verde claro
-            elif row["Status"] == "Aguardando":
-                return "rgba(255, 215, 0, 0.20)"  # amarelo claro
-            else:
-                return "transparent"
+        # -------------------------------------------------
+        # 🎨 Função JS para cor condicional de linhas
+        # -------------------------------------------------
+        row_style_jscode = """
+        function(params) {
+            const r = params.data;
+            if (r.grupo_verde)   { return { 'backgroundColor': 'rgba(0,255,128,0.20)' }; }
+            if (r.duplicado)     { return { 'backgroundColor': 'rgba(0,123,255,0.15)' }; }
+            if (r.is_sedex)      { return { 'backgroundColor': 'rgba(255,215,0,0.20)' }; }
+            if (r.Status === 'Feito')       { return { 'backgroundColor': 'rgba(40,167,69,0.15)' }; }
+            if (r.Status === 'Aguardando')  { return { 'backgroundColor': 'rgba(255,215,0,0.15)' }; }
+            return {};
+        }
+        """
 
-        tabela_editavel["row_color"] = tabela_editavel.apply(cor_linha, axis=1)
+        # -------------------------------------------------
+        # ⚙️ Configura grid editável (apenas Status)
+        # -------------------------------------------------
+        gb = GridOptionsBuilder.from_dataframe(tabela_ag)
 
-        # Exibe a tabela com edição apenas em Status
-        edited_df = st.data_editor(
-            tabela_editavel.drop(columns=["row_color"]),
-            hide_index=True,
-            use_container_width=True,
-            column_config={
-                "Status": st.column_config.SelectboxColumn(
-                    "Status",
-                    help="Altere o status do pedido",
-                    options=status_options,
-                    required=True
-                )
-            },
-            disabled=[c for c in tabela_editavel.columns if c not in ["Status"]],
-            key="tabela_logistica"
+        # Coluna "Status" editável com select
+        gb.configure_column(
+            "Status",
+            editable=True,
+            cellEditor="agSelectCellEditor",
+            cellEditorParams={"values": status_options},
+            headerName="Status do Pedido",
         )
 
-        # Atualiza session_state
-        for pid, status in zip(edited_df["Pedido"], edited_df["Status"]):
+        # Todas as outras colunas ficam bloqueadas
+        for col in tabela_ag.columns:
+            if col != "Status":
+                gb.configure_column(col, editable=False)
+
+        # Estilo condicional de linha
+        gb.configure_grid_options(getRowStyle=row_style_jscode)
+
+        # Paginação, filtros e responsividade
+        gb.configure_pagination(paginationAutoPageSize=True)
+        gb.configure_default_column(
+            resizable=True,
+            filter=True,
+            sortable=True,
+            wrapText=True,
+            autoHeight=True
+        )
+
+        grid_options = gb.build()
+
+        # -------------------------------------------------
+        # 🧠 Renderiza tabela interativa
+        # -------------------------------------------------
+        grid_response = AgGrid(
+            tabela_ag,
+            gridOptions=grid_options,
+            update_mode=GridUpdateMode.VALUE_CHANGED,
+            allow_unsafe_jscode=True,
+            fit_columns_on_grid_load=True,
+            theme="balham-dark",  # temas: "streamlit", "balham", "material"
+            height=500,
+        )
+
+        # -------------------------------------------------
+        # 🔄 Atualiza session_state com novos Status
+        # -------------------------------------------------
+        df_editado = grid_response["data"]
+        for pid, status in zip(df_editado["Pedido"], df_editado["Status"]):
             st.session_state["status_pedidos"][pid] = status
-
-        # -------------------------------------------------
-        # 🎨 CSS dinâmico aplicado à tabela única
-        # -------------------------------------------------
-        linhas_css = "\n".join(
-            [
-                f"""
-                <style>
-                [data-testid="stDataEditorGrid"] div[data-testid="stDataFrameRow"]:nth-child({i+1}) {{
-                    background-color: {cor} !important;
-                }}
-                </style>
-                """
-                for i, cor in enumerate(tabela_editavel["row_color"])
-            ]
-        )
-        st.markdown(linhas_css, unsafe_allow_html=True)
 
         # -------------------------------------------------
         # 🎛️ Filtros adicionais
