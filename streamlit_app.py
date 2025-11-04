@@ -4440,6 +4440,31 @@ if menu == "📦 Dashboard – Logística":
             </style>
         """, unsafe_allow_html=True)
 
+        # -------------------------------------------------
+        # 🎨 CSS adicional para destacar Status (igual Excel)
+        # -------------------------------------------------
+        st.markdown("""
+        <style>
+        .status-aguardando {
+            background-color: rgba(255, 215, 0, 0.25);
+            color: #856404;
+            padding: 4px 8px;
+            border-radius: 8px;
+            font-weight: 600;
+            text-align: center;
+        }
+        .status-feito {
+            background-color: rgba(40, 167, 69, 0.25);
+            color: #155724;
+            padding: 4px 8px;
+            border-radius: 8px;
+            font-weight: 600;
+            text-align: center;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+
+
         colunas = [order_col, "fulfillment_status", "customer_name", "product_title", "variant_title", "quantity", "created_at", 
                    "forma_entrega", "customer_email", "customer_phone", "customer_cpf", "endereco", "bairro", "cep", "estado", "cidade"]
         colunas = [c for c in colunas if c in df.columns]
@@ -4541,8 +4566,48 @@ if menu == "📦 Dashboard – Logística":
         colunas_visiveis = [c for c in tabela.columns if c not in ["duplicado", "is_sedex", "grupo_verde", "grupo_id"]]
         tabela_exibir = tabela[colunas_visiveis + ["duplicado", "is_sedex", "grupo_verde", "grupo_id"]].copy()
 
-        # Aplica estilo condicional
-        tabela_estilizada = tabela_exibir.style.apply(highlight_prioridades, axis=1)
+        # -------------------------------------------------
+        # 🟡 Coluna manual de Status (Aguardando / Feito)
+        # -------------------------------------------------
+        if "status_pedidos" not in st.session_state:
+            st.session_state["status_pedidos"] = {}
+
+        # Cria coluna Status inicial
+        tabela_exibir["Status"] = tabela_exibir["Pedido"].apply(
+            lambda pid: st.session_state["status_pedidos"].get(pid, "Aguardando")
+        )
+
+        # Interface interativa para mudar status
+        st.markdown("### 🗂️ Atualizar status dos pedidos")
+
+        for idx, row in tabela_exibir.iterrows():
+            pedido_id = row["Pedido"]
+            status_key = f"status_{pedido_id}"
+
+            novo_status = st.selectbox(
+                f"📦 Pedido #{pedido_id} — {row['Cliente']}",
+                ["Aguardando", "Feito"],
+                index=0 if st.session_state["status_pedidos"].get(pedido_id, "Aguardando") == "Aguardando" else 1,
+                key=status_key
+            )
+            st.session_state["status_pedidos"][pedido_id] = novo_status
+            tabela_exibir.loc[idx, "Status"] = novo_status
+        
+
+        # -------------------------------------------------
+        # 🎨 Aplicar cor condicional combinada (SEDEX + Status)
+        # -------------------------------------------------
+        def highlight_prioridades_com_status(row):
+            base_style = highlight_prioridades(row)
+            if "Status" in row:
+                if row["Status"] == "Aguardando":
+                    base_style = ['background-color: rgba(255, 215, 0, 0.25)'] * len(row)
+                elif row["Status"] == "Feito":
+                    base_style = ['background-color: rgba(40, 167, 69, 0.25)'] * len(row)
+            return base_style
+
+        tabela_estilizada = tabela_exibir.style.apply(highlight_prioridades_com_status, axis=1)
+
 
         # ✅ Remove colunas técnicas antes de exibir (só da visualização)
         colunas_visiveis = [
