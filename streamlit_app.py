@@ -4440,6 +4440,31 @@ if menu == "📦 Dashboard – Logística":
             </style>
         """, unsafe_allow_html=True)
 
+        # -------------------------------------------------
+        # 🎨 CSS adicional para destacar Status (igual Excel)
+        # -------------------------------------------------
+        st.markdown("""
+        <style>
+        .status-aguardando {
+            background-color: rgba(255, 215, 0, 0.25);
+            color: #856404;
+            padding: 4px 8px;
+            border-radius: 8px;
+            font-weight: 600;
+            text-align: center;
+        }
+        .status-feito {
+            background-color: rgba(40, 167, 69, 0.25);
+            color: #155724;
+            padding: 4px 8px;
+            border-radius: 8px;
+            font-weight: 600;
+            text-align: center;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+
+
         colunas = [order_col, "fulfillment_status", "customer_name", "product_title", "variant_title", "quantity", "created_at", 
                    "forma_entrega", "customer_email", "customer_phone", "customer_cpf", "endereco", "bairro", "cep", "estado", "cidade"]
         colunas = [c for c in colunas if c in df.columns]
@@ -4541,23 +4566,88 @@ if menu == "📦 Dashboard – Logística":
         colunas_visiveis = [c for c in tabela.columns if c not in ["duplicado", "is_sedex", "grupo_verde", "grupo_id"]]
         tabela_exibir = tabela[colunas_visiveis + ["duplicado", "is_sedex", "grupo_verde", "grupo_id"]].copy()
 
-        # Aplica estilo condicional
-        tabela_estilizada = tabela_exibir.style.apply(highlight_prioridades, axis=1)
+        # -------------------------------------------------
+        # 🟢 Coluna de Status (primeira da tabela de baixo)
+        # -------------------------------------------------
+        if "status_pedidos" not in st.session_state:
+            st.session_state["status_pedidos"] = {}
 
-        # ✅ Remove colunas técnicas antes de exibir (só da visualização)
-        colunas_visiveis = [
-            c for c in tabela_exibir.columns 
-            if c not in ["duplicado", "is_sedex", "grupo_verde", "grupo_id"]
+        # Se não existir a coluna Status, cria padrão “Aguardando”
+        if "Status" not in tabela_exibir.columns:
+            tabela_exibir.insert(0, "Status", [
+                st.session_state["status_pedidos"].get(pid, "Aguardando")
+                for pid in tabela_exibir["Pedido"]
+            ])
+        else:
+            # Garante que Status fica sempre na primeira posição
+            cols = ["Status"] + [c for c in tabela_exibir.columns if c != "Status"]
+            tabela_exibir = tabela_exibir[cols]
+
+        # -------------------------------------------------
+        # 📋 Tabela interativa — controle de Status + cores condicionais (estilo elegante)
+        # -------------------------------------------------
+        st.markdown("### 📋 Tabela de pedidos com controle de Status")
+
+        status_options = ["Aguardando", "Feito"]
+        tabela_view = tabela_exibir.copy()
+
+        # Atualiza o Status com base na sessão
+        tabela_view["Status"] = [
+            st.session_state["status_pedidos"].get(pid, "Aguardando")
+            for pid in tabela_view["Pedido"]
         ]
 
-        # ✅ Converte valores para string (evita erro React no front-end)
-        tabela_exibir[colunas_visiveis] = tabela_exibir[colunas_visiveis].fillna("").astype(str)
+        # Função de cor condicional (igual ao exemplo bonito)
+        def cor_linha(row):
+            if row.get("grupo_verde"):
+                return ["background-color: rgba(0,255,128,0.25);"] * len(row)
+            elif row.get("duplicado"):
+                return ["background-color: rgba(0,123,255,0.15);"] * len(row)
+            elif row.get("is_sedex"):
+                return ["background-color: rgba(255,215,0,0.20);"] * len(row)
+            elif row.get("Status") == "Feito":
+                return ["background-color: rgba(40,167,69,0.15);"] * len(row)
+            elif row.get("Status") == "Aguardando":
+                return ["background-color: rgba(255,215,0,0.15);"] * len(row)
+            else:
+                return [""] * len(row)
 
-        # ✅ Exibe tabela com estilo (mantém cores sem quebrar)
-        st.write(
-            tabela_estilizada.hide(axis="columns", subset=["duplicado", "is_sedex", "grupo_verde", "grupo_id"]),
-            unsafe_allow_html=True
+        # -------------------------------------------------
+        # ✏️ Editor apenas da coluna Status
+        # -------------------------------------------------
+        edited_df = st.data_editor(
+            tabela_view,
+            hide_index=True,
+            use_container_width=True,
+            column_config={
+                "Status": st.column_config.SelectboxColumn(
+                    "Status",
+                    help="Altere o status do pedido",
+                    options=status_options,
+                    required=True
+                )
+            },
+            disabled=[c for c in tabela_view.columns if c != "Status"],
+            key="tabela_status_edit",
         )
+
+        # -------------------------------------------------
+        # 🔄 Atualiza session_state
+        # -------------------------------------------------
+        for pid, status in zip(edited_df["Pedido"], edited_df["Status"]):
+            st.session_state["status_pedidos"][pid] = status
+
+        # -------------------------------------------------
+        # 🎨 Aplica as cores de linha (estilo bonito)
+        # -------------------------------------------------
+        tabela_colorida = edited_df.style.apply(cor_linha, axis=1)
+
+        st.dataframe(
+            tabela_colorida,
+            use_container_width=True,
+            height=480
+        )
+
 
         # -------------------------------------------------
         # 🎛️ Filtros adicionais
