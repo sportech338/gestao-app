@@ -4424,7 +4424,7 @@ if menu == "📦 Dashboard – Logística":
         colD.metric("💸 Ticket médio", formatar_moeda(ticket_medio))
 
         # -------------------------------------------------
-        # 📋 Tabela de pedidos
+        # 📋 Tabela de pedidos + faixas de status
         # -------------------------------------------------
         
         st.markdown("""
@@ -4437,154 +4437,7 @@ if menu == "📦 Dashboard – Logística":
                 border: 1px solid #444;
                 padding: 8px 12px;
             }
-            </style>
-        """, unsafe_allow_html=True)
-
-        colunas = [order_col, "fulfillment_status", "customer_name", "product_title", "variant_title", "quantity", "created_at", 
-                   "forma_entrega", "customer_email", "customer_phone", "customer_cpf", "endereco", "bairro", "cep", "estado", "cidade"]
-        colunas = [c for c in colunas if c in df.columns]
-        tabela = df[colunas].sort_values("created_at", ascending=False).copy()
-
-        tabela.rename(columns={
-            order_col: "Pedido", "created_at": "Data do pedido", "customer_name": "Cliente", "customer_email": "E-mail", "customer_phone": "Telefone", "customer_cpf": "CPF",
-            "endereco": "Endereço", "bairro": "Bairro", "cep": "CEP", "quantity": "Qtd", "product_title": "Produto", "variant_title": "Variante", 
-            "price": "Preço", "fulfillment_status": "Status de processamento",
-            "forma_entrega": "Frete", "estado": "Estado"
-        }, inplace=True)
-
-        if "Pedido" in tabela.columns:
-            tabela["Pedido"] = tabela["Pedido"].astype(str).str.replace(",", "").str.replace(".0", "", regex=False)
-
-        tabela["Status de processamento"] = df["fulfillment_status"].apply(
-            lambda x: "✅ Processado" if str(x).lower() in ["fulfilled", "shipped", "complete"] else "🟡 Não processado"
-        )
-
-        # 🔝 Identificação de duplicados
-        def identificar_duplicado(row, df_ref):
-            nome = str(row.get("Cliente", "")).strip().lower()
-            email = str(row.get("E-mail", "")).strip().lower()
-            cpf = str(row.get("CPF", "")).strip()
-            tel = str(row.get("Telefone", "")).strip()
-            end = str(row.get("Endereço", "")).strip().lower()
-
-            ignorar = ["(sem cpf)", "(sem email)", "(sem telefone)", "(sem endereço)", "(sem bairro)"]
-
-            if cpf and cpf not in ignorar and df_ref["CPF"].eq(cpf).sum() > 1:
-                return True
-            if email and email not in ignorar and df_ref["E-mail"].str.lower().eq(email).sum() > 1:
-                return True
-            if nome and df_ref["Cliente"].str.lower().eq(nome).sum() > 1:
-                return True
-            if tel and tel not in ignorar and df_ref["Telefone"].eq(tel).sum() > 1:
-                return True
-            if end and end not in ignorar and df_ref["Endereço"].str.lower().eq(end).sum() > 1:
-                return True
-            return False
-
-        tabela["duplicado"] = tabela.apply(lambda row: identificar_duplicado(row, tabela), axis=1)
-        # -------------------------------------------------
-        # 🚚 Identificação de SEDEX e ordenação
-        # -------------------------------------------------
-        if "Frete" in tabela.columns:
-            tabela["is_sedex"] = tabela["Frete"].astype(str).str.contains("SEDEX", case=False, na=False)
-        else:
-            tabela["is_sedex"] = False  # cria coluna padrão
-
-        # -------------------------------------------------
-        # 🟩 Agrupamento lógico de duplicados (CPF, E-mail, Telefone, Nome, Endereço)
-        # -------------------------------------------------
-        def chave_grupo(row):
-            partes = [
-                str(row.get("CPF", "")).strip().lower(),
-                str(row.get("E-mail", "")).strip().lower(),
-                str(row.get("Telefone", "")).strip(),
-                str(row.get("Cliente", "")).strip().lower(),
-                str(row.get("Endereço", "")).strip().lower()
-            ]
-            return "|".join([p for p in partes if p and "(sem" not in p])
-
-        tabela["grupo_id"] = tabela.apply(chave_grupo, axis=1)
-
-        # Se o grupo tiver mais de um item e pelo menos um SEDEX, marca todos como grupo_verde
-        grupo_sedex = (
-            tabela.groupby("grupo_id")["is_sedex"]
-            .transform(lambda x: x.any())
-        )
-        grupo_duplicado = (
-            tabela.groupby("grupo_id")["duplicado"]
-            .transform(lambda x: x.any())
-        )
-        tabela["grupo_verde"] = grupo_duplicado & grupo_sedex
-
-        # ✅ Garante que colunas de ordenação existem
-        colunas_ordem = [c for c in ["duplicado", "is_sedex", "Data do pedido"] if c in tabela.columns]
-        if colunas_ordem:
-            tabela = tabela.sort_values(by=colunas_ordem, ascending=[False, True, False][:len(colunas_ordem)])
-
-        def highlight_prioridades(row):
-            # 🟢 Grupo duplicado com SEDEX → Verde translúcido
-            if row["grupo_verde"]:
-                return ['background-color: rgba(0, 255, 128, 0.15)'] * len(row)
-            # 🔵 Duplicado → Azul translúcido
-            elif row["duplicado"]:
-                return ['background-color: rgba(0, 123, 255, 0.15)'] * len(row)
-            # 🟡 SEDEX → Amarelo translúcido
-            elif row["is_sedex"]:
-                return ['background-color: rgba(255, 215, 0, 0.15)'] * len(row)
-            else:
-                return [''] * len(row)
-
-        # 🔢 Ajusta o índice antes de aplicar o estilo
-        tabela.index = range(1, len(tabela) + 1)
-
-        # Cria uma cópia apenas com as colunas visíveis + técnicas
-        colunas_visiveis = [c for c in tabela.columns if c not in ["duplicado", "is_sedex", "grupo_verde", "grupo_id"]]
-        tabela_exibir = tabela[colunas_visiveis + ["duplicado", "is_sedex", "grupo_verde", "grupo_id"]].copy()
-
-        # Aplica estilo condicional
-        tabela_estilizada = tabela_exibir.style.apply(highlight_prioridades, axis=1)
-
-        # ✅ Remove colunas técnicas antes de exibir (só da visualização)
-        colunas_visiveis = [
-            c for c in tabela_exibir.columns 
-            if c not in ["duplicado", "is_sedex", "grupo_verde", "grupo_id"]
-        ]
-
-        # ✅ Converte valores para string (evita erro React no front-end)
-        tabela_exibir[colunas_visiveis] = tabela_exibir[colunas_visiveis].fillna("").astype(str)
-
-        # ✅ Exibe tabela com estilo (mantém cores sem quebrar)
-        st.write(
-            tabela_estilizada.hide(axis="columns", subset=["duplicado", "is_sedex", "grupo_verde", "grupo_id"]),
-            unsafe_allow_html=True
-        )
-
-        # -------------------------------------------------
-        # 🎯 Indicadores laterais independentes da tabela (fora dela)
-        # -------------------------------------------------
-        st.markdown("### 🎯 Indicadores de status (fora da tabela)")
-
-        # Inicializa o dicionário persistente (guarda o status de cada pedido)
-        if "status_visuais" not in st.session_state:
-            st.session_state["status_visuais"] = {}
-
-        # Lista dos pedidos atuais
-        pedidos_lista = tabela["Pedido"].astype(str).tolist()
-
-        # Função de cor do status
-        def cor_status(status):
-            cores = {
-                "Aguardando": "#FFD700",  # amarelo
-                "Feito": "#00BF63",       # verde
-                "Pendente": "#FF9900",    # laranja
-                "Revisar": "#FF4444",     # vermelho
-                "": "#555555"             # neutro
-            }
-            return cores.get(status, "#555555")
-
-        # CSS do layout (lado a lado: faixas + tabela)
-        st.markdown("""
-            <style>
+            /* layout geral: faixas + tabela lado a lado */
             .bloco-lateral {
                 display: flex;
                 flex-direction: row;
@@ -4595,22 +4448,21 @@ if menu == "📦 Dashboard – Logística":
                 overflow-y: auto;
             }
             .coluna-faixas {
-                display: grid;
-                grid-auto-rows: 1fr; /* cada faixa ocupa a mesma altura da linha */
-                align-items: stretch;
-                justify-items: center;
-                margin-top: 65px;  /* alinha com o cabeçalho da tabela */
-                padding-right: 4px;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: flex-start;
+                margin-top: 65px; /* alinhamento com cabeçalho */
+                padding-right: 6px;
             }
             .faixa {
-                width: 16px;               /* espessura lateral da faixa */
+                width: 14px;
                 border-radius: 4px;
-                margin-bottom: 1px;
+                margin-bottom: 2px;
                 transition: all 0.2s ease;
-                aspect-ratio: 1 / 7;       /* ajusta proporção da altura */
             }
             .faixa:hover {
-                transform: scaleX(1.2);
+                transform: scaleX(1.3);
                 filter: brightness(1.2);
             }
             .coluna-tabela {
@@ -4620,28 +4472,108 @@ if menu == "📦 Dashboard – Logística":
             </style>
         """, unsafe_allow_html=True)
 
-        # Gera as faixas HTML com base no status salvo
+        # Montagem da tabela base (igual antes)
+        colunas = [order_col, "fulfillment_status", "customer_name", "product_title", "variant_title", "quantity", "created_at", 
+                   "forma_entrega", "customer_email", "customer_phone", "customer_cpf", "endereco", "bairro", "cep", "estado", "cidade"]
+        colunas = [c for c in colunas if c in df.columns]
+        tabela = df[colunas].sort_values("created_at", ascending=False).copy()
+
+        tabela.rename(columns={
+            order_col: "Pedido", "created_at": "Data do pedido", "customer_name": "Cliente", "customer_email": "E-mail", 
+            "customer_phone": "Telefone", "customer_cpf": "CPF", "endereco": "Endereço", "bairro": "Bairro", 
+            "cep": "CEP", "quantity": "Qtd", "product_title": "Produto", "variant_title": "Variante", 
+            "price": "Preço", "fulfillment_status": "Status de processamento", "forma_entrega": "Frete", "estado": "Estado"
+        }, inplace=True)
+
+        if "Pedido" in tabela.columns:
+            tabela["Pedido"] = tabela["Pedido"].astype(str).str.replace(",", "").str.replace(".0", "", regex=False)
+
+        tabela["Status de processamento"] = df["fulfillment_status"].apply(
+            lambda x: "✅ Processado" if str(x).lower() in ["fulfilled", "shipped", "complete"] else "🟡 Não processado"
+        )
+
+        # Mantém suas lógicas de duplicado e cores
+        tabela["duplicado"] = tabela.apply(lambda row: identificar_duplicado(row, tabela), axis=1)
+        tabela["is_sedex"] = tabela["Frete"].astype(str).str.contains("SEDEX", case=False, na=False) if "Frete" in tabela.columns else False
+        tabela["grupo_id"] = tabela.apply(chave_grupo, axis=1)
+
+        grupo_sedex = tabela.groupby("grupo_id")["is_sedex"].transform(lambda x: x.any())
+        grupo_duplicado = tabela.groupby("grupo_id")["duplicado"].transform(lambda x: x.any())
+        tabela["grupo_verde"] = grupo_duplicado & grupo_sedex
+
+        colunas_ordem = [c for c in ["duplicado", "is_sedex", "Data do pedido"] if c in tabela.columns]
+        if colunas_ordem:
+            tabela = tabela.sort_values(by=colunas_ordem, ascending=[False, True, False][:len(colunas_ordem)])
+
+        def highlight_prioridades(row):
+            if row["grupo_verde"]:
+                return ['background-color: rgba(0, 255, 128, 0.15)'] * len(row)
+            elif row["duplicado"]:
+                return ['background-color: rgba(0, 123, 255, 0.15)'] * len(row)
+            elif row["is_sedex"]:
+                return ['background-color: rgba(255, 215, 0, 0.15)'] * len(row)
+            else:
+                return [''] * len(row)
+
+        tabela.index = range(1, len(tabela) + 1)
+        colunas_visiveis = [c for c in tabela.columns if c not in ["duplicado", "is_sedex", "grupo_verde", "grupo_id"]]
+        tabela_exibir = tabela[colunas_visiveis + ["duplicado", "is_sedex", "grupo_verde", "grupo_id"]].copy()
+        tabela_estilizada = tabela_exibir.style.apply(highlight_prioridades, axis=1)
+        tabela_exibir[colunas_visiveis] = tabela_exibir[colunas_visiveis].fillna("").astype(str)
+
+        # -------------------------------------------------
+        # 🎯 Geração das faixas (fora da tabela, mas lado a lado)
+        # -------------------------------------------------
+        if "status_visuais" not in st.session_state:
+            st.session_state["status_visuais"] = {}
+
+        pedidos_lista = tabela["Pedido"].astype(str).tolist()
+
+        def cor_status(status):
+            cores = {
+                "Aguardando": "#FFD700",
+                "Feito": "#00BF63",
+                "Pendente": "#FF9900",
+                "Revisar": "#FF4444",
+                "": "#555555"
+            }
+            return cores.get(status, "#555555")
+
         faixas_html = ""
         for pedido in pedidos_lista:
             status = st.session_state["status_visuais"].get(pedido, "")
             cor = cor_status(status)
             faixas_html += f"<div class='faixa' style='background:{cor}' title='{pedido} — {status or '-'}'></div>"
 
-        # Converte a tabela pandas estilizada em HTML
+        # 🚀 Tabela original dentro do container com faixas
         tabela_html = tabela_estilizada.hide(
             axis="columns", subset=["duplicado", "is_sedex", "grupo_verde", "grupo_id"]
         ).to_html()
 
-        # Junta faixas + tabela num container flex
         st.markdown(f"""
-            <div class="bloco-lateral">
-                <div class="coluna-faixas">{faixas_html}</div>
-                <div class="coluna-tabela">{tabela_html}</div>
+            <div class="bloco-lateral" id="bloco-lateral">
+                <div class="coluna-faixas" id="coluna-faixas">{faixas_html}</div>
+                <div class="coluna-tabela" id="coluna-tabela">{tabela_html}</div>
             </div>
+
+            <script>
+            function sincronizarAlturas() {{
+                const linhas = document.querySelectorAll('#coluna-tabela tbody tr');
+                const faixas = document.querySelectorAll('#coluna-faixas .faixa');
+                if (linhas.length === faixas.length) {{
+                    linhas.forEach((linha, i) => {{
+                        faixas[i].style.height = linha.offsetHeight + 'px';
+                    }});
+                }}
+            }}
+            window.addEventListener('load', sincronizarAlturas);
+            window.addEventListener('resize', sincronizarAlturas);
+            setTimeout(sincronizarAlturas, 500);
+            </script>
         """, unsafe_allow_html=True)
 
         # -------------------------------------------------
-        # ✏️ Editor visual de faixas (não altera tabela)
+        # ✏️ Editor visual de faixas
         # -------------------------------------------------
         st.markdown("#### ✏️ Atualizar status visual (faixas coloridas)")
         col1, col2, col3 = st.columns([2, 1, 1])
@@ -4653,7 +4585,6 @@ if menu == "📦 Dashboard – Logística":
             if st.button("💾 Aplicar"):
                 st.session_state["status_visuais"][pedido_sel] = novo_status
                 st.rerun()
-
     
         # -------------------------------------------------
         # 🎛️ Filtros adicionais
