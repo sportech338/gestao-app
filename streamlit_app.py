@@ -4577,22 +4577,41 @@ if menu == "📦 Dashboard – Logística":
             lambda pid: st.session_state["status_pedidos"].get(pid, "Aguardando")
         )
 
-        # Interface interativa para mudar status
-        st.markdown("### 🗂️ Atualizar status dos pedidos")
+        # -------------------------------------------------
+        # 🟩 Editor direto na tabela (Aguardando / Feito)
+        # -------------------------------------------------
+        st.markdown("### 🗂️ Controle de Status — direto na tabela")
 
-        for idx, row in tabela_exibir.iterrows():
-            pedido_id = row["Pedido"]
-            status_key = f"status_{pedido_id}"
+        # Se ainda não existir a coluna "Status", cria com padrão "Aguardando"
+        if "Status" not in tabela_exibir.columns:
+            tabela_exibir["Status"] = [
+                st.session_state["status_pedidos"].get(pid, "Aguardando")
+                for pid in tabela_exibir["Pedido"]
+            ]
 
-            novo_status = st.selectbox(
-                f"📦 Pedido #{pedido_id} — {row['Cliente']}",
-                ["Aguardando", "Feito"],
-                index=0 if st.session_state["status_pedidos"].get(pedido_id, "Aguardando") == "Aguardando" else 1,
-                key=status_key
-            )
-            st.session_state["status_pedidos"][pedido_id] = novo_status
-            tabela_exibir.loc[idx, "Status"] = novo_status
-        
+        # Editor direto (permite mudar o valor dentro da célula)
+        tabela_editada = st.data_editor(
+            tabela_exibir,
+            hide_index=True,
+            use_container_width=True,
+            column_config={
+                "Status": st.column_config.SelectboxColumn(
+                    "Status",
+                    help="Marque se o pedido foi feito ou está aguardando",
+                    options=["Aguardando", "Feito"],
+                    required=True
+                )
+            },
+            key="editor_status"
+        )
+
+        # Atualiza o estado de cada pedido com o valor editado
+        for _, row in tabela_editada.iterrows():
+            pid = row["Pedido"]
+            st.session_state["status_pedidos"][pid] = row["Status"]
+
+        # Substitui a tabela original pela editada
+        tabela_exibir = tabela_editada
 
         # -------------------------------------------------
         # 🎨 Aplicar cor condicional combinada (SEDEX + Status)
