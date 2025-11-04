@@ -4658,7 +4658,7 @@ if menu == "📦 Dashboard – Logística":
             update_mode=GridUpdateMode.VALUE_CHANGED,
             allow_unsafe_jscode=True,
             fit_columns_on_grid_load=True,
-            theme="balham-dark",  # temas: "streamlit", "balham", "material"
+            theme="balham",  # tema claro compatível com todas as versões
             height=500,
         )
 
