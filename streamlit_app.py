@@ -4511,12 +4511,12 @@ if menu == "📦 Dashboard – Logística":
             tabela = tabela.sort_values(by=colunas_ordem, ascending=[False, True, False][:len(colunas_ordem)])
 
         # -------------------------------------------------
-        # 🎨 Regras de cores + etiquetas visuais
+        # 🎨 Regras de cores + etiquetas visuais HTML
         # -------------------------------------------------
         def highlight_prioridades(row):
             styles = [''] * len(row)
 
-            # Cores originais
+            # Cores originais (mantém)
             if row["grupo_verde"]:
                 styles = ['background-color: rgba(0, 255, 128, 0.15);'] * len(row)
             elif row["duplicado"]:
@@ -4524,15 +4524,19 @@ if menu == "📦 Dashboard – Logística":
             elif row["is_sedex"]:
                 styles = ['background-color: rgba(255, 215, 0, 0.15);'] * len(row)
 
-            # Etiquetas visuais manuais (sem alterar o DF)
-            pedido = str(row.get("Pedido", ""))
-            if pedido in ["36797", "36798"]:
-                # 🟡 Aguardando → borda lateral amarela
-                styles[0] += "box-shadow: inset 4px 0 0 0 #FFD700;"
-            elif pedido in ["36801", "36802"]:
-                # 🟢 Feito → borda lateral verde
-                styles[0] += "box-shadow: inset 4px 0 0 0 #00BF63;"
             return styles
+
+        # 🏷️ Função para adicionar etiquetas visuais (badges)
+        def aplicar_etiquetas_visuais(valor):
+            valor_str = str(valor)
+            if valor_str in ["36797", "36798"]:
+                return f"<span style='background-color:#FFD700; color:black; padding:2px 6px; border-radius:6px; font-weight:600;'>Aguardando</span> {valor_str}"
+            elif valor_str in ["36801", "36802"]:
+                return f"<span style='background-color:#00BF63; color:white; padding:2px 6px; border-radius:6px; font-weight:600;'>Feito</span> {valor_str}"
+            else:
+                return valor_str
+
+        tabela["Pedido"] = tabela["Pedido"].apply(aplicar_etiquetas_visuais)
 
         # -------------------------------------------------
         # 📊 Montagem final
@@ -4547,9 +4551,9 @@ if menu == "📦 Dashboard – Logística":
         # Aplica as cores + etiquetas visuais
         tabela_estilizada = tabela_exibir.style.apply(highlight_prioridades, axis=1)
 
-        # ✅ Exibe tabela estilizada
+        # ✅ Exibe tabela estilizada com HTML liberado
         st.write(
-            tabela_estilizada.hide(axis="columns", subset=["duplicado", "is_sedex", "grupo_verde", "grupo_id"]),
+            tabela_estilizada.hide(axis="columns", subset=["duplicado", "is_sedex", "grupo_verde", "grupo_id"]).to_html(escape=False),
             unsafe_allow_html=True
         )
 
