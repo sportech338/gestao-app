@@ -4681,7 +4681,7 @@ if menu == "📦 Dashboard – Logística":
                 st.session_state["status_visuais"] = {}
 
             # Evita duplicação de pedidos
-            pedidos_lista = sorted(set(tabela["Pedido"].astype(str).tolist()))
+            pedidos_lista = list(dict.fromkeys(tabela["Pedido"].astype(str).tolist()))
 
             def cor_status(status):
                 cores = {
