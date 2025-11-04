@@ -4584,16 +4584,39 @@ if menu == "📦 Dashboard – Logística":
             tabela_exibir = tabela_exibir[cols]
 
         # -------------------------------------------------
-        # 🟢 Tabela interativa — controle de Status + cores condicionais
+        # 🟢 Tabela interativa — controle de Status + cores condicionais (versão única)
         # -------------------------------------------------
         st.markdown("### 📋 Tabela de pedidos com controle de Status")
 
         status_options = ["Aguardando", "Feito"]
         tabela_editavel = tabela_exibir.copy()
 
-        # Editor de status (sem cor)
+        # Atualiza Status com o que já estiver salvo na sessão
+        tabela_editavel["Status"] = [
+            st.session_state["status_pedidos"].get(pid, "Aguardando")
+            for pid in tabela_editavel["Pedido"]
+        ]
+
+        # Cria uma coluna auxiliar de cor condicional
+        def cor_linha(row):
+            if row.get("grupo_verde"):
+                return "rgba(0, 255, 128, 0.25)"  # verde translúcido
+            elif row.get("duplicado"):
+                return "rgba(0, 123, 255, 0.20)"  # azul translúcido
+            elif row.get("is_sedex"):
+                return "rgba(255, 215, 0, 0.25)"  # amarelo translúcido
+            elif row["Status"] == "Feito":
+                return "rgba(40, 167, 69, 0.20)"  # verde claro
+            elif row["Status"] == "Aguardando":
+                return "rgba(255, 215, 0, 0.20)"  # amarelo claro
+            else:
+                return "transparent"
+
+        tabela_editavel["row_color"] = tabela_editavel.apply(cor_linha, axis=1)
+
+        # Exibe a tabela com edição apenas em Status
         edited_df = st.data_editor(
-            tabela_editavel,
+            tabela_editavel.drop(columns=["row_color"]),
             hide_index=True,
             use_container_width=True,
             column_config={
@@ -4608,38 +4631,26 @@ if menu == "📦 Dashboard – Logística":
             key="tabela_logistica"
         )
 
-        # Atualiza o estado de sessão
+        # Atualiza session_state
         for pid, status in zip(edited_df["Pedido"], edited_df["Status"]):
             st.session_state["status_pedidos"][pid] = status
 
         # -------------------------------------------------
-        # 🎨 Exibição colorida (visualmente destacada)
+        # 🎨 CSS dinâmico aplicado à tabela única
         # -------------------------------------------------
-        st.markdown("### 🎨 Visualização colorida de prioridades")
-
-        def highlight_condicoes(row):
-            # 🟢 Grupo duplicado com SEDEX → Verde
-            if row.get("grupo_verde"):
-                return ['background-color: rgba(0, 255, 128, 0.15)'] * len(row)
-            # 🔵 Duplicado → Azul
-            elif row.get("duplicado"):
-                return ['background-color: rgba(0, 123, 255, 0.15)'] * len(row)
-            # 🟡 SEDEX → Amarelo
-            elif row.get("is_sedex"):
-                return ['background-color: rgba(255, 215, 0, 0.15)'] * len(row)
-            # 🟩 Feito → Verde claro
-            elif row["Status"] == "Feito":
-                return ['background-color: rgba(40, 167, 69, 0.25)'] * len(row)
-            # 🟨 Aguardando → Amarelo claro
-            elif row["Status"] == "Aguardando":
-                return ['background-color: rgba(255, 215, 0, 0.25)'] * len(row)
-            return [''] * len(row)
-
-        st.dataframe(
-            edited_df.style.apply(highlight_condicoes, axis=1),
-            use_container_width=True
+        linhas_css = "\n".join(
+            [
+                f"""
+                <style>
+                [data-testid="stDataEditorGrid"] div[data-testid="stDataFrameRow"]:nth-child({i+1}) {{
+                    background-color: {cor} !important;
+                }}
+                </style>
+                """
+                for i, cor in enumerate(tabela_editavel["row_color"])
+            ]
         )
-
+        st.markdown(linhas_css, unsafe_allow_html=True)
 
         # -------------------------------------------------
         # 🎛️ Filtros adicionais
