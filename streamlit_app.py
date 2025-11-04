@@ -4424,7 +4424,7 @@ if menu == "📦 Dashboard – Logística":
         colD.metric("💸 Ticket médio", formatar_moeda(ticket_medio))
 
         # -------------------------------------------------
-        # 📋 Tabela de pedidos com edição de etiquetas
+        # 📋 Tabela de pedidos
         # -------------------------------------------------
         
         st.markdown("""
@@ -4459,94 +4459,125 @@ if menu == "📦 Dashboard – Logística":
             lambda x: "✅ Processado" if str(x).lower() in ["fulfilled", "shipped", "complete"] else "🟡 Não processado"
         )
 
-        # 🏷️ Garante a coluna de etiquetas
-        if "Etiqueta" not in tabela.columns:
-            tabela["Etiqueta"] = ""
+        # 🔝 Identificação de duplicados
+        def identificar_duplicado(row, df_ref):
+            nome = str(row.get("Cliente", "")).strip().lower()
+            email = str(row.get("E-mail", "")).strip().lower()
+            cpf = str(row.get("CPF", "")).strip()
+            tel = str(row.get("Telefone", "")).strip()
+            end = str(row.get("Endereço", "")).strip().lower()
+
+            ignorar = ["(sem cpf)", "(sem email)", "(sem telefone)", "(sem endereço)", "(sem bairro)"]
+
+            if cpf and cpf not in ignorar and df_ref["CPF"].eq(cpf).sum() > 1:
+                return True
+            if email and email not in ignorar and df_ref["E-mail"].str.lower().eq(email).sum() > 1:
+                return True
+            if nome and df_ref["Cliente"].str.lower().eq(nome).sum() > 1:
+                return True
+            if tel and tel not in ignorar and df_ref["Telefone"].eq(tel).sum() > 1:
+                return True
+            if end and end not in ignorar and df_ref["Endereço"].str.lower().eq(end).sum() > 1:
+                return True
+            return False
+
+        tabela["duplicado"] = tabela.apply(lambda row: identificar_duplicado(row, tabela), axis=1)
+        # -------------------------------------------------
+        # 🚚 Identificação de SEDEX e ordenação
+        # -------------------------------------------------
+        if "Frete" in tabela.columns:
+            tabela["is_sedex"] = tabela["Frete"].astype(str).str.contains("SEDEX", case=False, na=False)
+        else:
+            tabela["is_sedex"] = False  # cria coluna padrão
 
         # -------------------------------------------------
-        # ✏️ Editor inline
+        # 🟩 Agrupamento lógico de duplicados (CPF, E-mail, Telefone, Nome, Endereço)
         # -------------------------------------------------
-        st.markdown("### 🏷️ Editar etiquetas manualmente")
+        def chave_grupo(row):
+            partes = [
+                str(row.get("CPF", "")).strip().lower(),
+                str(row.get("E-mail", "")).strip().lower(),
+                str(row.get("Telefone", "")).strip(),
+                str(row.get("Cliente", "")).strip().lower(),
+                str(row.get("Endereço", "")).strip().lower()
+            ]
+            return "|".join([p for p in partes if p and "(sem" not in p])
 
-        tabela_editavel = st.data_editor(
-            tabela[["Pedido", "Cliente", "Produto", "Etiqueta"]],
-            num_rows="dynamic",
-            use_container_width=True,
-            key="editor_tabela",
-            column_config={
-                "Etiqueta": st.column_config.SelectboxColumn(
-                    "Etiqueta",
-                    help="Selecione o status da etiqueta",
-                    options=["", "Aguardando", "Feito", "Pendente", "Revisar"],
-                    required=False,
-                )
-            },
-            disabled=["Pedido", "Cliente", "Produto"]
+        tabela["grupo_id"] = tabela.apply(chave_grupo, axis=1)
+
+        # Se o grupo tiver mais de um item e pelo menos um SEDEX, marca todos como grupo_verde
+        grupo_sedex = (
+            tabela.groupby("grupo_id")["is_sedex"]
+            .transform(lambda x: x.any())
         )
+        grupo_duplicado = (
+            tabela.groupby("grupo_id")["duplicado"]
+            .transform(lambda x: x.any())
+        )
+        tabela["grupo_verde"] = grupo_duplicado & grupo_sedex
 
-        # -------------------------------------------------
-        # 🧠 Atualiza tabela com as edições feitas
-        # -------------------------------------------------
-        tabela.update(tabela_editavel)
+        # ✅ Garante que colunas de ordenação existem
+        colunas_ordem = [c for c in ["duplicado", "is_sedex", "Data do pedido"] if c in tabela.columns]
+        if colunas_ordem:
+            tabela = tabela.sort_values(by=colunas_ordem, ascending=[False, True, False][:len(colunas_ordem)])
 
-        # -------------------------------------------------
-        # 🎨 Aplica badges visuais HTML nas etiquetas
-        # -------------------------------------------------
-        def aplicar_badge_html(row):
-            etiqueta = str(row.get("Etiqueta", "")).strip().lower()
-            pedido = str(row.get("Pedido", ""))
-            if etiqueta == "aguardando":
-                badge = f"<span style='background-color:#FFD700; color:black; padding:2px 6px; border-radius:6px; font-weight:600;'>Aguardando</span>"
-            elif etiqueta == "feito":
-                badge = f"<span style='background-color:#00BF63; color:white; padding:2px 6px; border-radius:6px; font-weight:600;'>Feito</span>"
-            elif etiqueta == "pendente":
-                badge = f"<span style='background-color:#ff9900; color:white; padding:2px 6px; border-radius:6px; font-weight:600;'>Pendente</span>"
-            elif etiqueta == "revisar":
-                badge = f"<span style='background-color:#ff4444; color:white; padding:2px 6px; border-radius:6px; font-weight:600;'>Revisar</span>"
-            else:
-                badge = ""
-            return f"{badge} {pedido}"
-
-        tabela["Pedido"] = tabela.apply(aplicar_badge_html, axis=1)
-
-        # -------------------------------------------------
-        # 🎨 Regras de cor originais
-        # -------------------------------------------------
         def highlight_prioridades(row):
-            styles = [''] * len(row)
-            if row["duplicado"]:
-                styles = ['background-color: rgba(0, 123, 255, 0.15);'] * len(row)
+            # 🟢 Grupo duplicado com SEDEX → Verde translúcido
+            if row["grupo_verde"]:
+                return ['background-color: rgba(0, 255, 128, 0.15)'] * len(row)
+            # 🔵 Duplicado → Azul translúcido
+            elif row["duplicado"]:
+                return ['background-color: rgba(0, 123, 255, 0.15)'] * len(row)
+            # 🟡 SEDEX → Amarelo translúcido
             elif row["is_sedex"]:
-                styles = ['background-color: rgba(255, 215, 0, 0.15);'] * len(row)
-            elif row["grupo_verde"]:
-                styles = ['background-color: rgba(0, 255, 128, 0.15);'] * len(row)
-            return styles
+                return ['background-color: rgba(255, 215, 0, 0.15)'] * len(row)
+            else:
+                return [''] * len(row)
 
-        # -------------------------------------------------
-        # 📊 Montagem final segura (sem KeyError)
-        # -------------------------------------------------
-        colunas_visiveis = [
-            "Pedido", "Status de processamento", "Cliente", "Produto", 
-            "Variante", "Qtd", "Data do pedido", "Frete", "E-mail"
-        ]
-        colunas_visiveis_existentes = [c for c in colunas_visiveis if c in tabela.columns]
+        # 🔢 Ajusta o índice antes de aplicar o estilo
+        tabela.index = range(1, len(tabela) + 1)
 
-        # 🔒 Garante que as colunas técnicas existam, mesmo que vazias
-        for col in ["duplicado", "is_sedex", "grupo_verde", "grupo_id"]:
-            if col not in tabela.columns:
-                tabela[col] = False if col != "grupo_id" else ""
+        # Cria uma cópia apenas com as colunas visíveis + técnicas
+        colunas_visiveis = [c for c in tabela.columns if c not in ["duplicado", "is_sedex", "grupo_verde", "grupo_id"]]
+        tabela_exibir = tabela[colunas_visiveis + ["duplicado", "is_sedex", "grupo_verde", "grupo_id"]].copy()
 
-        # Cria a versão final sem risco de KeyError
-        tabela_exibir = tabela[colunas_visiveis_existentes + ["duplicado", "is_sedex", "grupo_verde", "grupo_id"]].copy()
-
-        # Aplica estilo
+        # Aplica estilo condicional
         tabela_estilizada = tabela_exibir.style.apply(highlight_prioridades, axis=1)
 
-        # ✅ Exibe com HTML liberado (para mostrar os badges)
+        # ✅ Remove colunas técnicas antes de exibir (só da visualização)
+        colunas_visiveis = [
+            c for c in tabela_exibir.columns 
+            if c not in ["duplicado", "is_sedex", "grupo_verde", "grupo_id"]
+        ]
+
+        # ✅ Converte valores para string (evita erro React no front-end)
+        tabela_exibir[colunas_visiveis] = tabela_exibir[colunas_visiveis].fillna("").astype(str)
+
+        # ✅ Exibe tabela com estilo (mantém cores sem quebrar)
         st.write(
-            tabela_estilizada.hide(axis="columns", subset=["duplicado", "is_sedex", "grupo_verde", "grupo_id"]).to_html(escape=False),
+            tabela_estilizada.hide(axis="columns", subset=["duplicado", "is_sedex", "grupo_verde", "grupo_id"]),
             unsafe_allow_html=True
         )
+
+        # -------------------------------------------------
+        # 🎛️ Filtros adicionais
+        # -------------------------------------------------
+        st.subheader("🎛️ Filtros adicionais")
+        col1, col2 = st.columns(2)
+        with col1:
+            escolha_prod = st.selectbox("Produto", ["(Todos)"] + sorted(base["product_title"].dropna().unique().tolist()))
+        with col2:
+            escolha_var = st.selectbox("Variante", ["(Todas)"] + sorted(base["variant_title"].dropna().unique().tolist()))
+
+        if escolha_prod != "(Todos)":
+            df = df[df["product_title"] == escolha_prod]
+        if escolha_var != "(Todas)":
+            df = df[df["variant_title"] == escolha_var]
+
+        if df.empty:
+            st.warning("⚠️ Nenhum pedido encontrado com os filtros selecionados.")
+        else:
+            st.success(f"✅ {len(df)} registros após aplicação dos filtros.")
             
         # -------------------------------------------------
         # 🚚 Processamento de pedidos
