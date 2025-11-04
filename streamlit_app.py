@@ -4594,25 +4594,25 @@ if menu == "📦 Dashboard – Logística":
         # Cria cópia editável só das colunas visíveis
         tabela_editavel = tabela_exibir.copy()
 
-# Mostra editor de tabela com coluna de status editável — exibição única
-edited_df = st.data_editor(
-    tabela_editavel,
-    hide_index=True,
-    use_container_width=True,
-    column_config={
-        "Status": st.column_config.SelectboxColumn(
-            "Status",
-            help="Altere o status do pedido",
-            options=status_options,
-            required=True
+        # Mostra editor de tabela com coluna de status editável — exibição única
+        edited_df = st.data_editor(
+            tabela_editavel,
+            hide_index=True,
+            use_container_width=True,
+            column_config={
+                "Status": st.column_config.SelectboxColumn(
+                    "Status",
+                    help="Altere o status do pedido",
+                    options=status_options,
+                    required=True
+                )
+            },
+            disabled=[c for c in tabela_editavel.columns if c != "Status"]
         )
-    },
-    disabled=[c for c in tabela_editavel.columns if c != "Status"]
-)
 
-# Atualiza valores no session_state (mantém seleção entre recarregamentos)
-for pid, status in zip(edited_df["Pedido"], edited_df["Status"]):
-    st.session_state["status_pedidos"][pid] = status
+        # Atualiza valores no session_state (mantém seleção entre recarregamentos)
+        for pid, status in zip(edited_df["Pedido"], edited_df["Status"]):
+            st.session_state["status_pedidos"][pid] = status
 
 
         # -------------------------------------------------
