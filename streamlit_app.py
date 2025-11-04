@@ -4445,6 +4445,13 @@ if menu == "📦 Dashboard – Logística":
         colunas = [c for c in colunas if c in df.columns]
         tabela = df[colunas].sort_values("created_at", ascending=False).copy()
 
+        # 🏷️ Adiciona coluna de etiqueta manual
+        tabela["Etiqueta"] = ""
+
+        # Exemplo: marque pedidos específicos manualmente
+        tabela.loc[tabela["Pedido"].isin(["36797", "36798"]), "Etiqueta"] = "Aguardando"
+        tabela.loc[tabela["Pedido"].isin(["36801", "36802"]), "Etiqueta"] = "Feito"
+
         tabela.rename(columns={
             order_col: "Pedido", "created_at": "Data do pedido", "customer_name": "Cliente", "customer_email": "E-mail", "customer_phone": "Telefone", "customer_cpf": "CPF",
             "endereco": "Endereço", "bairro": "Bairro", "cep": "CEP", "quantity": "Qtd", "product_title": "Produto", "variant_title": "Variante", 
@@ -4546,9 +4553,16 @@ if menu == "📦 Dashboard – Logística":
 
         # ✅ Remove colunas técnicas antes de exibir (só da visualização)
         colunas_visiveis = [
-            c for c in tabela_exibir.columns 
-            if c not in ["duplicado", "is_sedex", "grupo_verde", "grupo_id"]
+            "Etiqueta", "Pedido", "Status de processamento", "Cliente", "Produto", 
+            "Variante", "Qtd", "Data do pedido", "Frete", "E-mail"
         ]
+
+        # 🏷️ Adiciona coluna de etiqueta manual
+        tabela["Etiqueta"] = ""
+
+        # Exemplo: marque pedidos específicos manualmente
+        tabela.loc[tabela["Pedido"].isin(["36797", "36798"]), "Etiqueta"] = "Aguardando"
+        tabela.loc[tabela["Pedido"].isin(["36801", "36802"]), "Etiqueta"] = "Feito"
 
         # ✅ Converte valores para string (evita erro React no front-end)
         tabela_exibir[colunas_visiveis] = tabela_exibir[colunas_visiveis].fillna("").astype(str)
