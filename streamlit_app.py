@@ -4632,12 +4632,17 @@ if menu == "📦 Dashboard – Logística":
             st.session_state["status_pedidos"][pid] = status
 
         # -------------------------------------------------
-        # 🎨 CSS dinâmico — aplica as cores diretamente no st.data_editor
+        # 🎨 CSS dinâmico — aplica as cores diretamente no st.data_editor (correção 2025)
         # -------------------------------------------------
         linhas_css = "\n".join(
             [
-                f'<style>[data-testid="stDataFrame"] table tbody tr:nth-child({i+1}) '
-                f'{{background-color: {cor};}}</style>'
+                f"""
+                <style>
+                [data-testid="stDataEditorGrid"] div[data-testid="stDataFrameRow"]:nth-child({i+1}) {{
+                    background-color: {cor} !important;
+                }}
+                </style>
+                """
                 for i, cor in enumerate(tabela_editavel["row_color"])
             ]
         )
