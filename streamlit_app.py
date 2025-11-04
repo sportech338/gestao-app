@@ -4686,17 +4686,35 @@ if menu == "📦 Dashboard – Logística":
 
             st.markdown("---")
 
-            # Mostra uma mini listagem de status atuais
+            # Mostra uma mini listagem de status atuais (dividida em duas colunas)
             st.markdown("#### 📋 Situação atual")
-            for pedido in pedidos_lista:
-                status = st.session_state["status_visuais"].get(pedido, "")
-                st.markdown(
-                    f"<div style='display:flex;align-items:center;gap:6px;'>"
-                    f"<div style='width:12px;height:12px;border-radius:50%;background:{cor_status(status)};'></div>"
-                    f"<span style='font-size:14px;'>{pedido} — <b>{status or '-'}</b></span>"
-                    f"</div>",
-                    unsafe_allow_html=True,
-                )
+
+            # Divide a lista em duas partes quase iguais
+            metade = len(pedidos_lista) // 2
+            col_esq, col_dir = st.columns(2)
+
+            with col_esq:
+                for pedido in pedidos_lista[:metade]:
+                    status = st.session_state["status_visuais"].get(pedido, "")
+                    st.markdown(
+                        f"<div style='display:flex;align-items:center;gap:6px;margin-bottom:4px;'>"
+                        f"<div style='width:12px;height:12px;border-radius:50%;background:{cor_status(status)};'></div>"
+                        f"<span style='font-size:14px;'>{pedido} — <b>{status or '-'}</b></span>"
+                        f"</div>",
+                        unsafe_allow_html=True,
+                    )
+
+            with col_dir:
+                for pedido in pedidos_lista[metade:]:
+                    status = st.session_state["status_visuais"].get(pedido, "")
+                    st.markdown(
+                        f"<div style='display:flex;align-items:center;gap:6px;margin-bottom:4px;'>"
+                        f"<div style='width:12px;height:12px;border-radius:50%;background:{cor_status(status)};'></div>"
+                        f"<span style='font-size:14px;'>{pedido} — <b>{status or '-'}</b></span>"
+                        f"</div>",
+                        unsafe_allow_html=True,
+                    )
+
     
     # =====================================================
     # 📦 ABA 2 — ESTOQUE
