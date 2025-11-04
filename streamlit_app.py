@@ -4603,22 +4603,6 @@ if menu == "📦 Dashboard – Logística":
             unsafe_allow_html=True
         )
 
-
-        # ✅ Remove colunas técnicas antes de exibir (só da visualização)
-        colunas_visiveis = [
-            c for c in tabela_exibir.columns 
-            if c not in ["duplicado", "is_sedex", "grupo_verde", "grupo_id"]
-        ]
-
-        # ✅ Converte valores para string (evita erro React no front-end)
-        tabela_exibir[colunas_visiveis] = tabela_exibir[colunas_visiveis].fillna("").astype(str)
-
-        # ✅ Exibe tabela com estilo (mantém cores sem quebrar)
-        st.write(
-            tabela_estilizada.hide(axis="columns", subset=["duplicado", "is_sedex", "grupo_verde", "grupo_id"]),
-            unsafe_allow_html=True
-        )
-
         # -------------------------------------------------
         # 🎛️ Filtros adicionais
         # -------------------------------------------------
