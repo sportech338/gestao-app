@@ -4553,11 +4553,70 @@ if menu == "📦 Dashboard – Logística":
         # ✅ Converte valores para string (evita erro React no front-end)
         tabela_exibir[colunas_visiveis] = tabela_exibir[colunas_visiveis].fillna("").astype(str)
 
-        # ✅ Exibe tabela com estilo (mantém cores sem quebrar)
-        st.write(
-            tabela_estilizada.hide(axis="columns", subset=["duplicado", "is_sedex", "grupo_verde", "grupo_id"]),
-            unsafe_allow_html=True
-        )
+        # -------------------------------------------------
+        # 🧱 Layout: tabela (2/3) + painel lateral de status (1/3)
+        # -------------------------------------------------
+        col_tabela, col_status = st.columns([2, 1], gap="medium")
+
+        with col_tabela:
+            # Exibe a tabela normalmente (sem alterar nada)
+            st.write(
+                tabela_estilizada.hide(
+                    axis="columns", subset=["duplicado", "is_sedex", "grupo_verde", "grupo_id"]
+                ),
+                unsafe_allow_html=True
+            )
+
+        with col_status:
+            st.markdown("### 🎯 Status dos pedidos")
+
+            # Inicializa o dicionário de status persistente
+            if "status_visuais" not in st.session_state:
+                st.session_state["status_visuais"] = {}
+
+            pedidos_lista = tabela["Pedido"].astype(str).tolist()
+
+            # Função de cor do status
+            def cor_status(status):
+                cores = {
+                    "Aguardando": "#FFD700",  # amarelo
+                    "Feito": "#00BF63",       # verde
+                    "Pendente": "#FF9900",    # laranja
+                    "Revisar": "#FF4444",     # vermelho
+                    "": "#555555"             # neutro
+                }
+                return cores.get(status, "#555555")
+
+            # Campo para selecionar pedido
+            pedido_sel = st.selectbox("Pedido:", pedidos_lista)
+
+            # Campo para escolher novo status
+            novo_status = st.radio(
+                "Novo status:",
+                ["", "Aguardando", "Feito", "Pendente", "Revisar"],
+                horizontal=True,
+            )
+
+            # Botão para salvar
+            if st.button("💾 Aplicar status"):
+                st.session_state["status_visuais"][pedido_sel] = novo_status
+                st.success(f"Status atualizado para '{novo_status or '—'}'")
+                st.rerun()
+
+            st.markdown("---")
+
+            # Mostra uma mini listagem de status atuais
+            st.markdown("#### 📋 Situação atual")
+            for pedido in pedidos_lista:
+                status = st.session_state["status_visuais"].get(pedido, "")
+                st.markdown(
+                    f"<div style='display:flex;align-items:center;gap:6px;'>"
+                    f"<div style='width:12px;height:12px;border-radius:50%;background:{cor_status(status)};'></div>"
+                    f"<span style='font-size:14px;'>{pedido} — <b>{status or '-'}</b></span>"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+
 
         # -------------------------------------------------
         # 🎛️ Filtros adicionais
