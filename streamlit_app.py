@@ -4584,7 +4584,7 @@ if menu == "📦 Dashboard – Logística":
             tabela_exibir = tabela_exibir[cols]
 
         # -------------------------------------------------
-        # 🟢 Tabela interativa — única versão oficial
+        # 🟢 Tabela interativa — única versão oficial com cores condicionais
         # -------------------------------------------------
         st.markdown("### 📋 Tabela de pedidos com controle de Status")
 
@@ -4593,6 +4593,22 @@ if menu == "📦 Dashboard – Logística":
 
         # Cria cópia editável só das colunas visíveis
         tabela_editavel = tabela_exibir.copy()
+
+        # 🟦 Gera uma coluna auxiliar com a cor de fundo conforme condições
+        def cor_linha(row):
+            # 🟢 Grupo duplicado com SEDEX → Verde translúcido
+            if row.get("grupo_verde"):
+                return "rgba(0, 255, 128, 0.15)"
+            # 🔵 Duplicado → Azul translúcido
+            elif row.get("duplicado"):
+                return "rgba(0, 123, 255, 0.15)"
+            # 🟡 SEDEX → Amarelo translúcido
+            elif row.get("is_sedex"):
+                return "rgba(255, 215, 0, 0.15)"
+            else:
+                return "transparent"
+
+        tabela_editavel["row_color"] = tabela_editavel.apply(cor_linha, axis=1)
 
         # Mostra editor de tabela com coluna de status editável — exibição única
         edited_df = st.data_editor(
@@ -4607,12 +4623,25 @@ if menu == "📦 Dashboard – Logística":
                     required=True
                 )
             },
-            disabled=[c for c in tabela_editavel.columns if c != "Status"]
+            disabled=[c for c in tabela_editavel.columns if c not in ["Status"]],
+            key="tabela_logistica"
         )
 
         # Atualiza valores no session_state (mantém seleção entre recarregamentos)
         for pid, status in zip(edited_df["Pedido"], edited_df["Status"]):
             st.session_state["status_pedidos"][pid] = status
+
+        # -------------------------------------------------
+        # 🎨 CSS dinâmico — aplica as cores diretamente no st.data_editor
+        # -------------------------------------------------
+        linhas_css = "\n".join(
+            [
+                f'<style>[data-testid="stDataFrame"] table tbody tr:nth-child({i+1}) '
+                f'{{background-color: {cor};}}</style>'
+                for i, cor in enumerate(tabela_editavel["row_color"])
+            ]
+        )
+        st.markdown(linhas_css, unsafe_allow_html=True)
 
 
         # -------------------------------------------------
