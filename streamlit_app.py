@@ -4657,16 +4657,14 @@ if menu == "📦 Dashboard – Logística":
             if "status_visuais" not in st.session_state:
                 st.session_state["status_visuais"] = {}
 
-            pedidos_lista = tabela["Pedido"].astype(str).tolist()
+            # Evita duplicação de pedidos
+            pedidos_lista = sorted(set(tabela["Pedido"].astype(str).tolist()))
 
-            # Função de cor do status
             def cor_status(status):
                 cores = {
-                    "": "#555555",             # neutro
-                    "Aguardando": "#FFD700",   # amarelo
-                    "Feito": "#00BF63",        # verde
-                    "Pendente": "#FF9900",     # laranja
-                    "Revisar": "#FF4444"       # vermelho
+                    "": "#555555",            # neutro
+                    "Aguardando": "#FFD700",  # amarelo
+                    "Feito": "#00BF63",       # verde
                 }
                 return cores.get(status, "#555555")
 
@@ -4678,39 +4676,29 @@ if menu == "📦 Dashboard – Logística":
             quarto = (total + 3) // 4
             col1, col2, col3, col4 = st.columns(4)
 
-            def botoes_status(pedido):
-                """Renderiza botões para alterar status direto"""
-                col_a, col_b, col_c, col_d = st.columns(4)
-                with col_a:
-                    if st.button("🟡", key=f"aguardando_{pedido}", help="Aguardando"):
-                        st.session_state["status_visuais"][pedido] = "Aguardando"
-                        st.rerun()
-                with col_b:
-                    if st.button("🟢", key=f"feito_{pedido}", help="Feito"):
-                        st.session_state["status_visuais"][pedido] = "Feito"
-                        st.rerun()
-                with col_c:
-                    if st.button("🟠", key=f"pendente_{pedido}", help="Pendente"):
-                        st.session_state["status_visuais"][pedido] = "Pendente"
-                        st.rerun()
-                with col_d:
-                    if st.button("🔴", key=f"revisar_{pedido}", help="Revisar"):
-                        st.session_state["status_visuais"][pedido] = "Revisar"
-                        st.rerun()
-
             def render_coluna(lista_pedidos):
                 for pedido in lista_pedidos:
-                    status = st.session_state["status_visuais"].get(pedido, "")
-                    cor = cor_status(status)
-                    # Cada número é clicável
-                    if st.button(f"{pedido} — {status or '-'}", key=f"btn_{pedido}"):
-                        st.session_state["pedido_editando"] = pedido
-                        st.rerun()
+                    status_atual = st.session_state["status_visuais"].get(pedido, "")
 
-                    # Se o pedido estiver sendo editado, exibe botões de status
-                    if st.session_state.get("pedido_editando") == pedido:
-                        botoes_status(pedido)
-                        st.markdown("---")
+                    # Define o próximo status de acordo com o clique
+                    if st.button(
+                        f"{pedido}",
+                        key=f"pedido_{pedido}",
+                        use_container_width=True
+                    ):
+                        if status_atual == "":
+                            st.session_state["status_visuais"][pedido] = "Aguardando"
+                        elif status_atual == "Aguardando":
+                            st.session_state["status_visuais"][pedido] = "Feito"
+                        else:
+                            st.session_state["status_visuais"][pedido] = ""
+
+                    # Cor de fundo dinâmica conforme o status
+                    cor = cor_status(st.session_state["status_visuais"].get(pedido, ""))
+                    st.markdown(
+                        f"<div style='height:4px;border-radius:4px;background:{cor}66;margin-bottom:6px;'></div>",
+                        unsafe_allow_html=True
+                    )
 
             with col1:
                 render_coluna(pedidos_lista[:quarto])
@@ -4721,8 +4709,6 @@ if menu == "📦 Dashboard – Logística":
             with col4:
                 render_coluna(pedidos_lista[3*quarto:])
 
-
-    
     # =====================================================
     # 📦 ABA 2 — ESTOQUE
     # =====================================================
