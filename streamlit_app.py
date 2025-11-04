@@ -4440,31 +4440,6 @@ if menu == "📦 Dashboard – Logística":
             </style>
         """, unsafe_allow_html=True)
 
-        # -------------------------------------------------
-        # 🎨 CSS adicional para destacar Status (igual Excel)
-        # -------------------------------------------------
-        st.markdown("""
-        <style>
-        .status-aguardando {
-            background-color: rgba(255, 215, 0, 0.25);
-            color: #856404;
-            padding: 4px 8px;
-            border-radius: 8px;
-            font-weight: 600;
-            text-align: center;
-        }
-        .status-feito {
-            background-color: rgba(40, 167, 69, 0.25);
-            color: #155724;
-            padding: 4px 8px;
-            border-radius: 8px;
-            font-weight: 600;
-            text-align: center;
-        }
-        </style>
-        """, unsafe_allow_html=True)
-
-
         colunas = [order_col, "fulfillment_status", "customer_name", "product_title", "variant_title", "quantity", "created_at", 
                    "forma_entrega", "customer_email", "customer_phone", "customer_cpf", "endereco", "bairro", "cep", "estado", "cidade"]
         colunas = [c for c in colunas if c in df.columns]
@@ -4566,126 +4541,23 @@ if menu == "📦 Dashboard – Logística":
         colunas_visiveis = [c for c in tabela.columns if c not in ["duplicado", "is_sedex", "grupo_verde", "grupo_id"]]
         tabela_exibir = tabela[colunas_visiveis + ["duplicado", "is_sedex", "grupo_verde", "grupo_id"]].copy()
 
-        # -------------------------------------------------
-        # 🟢 Coluna de Status (primeira da tabela de baixo)
-        # -------------------------------------------------
-        if "status_pedidos" not in st.session_state:
-            st.session_state["status_pedidos"] = {}
+        # Aplica estilo condicional
+        tabela_estilizada = tabela_exibir.style.apply(highlight_prioridades, axis=1)
 
-        # Se não existir a coluna Status, cria padrão “Aguardando”
-        if "Status" not in tabela_exibir.columns:
-            tabela_exibir.insert(0, "Status", [
-                st.session_state["status_pedidos"].get(pid, "Aguardando")
-                for pid in tabela_exibir["Pedido"]
-            ])
-        else:
-            # Garante que Status fica sempre na primeira posição
-            cols = ["Status"] + [c for c in tabela_exibir.columns if c != "Status"]
-            tabela_exibir = tabela_exibir[cols]
-
-        # -------------------------------------------------
-        # 📋 Tabela interativa — controle de Status + cores condicionais (sem JS)
-        # -------------------------------------------------
-        from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
-
-        st.markdown("### 📋 Tabela de pedidos com controle de Status")
-
-        status_options = ["Aguardando", "Feito"]
-        tabela_ag = tabela_exibir.copy()
-
-        # Atualiza o Status inicial com o que já está salvo
-        tabela_ag["Status"] = [
-            st.session_state["status_pedidos"].get(pid, "Aguardando")
-            for pid in tabela_ag["Pedido"]
+        # ✅ Remove colunas técnicas antes de exibir (só da visualização)
+        colunas_visiveis = [
+            c for c in tabela_exibir.columns 
+            if c not in ["duplicado", "is_sedex", "grupo_verde", "grupo_id"]
         ]
 
-        # -------------------------------------------------
-        # 🟦 Funções de cor condicional (sem JS)
-        # -------------------------------------------------
-        def cor_celula(row):
-            if row["grupo_verde"]:
-                return "rgba(0,255,128,0.20)"  # verde translúcido
-            elif row["duplicado"]:
-                return "rgba(0,123,255,0.15)"  # azul translúcido
-            elif row["is_sedex"]:
-                return "rgba(255,215,0,0.20)"  # amarelo translúcido
-            elif row["Status"] == "Feito":
-                return "rgba(40,167,69,0.15)"  # verde claro
-            elif row["Status"] == "Aguardando":
-                return "rgba(255,215,0,0.15)"  # amarelo claro
-            return "transparent"
+        # ✅ Converte valores para string (evita erro React no front-end)
+        tabela_exibir[colunas_visiveis] = tabela_exibir[colunas_visiveis].fillna("").astype(str)
 
-        tabela_ag["rowColor"] = tabela_ag.apply(cor_celula, axis=1)
-
-        # -------------------------------------------------
-        # ⚙️ Configura grid editável (apenas Status)
-        # -------------------------------------------------
-        gb = GridOptionsBuilder.from_dataframe(tabela_ag)
-
-        # Coluna Status editável com selectbox
-        gb.configure_column(
-            "Status",
-            editable=True,
-            cellEditor="agSelectCellEditor",
-            cellEditorParams={"values": status_options},
-            headerName="Status do Pedido",
+        # ✅ Exibe tabela com estilo (mantém cores sem quebrar)
+        st.write(
+            tabela_estilizada.hide(axis="columns", subset=["duplicado", "is_sedex", "grupo_verde", "grupo_id"]),
+            unsafe_allow_html=True
         )
-
-        # Trava as demais colunas
-        for col in tabela_ag.columns:
-            if col != "Status":
-                gb.configure_column(col, editable=False)
-
-        # Aplica estilo de célula condicional via 'cellStyle'
-        for col in tabela_ag.columns:
-            gb.configure_column(
-                col,
-                cellStyle={
-                    "styleConditions": [
-                        {
-                            "condition": "true",
-                            "style": {"backgroundColor": "params.data.rowColor"},
-                        }
-                    ]
-                },
-            )
-
-        # -------------------------------------------------
-        # 🎨 Ajuste visual — layout compacto e limpo
-        # -------------------------------------------------
-        gb.configure_pagination(paginationAutoPageSize=True)
-        gb.configure_default_column(
-            resizable=True,
-            filter=True,
-            sortable=True,
-            wrapText=False,        # ❌ evita linhas altas
-            autoHeight=False,      # ❌ impede células esticadas
-            cellStyle={"lineHeight": "28px", "padding": "2px 6px"}  # ✅ mais compacto
-        )
-
-        grid_options = gb.build()
-
-        # -------------------------------------------------
-        # 🧠 Renderiza tabela interativa
-        # -------------------------------------------------
-        grid_response = AgGrid(
-            tabela_ag,
-            gridOptions=grid_options,
-            update_mode=GridUpdateMode.VALUE_CHANGED,
-            allow_unsafe_jscode=False,
-            fit_columns_on_grid_load=True,
-            theme="balham",     # compatível e limpo
-            height=480,         # altura ajustada
-            reload_data=True,   # força atualização visual
-        )
-
-        # -------------------------------------------------
-        # 🔄 Atualiza session_state com novos Status
-        # -------------------------------------------------
-        df_editado = grid_response["data"]
-        for pid, status in zip(df_editado["Pedido"], df_editado["Status"]):
-            st.session_state["status_pedidos"][pid] = status
-
 
         # -------------------------------------------------
         # 🎛️ Filtros adicionais
