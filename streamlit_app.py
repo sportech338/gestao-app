@@ -4595,22 +4595,22 @@ if menu == "📦 Dashboard – Logística":
                 overflow-y: auto;
             }
             .coluna-faixas {
-                display: flex;
-                flex-direction: column;
+                display: grid;
+                grid-auto-rows: 1fr; /* cada faixa ocupa a mesma altura da linha */
                 align-items: stretch;
-                justify-content: flex-start;
+                justify-items: center;
                 margin-top: 65px;  /* alinha com o cabeçalho da tabela */
                 padding-right: 4px;
             }
             .faixa {
-                width: 15px;
-                height: 115px;  /* altura sincronizada com as linhas da tabela */
-                border-radius: 3px;
-                margin-bottom: 2px;
+                width: 16px;               /* espessura lateral da faixa */
+                border-radius: 4px;
+                margin-bottom: 1px;
                 transition: all 0.2s ease;
+                aspect-ratio: 1 / 7;       /* ajusta proporção da altura */
             }
             .faixa:hover {
-                transform: scaleX(1.3);
+                transform: scaleX(1.2);
                 filter: brightness(1.2);
             }
             .coluna-tabela {
@@ -4653,6 +4653,7 @@ if menu == "📦 Dashboard – Logística":
             if st.button("💾 Aplicar"):
                 st.session_state["status_visuais"][pedido_sel] = novo_status
                 st.rerun()
+
     
         # -------------------------------------------------
         # 🎛️ Filtros adicionais
