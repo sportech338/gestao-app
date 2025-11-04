@@ -4669,7 +4669,6 @@ if menu == "📦 Dashboard – Logística":
                 return cores.get(status, "#555555")
 
             st.markdown("---")
-            st.markdown("#### 📋 Situação atual")
 
             # Divide em 4 colunas equilibradas
             total = len(pedidos_lista)
