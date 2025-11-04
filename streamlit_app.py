@@ -4668,8 +4668,6 @@ if menu == "📦 Dashboard – Logística":
                 }
                 return cores.get(status, "#555555")
 
-            st.markdown("---")
-
             # Divide em 4 colunas equilibradas
             total = len(pedidos_lista)
             quarto = (total + 3) // 4
