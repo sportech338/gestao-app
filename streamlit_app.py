@@ -4482,17 +4482,14 @@ if menu == "📦 Dashboard – Logística":
             return False
 
         tabela["duplicado"] = tabela.apply(lambda row: identificar_duplicado(row, tabela), axis=1)
-        # -------------------------------------------------
-        # 🚚 Identificação de SEDEX e ordenação
-        # -------------------------------------------------
+
+        # 🚚 Identificação de SEDEX
         if "Frete" in tabela.columns:
             tabela["is_sedex"] = tabela["Frete"].astype(str).str.contains("SEDEX", case=False, na=False)
         else:
-            tabela["is_sedex"] = False  # cria coluna padrão
+            tabela["is_sedex"] = False
 
-        # -------------------------------------------------
-        # 🟩 Agrupamento lógico de duplicados (CPF, E-mail, Telefone, Nome, Endereço)
-        # -------------------------------------------------
+        # 🟩 Agrupamento lógico
         def chave_grupo(row):
             partes = [
                 str(row.get("CPF", "")).strip().lower(),
@@ -4504,68 +4501,40 @@ if menu == "📦 Dashboard – Logística":
             return "|".join([p for p in partes if p and "(sem" not in p])
 
         tabela["grupo_id"] = tabela.apply(chave_grupo, axis=1)
-
-        # Se o grupo tiver mais de um item e pelo menos um SEDEX, marca todos como grupo_verde
-        grupo_sedex = (
-            tabela.groupby("grupo_id")["is_sedex"]
-            .transform(lambda x: x.any())
-        )
-        grupo_duplicado = (
-            tabela.groupby("grupo_id")["duplicado"]
-            .transform(lambda x: x.any())
-        )
+        grupo_sedex = tabela.groupby("grupo_id")["is_sedex"].transform(lambda x: x.any())
+        grupo_duplicado = tabela.groupby("grupo_id")["duplicado"].transform(lambda x: x.any())
         tabela["grupo_verde"] = grupo_duplicado & grupo_sedex
 
-        # ✅ Garante que colunas de ordenação existem
+        # 🔢 Ordenação
         colunas_ordem = [c for c in ["duplicado", "is_sedex", "Data do pedido"] if c in tabela.columns]
         if colunas_ordem:
             tabela = tabela.sort_values(by=colunas_ordem, ascending=[False, True, False][:len(colunas_ordem)])
 
+        # 🎨 Regras de cores
         def highlight_prioridades(row):
-            # 🟢 Grupo duplicado com SEDEX → Verde translúcido
             if row["grupo_verde"]:
                 return ['background-color: rgba(0, 255, 128, 0.15)'] * len(row)
-            # 🔵 Duplicado → Azul translúcido
             elif row["duplicado"]:
                 return ['background-color: rgba(0, 123, 255, 0.15)'] * len(row)
-            # 🟡 SEDEX → Amarelo translúcido
             elif row["is_sedex"]:
                 return ['background-color: rgba(255, 215, 0, 0.15)'] * len(row)
             else:
                 return [''] * len(row)
 
-        # 🔢 Ajusta o índice antes de aplicar o estilo
-        tabela.index = range(1, len(tabela) + 1)
-
-        # Cria uma cópia apenas com as colunas visíveis + técnicas
-        colunas_visiveis = [c for c in tabela.columns if c not in ["duplicado", "is_sedex", "grupo_verde", "grupo_id"]]
-        tabela_exibir = tabela[colunas_visiveis + ["duplicado", "is_sedex", "grupo_verde", "grupo_id"]].copy()
-
-        # Aplica estilo condicional
-        tabela_estilizada = tabela_exibir.style.apply(highlight_prioridades, axis=1)
-
-        # 🏷️ Adiciona coluna de etiqueta manual (depois do rename)
+        # 🏷️ Garante coluna "Etiqueta"
         if "Etiqueta" not in tabela.columns:
             tabela["Etiqueta"] = ""
 
-        # Exemplo: marque pedidos específicos manualmente
-        tabela.loc[tabela["Pedido"].isin(["36797", "36798"]), "Etiqueta"] = "Aguardando"
-        tabela.loc[tabela["Pedido"].isin(["36801", "36802"]), "Etiqueta"] = "Feito"
-
-        # Cria a tabela final de exibição
+        # Cria tabela base para exibição
         colunas_visiveis = [
             "Etiqueta", "Pedido", "Status de processamento", "Cliente", "Produto", 
             "Variante", "Qtd", "Data do pedido", "Frete", "E-mail"
         ]
         colunas_visiveis_existentes = [c for c in colunas_visiveis if c in tabela.columns]
-
         tabela_exibir = tabela[colunas_visiveis_existentes + ["duplicado", "is_sedex", "grupo_verde", "grupo_id"]].copy()
 
-        # Aplica estilo condicional (mantém cores da tabela)
+        # Aplica cores
         tabela_estilizada = tabela_exibir.style.apply(highlight_prioridades, axis=1)
-
-        # ✅ Converte valores para string (evita erro React no front-end)
-        tabela_exibir[colunas_visiveis_existentes] = tabela_exibir[colunas_visiveis_existentes].fillna("").astype(str)
 
         # ✅ Exibe tabela com estilo
         st.write(
@@ -4574,24 +4543,25 @@ if menu == "📦 Dashboard – Logística":
         )
 
         # -------------------------------------------------
-        # 🎛️ Filtros adicionais
+        # ✏️ Editor de etiquetas manual
         # -------------------------------------------------
-        st.subheader("🎛️ Filtros adicionais")
-        col1, col2 = st.columns(2)
+        st.markdown("### ✏️ Atualizar etiquetas manualmente")
+        col1, col2, col3 = st.columns([1.5, 2, 1])
         with col1:
-            escolha_prod = st.selectbox("Produto", ["(Todos)"] + sorted(base["product_title"].dropna().unique().tolist()))
+            pedido_edit = st.text_input("Número do pedido:")
         with col2:
-            escolha_var = st.selectbox("Variante", ["(Todas)"] + sorted(base["variant_title"].dropna().unique().tolist()))
+            nova_etiqueta = st.selectbox("Nova etiqueta:", ["", "Aguardando", "Feito", "Pendente", "Revisar"])
+        with col3:
+            salvar = st.button("Salvar etiqueta")
 
-        if escolha_prod != "(Todos)":
-            df = df[df["product_title"] == escolha_prod]
-        if escolha_var != "(Todas)":
-            df = df[df["variant_title"] == escolha_var]
+        if salvar and pedido_edit:
+            if pedido_edit in tabela["Pedido"].values:
+                tabela.loc[tabela["Pedido"] == pedido_edit, "Etiqueta"] = nova_etiqueta
+                st.session_state["tabela_editada"] = tabela
+                st.success(f"✅ Etiqueta do pedido {pedido_edit} atualizada para '{nova_etiqueta}'")
+            else:
+                st.warning(f"⚠️ Pedido {pedido_edit} não encontrado na tabela.")
 
-        if df.empty:
-            st.warning("⚠️ Nenhum pedido encontrado com os filtros selecionados.")
-        else:
-            st.success(f"✅ {len(df)} registros após aplicação dos filtros.")
             
         # -------------------------------------------------
         # 🚚 Processamento de pedidos
