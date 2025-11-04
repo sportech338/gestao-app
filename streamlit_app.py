@@ -4662,9 +4662,9 @@ if menu == "📦 Dashboard – Logística":
             # Função de cor do status
             def cor_status(status):
                 cores = {
-                    "": "#555555"             # neutro
+                    "": "#555555",             # neutro
                     "Aguardando": "#FFD700",  # amarelo
-                    "Feito": "#00BF63",       # verde
+                    "Feito": "#00BF63"      # verde
                 }
                 return cores.get(status, "#555555")
 
