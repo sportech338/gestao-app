@@ -4584,13 +4584,12 @@ if menu == "📦 Dashboard – Logística":
             tabela_exibir = tabela_exibir[cols]
 
         # -------------------------------------------------
-        # 📋 Tabela interativa — controle de Status + cores condicionais (AgGrid)
+        # 📋 Tabela interativa — controle de Status + cores condicionais (sem JS)
         # -------------------------------------------------
         from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
 
         st.markdown("### 📋 Tabela de pedidos com controle de Status")
 
-        # 🔹 Opções de status
         status_options = ["Aguardando", "Feito"]
         tabela_ag = tabela_exibir.copy()
 
@@ -4601,26 +4600,29 @@ if menu == "📦 Dashboard – Logística":
         ]
 
         # -------------------------------------------------
-        # 🎨 Função JS para cor condicional de linhas
+        # 🟦 Funções de cor condicional (sem JS)
         # -------------------------------------------------
-        row_style_jscode = """
-        function(params) {
-            const r = params.data;
-            if (r.grupo_verde)   { return { 'backgroundColor': 'rgba(0,255,128,0.20)' }; }
-            if (r.duplicado)     { return { 'backgroundColor': 'rgba(0,123,255,0.15)' }; }
-            if (r.is_sedex)      { return { 'backgroundColor': 'rgba(255,215,0,0.20)' }; }
-            if (r.Status === 'Feito')       { return { 'backgroundColor': 'rgba(40,167,69,0.15)' }; }
-            if (r.Status === 'Aguardando')  { return { 'backgroundColor': 'rgba(255,215,0,0.15)' }; }
-            return {};
-        }
-        """
+        def cor_celula(row):
+            if row["grupo_verde"]:
+                return "rgba(0,255,128,0.20)"
+            elif row["duplicado"]:
+                return "rgba(0,123,255,0.15)"
+            elif row["is_sedex"]:
+                return "rgba(255,215,0,0.20)"
+            elif row["Status"] == "Feito":
+                return "rgba(40,167,69,0.15)"
+            elif row["Status"] == "Aguardando":
+                return "rgba(255,215,0,0.15)"
+            return "transparent"
+
+        tabela_ag["rowColor"] = tabela_ag.apply(cor_celula, axis=1)
 
         # -------------------------------------------------
         # ⚙️ Configura grid editável (apenas Status)
         # -------------------------------------------------
         gb = GridOptionsBuilder.from_dataframe(tabela_ag)
 
-        # Coluna "Status" editável com select
+        # Coluna Status editável com selectbox
         gb.configure_column(
             "Status",
             editable=True,
@@ -4629,22 +4631,32 @@ if menu == "📦 Dashboard – Logística":
             headerName="Status do Pedido",
         )
 
-        # Todas as outras colunas ficam bloqueadas
+        # Trava as demais colunas
         for col in tabela_ag.columns:
             if col != "Status":
                 gb.configure_column(col, editable=False)
 
-        # Estilo condicional de linha
-        gb.configure_grid_options(getRowStyle=row_style_jscode)
+        # Aplica estilo de célula condicional via 'cellStyle'
+        for col in tabela_ag.columns:
+            gb.configure_column(
+                col,
+                cellStyle={
+                    "styleConditions": [
+                        {
+                            "condition": "true",
+                            "style": {"backgroundColor": "params.data.rowColor"},
+                        }
+                    ]
+                },
+            )
 
-        # Paginação, filtros e responsividade
         gb.configure_pagination(paginationAutoPageSize=True)
         gb.configure_default_column(
             resizable=True,
             filter=True,
             sortable=True,
             wrapText=True,
-            autoHeight=True
+            autoHeight=True,
         )
 
         grid_options = gb.build()
@@ -4656,10 +4668,10 @@ if menu == "📦 Dashboard – Logística":
             tabela_ag,
             gridOptions=grid_options,
             update_mode=GridUpdateMode.VALUE_CHANGED,
-            allow_unsafe_jscode=True,
+            allow_unsafe_jscode=False,
             fit_columns_on_grid_load=True,
-            theme="balham",  # tema claro compatível com todas as versões
-            height=500,
+            theme="balham",  # seguro e compatível
+            height=520,
         )
 
         # -------------------------------------------------
