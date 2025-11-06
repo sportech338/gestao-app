@@ -1238,22 +1238,55 @@ if menu == "📊 Dashboard – Tráfego Pago":
             st.warning("⚠️ Nenhum produto encontrado.")
             st.stop()
 
+        # =====================================================
+        # 🔄 Carregamento seguro de produtos e pedidos
+        # =====================================================
+        produtos = st.session_state.get("produtos", pd.DataFrame())
+        if produtos.empty:
+            try:
+                with st.spinner("🔄 Carregando lista de produtos da Shopify..."):
+                    produtos = get_products_with_variants()
+                    st.session_state["produtos"] = produtos
+            except Exception as e:
+                st.error(f"❌ Erro ao carregar produtos: {e}")
+                st.stop()
+
         pedidos_cached = st.session_state.get("pedidos", pd.DataFrame())
-        produtos_unicos = sorted(
-            pedidos_cached.get("product_title", pd.Series(dtype=str)).dropna().unique().tolist()
-            or produtos["product_title"].dropna().unique().tolist()
-        )
 
         # =====================================================
-        # 🧾 Seleção de produto (com opção "(Todos)" pré-selecionada)
+        # 🧾 Construção segura da lista de produtos únicos
         # =====================================================
-        lista_produtos = ["(Todos)"] + sorted(produtos_unicos)
+        colunas_validas = []
+        if "product_title" in pedidos_cached.columns:
+            colunas_validas.append(pedidos_cached["product_title"].dropna())
+        if "product_title" in produtos.columns:
+            colunas_validas.append(produtos["product_title"].dropna())
+
+        if colunas_validas:
+            produtos_unicos = pd.concat(colunas_validas, ignore_index=True).dropna().unique().tolist()
+        else:
+            produtos_unicos = []
+
+        # Remove espaços extras, converte para string e remove duplicados
+        produtos_unicos = sorted(set(str(p).strip() for p in produtos_unicos if p and p != "nan"))
+
+        # =====================================================
+        # 🧾 Selectbox de produto (com persistência de estado)
+        # =====================================================
+        lista_produtos = ["(Todos)"] + produtos_unicos
 
         produto_escolhido = st.selectbox(
             "🧾 Selecione o produto:",
-            lista_produtos,
-            index=0  # 🔹 Sempre começa com "(Todos)" selecionado
+            options=lista_produtos,
+            index=lista_produtos.index(st.session_state.get("produto_atual", "(Todos)"))
+            if st.session_state.get("produto_atual", "(Todos)") in lista_produtos else 0
         )
+
+        # Atualiza session_state se mudou
+        if st.session_state.get("produto_atual") != produto_escolhido:
+            st.session_state["produto_atual"] = produto_escolhido
+            st.experimental_rerun()
+
 
         # =====================================================
         # 🔁 Controle de atualização automática ao trocar filtros
