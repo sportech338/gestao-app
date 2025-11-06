@@ -1285,7 +1285,7 @@ if menu == "📊 Dashboard – Tráfego Pago":
         # Atualiza session_state se mudou
         if st.session_state.get("produto_atual") != produto_escolhido:
             st.session_state["produto_atual"] = produto_escolhido
-            st.experimental_rerun()
+            st.rerun()
 
 
         # =====================================================
