@@ -1536,9 +1536,18 @@ if menu == "📊 Dashboard – Tráfego Pago":
             custos_base_A = df_custos[df_custos["Produto"].isin(itens_a)].copy()
             custos_base_B = df_custos[df_custos["Produto"].isin(itens_b)].copy()
         else:
-            # 👉 Quando o produto específico está selecionado, compara apenas por variante
-            custos_base_A = df_custos[df_custos["Variante"].isin(itens_a)].copy()
-            custos_base_B = df_custos[df_custos["Variante"].isin(itens_b)].copy()
+            # 👉 Quando o produto específico está selecionado,
+            #    filtra CORRETAMENTE por Produto + Variante
+            custos_base_A = df_custos[
+                (df_custos["Produto"] == produto_escolhido) &
+                (df_custos["Variante"].isin(itens_a))
+            ].copy()
+
+            custos_base_B = df_custos[
+                (df_custos["Produto"] == produto_escolhido) &
+                (df_custos["Variante"].isin(itens_b))
+            ].copy()
+
 
         # 🔗 Adiciona colunas de quantidade correspondentes
         custos_base_A = custos_base_A.merge(
