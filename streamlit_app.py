@@ -1374,28 +1374,15 @@ if menu == "📊 Dashboard – Tráfego Pago":
             match = re.search(r"(\d+)\s*(peças|pçs?|unidades|unid|uni)", nome.lower())
             return int(match.group(1)) if match else None
 
-        # =====================================================
-        # 🚫 NÃO normalizar Order Bump (Oferta Especial)
-        # =====================================================
-        mask_orderbump = pedidos["product_title"].str.contains(
-            "Oferta Especial", case=False, na=False
-        )
-
         # Cria nova coluna auxiliar (só pra conferência)
         pedidos["Qtd Base"] = pedidos["variant_title"].apply(extrair_qtd_pecas)
 
         # Substitui o próprio variant_title por nome padronizado "XX peças"
-        # — mas SOMENTE para produtos que NÃO são Order Bump
-        pedidos["variant_title"] = pedidos.apply(
-            lambda row: (
-                f"{int(row['Qtd Base'])} peças"
-                if pd.notna(row["Qtd Base"]) and not mask_orderbump.loc[row.name]
-                else row["variant_title"]
-            ),
-            axis=1
+        pedidos["variant_title"] = pedidos["Qtd Base"].apply(
+            lambda x: f"{int(x)} peças" if pd.notna(x) else None
         )
 
-        st.info("✅ Variantes normalizadas — nomes antigos e novos agora são tratados como iguais (exceto Oferta Especial).")
+        st.info("✅ Variantes normalizadas — nomes antigos e novos agora são tratados como iguais.")
         
         if pedidos.empty:
             st.warning("⚠️ Nenhum pedido encontrado no intervalo selecionado.")
@@ -1415,11 +1402,7 @@ if menu == "📊 Dashboard – Tráfego Pago":
             nivel_agrupamento = "product_title"
             label_nivel = "Produto"
         else:
-            # 🚫 Produto principal NÃO deve trazer variantes do Order Bump
-            base_prod = pedidos[
-                (pedidos["product_title"] == produto_escolhido) &
-                (~mask_orderbump)
-            ].copy()
+            base_prod = pedidos[pedidos["product_title"] == produto_escolhido].copy()
             nivel_agrupamento = "variant_title"
             label_nivel = "Variante"
 
@@ -1773,36 +1756,16 @@ if menu == "📊 Dashboard – Tráfego Pago":
             invest_total_a = ads_a["spend"].sum() if not ads_a.empty else 0
             invest_total_b = ads_b["spend"].sum() if not ads_b.empty else 0
 
-            # =====================================================
-            # 💸 Distribuição do investimento (corrigido: exclui Order Bump)
-            # =====================================================
-
+            # Função para distribuir investimento proporcional às vendas
             def distribuir_investimento(df, invest_total, qtd_col):
-                df = df.copy()
-
-                # 🔹 Identifica Order Bump SEMPRE pelo product_title (nunca pelo label_nivel)
-                mask_ob = df["product_title"].astype(str).str.contains(
-                    "Oferta Especial", case=False, na=False
-                )
-
-                # 🔹 Soma só itens principais (sem Order Bump)
-                total_qtd_principal = df.loc[~mask_ob, qtd_col].sum()
-
-                if total_qtd_principal == 0:
+                total_qtd = df[qtd_col].sum()
+                if total_qtd == 0:
                     df["Invest. (R$)"] = 0
                 else:
-                    df["Invest. (R$)"] = np.where(
-                        ~mask_ob,
-                        (df[qtd_col] / total_qtd_principal) * invest_total,
-                        0  # Order Bump = zero SEMPRE
-                    )
-
+                    df["Invest. (R$)"] = (df[qtd_col] / total_qtd) * invest_total
                 return df
 
-
-
-
-            # 🔹 Aplica para os dois períodos
+            # Aplica para os dois períodos
             df_a = distribuir_investimento(df_a, invest_total_a, "Qtd A")
             df_b = distribuir_investimento(df_b, invest_total_b, "Qtd B")
 
