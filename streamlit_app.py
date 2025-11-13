@@ -1769,6 +1769,21 @@ if menu == "📊 Dashboard – Tráfego Pago":
             df_a = distribuir_investimento(df_a, invest_total_a, "Qtd A")
             df_b = distribuir_investimento(df_b, invest_total_b, "Qtd B")
 
+            # -------------------------------------------------
+            # 🔒 Ajuste especial: variante "Oferta Especial" é Order Bump → investimento = 0
+            # -------------------------------------------------
+            def zerar_investimento_orderbump(df):
+                if label_nivel not in df.columns:
+                    return df
+                mask = df[label_nivel].astype(str).str.contains("Oferta Especial", case=False, na=False)
+                df.loc[mask, "Invest. (R$)"] = 0
+                return df
+
+            df_a = zerar_investimento_orderbump(df_a)
+            df_b = zerar_investimento_orderbump(df_b)
+
+            st.info("ℹ️ Investimento zerado automaticamente para a variante 'Oferta Especial' (Order Bump).")
+
             # Feedback visual
             st.success(
                 f"✅ Investimentos distribuídos automaticamente com base no gasto de anúncios Meta Ads ({produto_nome})"
