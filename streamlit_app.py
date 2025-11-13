@@ -4425,6 +4425,10 @@ if menu == "📦 Dashboard – Logística":
 
         base["line_revenue"] = base["price"] * base["quantity"]
 
+        # -------------------------------------------------
+        # 🟦 Identificar Order Bump ANTES dos filtros
+        # -------------------------------------------------
+        base["is_orderbump"] = base["product_title"].str.contains("Oferta Especial", case=False, na=False)
 
         # -------------------------------------------------
         # 🧠 Aplicação de filtros
@@ -4438,36 +4442,23 @@ if menu == "📦 Dashboard – Logística":
         # -------------------------------------------------
         # 📊 Métricas de resumo
         # -------------------------------------------------
-
-        # Identificar corretamente o Order Bump
-        df["is_orderbump"] = df["product_title"].str.contains("Oferta Especial", case=False, na=False)
-
         order_col = "order_number" if df["order_number"].notna().any() else "order_id"
 
-        # ================================
-        # 🚫 NÃO contar Order Bump como pedido (CPA correto)
-        # ================================
+        # 🚫 Não contar Order Bump como pedido (CPA)
         total_pedidos = df[~df["is_orderbump"]][order_col].nunique()
 
-        # Total de unidades continua normal (com OB incluído)
+        # Unidades totais
         total_unidades = df["quantity"].sum()
 
-        # ================================
         # 💰 Receita separada
-        # ================================
         receita_principal = df[~df["is_orderbump"]]["line_revenue"].sum()
         receita_orderbump = df[df["is_orderbump"]]["line_revenue"].sum()
-
         total_receita = receita_principal + receita_orderbump
 
-        # ================================
-        # 🧮 Ticket médio correto (SEM order bump)
-        # ================================
+        # 🧮 Ticket médio correto (SEM OB)
         ticket_medio = receita_principal / total_pedidos if total_pedidos > 0 else 0
 
-        # ================================
-        # 🔢 Exibir métricas
-        # ================================
+        # 🔢 Exibição
         colA, colB, colC, colD = st.columns(4)
         colA.metric("🧾 Pedidos (sem OB)", total_pedidos)
         colB.metric("📦 Unidades vendidas", int(total_unidades))
