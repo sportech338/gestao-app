@@ -1756,16 +1756,35 @@ if menu == "📊 Dashboard – Tráfego Pago":
             invest_total_a = ads_a["spend"].sum() if not ads_a.empty else 0
             invest_total_b = ads_b["spend"].sum() if not ads_b.empty else 0
 
-            # Função para distribuir investimento proporcional às vendas
+            # =====================================================
+            # 💸 Distribuição do investimento (corrigido: exclui Order Bump)
+            # =====================================================
+
             def distribuir_investimento(df, invest_total, qtd_col):
-                total_qtd = df[qtd_col].sum()
-                if total_qtd == 0:
+                df = df.copy()
+
+                # 🔹 Identifica corretamente o Order Bump pela coluna original da Shopify
+                mask_ob = df["product_title"].astype(str).str.contains(
+                    "Oferta Especial", case=False, na=False
+                )
+
+                # 🔹 Soma só itens principais (sem Order Bump)
+                total_qtd_principal = df.loc[~mask_ob, qtd_col].sum()
+
+                if total_qtd_principal == 0:
                     df["Invest. (R$)"] = 0
                 else:
-                    df["Invest. (R$)"] = (df[qtd_col] / total_qtd) * invest_total
+                    # 🔹 Distribui investimento SOMENTE para principais
+                    df["Invest. (R$)"] = np.where(
+                        ~mask_ob,
+                        (df[qtd_col] / total_qtd_principal) * invest_total,
+                        0  # Order Bump = investimento 0 sempre
+                    )
+
                 return df
 
-            # Aplica para os dois períodos
+
+            # 🔹 Aplica para os dois períodos
             df_a = distribuir_investimento(df_a, invest_total_a, "Qtd A")
             df_b = distribuir_investimento(df_b, invest_total_b, "Qtd B")
 
