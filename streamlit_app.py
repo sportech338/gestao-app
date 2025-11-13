@@ -1780,7 +1780,8 @@ if menu == "📊 Dashboard – Tráfego Pago":
             def distribuir_investimento(df, invest_total, qtd_col):
                 df = df.copy()
 
-                mask_ob = df[label_nivel].astype(str).str.contains(
+                # 🔹 Identifica Order Bump SEMPRE pelo product_title (nunca pelo label_nivel)
+                mask_ob = df["product_title"].astype(str).str.contains(
                     "Oferta Especial", case=False, na=False
                 )
 
@@ -1790,14 +1791,14 @@ if menu == "📊 Dashboard – Tráfego Pago":
                 if total_qtd_principal == 0:
                     df["Invest. (R$)"] = 0
                 else:
-                    # 🔹 Distribui investimento SOMENTE para principais
                     df["Invest. (R$)"] = np.where(
                         ~mask_ob,
                         (df[qtd_col] / total_qtd_principal) * invest_total,
-                        0  # Order Bump = investimento 0 sempre
+                        0  # Order Bump = zero SEMPRE
                     )
 
                 return df
+
 
 
 
