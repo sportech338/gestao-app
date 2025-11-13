@@ -1374,15 +1374,28 @@ if menu == "📊 Dashboard – Tráfego Pago":
             match = re.search(r"(\d+)\s*(peças|pçs?|unidades|unid|uni)", nome.lower())
             return int(match.group(1)) if match else None
 
+        # =====================================================
+        # 🚫 NÃO normalizar Order Bump (Oferta Especial)
+        # =====================================================
+        mask_orderbump = pedidos["product_title"].str.contains(
+            "Oferta Especial", case=False, na=False
+        )
+
         # Cria nova coluna auxiliar (só pra conferência)
         pedidos["Qtd Base"] = pedidos["variant_title"].apply(extrair_qtd_pecas)
 
         # Substitui o próprio variant_title por nome padronizado "XX peças"
-        pedidos["variant_title"] = pedidos["Qtd Base"].apply(
-            lambda x: f"{int(x)} peças" if pd.notna(x) else None
+        # — mas SOMENTE para produtos que NÃO são Order Bump
+        pedidos["variant_title"] = pedidos.apply(
+            lambda row: (
+                f"{int(row['Qtd Base'])} peças"
+                if pd.notna(row["Qtd Base"]) and not mask_orderbump.loc[row.name]
+                else row["variant_title"]
+            ),
+            axis=1
         )
 
-        st.info("✅ Variantes normalizadas — nomes antigos e novos agora são tratados como iguais.")
+        st.info("✅ Variantes normalizadas — nomes antigos e novos agora são tratados como iguais (exceto Oferta Especial).")
         
         if pedidos.empty:
             st.warning("⚠️ Nenhum pedido encontrado no intervalo selecionado.")
@@ -1402,7 +1415,11 @@ if menu == "📊 Dashboard – Tráfego Pago":
             nivel_agrupamento = "product_title"
             label_nivel = "Produto"
         else:
-            base_prod = pedidos[pedidos["product_title"] == produto_escolhido].copy()
+            # 🚫 Produto principal NÃO deve trazer variantes do Order Bump
+            base_prod = pedidos[
+                (pedidos["product_title"] == produto_escolhido) &
+                (~mask_orderbump)
+            ].copy()
             nivel_agrupamento = "variant_title"
             label_nivel = "Variante"
 
