@@ -4438,15 +4438,40 @@ if menu == "📦 Dashboard – Logística":
         # -------------------------------------------------
         # 📊 Métricas de resumo
         # -------------------------------------------------
-        order_col = "order_number" if df["order_number"].notna().any() else "order_id"
-        total_pedidos = df[order_col].nunique()
-        total_unidades = df["quantity"].sum()
-        total_receita = df["line_revenue"].sum()
-        ticket_medio = total_receita / total_pedidos if total_pedidos > 0 else 0
 
+        # Identificar corretamente o Order Bump
+        df["is_orderbump"] = df["product_title"].str.contains("Oferta Especial", case=False, na=False)
+
+        order_col = "order_number" if df["order_number"].notna().any() else "order_id"
+
+        # ================================
+        # 🚫 NÃO contar Order Bump como pedido (CPA correto)
+        # ================================
+        total_pedidos = df[~df["is_orderbump"]][order_col].nunique()
+
+        # Total de unidades continua normal (com OB incluído)
+        total_unidades = df["quantity"].sum()
+
+        # ================================
+        # 💰 Receita separada
+        # ================================
+        receita_principal = df[~df["is_orderbump"]]["line_revenue"].sum()
+        receita_orderbump = df[df["is_orderbump"]]["line_revenue"].sum()
+
+        total_receita = receita_principal + receita_orderbump
+
+        # ================================
+        # 🧮 Ticket médio correto (SEM order bump)
+        # ================================
+        ticket_medio = receita_principal / total_pedidos if total_pedidos > 0 else 0
+
+        # ================================
+        # 🔢 Exibir métricas
+        # ================================
         colA, colB, colC, colD = st.columns(4)
-        colA.metric("🧾 Pedidos", total_pedidos)
+        colA.metric("🧾 Pedidos (sem OB)", total_pedidos)
         colB.metric("📦 Unidades vendidas", int(total_unidades))
+
         def formatar_moeda(valor):
             try:
                 return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
@@ -4454,7 +4479,8 @@ if menu == "📦 Dashboard – Logística":
                 return f"R$ {valor:.2f}"
 
         colC.metric("💰 Receita total", formatar_moeda(total_receita))
-        colD.metric("💸 Ticket médio", formatar_moeda(ticket_medio))
+        colD.metric("💸 Ticket médio (sem OB)", formatar_moeda(ticket_medio))
+
 
         # -------------------------------------------------
         # 📋 Tabela de pedidos
