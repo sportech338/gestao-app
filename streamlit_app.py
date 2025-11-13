@@ -1763,8 +1763,7 @@ if menu == "📊 Dashboard – Tráfego Pago":
             def distribuir_investimento(df, invest_total, qtd_col):
                 df = df.copy()
 
-                # 🔹 Identifica corretamente o Order Bump pela coluna original da Shopify
-                mask_ob = df["product_title"].astype(str).str.contains(
+                mask_ob = df[label_nivel].astype(str).str.contains(
                     "Oferta Especial", case=False, na=False
                 )
 
@@ -1782,6 +1781,7 @@ if menu == "📊 Dashboard – Tráfego Pago":
                     )
 
                 return df
+
 
 
             # 🔹 Aplica para os dois períodos
