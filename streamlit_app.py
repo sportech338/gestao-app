@@ -804,7 +804,15 @@ def fetch_insights_daily(act_id: str, token: str, api_version: str,
                 if code == 100 and _try_extra:
                     # refaz sem extras só para ESTA janela
                     return _fetch_range(_since, _until, _try_extra=False)
-                raise RuntimeError(f"Graph API error {resp.status_code} | code={code} subcode={sub} | {msg}")
+
+                # =====================================================
+                #  🔧 CORREÇÃO: NÃO QUEBRA O APP AO INVÉS DO RAISE
+                # =====================================================
+                st.warning(
+                    f"⚠️ Meta Ads retornou erro {resp.status_code} "
+                    f"(code={code}, subcode={sub}): {msg}"
+                )
+                return []  # devolve vazio e segue sem travar
 
             for rec in payload.get("data", []):
                 actions = rec.get("actions") or []
