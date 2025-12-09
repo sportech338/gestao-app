@@ -5061,21 +5061,21 @@ if menu == "📦 Dashboard – Logística":
             except:
                 return ""
 
-        # -----------------------------------------------
-        # 📦 Códigos de rastreio
-        # -----------------------------------------------
+        # -------------------------------------------------
+        # 📦 Prepara tabela de rastreios
+        # -------------------------------------------------
         st.info("🔄 Obtendo códigos de rastreio dos pedidos…")
+
         df_entregas["tracking_number"] = df_entregas["order_id"].apply(get_tracking)
         df_entregas = df_entregas[df_entregas["tracking_number"].astype(str).str.strip() != ""]
+        df_entregas["tracking_link"] = df_entregas["tracking_number"].apply(gerar_link_rastreio)
 
         if df_entregas.empty:
             st.warning("Nenhum pedido com rastreio encontrado.")
             st.stop()
 
-        df_entregas["tracking_link"] = df_entregas["tracking_number"].apply(gerar_link_rastreio)
-
         # -----------------------------------------------
-        # 🕷 ROBÔ — RASPAGEM DO HTML DO RASTREIO
+        # 🕷 ROBÔ — RASPAGEM REAL
         # -----------------------------------------------
         def extrair_status_rastreio(link):
             try:
@@ -5087,42 +5087,29 @@ if menu == "📦 Dashboard – Logística":
                     return ("Não encontrado", "", "")
 
                 texto = bloco.get_text(separator=" ", strip=True)
-
                 status = texto.split(" - ")[0] if " - " in texto else texto
                 obs = texto
-                data = ""
 
-                padrao_data = re.search(r"\d{2}/\d{2}/\d{4}|\d{2}/\d{2} \d{2}:\d{2}", texto)
-                if padrao_data:
-                    data = padrao_data.group(0)
+                data = ""
+                m = re.search(r"\d{2}/\d{2}/\d{4}|\d{2}/\d{2} \d{2}:\d{2}", texto)
+                if m:
+                    data = m.group(0)
 
                 return (status, data, obs)
-
             except:
                 return ("Erro ao consultar", "", "")
 
-        # -----------------------------------------------
-        # 🔄 RASPAR CADA RASTREIO
-        # -----------------------------------------------
         st.info("📡 Lendo atualizações reais dos Correios…")
         df_entregas["status"], df_entregas["data_evento"], df_entregas["observacao"] = zip(
             *df_entregas["tracking_link"].apply(extrair_status_rastreio)
         )
 
-        # -----------------------------------------------
-        # 📊 Tabela final
-        # -----------------------------------------------
-        st.subheader("📦 Status de Entregas")
-
+        # -------------------------------------------------
+        # 📊 Tabela visual
+        # -------------------------------------------------
         tabela = df_entregas[[
-            "order_number",
-            "customer_name",
-            "product_title",
-            "tracking_number",
-            "status",
-            "data_evento",
-            "observacao",
-            "tracking_link"
+            "order_number","customer_name","product_title","tracking_number",
+            "status","data_evento","observacao","tracking_link"
         ]].rename(columns={
             "order_number": "Pedido",
             "customer_name": "Cliente",
@@ -5137,7 +5124,7 @@ if menu == "📦 Dashboard – Logística":
         st.dataframe(tabela, use_container_width=True)
 
         # =====================================================
-        # 📤 EXPORTAÇÃO PROGRESSIVA DE TODOS OS PEDIDOS PAGOS
+        # 📤 EXPORTAÇÃO PROGRESSIVA — 20 LINHAS POR LOTE
         # =====================================================
         import gspread
         from google.oauth2.service_account import Credentials
@@ -5159,33 +5146,39 @@ if menu == "📦 Dashboard – Logística":
             try:
                 sheet = sh.worksheet("Logística")
             except:
-                sheet = sh.add_worksheet("Logística", rows=3000, cols=20)
+                sheet = sh.add_worksheet("Logística", rows=6000, cols=20)
             return sheet
 
-        # FUNÇÃO NOVA — PROGRESSIVA
+        # função final progressiva (20 por lote)
         def exportar_todos_pedidos_progressivo():
-            st.info("🔄 Carregando pedidos aos poucos...")
+            st.info("🔄 Exportando pedidos aos poucos (20 por lote)...")
 
             sheet = carregar_aba_logistica()
-            header = ["DATA","CLIENTE","STATUS","PRODUTO","QTD","EMAIL","ORDER_ID","RASTREIO","LINK"]
+
+            HEADER = [
+                "DATA","CLIENTE","STATUS","PRODUTO","QTD","EMAIL",
+                "ORDER_ID","RASTREIO","LINK"
+            ]
 
             sheet.clear()
-            sheet.append_row(header)
+            sheet.append_row(HEADER)
 
             s = _get_session()
             url = f"{BASE_URL}/orders.json?status=any&limit=50&order=created_at asc"
 
-            total = 0
-            barra = st.progress(0)
+            progresso = st.progress(0)
             log = st.empty()
+            total_processado = 0
+            lote = []
 
             while url:
                 r = s.get(url, headers=HEADERS, timeout=60)
                 r.raise_for_status()
-                data = r.json().get("orders", [])
+                pedidos = r.json().get("orders", [])
 
-                for o in data:
-                    if o.get("financial_status") not in ["paid", "partially_paid"]:
+                for o in pedidos:
+
+                    if o.get("financial_status") not in ["paid","partially_paid"]:
                         continue
 
                     customer = o.get("customer") or {}
@@ -5196,7 +5189,7 @@ if menu == "📦 Dashboard – Logística":
                     try:
                         fulf = requests.get(
                             f"{BASE_URL}/orders/{o['id']}/fulfillments.json",
-                            headers=HEADERS, timeout=20
+                            headers=HEADERS, timeout=15
                         ).json().get("fulfillments", [])
                         if fulf:
                             tracking = fulf[0].get("tracking_info", {}).get("number", "")
@@ -5206,6 +5199,7 @@ if menu == "📦 Dashboard – Logística":
                     link = gerar_link_rastreio(tracking)
 
                     for it in o.get("line_items", []):
+
                         linha = [
                             str(o.get("created_at",""))[:10],
                             nome,
@@ -5217,25 +5211,34 @@ if menu == "📦 Dashboard – Logística":
                             tracking,
                             link
                         ]
-                        sheet.append_row(linha)
-                        total += 1
-                        log.write(f"📦 Processados: **{total} pedidos**")
 
-                barra.progress(min(1.0, barra._value + 0.05))
+                        lote.append(linha)
+                        total_processado += 1
+
+                        # quando enche 20 linhas → envia
+                        if len(lote) == 20:
+                            sheet.append_rows(lote, value_input_option="USER_ENTERED")
+                            lote = []
+                            log.write(f"📦 Processados: {total_processado} linhas...")
+                            progresso.progress(min(1.0, total_processado / 5000))  # estimativa
+
                 url = r.links.get("next", {}).get("url")
 
-            barra.progress(1.0)
-            st.success(f"✅ Exportação concluída! Total exportado: {total}")
+            # envia o resto
+            if lote:
+                sheet.append_rows(lote, value_input_option="USER_ENTERED")
+
+            progresso.progress(1.0)
+            st.success(f"✅ Exportação concluída! Total exportado: {total_processado} linhas.")
 
         st.markdown("---")
-        if st.button("📤 Exportar TODOS os pedidos pagos — Modo Progressivo"):
+        if st.button("📤 Exportar TODOS — Modo Progressivo (20 por lote)"):
             exportar_todos_pedidos_progressivo()
 
         # -----------------------------------------------
-        # 🔎 Busca manual de rastreio
+        # 🔎 Busca manual
         # -----------------------------------------------
         st.subheader("🔎 Rastrear manualmente")
-
         codigo_manual = st.text_input("Código de rastreio:")
 
         if codigo_manual:
@@ -5247,5 +5250,4 @@ if menu == "📦 Dashboard – Logística":
             st.info(f"**Status:** {status_m}")
             st.info(f"**Data:** {data_m}")
             st.write(f"**Observação completa:** {obs_m}")
-
             st.components.v1.iframe(link_manual, height=600, scrolling=True)
