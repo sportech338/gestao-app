@@ -4879,7 +4879,6 @@ if menu == "📦 Dashboard – Logística":
 
         import gspread
         from google.oauth2.service_account import Credentials
-        import string  # 🔥 Necessário para gerar a última letra da coluna
 
         # -------------------------------
         # 🔁 SINCRONIZAR SHOPIFY → PLANILHA
@@ -4892,7 +4891,7 @@ if menu == "📦 Dashboard – Logística":
                 return pd.DataFrame()
 
             df = df.rename(columns={
-                "order_number": "ID",
+                "order_number": "PEDIDO",
                 "created_at": "DATA",
                 "customer_name": "CLIENTE",
                 "financial_status": "STATUS",
@@ -4901,14 +4900,14 @@ if menu == "📦 Dashboard – Logística":
                 "customer_email": "EMAIL"
             })
 
-            df["ID"] = df["ID"].astype(str).apply(lambda x: f"#{x}")
+            df["PEDIDO"] = df["PEDIDO"].astype(str).apply(lambda x: f"#{x}")
             df["RASTREIO"] = ""
             df["LINK"] = ""
             df["OBSERVAÇÕES"] = ""
 
-            return df[[
+            return df[[ 
                 "DATA", "CLIENTE", "STATUS", "PRODUTO", "QUANTIDADE",
-                "EMAIL", "ID", "RASTREIO", "LINK", "OBSERVAÇÕES"
+                "EMAIL", "PEDIDO", "RASTREIO", "LINK", "OBSERVAÇÕES"
             ]]
 
         # -------------------------------------------------------
@@ -4916,18 +4915,15 @@ if menu == "📦 Dashboard – Logística":
         # -------------------------------------------------------
         def sync_shopify_to_sheet():
 
-            # Função auxiliar para normalizar ID (#123 → 123)
-            def normalizar_id(id_raw):
-                if pd.isna(id_raw):
+            def normalizar_pedido(p):
+                if pd.isna(p):
                     return None
-                return str(id_raw).replace("#", "").strip()
+                return str(p).replace("#", "").strip()
 
-            # Buscar pedidos novos
             df_new = get_paid_orders_today()
             if df_new.empty:
                 return "Nenhum pedido pago novo encontrado hoje."
 
-            # Autenticação Google Sheets
             scopes = [
                 "https://www.googleapis.com/auth/spreadsheets",
                 "https://www.googleapis.com/auth/drive"
@@ -4939,32 +4935,26 @@ if menu == "📦 Dashboard – Logística":
 
             sheet = client.open_by_key(st.secrets["sheets"]["spreadsheet_id"]).worksheet("Logística")
 
-            # Carregar planilha atual
             df_sheet = pd.DataFrame(sheet.get_all_records())
             df_sheet.columns = df_sheet.columns.str.strip()
 
-            # Garantir coluna ID
-            if "ID" not in df_sheet.columns:
-                df_sheet["ID"] = ""
+            # Garantir coluna PEDIDO
+            if "PEDIDO" not in df_sheet.columns:
+                df_sheet["PEDIDO"] = ""
 
-            # Normalizar IDs já existentes
-            ids_existentes = set(df_sheet["ID"].apply(normalizar_id))
+            pedidos_existentes = set(df_sheet["PEDIDO"].apply(normalizar_pedido))
 
-            # Normalizar IDs novos
-            df_new["ID_LIMPO"] = df_new["ID"].apply(normalizar_id)
+            df_new["PEDIDO_LIMPO"] = df_new["PEDIDO"].apply(normalizar_pedido)
 
-            # Filtrar novos pedidos
-            novos = df_new[~df_new["ID_LIMPO"].isin(ids_existentes)]
+            novos = df_new[~df_new["PEDIDO_LIMPO"].isin(pedidos_existentes)]
+
             if novos.empty:
                 return "Nenhum pedido novo para adicionar."
 
-            # Remover coluna auxiliar antes do envio
-            novos = novos.drop(columns=["ID_LIMPO"])
+            novos = novos.drop(columns=["PEDIDO_LIMPO"])
 
-            # Preparar linhas
             linhas = novos.astype(str).values.tolist()
 
-            # 🚀 Envia SEM RANGE → SEM ERRO DE API
             sheet.append_rows(linhas, value_input_option="USER_ENTERED")
 
             return f"{len(linhas)} pedido(s) novo(s) adicionados com sucesso!"
@@ -5034,9 +5024,9 @@ if menu == "📦 Dashboard – Logística":
         if termo.strip():
             termo_lower = termo.lower()
 
-            if termo.startswith("#") and "ID" in df_log.columns:
+            if termo.startswith("#") and "PEDIDO" in df_log.columns:
                 df_exibir = df_log[
-                    df_log["ID"].astype(str).str.lower().str.contains(termo_lower)
+                    df_log["PEDIDO"].astype(str).str.lower().str.contains(termo_lower)
                 ]
             else:
                 df_exibir = df_log[
