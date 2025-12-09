@@ -4911,12 +4911,23 @@ if menu == "📦 Dashboard – Logística":
                 "EMAIL", "ID", "RASTREIO", "LINK", "OBSERVAÇÕES"
             ]]
 
+        # -------------------------------------------------------
+        # 🔥 FUNÇÃO DEFINITIVA — SEM DUPLICAÇÃO / SEM API ERROR
+        # -------------------------------------------------------
         def sync_shopify_to_sheet():
+
+            # Função auxiliar para normalizar ID (#123 → 123)
+            def normalizar_id(id_raw):
+                if pd.isna(id_raw):
+                    return None
+                return str(id_raw).replace("#", "").strip()
+
+            # Buscar pedidos novos
             df_new = get_paid_orders_today()
             if df_new.empty:
                 return "Nenhum pedido pago novo encontrado hoje."
 
-            # Autenticação
+            # Autenticação Google Sheets
             scopes = [
                 "https://www.googleapis.com/auth/spreadsheets",
                 "https://www.googleapis.com/auth/drive"
@@ -4925,9 +4936,10 @@ if menu == "📦 Dashboard – Logística":
             gcp_info["private_key"] = gcp_info["private_key"].replace("\\n", "\n")
             creds = Credentials.from_service_account_info(gcp_info, scopes=scopes)
             client = gspread.authorize(creds)
+
             sheet = client.open_by_key(st.secrets["sheets"]["spreadsheet_id"]).worksheet("Logística")
 
-            # Carregar tabela atual
+            # Carregar planilha atual
             df_sheet = pd.DataFrame(sheet.get_all_records())
             df_sheet.columns = df_sheet.columns.str.strip()
 
@@ -4935,22 +4947,31 @@ if menu == "📦 Dashboard – Logística":
             if "ID" not in df_sheet.columns:
                 df_sheet["ID"] = ""
 
-            ids_existentes = df_sheet["ID"].astype(str).str.strip().tolist()
+            # Normalizar IDs já existentes
+            ids_existentes = set(df_sheet["ID"].apply(normalizar_id))
+
+            # Normalizar IDs novos
+            df_new["ID_LIMPO"] = df_new["ID"].apply(normalizar_id)
 
             # Filtrar novos pedidos
-            novos = df_new[~df_new["ID"].astype(str).isin(ids_existentes)]
+            novos = df_new[~df_new["ID_LIMPO"].isin(ids_existentes)]
             if novos.empty:
                 return "Nenhum pedido novo para adicionar."
 
-            # Preparar linhas para envio
+            # Remover coluna auxiliar antes do envio
+            novos = novos.drop(columns=["ID_LIMPO"])
+
+            # Preparar linhas
             linhas = novos.astype(str).values.tolist()
 
-            # 🚀 **APENAS ISSO: envia na última linha disponível → SEM ERRO**
+            # 🚀 Envia SEM RANGE → SEM ERRO DE API
             sheet.append_rows(linhas, value_input_option="USER_ENTERED")
 
             return f"{len(linhas)} pedido(s) novo(s) adicionados com sucesso!"
 
-
+        # ---------------------------------------
+        # Botão de sincronização
+        # ---------------------------------------
         st.subheader("🔄 Sincronização Shopify")
         if st.button("📥 Buscar pedidos pagos de hoje"):
             resultado = sync_shopify_to_sheet()
