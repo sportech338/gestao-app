@@ -4300,7 +4300,6 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from webdriver_manager.chrome import ChromeDriverManager
 
 def extrair_status_rastreio_selenium(link):
     """Extrai TODOS os eventos do rastreio usando Selenium."""
@@ -4311,10 +4310,7 @@ def extrair_status_rastreio_selenium(link):
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--window-size=1920,1080")
 
-        driver = webdriver.Chrome(
-            service=Service(ChromeDriverManager().install()),
-            options=options
-        )
+        driver = webdriver.Chrome(options=options)
 
         driver.get(link)
 
