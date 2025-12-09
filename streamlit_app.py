@@ -4974,7 +4974,12 @@ if menu == "📦 Dashboard – Logística":
             df_sheet = pd.DataFrame(sheet.get_all_records())
             df_sheet.columns = df_sheet.columns.str.strip()
 
-            ids_existentes = df_sheet["ID"].astype(str).tolist()
+            # 👇👇👇  CORREÇÃO DO ERRO KeyError: 'ID'
+            if "ID" not in df_sheet.columns:
+                df_sheet["ID"] = ""
+            ids_existentes = df_sheet["ID"].astype(str).str.strip().tolist()
+            # 👆👆👆  CERTO AGORA
+
             novos = df_new[~df_new["ID"].astype(str).isin(ids_existentes)]
 
             if novos.empty:
@@ -5078,6 +5083,3 @@ if menu == "📦 Dashboard – Logística":
         # 7) Ações rápidas
         # -------------------------------
         st.subheader("⚡ Ações rápidas")
-        if st.button("🔄 Recarregar"):
-            st.cache_data.clear()
-            st.rerun()
