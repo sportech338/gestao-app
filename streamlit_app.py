@@ -4264,7 +4264,7 @@ if menu == "📊 Dashboard – Tráfego Pago":
 def extrair_status_rastreio(link):
     """Extrai o evento mais recente do rastreio via HTML"""
     try:
-        r = requests.get(link, timeout=10)
+        r = requests.get(link, timeout=30)
         r.raise_for_status()
         soup = BeautifulSoup(r.text, "html.parser")
 
