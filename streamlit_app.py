@@ -4899,7 +4899,7 @@ if menu == "📦 Dashboard – Logística":
                 "customer_email": "EMAIL"
             })
 
-            df["PEDIDO"] = df["PEDIDO"].astype(str).apply(lambda x: f"#{x}")
+            df["PEDIDO"] = df["PEDIDO"].astype(str)
             df["RASTREIO"] = ""
             df["LINK"] = ""
             df["OBSERVAÇÕES"] = ""
