@@ -2410,42 +2410,13 @@ if menu == "📊 Dashboard – Tráfego Pago":
         # 🧾 Cria versão formatada da planilha para edição
         # =====================================================
         df_display = df_custos.copy()
-
-        def formatar_custo(x):
-            try:
-                # Converte para string para facilitar o tratamento
-                s = str(x).strip()
-
-                # Valores vazios → retornar vazio
-                if s in ["", "nan", "None"]:
-                    return ""
-
-                # Remove "R$" caso exista
-                s = s.replace("R$", "").strip()
-
-                # Troca vírgula por ponto antes da conversão
-                s = s.replace(",", ".")
-
-                # Agora converte para número
-                valor = float(s)
-
-                # Formata de volta para padrão brasileiro
-                return (
-                    f"R$ {valor:,.2f}"
-                    .replace(",", "X")
-                    .replace(".", ",")
-                    .replace("X", ".")
-                )
-
-            except:
-                # Em qualquer erro, retorna vazio para evitar quebrar o app
-                return ""
-
         for col in ["Custo AliExpress (R$)", "Custo Estoque (R$)"]:
             if col in df_display.columns:
-                df_display[col] = df_display[col].apply(formatar_custo)
+                df_display[col] = df_display[col].apply(
+                    lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                    if pd.notna(x) else ""
+                )
 
-                    
         # -------------------------------------------------
         # 🔄 Função para atualizar planilha de custos
         # -------------------------------------------------
@@ -4965,8 +4936,7 @@ if menu == "📦 Dashboard – Logística":
             sh = client.open_by_key(st.secrets["sheets"]["spreadsheet_id"])
             sheet = sh.worksheet("Produto | Precificação")
 
-            rows = sheet.get_all_values()
-            df = pd.DataFrame(rows[1:], columns=rows[0])
+            df = pd.DataFrame(sheet.get_all_records())
             df.columns = df.columns.str.strip()
 
             mapa_colunas = {
