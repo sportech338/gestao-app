@@ -4962,6 +4962,7 @@ if menu == "📦 Dashboard – Logística":
             if df_new.empty:
                 return "Nenhum pedido pago novo encontrado hoje."
 
+            # Autenticação
             scopes = [
                 "https://www.googleapis.com/auth/spreadsheets",
                 "https://www.googleapis.com/auth/drive"
@@ -4972,33 +4973,29 @@ if menu == "📦 Dashboard – Logística":
             client = gspread.authorize(creds)
             sheet = client.open_by_key(st.secrets["sheets"]["spreadsheet_id"]).worksheet("Logística")
 
+            # Carregar tabela atual
             df_sheet = pd.DataFrame(sheet.get_all_records())
             df_sheet.columns = df_sheet.columns.str.strip()
 
-            # 👇 Garantir que a coluna ID exista
+            # Garantir coluna ID
             if "ID" not in df_sheet.columns:
                 df_sheet["ID"] = ""
 
             ids_existentes = df_sheet["ID"].astype(str).str.strip().tolist()
 
+            # Filtrar novos pedidos
             novos = df_new[~df_new["ID"].astype(str).isin(ids_existentes)]
             if novos.empty:
                 return "Nenhum pedido novo para adicionar."
 
-            # 🔥 GERAR RANGE DINÂMICO (ADEUS ERRO DE RANGE)
+            # Preparar linhas para envio
             linhas = novos.astype(str).values.tolist()
-            num_cols = len(novos.columns)                           # Ex.: 10 colunas
-            ultima_col = string.ascii_uppercase[num_cols - 1]       # Ex.: 10 → J
 
-            start = len(df_sheet) + 2
-            end = start + len(linhas) - 1
-
-            range_envio = f"A{start}:{ultima_col}{end}"
-
-            # Enviar para o Google Sheets
-            sheet.update(range_envio, linhas)
+            # 🚀 **APENAS ISSO: envia na última linha disponível → SEM ERRO**
+            sheet.append_rows(linhas, value_input_option="USER_ENTERED")
 
             return f"{len(linhas)} pedido(s) novo(s) adicionados com sucesso!"
+
 
         st.subheader("🔄 Sincronização Shopify")
         if st.button("📥 Buscar pedidos pagos de hoje"):
