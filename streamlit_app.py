@@ -5079,31 +5079,21 @@ if menu == "📦 Dashboard – Logística":
         # 🕷 ROBÔ — RASPAGEM DO HTML DO RASTREIO
         # -----------------------------------------------
         def extrair_status_rastreio(link):
-            """
-            Abre o rastreio oficialmente da Sportech e extrai:
-            - Último status
-            - Última atualização
-            - Observação completa
-            """
             try:
                 html = requests.get(link, timeout=10).text
                 soup = BeautifulSoup(html, "html.parser")
 
-                bloco = soup.select_one(".tracking-event, .event, .linha")  
-                # tentativas múltiplas devido à estrutura variável
+                bloco = soup.select_one(".tracking-event, .event, .linha")
 
                 if not bloco:
                     return ("Não encontrado", "", "")
 
                 texto = bloco.get_text(separator=" ", strip=True)
 
-                # Tentamos separar partes conhecidas
                 status = texto.split(" - ")[0] if " - " in texto else texto
                 obs = texto
                 data = ""
 
-                # buscar data no formato DD/MM/AAAA ou DD/MM HH:MM
-                import re
                 padrao_data = re.search(r"\d{2}/\d{2}/\d{4}|\d{2}/\d{2} \d{2}:\d{2}", texto)
                 if padrao_data:
                     data = padrao_data.group(0)
@@ -5148,10 +5138,73 @@ if menu == "📦 Dashboard – Logística":
 
         st.dataframe(tabela, use_container_width=True)
 
+        # =====================================================
+        # 📤 EXPORTAR **TODOS OS PEDIDOS** PARA A ABA LOGÍSTICA
+        # =====================================================
+        import gspread
+        from google.oauth2.service_account import Credentials
+
+        def get_gsheet_client():
+            scopes = [
+                "https://www.googleapis.com/auth/spreadsheets",
+                "https://www.googleapis.com/auth/drive"
+            ]
+            gcp_info = dict(st.secrets["gcp_service_account"])
+            if isinstance(gcp_info.get("private_key"), str):
+                gcp_info["private_key"] = gcp_info["private_key"].replace("\\n", "\n")
+            creds = Credentials.from_service_account_info(gcp_info, scopes=scopes)
+            return gspread.authorize(creds)
+
+        def carregar_aba_logistica():
+            client = get_gsheet_client()
+            sh = client.open_by_key(st.secrets["sheets"]["spreadsheet_id"])
+            try:
+                sheet = sh.worksheet("Logística")
+            except:
+                sheet = sh.add_worksheet("Logística", rows=3000, cols=20)
+            return sheet
+
+        def exportar_todos_pedidos(df):
+            sheet = carregar_aba_logistica()
+
+            header = [
+                "DATA","CLIENTE","STATUS","PRODUTO","QTD",
+                "EMAIL","ORDER_ID","RASTREIO","LINK"
+            ]
+
+            linhas = []
+            for _, row in df.iterrows():
+                linhas.append([
+                    str(row.get("created_at", ""))[:10],
+                    row.get("customer_name", ""),
+                    row.get("financial_status", ""),
+                    row.get("product_title", ""),
+                    row.get("quantity", ""),
+                    row.get("customer_email", ""),
+                    str(row.get("order_id", "")),
+                    row.get("tracking_number", ""),
+                    row.get("tracking_link", "")
+                ])
+
+            # Se estiver vazia, adiciona cabeçalho
+            if len(sheet.get_all_values()) < 1:
+                sheet.append_row(header)
+
+            # Escreve tudo de uma vez
+            sheet.clear()
+            sheet.append_row(header)
+            for l in linhas:
+                sheet.append_row(l)
+
+            st.success(f"✅ {len(linhas)} pedidos exportados para a aba Logística!")
+
+        st.markdown("---")
+        if st.button("📤 Exportar TODOS os pedidos para o Google Sheets — Aba Logística"):
+            exportar_todos_pedidos(df_entregas)
+
         # -----------------------------------------------
         # 🔎 Busca manual de rastreio
         # -----------------------------------------------
-        st.markdown("---")
         st.subheader("🔎 Rastrear manualmente")
 
         codigo_manual = st.text_input("Código de rastreio:")
