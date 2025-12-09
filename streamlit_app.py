@@ -4381,7 +4381,7 @@ if menu == "📦 Dashboard – Logística":
         elif periodo_atual != (start_date, end_date):
             with st.spinner("🔄 Carregando dados da Shopify..."):
                 produtos = get_products_with_variants()
-                pedidos = get_orders(start_date=start_date, end_date=end_date)
+                pedidos = get_all_paid_orders()
                 st.session_state["produtos"] = produtos
                 st.session_state["pedidos"] = pedidos
                 st.session_state["periodo_atual"] = (start_date, end_date)
