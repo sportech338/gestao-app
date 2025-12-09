@@ -4291,23 +4291,6 @@ def extrair_status_rastreio(link):
     except Exception as e:
         return f"Erro ao rastrear: {e}"
 
-
-def atualizar_observacoes(df):
-    """Atualiza a coluna OBSERVAÇÕES baseada no LINK"""
-    if "LINK" not in df.columns:
-        return df
-
-    resultados = []
-    for link in df["LINK"]:
-        if isinstance(link, str) and link.startswith("http"):
-            resultados.append(extrair_status_rastreio_selenium(link))
-        else:
-            resultados.append("Sem link")
-
-    df["OBSERVAÇÕES"] = resultados
-    return df
-
-
 # =====================================================
 # 🔍 EXTRAÇÃO AUTOMÁTICA DO STATUS (VERSÃO SELENIUM)
 # =====================================================
@@ -4367,6 +4350,23 @@ def extrair_status_rastreio_selenium(link):
 
     except Exception as e:
         return f"Erro Selenium: {e}"
+
+
+
+def atualizar_observacoes(df):
+    """Atualiza a coluna OBSERVAÇÕES baseada no LINK"""
+    if "LINK" not in df.columns:
+        return df
+
+    resultados = []
+    for link in df["LINK"]:
+        if isinstance(link, str) and link.startswith("http"):
+            resultados.append(extrair_status_rastreio_selenium(link))
+        else:
+            resultados.append("Sem link")
+
+    df["OBSERVAÇÕES"] = resultados
+    return df
 
 
 
