@@ -5044,14 +5044,12 @@ if menu == "📦 Dashboard – Logística":
         import requests
 
         def gerar_link_rastreio(codigo):
-            """Gera link da página de rastreio da Sportech em Base64."""
             if not codigo or str(codigo).strip() == "":
                 return ""
             b64 = base64.urlsafe_b64encode(str(codigo).encode()).decode()
             return f"https://lojasportech.com/pages/rastreio?t={b64}"
 
         def get_tracking(order_id):
-            """Busca tracking number real do pedido na Shopify."""
             try:
                 url = f"{BASE_URL}/orders/{order_id}/fulfillments.json"
                 r = requests.get(url, headers=HEADERS, timeout=30)
@@ -5085,7 +5083,6 @@ if menu == "📦 Dashboard – Logística":
                 soup = BeautifulSoup(html, "html.parser")
 
                 bloco = soup.select_one(".tracking-event, .event, .linha")
-
                 if not bloco:
                     return ("Não encontrado", "", "")
 
@@ -5101,8 +5098,8 @@ if menu == "📦 Dashboard – Logística":
 
                 return (status, data, obs)
 
-            except Exception as e:
-                return ("Erro ao consultar", "", str(e))
+            except:
+                return ("Erro ao consultar", "", "")
 
         # -----------------------------------------------
         # 🔄 RASPAR CADA RASTREIO
@@ -5140,7 +5137,7 @@ if menu == "📦 Dashboard – Logística":
         st.dataframe(tabela, use_container_width=True)
 
         # =====================================================
-        # 📤 EXPORTAR **TODOS OS PEDIDOS PAGOS** PARA A ABA LOGÍSTICA
+        # 📤 EXPORTAÇÃO PROGRESSIVA DE TODOS OS PEDIDOS PAGOS
         # =====================================================
         import gspread
         from google.oauth2.service_account import Credentials
@@ -5165,41 +5162,74 @@ if menu == "📦 Dashboard – Logística":
                 sheet = sh.add_worksheet("Logística", rows=3000, cols=20)
             return sheet
 
-        def exportar_todos_pedidos():
-            st.info("🔄 Carregando TODOS os pedidos pagos da Shopify...")
-            df_all = get_all_paid_orders()  # <-- AGORA SIM: TODOS OS PAGOS
+        # FUNÇÃO NOVA — PROGRESSIVA
+        def exportar_todos_pedidos_progressivo():
+            st.info("🔄 Carregando pedidos aos poucos...")
 
             sheet = carregar_aba_logistica()
-
-            header = [
-                "DATA","CLIENTE","STATUS","PRODUTO","QTD",
-                "EMAIL","ORDER_ID","RASTREIO","LINK"
-            ]
-
-            linhas = []
-            for _, row in df_all.iterrows():
-                linhas.append([
-                    str(row.get("created_at", ""))[:10],
-                    row.get("customer_name", ""),
-                    row.get("financial_status", ""),
-                    row.get("product_title", ""),
-                    row.get("quantity", ""),
-                    row.get("customer_email", ""),
-                    str(row.get("order_id", "")),
-                    row.get("tracking_number", ""),
-                    row.get("tracking_link", "")
-                ])
+            header = ["DATA","CLIENTE","STATUS","PRODUTO","QTD","EMAIL","ORDER_ID","RASTREIO","LINK"]
 
             sheet.clear()
             sheet.append_row(header)
-            for l in linhas:
-                sheet.append_row(l)
 
-            st.success(f"✅ {len(linhas)} pedidos exportados para a aba Logística!")
+            s = _get_session()
+            url = f"{BASE_URL}/orders.json?status=any&limit=50&order=created_at asc"
+
+            total = 0
+            barra = st.progress(0)
+            log = st.empty()
+
+            while url:
+                r = s.get(url, headers=HEADERS, timeout=60)
+                r.raise_for_status()
+                data = r.json().get("orders", [])
+
+                for o in data:
+                    if o.get("financial_status") not in ["paid", "partially_paid"]:
+                        continue
+
+                    customer = o.get("customer") or {}
+                    nome = f"{customer.get('first_name','')} {customer.get('last_name','')}".strip()
+                    email = customer.get("email") or "(sem email)"
+
+                    tracking = ""
+                    try:
+                        fulf = requests.get(
+                            f"{BASE_URL}/orders/{o['id']}/fulfillments.json",
+                            headers=HEADERS, timeout=20
+                        ).json().get("fulfillments", [])
+                        if fulf:
+                            tracking = fulf[0].get("tracking_info", {}).get("number", "")
+                    except:
+                        pass
+
+                    link = gerar_link_rastreio(tracking)
+
+                    for it in o.get("line_items", []):
+                        linha = [
+                            str(o.get("created_at",""))[:10],
+                            nome,
+                            o.get("financial_status",""),
+                            it.get("title",""),
+                            it.get("quantity",""),
+                            email,
+                            str(o.get("id","")),
+                            tracking,
+                            link
+                        ]
+                        sheet.append_row(linha)
+                        total += 1
+                        log.write(f"📦 Processados: **{total} pedidos**")
+
+                barra.progress(min(1.0, barra._value + 0.05))
+                url = r.links.get("next", {}).get("url")
+
+            barra.progress(1.0)
+            st.success(f"✅ Exportação concluída! Total exportado: {total}")
 
         st.markdown("---")
-        if st.button("📤 Exportar TODOS os pedidos pagos para o Google Sheets — Aba Logística"):
-            exportar_todos_pedidos()
+        if st.button("📤 Exportar TODOS os pedidos pagos — Modo Progressivo"):
+            exportar_todos_pedidos_progressivo()
 
         # -----------------------------------------------
         # 🔎 Busca manual de rastreio
@@ -5211,8 +5241,6 @@ if menu == "📦 Dashboard – Logística":
         if codigo_manual:
             link_manual = gerar_link_rastreio(codigo_manual)
             st.markdown(f"▶️ **Abrir rastreio:** [{link_manual}]({link_manual})")
-
-            st.markdown("### 📍 Atualização em tempo real:")
 
             status_m, data_m, obs_m = extrair_status_rastreio(link_manual)
 
