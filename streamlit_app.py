@@ -5043,6 +5043,14 @@ if menu == "📦 Dashboard – Logística":
             except:
                 pass
 
+        # ----------------------------------------
+        # 🔧 AJUSTE DO ÍNDICE (REMOVE A VÍRGULA)
+        # ----------------------------------------
+        df_exibir = df_exibir.reset_index(drop=True)
+        df_exibir.index = df_exibir.index + 1
+        df_exibir.index.name = "Nº"
+             
+
         # -------------------------------
         # 6) Mostrar tabela
         # -------------------------------
