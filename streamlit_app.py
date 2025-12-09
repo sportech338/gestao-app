@@ -4936,7 +4936,8 @@ if menu == "📦 Dashboard – Logística":
             sh = client.open_by_key(st.secrets["sheets"]["spreadsheet_id"])
             sheet = sh.worksheet("Produto | Precificação")
 
-            df = pd.DataFrame(sheet.get_all_records())
+            rows = sheet.get_all_values()
+            df = pd.DataFrame(rows[1:], columns=rows[0])
             df.columns = df.columns.str.strip()
 
             mapa_colunas = {
