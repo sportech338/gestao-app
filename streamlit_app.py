@@ -4929,14 +4929,21 @@ if menu == "📦 Dashboard – Logística":
         # 4) Campo de busca
         # -------------------------------
         st.subheader("🔍 Buscar na planilha")
-        termo = st.text_input("Digite parte do nome, pedido, rastreio ou email:")
+        termo = st.text_input("Digite parte do nome, pedido (#12345), rastreio ou email:")
 
         df_exibir = df_log.copy()
         if termo.strip():
             termo_lower = termo.lower()
-            df_exibir = df_exibir[
-                df_exibir.apply(lambda row: termo_lower in str(row).lower(), axis=1)
-            ]
+
+            # ⭐ SE a busca começar com "#", buscar diretamente na coluna de pedido
+            if termo.startswith("#") and "ID" in df_log.columns:
+                df_exibir = df_log[
+                    df_log["ID"].astype(str).str.lower().str.contains(termo_lower)
+                ]
+            else:
+                df_exibir = df_log[
+                    df_log.apply(lambda row: termo_lower in str(row).lower(), axis=1)
+                ]
 
         # -------------------------------
         # 5) Ordenação por data (se existir)
