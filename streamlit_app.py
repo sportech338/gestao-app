@@ -4905,7 +4905,7 @@ if menu == "📦 Dashboard – Logística":
             st.rerun()
 
     # =====================================================
-    # 🚚 ABA 3 — ENTREGAS
+    # 🚚 ABA 3 — ENTREGAS (COM RASPAGEM REAL DO RASTREIO)
     # =====================================================
     with aba3:
         st.title("🚚 Rastreamento de Entregas — Sportech")
@@ -4920,9 +4920,10 @@ if menu == "📦 Dashboard – Logística":
         df_entregas = st.session_state["pedidos"].copy()
 
         # -----------------------------------------------
-        # 🔧 NOVO MÉTODO: Buscar rastreio de TODOS os pedidos
+        # 📌 PEGAR CÓDIGO DE RASTREIO VIA SHOPIFY
         # -----------------------------------------------
-        import base64
+        import base64, requests
+        from bs4 import BeautifulSoup
 
         def gerar_link_rastreio(codigo):
             """Gera link da página de rastreio da Sportech em Base64."""
@@ -4945,60 +4946,109 @@ if menu == "📦 Dashboard – Logística":
                 return ""
 
         # -----------------------------------------------
-        # 🔄 Carregando rastreios reais
+        # 📦 Códigos de rastreio
         # -----------------------------------------------
         st.info("🔄 Obtendo códigos de rastreio dos pedidos…")
-
         df_entregas["tracking_number"] = df_entregas["order_id"].apply(get_tracking)
+        df_entregas = df_entregas[df_entregas["tracking_number"].astype(str).str.strip() != ""]
+
+        if df_entregas.empty:
+            st.warning("Nenhum pedido com rastreio encontrado.")
+            st.stop()
+
         df_entregas["tracking_link"] = df_entregas["tracking_number"].apply(gerar_link_rastreio)
 
         # -----------------------------------------------
-        # ❗ Filtrar apenas pedidos que realmente possuem rastreio
+        # 🕷 ROBÔ — RASPAGEM DO HTML DO RASTREIO
         # -----------------------------------------------
-        df_entregas = df_entregas[df_entregas["tracking_number"].astype(str).str.strip() != ""]
+        def extrair_status_rastreio(link):
+            """
+            Abre o rastreio oficialmente da Sportech e extrai:
+            - Último status
+            - Última atualização
+            - Observação completa
+            """
+            try:
+                html = requests.get(link, timeout=10).text
+                soup = BeautifulSoup(html, "html.parser")
 
-        st.subheader("📦 Pedidos com rastreio disponível")
+                bloco = soup.select_one(".tracking-event, .event, .linha")  
+                # tentativas múltiplas devido à estrutura variável
 
-        if df_entregas.empty:
-            st.warning("Nenhum pedido com código de rastreio foi encontrado no período.")
-            st.stop()
+                if not bloco:
+                    return ("Não encontrado", "", "")
+
+                texto = bloco.get_text(separator=" ", strip=True)
+
+                # Tentamos separar partes conhecidas
+                status = texto.split(" - ")[0] if " - " in texto else texto
+                obs = texto
+                data = ""
+
+                # buscar data no formato DD/MM/AAAA ou DD/MM HH:MM
+                import re
+                padrao_data = re.search(r"\d{2}/\d{2}/\d{4}|\d{2}/\d{2} \d{2}:\d{2}", texto)
+                if padrao_data:
+                    data = padrao_data.group(0)
+
+                return (status, data, obs)
+
+            except Exception as e:
+                return ("Erro ao consultar", "", str(e))
 
         # -----------------------------------------------
-        # 📊 Tabela de rastreamento formatada
+        # 🔄 RASPAR CADA RASTREIO
         # -----------------------------------------------
-        df_rastreios = df_entregas[[
+        st.info("📡 Lendo atualizações reais dos Correios…")
+        df_entregas["status"], df_entregas["data_evento"], df_entregas["observacao"] = zip(
+            *df_entregas["tracking_link"].apply(extrair_status_rastreio)
+        )
+
+        # -----------------------------------------------
+        # 📊 Tabela final
+        # -----------------------------------------------
+        st.subheader("📦 Status de Entregas")
+
+        tabela = df_entregas[[
             "order_number",
             "customer_name",
             "product_title",
             "tracking_number",
+            "status",
+            "data_evento",
+            "observacao",
             "tracking_link"
         ]].rename(columns={
             "order_number": "Pedido",
             "customer_name": "Cliente",
             "product_title": "Produto",
-            "tracking_number": "Código de Rastreio",
-            "tracking_link": "Link de Rastreamento"
+            "tracking_number": "Código",
+            "status": "Status",
+            "data_evento": "Última atualização",
+            "observacao": "Observação",
+            "tracking_link": "Link"
         })
 
-        st.dataframe(
-            df_rastreios,
-            use_container_width=True,
-            hide_index=True
-        )
+        st.dataframe(tabela, use_container_width=True)
 
         # -----------------------------------------------
-        # 🔎 Rastreio manual dentro do app
+        # 🔎 Busca manual de rastreio
         # -----------------------------------------------
-        st.subheader("🔎 Rastrear um pedido manualmente")
+        st.markdown("---")
+        st.subheader("🔎 Rastrear manualmente")
+
         codigo_manual = st.text_input("Código de rastreio:")
 
         if codigo_manual:
             link_manual = gerar_link_rastreio(codigo_manual)
-
             st.markdown(f"▶️ **Abrir rastreio:** [{link_manual}]({link_manual})")
 
-            st.markdown("---")
-            st.markdown("### 📍 Rastreio em tempo real:")
+            st.markdown("### 📍 Atualização em tempo real:")
+
+            status_m, data_m, obs_m = extrair_status_rastreio(link_manual)
+
+            st.info(f"**Status:** {status_m}")
+            st.info(f"**Data:** {data_m}")
+            st.write(f"**Observação completa:** {obs_m}")
 
             st.components.v1.iframe(link_manual, height=600, scrolling=True)
-
