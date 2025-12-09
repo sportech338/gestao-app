@@ -257,6 +257,113 @@ def get_all_paid_orders(limit=250):
 
     return pd.DataFrame(all_rows)
 
+@st.cache_data(ttl=600)
+def get_orders(start_date, end_date, limit=250):
+    """
+    Baixa pedidos da Shopify APENAS dentro do período selecionado.
+    Usada pela aba CONTROLE OPERACIONAL.
+    """
+
+    start_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=APP_TZ)
+    end_dt   = datetime.combine(end_date,   datetime.max.time(), tzinfo=APP_TZ)
+
+    start_str = start_dt.strftime("%Y-%m-%dT%H:%M:%S%z")
+    end_str   = end_dt.strftime("%Y-%m-%dT%H:%M:%S%z")
+
+    url = f"{BASE_URL}/orders.json?limit={limit}&status=any&created_at_min={start_str}&created_at_max={end_str}"
+    all_rows = []
+    s = _get_session()
+
+    while url:
+        r = s.get(url, headers=HEADERS, timeout=60)
+        r.raise_for_status()
+
+        data = r.json()
+        orders = data.get("orders", [])
+
+        for o in orders:
+
+            # Apenas pedidos pagos
+            if o.get("financial_status") not in ["paid", "partially_paid"]:
+                continue
+
+            customer = o.get("customer") or {}
+            shipping = o.get("shipping_address") or {}
+            shipping_lines = o.get("shipping_lines") or [{}]
+
+            nome_cliente = (
+                f"{customer.get('first_name','')} {customer.get('last_name','')}".strip()
+                or "(Cliente não informado)"
+            )
+
+            email_cliente = (
+                customer.get("email")
+                or o.get("email")
+                or o.get("contact_email")
+                or "(sem email)"
+            )
+
+            telefone = (
+                shipping.get("phone")
+                or customer.get("phone")
+                or o.get("phone")
+                or "(sem telefone)"
+            )
+
+            # CPF (vários possíveis lugares)
+            cpf = None
+            for attr in o.get("note_attributes", []):
+                if "cpf" in attr.get("name","").lower():
+                    cpf = attr.get("value")
+                    break
+            if not cpf:
+                cpf = shipping.get("company") or "(sem cpf)"
+
+            endereco = shipping.get("address1", "(sem endereço)")
+            bairro   = shipping.get("address2", "(sem bairro)")
+            cidade   = shipping.get("city",     "(sem cidade)")
+            estado   = shipping.get("province", "(sem estado)")
+            cep      = shipping.get("zip",      "(sem cep)")
+            pais     = shipping.get("country",  "(sem país)")
+
+            for it in o.get("line_items", []):
+                preco = float(it.get("price") or 0)
+                qtd   = int(it.get("quantity") or 0)
+
+                all_rows.append({
+                    "order_id":     o.get("id"),
+                    "order_number": o.get("order_number"),
+                    "created_at":   o.get("created_at"),
+
+                    "financial_status":   o.get("financial_status"),
+                    "fulfillment_status": o.get("fulfillment_status"),
+
+                    "customer_name":  nome_cliente,
+                    "customer_email": email_cliente,
+                    "customer_phone": telefone,
+                    "customer_cpf":   cpf,
+
+                    "product_title": it.get("title"),
+                    "variant_title": it.get("variant_title"),
+                    "variant_id":    it.get("variant_id"),
+                    "sku":           it.get("sku"),
+
+                    "quantity":     qtd,
+                    "price":        preco,
+                    "line_revenue": preco * qtd,
+
+                    "forma_entrega": shipping_lines[0].get("title", "N/A"),
+                    "endereco": endereco,
+                    "bairro":   bairro,
+                    "cidade":   cidade,
+                    "estado":   estado,
+                    "cep":      cep,
+                    "pais":     pais,
+                })
+
+        url = r.links.get("next", {}).get("url")
+
+    return pd.DataFrame(all_rows)
 
 
 # =====================================================
@@ -4381,7 +4488,7 @@ if menu == "📦 Dashboard – Logística":
         elif periodo_atual != (start_date, end_date):
             with st.spinner("🔄 Carregando dados da Shopify..."):
                 produtos = get_products_with_variants()
-                pedidos = get_all_paid_orders()
+                pedidos = get_orders(start_date, end_date)
                 st.session_state["produtos"] = produtos
                 st.session_state["pedidos"] = pedidos
                 st.session_state["periodo_atual"] = (start_date, end_date)
