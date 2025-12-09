@@ -5041,6 +5041,7 @@ if menu == "📦 Dashboard – Logística":
         import base64
         from bs4 import BeautifulSoup
         import re
+        import requests
 
         def gerar_link_rastreio(codigo):
             """Gera link da página de rastreio da Sportech em Base64."""
@@ -5139,7 +5140,7 @@ if menu == "📦 Dashboard – Logística":
         st.dataframe(tabela, use_container_width=True)
 
         # =====================================================
-        # 📤 EXPORTAR **TODOS OS PEDIDOS** PARA A ABA LOGÍSTICA
+        # 📤 EXPORTAR **TODOS OS PEDIDOS PAGOS** PARA A ABA LOGÍSTICA
         # =====================================================
         import gspread
         from google.oauth2.service_account import Credentials
@@ -5164,7 +5165,10 @@ if menu == "📦 Dashboard – Logística":
                 sheet = sh.add_worksheet("Logística", rows=3000, cols=20)
             return sheet
 
-        def exportar_todos_pedidos(df):
+        def exportar_todos_pedidos():
+            st.info("🔄 Carregando TODOS os pedidos pagos da Shopify...")
+            df_all = get_all_paid_orders()  # <-- AGORA SIM: TODOS OS PAGOS
+
             sheet = carregar_aba_logistica()
 
             header = [
@@ -5173,7 +5177,7 @@ if menu == "📦 Dashboard – Logística":
             ]
 
             linhas = []
-            for _, row in df.iterrows():
+            for _, row in df_all.iterrows():
                 linhas.append([
                     str(row.get("created_at", ""))[:10],
                     row.get("customer_name", ""),
@@ -5186,11 +5190,6 @@ if menu == "📦 Dashboard – Logística":
                     row.get("tracking_link", "")
                 ])
 
-            # Se estiver vazia, adiciona cabeçalho
-            if len(sheet.get_all_values()) < 1:
-                sheet.append_row(header)
-
-            # Escreve tudo de uma vez
             sheet.clear()
             sheet.append_row(header)
             for l in linhas:
@@ -5199,8 +5198,8 @@ if menu == "📦 Dashboard – Logística":
             st.success(f"✅ {len(linhas)} pedidos exportados para a aba Logística!")
 
         st.markdown("---")
-        if st.button("📤 Exportar TODOS os pedidos para o Google Sheets — Aba Logística"):
-            exportar_todos_pedidos(df_entregas)
+        if st.button("📤 Exportar TODOS os pedidos pagos para o Google Sheets — Aba Logística"):
+            exportar_todos_pedidos()
 
         # -----------------------------------------------
         # 🔎 Busca manual de rastreio
