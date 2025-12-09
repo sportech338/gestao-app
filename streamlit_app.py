@@ -5033,7 +5033,7 @@ if menu == "📦 Dashboard – Logística":
             st.info("Carregue pedidos na aba 'Controle Operacional' para ver entregas.")
             st.stop()
 
-        df_entregas = st.session_state["pedidos"].copy()
+        df_entregas = get_all_paid_orders().copy()
 
         # -----------------------------------------------
         # 📌 PEGAR CÓDIGO DE RASTREIO VIA SHOPIFY
