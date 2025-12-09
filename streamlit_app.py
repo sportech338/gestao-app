@@ -5033,6 +5033,19 @@ if menu == "📦 Dashboard – Logística":
                 pass
 
         # ----------------------------------------
+        # 🔧 AJUSTE DA COLUNA PEDIDO (Remove vírgulas do número)
+        # ----------------------------------------
+        if "PEDIDO" in df_exibir.columns:
+            df_exibir["PEDIDO"] = (
+                df_exibir["PEDIDO"]
+                .astype(str)
+                .str.replace(",", "")
+                .str.replace(".0", "")
+                .str.strip()
+            )
+                
+
+        # ----------------------------------------
         # 🔧 AJUSTE DO ÍNDICE (REMOVE A VÍRGULA)
         # ----------------------------------------
         df_exibir = df_exibir.reset_index(drop=True)
