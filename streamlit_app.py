@@ -5048,8 +5048,3 @@ if menu == "📦 Dashboard – Logística":
         # -------------------------------
         st.subheader("📄 Registros da Logística (Planilha)")
         st.dataframe(df_exibir, use_container_width=True)
-
-        # -------------------------------
-        # 7) Ações rápidas
-        # -------------------------------
-        st.subheader("⚡ Ações rápidas")
