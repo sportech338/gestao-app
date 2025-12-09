@@ -4,17 +4,11 @@ numpy~=1.26
 plotly~=5.22
 reportlab~=4.0
 kaleido==0.2.1
-
 openpyxl
 XlsxWriter==3.2.0
-
 facebook-business==19.0.0
 requests>=2.31.0
-
 gspread
 google-auth
-
-beautifulsoup4
-
 streamlit-date-picker==0.0.4
 streamlit-aggrid==1.0.5
