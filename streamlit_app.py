@@ -5038,8 +5038,9 @@ if menu == "📦 Dashboard – Logística":
         # -----------------------------------------------
         # 📌 PEGAR CÓDIGO DE RASTREIO VIA SHOPIFY
         # -----------------------------------------------
-        import base64, requests
+        import base64
         from bs4 import BeautifulSoup
+        import re
 
         def gerar_link_rastreio(codigo):
             """Gera link da página de rastreio da Sportech em Base64."""
