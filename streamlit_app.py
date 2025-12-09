@@ -4907,4 +4907,102 @@ if menu == "📦 Dashboard – Logística":
     # 🚚 ABA 3 — ENTREGAS
     # =====================================================
     with aba3:
-        st.info("📍 Em breve: status de fretes, prazos e devoluções.")
+        st.title("🚚 Rastreamento de Entregas — Sportech")
+
+        # -----------------------------------------------
+        # 🔐 Verifica se já existem pedidos carregados
+        # -----------------------------------------------
+        if "pedidos" not in st.session_state or st.session_state["pedidos"].empty:
+            st.info("Carregue pedidos na aba 'Controle Operacional' para ver entregas.")
+            st.stop()
+
+        df_entregas = st.session_state["pedidos"].copy()
+
+        # Mantém apenas pedidos já processados (fulfilled/shipped)
+        df_entregas = df_entregas[
+            df_entregas["fulfillment_status"].isin(["fulfilled", "shipped", "complete"])
+        ]
+
+        st.subheader("📦 Pedidos com rastreio disponível")
+
+        if df_entregas.empty:
+            st.warning("Nenhum pedido processado foi encontrado no período selecionado.")
+            st.stop()
+
+        # -----------------------------------------------
+        # 🧩 Função para gerar link Base64 igual ao Apps Script
+        # -----------------------------------------------
+        import base64
+
+        def gerar_link_rastreio(codigo):
+            if not codigo or str(codigo).strip() == "":
+                return ""
+            b64 = base64.urlsafe_b64encode(str(codigo).encode()).decode()
+            return f"https://lojasportech.com/pages/rastreio?t={b64}"
+
+        # -----------------------------------------------
+        # 🔍 Buscar tracking number pela API da Shopify
+        # -----------------------------------------------
+        def get_tracking(order_id):
+            try:
+                url = f"{BASE_URL}/orders/{order_id}/fulfillments.json"
+                r = requests.get(url, headers=HEADERS, timeout=30)
+                data = r.json().get("fulfillments", [])
+                if not data:
+                    return ""
+                track_info = data[0].get("tracking_info", {})
+                return track_info.get("number", "") or ""
+            except:
+                return ""
+
+        # -----------------------------------------------
+        # 🔄 Carregando rastreios
+        # -----------------------------------------------
+        st.info("🔄 Obtendo códigos de rastreio dos pedidos…")
+
+        linhas = []
+        for row in df_entregas.itertuples():
+            tracking = get_tracking(row.order_id)
+            link_rastreio = gerar_link_rastreio(tracking)
+
+            linhas.append([
+                row.order_number,
+                row.customer_name,
+                row.product_title,
+                tracking,
+                link_rastreio
+            ])
+
+        df_rastreios = pd.DataFrame(linhas, columns=[
+            "Pedido",
+            "Cliente",
+            "Produto",
+            "Código de Rastreio",
+            "Link de Rastreamento"
+        ])
+
+        # -----------------------------------------------
+        # 📊 Tabela principal
+        # -----------------------------------------------
+        st.dataframe(
+            df_rastreios,
+            use_container_width=True,
+            hide_index=True
+        )
+
+        # -----------------------------------------------
+        # 🔎 Rastrear manualmente no app
+        # -----------------------------------------------
+        st.subheader("🔎 Rastrear um pedido manualmente")
+        codigo_manual = st.text_input("Código de rastreio:")
+
+        if codigo_manual:
+            link_manual = gerar_link_rastreio(codigo_manual)
+
+            st.markdown(f"▶️ **Abrir rastreio:** [{link_manual}]({link_manual})")
+
+            st.markdown("---")
+            st.markdown("### 📍 Rastreio em tempo real:")
+
+            # Exibe a página de rastreio diretamente no Streamlit
+            st.components.v1.iframe(link_manual, height=600, scrolling=True)
