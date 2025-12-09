@@ -1606,7 +1606,7 @@ if menu == "📊 Dashboard – Tráfego Pago":
         def carregar_planilha_custos(fornecedor):
             """Carrega a planilha de custos e cria cache separado por fornecedor."""
             client = get_gsheet_client()
-            sheet = client.open_by_key(st.secrets["sheets"]["spreadsheet_id"]).sheet1
+            sheet = client.open_by_key(st.secrets["sheets"]["spreadsheet_id"]).sheet2
             df = pd.DataFrame(sheet.get_all_records())
             df.columns = df.columns.str.strip()
 
@@ -2436,7 +2436,7 @@ if menu == "📊 Dashboard – Tráfego Pago":
 
                 creds = Credentials.from_service_account_info(gcp_info, scopes=scopes)
                 client = gspread.authorize(creds)
-                sheet = client.open_by_key(st.secrets["sheets"]["spreadsheet_id"]).sheet1
+                sheet = client.open_by_key(st.secrets["sheets"]["spreadsheet_id"]).sheet2
 
                 df_safe = (
                     df.copy()
@@ -4973,7 +4973,7 @@ if menu == "📦 Dashboard – Logística":
             """Atualiza dados na planilha de custos no Google Sheets"""
             try:
                 client = get_gsheet_client()
-                sheet = client.open_by_key(st.secrets["sheets"]["spreadsheet_id"]).sheet1
+                sheet = client.open_by_key(st.secrets["sheets"]["spreadsheet_id"]).sheet2
 
                 df_safe = (
                     df.copy()
