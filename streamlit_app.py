@@ -4875,4 +4875,97 @@ if menu == "📦 Dashboard – Logística":
     # 🚚 ABA 3 — ENTREGAS
     # =====================================================
     with aba3:
-        st.info("📍 Em breve: status de fretes, prazos e devoluções.")
+        st.title("🚚 Acompanhamento de Entregas")
+
+        # -------------------------------------------------
+        # 1) Verifica se os pedidos já foram carregados na aba Logística
+        # -------------------------------------------------
+        if "pedidos" not in st.session_state or st.session_state["pedidos"].empty:
+            st.warning("⚠️ Nenhum pedido carregado ainda. Vá na aba 'Logística' e selecione um período.")
+            st.stop()
+
+        df = st.session_state["pedidos"].copy()
+
+        # -------------------------------------------------
+        # 2) Normaliza colunas de rastreio e links
+        # -------------------------------------------------
+        if "rastreio" not in df.columns and "tracking_number" in df.columns:
+            df["rastreio"] = df["tracking_number"]
+
+        if "link" not in df.columns:
+            df["link"] = ""
+
+        # -------------------------------------------------
+        # 3) Métricas gerais de entrega
+        # -------------------------------------------------
+        st.subheader("📦 Visão Geral")
+        total = df["order_id"].nunique()
+        enviados = df[df["fulfillment_status"].isin(["fulfilled", "shipped", "complete"])]["order_id"].nunique()
+        pendentes = total - enviados
+
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Total de pedidos", total)
+        col2.metric("Pedidos enviados", enviados)
+        col3.metric("Pendentes", pendentes)
+
+        # -------------------------------------------------
+        # 4) Busca de pedidos
+        # -------------------------------------------------
+        st.subheader("🔍 Buscar Pedido")
+        termo = st.text_input("Busque por nome, número do pedido, email ou rastreio:")
+
+        if termo.strip():
+            df = df[
+                df["customer_name"].str.contains(termo, case=False, na=False) |
+                df["order_number"].astype(str).str.contains(termo, na=False) |
+                df["customer_email"].str.contains(termo, case=False, na=False) |
+                df["rastreio"].astype(str).str.contains(termo, na=False)
+            ]
+
+        # -------------------------------------------------
+        # 5) Monta tabela de entregas
+        # -------------------------------------------------
+        st.subheader("📄 Lista de Entregas")
+
+        tabela = df[[
+            "order_number",
+            "created_at",
+            "customer_name",
+            "product_title",
+            "quantity",
+            "fulfillment_status",
+            "rastreio",
+            "link",
+            "customer_email",
+            "customer_phone"
+        ]].copy()
+
+        tabela.rename(columns={
+            "order_number": "Pedido",
+            "created_at": "Data",
+            "customer_name": "Cliente",
+            "product_title": "Produto",
+            "quantity": "Qtd",
+            "fulfillment_status": "Status",
+            "rastreio": "Código de Rastreio",
+            "link": "Link de rastreio",
+            "customer_email": "Email",
+            "customer_phone": "Telefone"
+        }, inplace=True)
+
+        tabela = tabela.sort_values("Data", ascending=False)
+
+        st.dataframe(tabela, use_container_width=True)
+
+        # -------------------------------------------------
+        # 6) Ações rápidas
+        # -------------------------------------------------
+        st.subheader("⚡ Ações rápidas")
+        colA, colB = st.columns(2)
+
+        with colA:
+            if st.button("🔄 Atualizar página"):
+                st.rerun()
+
+        with colB:
+            st.info("Em breve: rastreamento automático em tempo real 🚀")
