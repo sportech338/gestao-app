@@ -4918,32 +4918,20 @@ if menu == "📦 Dashboard – Logística":
 
         df_entregas = st.session_state["pedidos"].copy()
 
-        # Mantém apenas pedidos já processados (fulfilled/shipped)
-        df_entregas = df_entregas[
-            df_entregas["fulfillment_status"].isin(["fulfilled", "shipped", "complete"])
-        ]
-
-        st.subheader("📦 Pedidos com rastreio disponível")
-
-        if df_entregas.empty:
-            st.warning("Nenhum pedido processado foi encontrado no período selecionado.")
-            st.stop()
-
         # -----------------------------------------------
-        # 🧩 Função para gerar link Base64 igual ao Apps Script
+        # 🔧 NOVO MÉTODO: Buscar rastreio de TODOS os pedidos
         # -----------------------------------------------
         import base64
 
         def gerar_link_rastreio(codigo):
+            """Gera link da página de rastreio da Sportech em Base64."""
             if not codigo or str(codigo).strip() == "":
                 return ""
             b64 = base64.urlsafe_b64encode(str(codigo).encode()).decode()
             return f"https://lojasportech.com/pages/rastreio?t={b64}"
 
-        # -----------------------------------------------
-        # 🔍 Buscar tracking number pela API da Shopify
-        # -----------------------------------------------
         def get_tracking(order_id):
+            """Busca tracking number real do pedido na Shopify."""
             try:
                 url = f"{BASE_URL}/orders/{order_id}/fulfillments.json"
                 r = requests.get(url, headers=HEADERS, timeout=30)
@@ -4956,34 +4944,41 @@ if menu == "📦 Dashboard – Logística":
                 return ""
 
         # -----------------------------------------------
-        # 🔄 Carregando rastreios
+        # 🔄 Carregando rastreios reais
         # -----------------------------------------------
         st.info("🔄 Obtendo códigos de rastreio dos pedidos…")
 
-        linhas = []
-        for row in df_entregas.itertuples():
-            tracking = get_tracking(row.order_id)
-            link_rastreio = gerar_link_rastreio(tracking)
-
-            linhas.append([
-                row.order_number,
-                row.customer_name,
-                row.product_title,
-                tracking,
-                link_rastreio
-            ])
-
-        df_rastreios = pd.DataFrame(linhas, columns=[
-            "Pedido",
-            "Cliente",
-            "Produto",
-            "Código de Rastreio",
-            "Link de Rastreamento"
-        ])
+        df_entregas["tracking_number"] = df_entregas["order_id"].apply(get_tracking)
+        df_entregas["tracking_link"] = df_entregas["tracking_number"].apply(gerar_link_rastreio)
 
         # -----------------------------------------------
-        # 📊 Tabela principal
+        # ❗ Filtrar apenas pedidos que realmente possuem rastreio
         # -----------------------------------------------
+        df_entregas = df_entregas[df_entregas["tracking_number"].astype(str).str.strip() != ""]
+
+        st.subheader("📦 Pedidos com rastreio disponível")
+
+        if df_entregas.empty:
+            st.warning("Nenhum pedido com código de rastreio foi encontrado no período.")
+            st.stop()
+
+        # -----------------------------------------------
+        # 📊 Tabela de rastreamento formatada
+        # -----------------------------------------------
+        df_rastreios = df_entregas[[
+            "order_number",
+            "customer_name",
+            "product_title",
+            "tracking_number",
+            "tracking_link"
+        ]].rename(columns={
+            "order_number": "Pedido",
+            "customer_name": "Cliente",
+            "product_title": "Produto",
+            "tracking_number": "Código de Rastreio",
+            "tracking_link": "Link de Rastreamento"
+        })
+
         st.dataframe(
             df_rastreios,
             use_container_width=True,
@@ -4991,7 +4986,7 @@ if menu == "📦 Dashboard – Logística":
         )
 
         # -----------------------------------------------
-        # 🔎 Rastrear manualmente no app
+        # 🔎 Rastreio manual dentro do app
         # -----------------------------------------------
         st.subheader("🔎 Rastrear um pedido manualmente")
         codigo_manual = st.text_input("Código de rastreio:")
@@ -5004,5 +4999,5 @@ if menu == "📦 Dashboard – Logística":
             st.markdown("---")
             st.markdown("### 📍 Rastreio em tempo real:")
 
-            # Exibe a página de rastreio diretamente no Streamlit
             st.components.v1.iframe(link_manual, height=600, scrolling=True)
+
