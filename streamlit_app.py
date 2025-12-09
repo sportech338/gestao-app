@@ -4877,95 +4877,87 @@ if menu == "📦 Dashboard – Logística":
     with aba3:
         st.title("🚚 Acompanhamento de Entregas")
 
-        # -------------------------------------------------
-        # 1) Verifica se os pedidos já foram carregados na aba Logística
-        # -------------------------------------------------
-        if "pedidos" not in st.session_state or st.session_state["pedidos"].empty:
-            st.warning("⚠️ Nenhum pedido carregado ainda. Vá na aba 'Logística' e selecione um período.")
+        import gspread
+        from google.oauth2.service_account import Credentials
+
+        # -------------------------------
+        # 1) Conectar ao Google Sheets
+        # -------------------------------
+        def get_gsheet_client():
+            scopes = [
+                "https://www.googleapis.com/auth/spreadsheets",
+                "https://www.googleapis.com/auth/drive"
+            ]
+            gcp_info = dict(st.secrets["gcp_service_account"])
+            if isinstance(gcp_info.get("private_key"), str):
+                gcp_info["private_key"] = gcp_info["private_key"].replace("\\n", "\n")
+            creds = Credentials.from_service_account_info(gcp_info, scopes=scopes)
+            return gspread.authorize(creds)
+
+        @st.cache_data(ttl=300)
+        def carregar_planilha_logistica():
+            client = get_gsheet_client()
+            sheet = client.open_by_key(st.secrets["sheets"]["spreadsheet_id"]).worksheet("Logística")
+            df = pd.DataFrame(sheet.get_all_records())
+            df.columns = df.columns.str.strip()
+            return df
+
+        # -------------------------------
+        # 2) Tentar carregar dados
+        # -------------------------------
+        try:
+            df_log = carregar_planilha_logistica()
+        except Exception as e:
+            st.error(f"❌ Erro ao carregar planilha de logística: {e}")
             st.stop()
 
-        df = st.session_state["pedidos"].copy()
-
-        # -------------------------------------------------
-        # 2) Normaliza colunas de rastreio e links
-        # -------------------------------------------------
-        if "rastreio" not in df.columns and "tracking_number" in df.columns:
-            df["rastreio"] = df["tracking_number"]
-
-        if "link" not in df.columns:
-            df["link"] = ""
-
-        # -------------------------------------------------
-        # 3) Métricas gerais de entrega
-        # -------------------------------------------------
+        # -------------------------------
+        # 3) Exibir métricas gerais
+        # -------------------------------
         st.subheader("📦 Visão Geral")
-        total = df["order_id"].nunique()
-        enviados = df[df["fulfillment_status"].isin(["fulfilled", "shipped", "complete"])]["order_id"].nunique()
-        pendentes = total - enviados
+
+        total = len(df_log)
+        com_rastreio = df_log[df_log["RASTREIO"].astype(str).str.strip() != ""]
+        sem_rastreio = total - len(com_rastreio)
 
         col1, col2, col3 = st.columns(3)
-        col1.metric("Total de pedidos", total)
-        col2.metric("Pedidos enviados", enviados)
-        col3.metric("Pendentes", pendentes)
+        col1.metric("Total de linhas", total)
+        col2.metric("Com código de rastreio", len(com_rastreio))
+        col3.metric("Sem rastreio", sem_rastreio)
 
-        # -------------------------------------------------
-        # 4) Busca de pedidos
-        # -------------------------------------------------
-        st.subheader("🔍 Buscar Pedido")
-        termo = st.text_input("Busque por nome, número do pedido, email ou rastreio:")
+        # -------------------------------
+        # 4) Campo de busca
+        # -------------------------------
+        st.subheader("🔍 Buscar na planilha")
+        termo = st.text_input("Digite parte do nome, pedido, rastreio ou email:")
 
+        df_exibir = df_log.copy()
         if termo.strip():
-            df = df[
-                df["customer_name"].str.contains(termo, case=False, na=False) |
-                df["order_number"].astype(str).str.contains(termo, na=False) |
-                df["customer_email"].str.contains(termo, case=False, na=False) |
-                df["rastreio"].astype(str).str.contains(termo, na=False)
+            termo_lower = termo.lower()
+            df_exibir = df_exibir[
+                df_exibir.apply(lambda row: termo_lower in str(row).lower(), axis=1)
             ]
 
-        # -------------------------------------------------
-        # 5) Monta tabela de entregas
-        # -------------------------------------------------
-        st.subheader("📄 Lista de Entregas")
+        # -------------------------------
+        # 5) Ordenação por data (se existir)
+        # -------------------------------
+        if "DATA" in df_exibir.columns:
+            try:
+                df_exibir["DATA"] = pd.to_datetime(df_exibir["DATA"], errors="coerce")
+                df_exibir = df_exibir.sort_values("DATA", ascending=False)
+            except:
+                pass
 
-        tabela = df[[
-            "order_number",
-            "created_at",
-            "customer_name",
-            "product_title",
-            "quantity",
-            "fulfillment_status",
-            "rastreio",
-            "link",
-            "customer_email",
-            "customer_phone"
-        ]].copy()
+        # -------------------------------
+        # 6) Mostrar tabela
+        # -------------------------------
+        st.subheader("📄 Registros da Logística (Planilha)")
+        st.dataframe(df_exibir, use_container_width=True)
 
-        tabela.rename(columns={
-            "order_number": "Pedido",
-            "created_at": "Data",
-            "customer_name": "Cliente",
-            "product_title": "Produto",
-            "quantity": "Qtd",
-            "fulfillment_status": "Status",
-            "rastreio": "Código de Rastreio",
-            "link": "Link de rastreio",
-            "customer_email": "Email",
-            "customer_phone": "Telefone"
-        }, inplace=True)
-
-        tabela = tabela.sort_values("Data", ascending=False)
-
-        st.dataframe(tabela, use_container_width=True)
-
-        # -------------------------------------------------
-        # 6) Ações rápidas
-        # -------------------------------------------------
+        # -------------------------------
+        # 7) Ações rápidas
+        # -------------------------------
         st.subheader("⚡ Ações rápidas")
-        colA, colB = st.columns(2)
-
-        with colA:
-            if st.button("🔄 Atualizar página"):
-                st.rerun()
-
-        with colB:
-            st.info("Em breve: rastreamento automático em tempo real 🚀")
+        if st.button("🔄 Recarregar"):
+            st.cache_data.clear()
+            st.rerun()
