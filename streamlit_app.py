@@ -249,6 +249,52 @@ def get_orders(start_date=None, end_date=None, only_paid=True, limit=250):
 
 
 # =====================================================
+# 🔄 SINCRONIZA SHOPIFY → PLANILHA LOGÍSTICA
+# =====================================================
+def sync_shopify_to_sheet():
+    import gspread
+    from google.oauth2.service_account import Credentials
+
+    # Conectar ao Sheets
+    scopes = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive"
+    ]
+    gcp_info = dict(st.secrets["gcp_service_account"])
+    gcp_info["private_key"] = gcp_info["private_key"].replace("\\n", "\n")
+
+    creds = Credentials.from_service_account_info(gcp_info, scopes=scopes)
+    client = gspread.authorize(creds)
+
+    sheet = client.open_by_key(st.secrets["sheets"]["spreadsheet_id"]).worksheet("Logística")
+
+    # Dados existentes
+    df_sheet = pd.DataFrame(sheet.get_all_records())
+    df_sheet.columns = df_sheet.columns.str.strip()
+
+    # Novos pedidos pagos
+    df_new = get_paid_orders_today()
+    if df_new.empty:
+        return "Nenhum pedido pago hoje."
+
+    # Filtrar apenas pedidos novos
+    ids_existentes = set(df_sheet["ID"].astype(str))
+    novos = df_new[~df_new["ID"].astype(str).isin(ids_existentes)]
+
+    if novos.empty:
+        return "Nenhum pedido novo para adicionar."
+
+    # Inserir na planilha
+    linhas = novos.values.tolist()
+    start_row = len(df_sheet) + 2
+    end_row = start_row + len(linhas) - 1
+
+    sheet.update(f"A{start_row}:J{end_row}", linhas)
+
+    return f"{len(linhas)} novo(s) pedido(s) adicionados."
+
+
+# =====================================================
 # Buscar clientes/pedidos na Shopify (nome, e-mail ou número do pedido)
 # =====================================================
 @st.cache_data(ttl=300)
@@ -4881,6 +4927,74 @@ if menu == "📦 Dashboard – Logística":
         from google.oauth2.service_account import Credentials
 
         # -------------------------------
+        # 🔁 SINCRONIZAR SHOPIFY → PLANILHA
+        # -------------------------------
+        @st.cache_data(ttl=300)
+        def get_paid_orders_today():
+            hoje = datetime.now(APP_TZ).date()
+            df = get_orders(start_date=hoje, end_date=hoje, only_paid=True)
+            if df.empty:
+                return pd.DataFrame()
+
+            df = df.rename(columns={
+                "order_number": "ID",
+                "created_at": "DATA",
+                "customer_name": "CLIENTE",
+                "financial_status": "STATUS",
+                "product_title": "PRODUTO",
+                "quantity": "QUANTIDADE",
+                "customer_email": "EMAIL"
+            })
+
+            df["ID"] = df["ID"].astype(str).apply(lambda x: f"#{x}")
+            df["RASTREIO"] = ""
+            df["LINK"] = ""
+            df["OBSERVAÇÕES"] = ""
+
+            return df[[
+                "DATA", "CLIENTE", "STATUS", "PRODUTO", "QUANTIDADE",
+                "EMAIL", "ID", "RASTREIO", "LINK", "OBSERVAÇÕES"
+            ]]
+
+        def sync_shopify_to_sheet():
+            df_new = get_paid_orders_today()
+            if df_new.empty:
+                return "Nenhum pedido pago novo encontrado hoje."
+
+            scopes = [
+                "https://www.googleapis.com/auth/spreadsheets",
+                "https://www.googleapis.com/auth/drive"
+            ]
+            gcp_info = dict(st.secrets["gcp_service_account"])
+            gcp_info["private_key"] = gcp_info["private_key"].replace("\\n", "\n")
+            creds = Credentials.from_service_account_info(gcp_info, scopes=scopes)
+            client = gspread.authorize(creds)
+            sheet = client.open_by_key(st.secrets["sheets"]["spreadsheet_id"]).worksheet("Logística")
+
+            df_sheet = pd.DataFrame(sheet.get_all_records())
+            df_sheet.columns = df_sheet.columns.str.strip()
+
+            ids_existentes = df_sheet["ID"].astype(str).tolist()
+            novos = df_new[~df_new["ID"].astype(str).isin(ids_existentes)]
+
+            if novos.empty:
+                return "Nenhum pedido novo para adicionar."
+
+            linhas = novos.values.tolist()
+            start = len(df_sheet) + 2
+            end = start + len(linhas) - 1
+            sheet.update(f"A{start}:J{end}", linhas)
+
+            return f"{len(linhas)} pedido(s) novo(s) adicionados com sucesso!"
+
+        st.subheader("🔄 Sincronização Shopify")
+        if st.button("📥 Buscar pedidos pagos de hoje"):
+            resultado = sync_shopify_to_sheet()
+            st.success(resultado)
+            st.cache_data.clear()
+            st.rerun()
+
+        # -------------------------------
         # 1) Conectar ao Google Sheets
         # -------------------------------
         def get_gsheet_client():
@@ -4935,7 +5049,6 @@ if menu == "📦 Dashboard – Logística":
         if termo.strip():
             termo_lower = termo.lower()
 
-            # ⭐ SE a busca começar com "#", buscar diretamente na coluna de pedido
             if termo.startswith("#") and "ID" in df_log.columns:
                 df_exibir = df_log[
                     df_log["ID"].astype(str).str.lower().str.contains(termo_lower)
