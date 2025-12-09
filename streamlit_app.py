@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -1537,18 +1536,9 @@ if menu == "📊 Dashboard – Tráfego Pago":
             custos_base_A = df_custos[df_custos["Produto"].isin(itens_a)].copy()
             custos_base_B = df_custos[df_custos["Produto"].isin(itens_b)].copy()
         else:
-            # 👉 Quando o produto específico está selecionado,
-            #    filtra CORRETAMENTE por Produto + Variante
-            custos_base_A = df_custos[
-                (df_custos["Produto"] == produto_escolhido) &
-                (df_custos["Variante"].isin(itens_a))
-            ].copy()
-
-            custos_base_B = df_custos[
-                (df_custos["Produto"] == produto_escolhido) &
-                (df_custos["Variante"].isin(itens_b))
-            ].copy()
-
+            # 👉 Quando o produto específico está selecionado, compara apenas por variante
+            custos_base_A = df_custos[df_custos["Variante"].isin(itens_a)].copy()
+            custos_base_B = df_custos[df_custos["Variante"].isin(itens_b)].copy()
 
         # 🔗 Adiciona colunas de quantidade correspondentes
         custos_base_A = custos_base_A.merge(
@@ -1778,21 +1768,6 @@ if menu == "📊 Dashboard – Tráfego Pago":
             # Aplica para os dois períodos
             df_a = distribuir_investimento(df_a, invest_total_a, "Qtd A")
             df_b = distribuir_investimento(df_b, invest_total_b, "Qtd B")
-
-            # -------------------------------------------------
-            # 🔒 Ajuste especial: variante "Oferta Especial" é Order Bump → investimento = 0
-            # -------------------------------------------------
-            def zerar_investimento_orderbump(df):
-                if label_nivel not in df.columns:
-                    return df
-                mask = df[label_nivel].astype(str).str.contains("Oferta Especial", case=False, na=False)
-                df.loc[mask, "Invest. (R$)"] = 0
-                return df
-
-            df_a = zerar_investimento_orderbump(df_a)
-            df_b = zerar_investimento_orderbump(df_b)
-
-            st.info("ℹ️ Investimento zerado automaticamente para a variante 'Oferta Especial' (Order Bump).")
 
             # Feedback visual
             st.success(
