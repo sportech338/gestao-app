@@ -1461,8 +1461,8 @@ if menu == "📊 Dashboard – Tráfego Pago":
 
             if pedidos_cached.empty or (not range_covers(loaded_range, start_date, end_date)):
                 with st.spinner(f"🔄 Carregando pedidos de {produto} de {start_date:%d/%m/%Y} a {end_date:%d/%m/%Y}..."):
-                    pedidos_new = get_orders(start_date=start_date, end_date=end_date, only_paid=True)
-                    pedidos_new["ProdutoFiltro"] = produto  # 👈 cache separado por produto
+                    pedidos_new = get_orders(start_date=start_date, end_date=end_date)
+                    pedidos_new["ProdutoFiltro"] = produto
                     st.session_state["pedidos"] = pedidos_new
                     st.session_state["periodo_atual"] = (start_date, end_date)
                     return pedidos_new
