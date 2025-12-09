@@ -5033,10 +5033,11 @@ if menu == "📦 Dashboard – Logística":
             st.info("Carregue pedidos na aba 'Controle Operacional' para ver entregas.")
             st.stop()
 
+        # Agora df_entregas já vem com fulfillments incorporado
         df_entregas = get_all_paid_orders().copy()
 
         # -----------------------------------------------
-        # 📌 PEGAR CÓDIGO DE RASTREIO VIA SHOPIFY
+        # 📌 Funções auxiliares
         # -----------------------------------------------
         import base64
         from bs4 import BeautifulSoup
@@ -5049,25 +5050,20 @@ if menu == "📦 Dashboard – Logística":
             b64 = base64.urlsafe_b64encode(str(codigo).encode()).decode()
             return f"https://lojasportech.com/pages/rastreio?t={b64}"
 
-        def get_tracking(order_id):
-            try:
-                url = f"{BASE_URL}/orders/{order_id}/fulfillments.json"
-                r = requests.get(url, headers=HEADERS, timeout=30)
-                data = r.json().get("fulfillments", [])
-                if not data:
-                    return ""
-                track_info = data[0].get("tracking_info", {})
-                return track_info.get("number", "") or ""
-            except:
-                return ""
+        # -----------------------------------------------
+        # 📦 Extrair tracking de fulfillment SEM nova requisição
+        # -----------------------------------------------
+        st.info("🔄 Obtendo códigos de rastreio direto da Shopify…")
 
-        # -------------------------------------------------
-        # 📦 Prepara tabela de rastreios
-        # -------------------------------------------------
-        st.info("🔄 Obtendo códigos de rastreio dos pedidos…")
+        def extract_tracking(f):
+            if isinstance(f, list) and len(f) > 0:
+                info = f[0].get("tracking_info", {})
+                return info.get("number", "") or ""
+            return ""
 
-        df_entregas["tracking_number"] = df_entregas["order_id"].apply(get_tracking)
-        df_entregas = df_entregas[df_entregas["tracking_number"].astype(str).str.strip() != ""]
+        df_entregas["tracking_number"] = df_entregas["fulfillments"].apply(extract_tracking)
+
+        df_entregas = df_entregas[df_entregas["tracking_number"] != ""]
         df_entregas["tracking_link"] = df_entregas["tracking_number"].apply(gerar_link_rastreio)
 
         if df_entregas.empty:
@@ -5149,7 +5145,6 @@ if menu == "📦 Dashboard – Logística":
                 sheet = sh.add_worksheet("Logística", rows=6000, cols=20)
             return sheet
 
-        # função final progressiva (20 por lote)
         def exportar_todos_pedidos_progressivo():
             st.info("🔄 Exportando pedidos aos poucos (20 por lote)...")
 
@@ -5185,16 +5180,15 @@ if menu == "📦 Dashboard – Logística":
                     nome = f"{customer.get('first_name','')} {customer.get('last_name','')}".strip()
                     email = customer.get("email") or "(sem email)"
 
-                    tracking = ""
+                    # tracking já vem no fulfillment da própria requisição
                     try:
-                        fulf = requests.get(
-                            f"{BASE_URL}/orders/{o['id']}/fulfillments.json",
-                            headers=HEADERS, timeout=15
-                        ).json().get("fulfillments", [])
-                        if fulf:
-                            tracking = fulf[0].get("tracking_info", {}).get("number", "")
+                        fulf = o.get("fulfillments", [])
+                        tracking = (
+                            fulf[0].get("tracking_info", {}).get("number", "")
+                            if fulf else ""
+                        )
                     except:
-                        pass
+                        tracking = ""
 
                     link = gerar_link_rastreio(tracking)
 
@@ -5215,16 +5209,14 @@ if menu == "📦 Dashboard – Logística":
                         lote.append(linha)
                         total_processado += 1
 
-                        # quando enche 20 linhas → envia
                         if len(lote) == 20:
                             sheet.append_rows(lote, value_input_option="USER_ENTERED")
                             lote = []
                             log.write(f"📦 Processados: {total_processado} linhas...")
-                            progresso.progress(min(1.0, total_processado / 5000))  # estimativa
+                            progresso.progress(min(1.0, total_processado / 5000))
 
                 url = r.links.get("next", {}).get("url")
 
-            # envia o resto
             if lote:
                 sheet.append_rows(lote, value_input_option="USER_ENTERED")
 
