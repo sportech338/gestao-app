@@ -5111,33 +5111,51 @@ if menu == "📦 Dashboard – Logística":
         st.dataframe(df_exibir, use_container_width=True)
 
         # =====================================================
-        # 📬 ATUALIZAR OBSERVAÇÕES DO RASTREIO
+        # 📬 ATUALIZAR OBSERVAÇÕES DO RASTREIO — LINHA POR LINHA
         # =====================================================
         st.subheader("📬 Atualizar status dos rastreios")
 
         if st.button("🔄 Atualizar rastreamento"):
-            with st.spinner("Buscando eventos de rastreamento..."):
+            with st.spinner("Atualizando rastreios linha por linha..."):
 
-                # Atualiza a coluna de Observações no dataframe
-                df_atualizado = df_log.copy()
-                df_atualizado = atualizar_observacoes(df_atualizado)
+                client = get_gsheet_client()
+                sheet = client.open_by_key(st.secrets["sheets"]["spreadsheet_id"]).worksheet("Logística")
 
-                # Salvar de volta na planilha
-                try:
-                    client = get_gsheet_client()
-                    sheet = client.open_by_key(st.secrets["sheets"]["spreadsheet_id"]).worksheet("Logística")
+                df = df_log.copy()
+                total_linhas = len(df)
 
-                    values = [df_atualizado.columns.tolist()] + df_atualizado.astype(str).values.tolist()
+                progresso = st.progress(0)
+                log_area = st.empty()
 
-                    sheet.batch_clear(["A:Z"])
-                    sheet.update(values)
+                # Coluna das observações (1 = A)
+                col_obs = df.columns.get_loc("OBSERVAÇÕES") + 1
 
-                    st.success("✅ OBSERVAÇÕES atualizadas com sucesso!")
-                    st.cache_data.clear()
-                    st.rerun()
+                for i, row in df.iterrows():
 
-                except Exception as e:
-                    st.error(f"❌ Erro ao atualizar planilha: {e}")
+                    linha_planilha = i + 2  # Primeira linha de dados (linha 1 é cabeçalho)
+                    link = str(row.get("LINK", "")).strip()
+
+                    # Caso não tenha link válido
+                    if not link.startswith("http"):
+                        sheet.update_cell(linha_planilha, col_obs, "Sem link")
+                        log_area.write(f"⚠️ Linha {linha_planilha}: Sem link")
+                        progresso.progress((i + 1) / total_linhas)
+                        continue
+
+                    # Extrai a informação da página de rastreio
+                    status = extrair_status_rastreio(link)
+
+                    # Atualiza apenas a célula da observação
+                    sheet.update_cell(linha_planilha, col_obs, status)
+
+                    log_area.write(f"➡️ Linha {linha_planilha}: {status}")
+                    progresso.progress((i + 1) / total_linhas)
+
+                    time.sleep(0.8)  # Evita limite de requisições da API
+
+                st.success("🎉 Todos os rastreios foram atualizados com sucesso!")
+                st.cache_data.clear()
+                st.rerun()
 
 
         # ---------------------------------------
