@@ -4959,16 +4959,6 @@ if menu == "📦 Dashboard – Logística":
 
             return f"{len(linhas)} pedido(s) novo(s) adicionados com sucesso!"
 
-        # ---------------------------------------
-        # Botão de sincronização
-        # ---------------------------------------
-        st.subheader("🔄 Sincronização Shopify")
-        if st.button("📥 Buscar pedidos pagos de hoje"):
-            resultado = sync_shopify_to_sheet()
-            st.success(resultado)
-            st.cache_data.clear()
-            st.rerun()
-
         # -------------------------------
         # 1) Conectar ao Google Sheets
         # -------------------------------
@@ -5056,3 +5046,13 @@ if menu == "📦 Dashboard – Logística":
         # -------------------------------
         st.subheader("📄 Registros da Logística (Planilha)")
         st.dataframe(df_exibir, use_container_width=True)
+
+        # ---------------------------------------
+        # Botão de sincronização
+        # ---------------------------------------
+        st.subheader("🔄 Sincronização Shopify")
+        if st.button("📥 Buscar pedidos pagos de hoje"):
+            resultado = sync_shopify_to_sheet()
+            st.success(resultado)
+            st.cache_data.clear()
+            st.rerun()
