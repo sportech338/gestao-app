@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -140,151 +141,35 @@ def get_products_with_variants(limit=250):
     return df_variants
 
 # =====================================================
-# 📦 PEDIDOS — BUSCA COMPLETA DE TODOS OS PAGOS
+# Pedidos
 # =====================================================
-
-@st.cache_data(ttl=900)
-def get_all_paid_orders(limit=250):
-    """
-    Baixa TODOS os pedidos pagos da Shopify.
-    Usa paginação automática e retorna uma linha por item.
-    """
-
-    url = f"{BASE_URL}/orders.json?status=any&limit={limit}&order=created_at asc"
-    all_rows = []
-    s = _get_session()
-
-    while url:
-        r = s.get(url, headers=HEADERS, timeout=60)
-        r.raise_for_status()
-
-        data = r.json()
-        orders = data.get("orders", [])
-
-        if not orders:
-            break
-
-        # -------------------------------------
-        # PROCESSA CADA PEDIDO
-        # -------------------------------------
-        for o in orders:
-
-            # 🔥 pega só pedidos pagos
-            if o.get("financial_status") not in ["paid", "partially_paid"]:
-                continue
-
-            customer = o.get("customer") or {}
-            shipping = o.get("shipping_address") or {}
-            shipping_lines = o.get("shipping_lines") or [{}]
-
-            nome_cliente = (
-                f"{customer.get('first_name','')} {customer.get('last_name','')}".strip()
-                or "(Cliente não informado)"
-            )
-
-            email_cliente = (
-                customer.get("email")
-                or o.get("email")
-                or o.get("contact_email")
-                or "(sem email)"
-            )
-
-            telefone = (
-                shipping.get("phone")
-                or customer.get("phone")
-                or o.get("phone")
-                or "(sem telefone)"
-            )
-
-            # CPF (vários possíveis lugares)
-            cpf = None
-            for attr in o.get("note_attributes", []):
-                if "cpf" in str(attr.get("name", "").lower()):
-                    cpf = attr.get("value")
-                    break
-            if not cpf:
-                cpf = shipping.get("company") or "(sem cpf)"
-
-            # Endereço
-            endereco = shipping.get("address1", "(sem endereço)")
-            bairro   = shipping.get("address2", "(sem bairro)")
-            cidade   = shipping.get("city",     "(sem cidade)")
-            estado   = shipping.get("province", "(sem estado)")
-            cep      = shipping.get("zip",      "(sem cep)")
-            pais     = shipping.get("country",  "(sem país)")
-
-            # -------------------------------------
-            # PROCESSA ITENS DO PEDIDO
-            # -------------------------------------
-            for it in o.get("line_items", []):
-                preco = float(it.get("price") or 0)
-                qtd   = int(it.get("quantity") or 0)
-
-                all_rows.append({
-                    "order_id":           o.get("id"),
-                    "order_number":       o.get("order_number"),
-                    "created_at":         o.get("created_at"),
-                    "financial_status":   o.get("financial_status"),
-                    "fulfillment_status": o.get("fulfillment_status"),
-
-                    "customer_name":  nome_cliente,
-                    "customer_email": email_cliente,
-                    "customer_phone": telefone,
-                    "customer_cpf":   cpf,
-
-                    "product_title":  it.get("title"),
-                    "variant_title":  it.get("variant_title"),
-                    "variant_id":     it.get("variant_id"),
-                    "sku":            it.get("sku"),
-
-                    "quantity":       qtd,
-                    "price":          preco,
-                    "line_revenue":   preco * qtd,
-
-                    "forma_entrega": shipping_lines[0].get("title", "N/A"),
-                    "endereco": endereco,
-                    "bairro":   bairro,
-                    "cidade":   cidade,
-                    "estado":   estado,
-                    "cep":      cep,
-                    "pais":     pais,
-                })
-
-        # -------------------------------------
-        # PAGINAÇÃO - LINK HEADER
-        # -------------------------------------
-        url = r.links.get("next", {}).get("url")
-
-    return pd.DataFrame(all_rows)
-
 @st.cache_data(ttl=600)
-def get_orders(start_date, end_date, limit=250):
-    """
-    Baixa pedidos da Shopify APENAS dentro do período selecionado.
-    Usada pela aba CONTROLE OPERACIONAL.
-    """
+def get_orders(start_date=None, end_date=None, only_paid=True, limit=250):
+    """Baixa pedidos da Shopify com filtro dinâmico de período, garantindo o e-mail do cliente e puxando CPF, telefone e endereço."""
+    hoje = datetime.now(APP_TZ).date()
+    if start_date is None:
+        start_date = hoje
+    if end_date is None:
+        end_date = hoje
 
     start_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=APP_TZ)
-    end_dt   = datetime.combine(end_date,   datetime.max.time(), tzinfo=APP_TZ)
+    end_dt = datetime.combine(end_date, datetime.max.time(), tzinfo=APP_TZ)
 
     start_str = start_dt.strftime("%Y-%m-%dT%H:%M:%S%z")
-    end_str   = end_dt.strftime("%Y-%m-%dT%H:%M:%S%z")
+    end_str = end_dt.strftime("%Y-%m-%dT%H:%M:%S%z")
 
     url = f"{BASE_URL}/orders.json?limit={limit}&status=any&created_at_min={start_str}&created_at_max={end_str}"
     all_rows = []
-    s = _get_session()
 
+    s = _get_session()
     while url:
         r = s.get(url, headers=HEADERS, timeout=60)
         r.raise_for_status()
-
         data = r.json()
         orders = data.get("orders", [])
 
         for o in orders:
-
-            # Apenas pedidos pagos
-            if o.get("financial_status") not in ["paid", "partially_paid"]:
+            if only_paid and o.get("financial_status") not in ["paid", "partially_paid"]:
                 continue
 
             customer = o.get("customer") or {}
@@ -292,7 +177,7 @@ def get_orders(start_date, end_date, limit=250):
             shipping_lines = o.get("shipping_lines") or [{}]
 
             nome_cliente = (
-                f"{customer.get('first_name','')} {customer.get('last_name','')}".strip()
+                f"{customer.get('first_name', '')} {customer.get('last_name', '')}".strip()
                 or "(Cliente não informado)"
             )
 
@@ -303,6 +188,7 @@ def get_orders(start_date, end_date, limit=250):
                 or "(sem email)"
             )
 
+            # 📞 Telefone e CPF
             telefone = (
                 shipping.get("phone")
                 or customer.get("phone")
@@ -310,55 +196,52 @@ def get_orders(start_date, end_date, limit=250):
                 or "(sem telefone)"
             )
 
-            # CPF (vários possíveis lugares)
+            # 🧾 CPF pode vir de vários lugares
             cpf = None
+            # 1️⃣ Em note_attributes (checkout customizado)
             for attr in o.get("note_attributes", []):
-                if "cpf" in attr.get("name","").lower():
+                if "cpf" in str(attr.get("name", "")).lower():
                     cpf = attr.get("value")
                     break
+            # 2️⃣ Às vezes vem no campo company (Shopify padrão)
             if not cpf:
                 cpf = shipping.get("company") or "(sem cpf)"
 
+            # 🏠 Endereço completo
             endereco = shipping.get("address1", "(sem endereço)")
-            bairro   = shipping.get("address2", "(sem bairro)")
-            cidade   = shipping.get("city",     "(sem cidade)")
-            estado   = shipping.get("province", "(sem estado)")
-            cep      = shipping.get("zip",      "(sem cep)")
-            pais     = shipping.get("country",  "(sem país)")
+            bairro = shipping.get("address2", "(sem bairro)")
+            cidade = shipping.get("city", "(sem cidade)")
+            estado = shipping.get("province", "(sem estado)")
+            cep = shipping.get("zip", "(sem cep)")
+            pais = shipping.get("country", "(sem país)")
 
             for it in o.get("line_items", []):
                 preco = float(it.get("price") or 0)
-                qtd   = int(it.get("quantity") or 0)
-
+                qtd = int(it.get("quantity", 0))
                 all_rows.append({
-                    "order_id":     o.get("id"),
+                    "order_id": o.get("id"),
                     "order_number": o.get("order_number"),
-                    "created_at":   o.get("created_at"),
-
-                    "financial_status":   o.get("financial_status"),
+                    "created_at": o.get("created_at"),
+                    "financial_status": o.get("financial_status"),
                     "fulfillment_status": o.get("fulfillment_status"),
-
-                    "customer_name":  nome_cliente,
+                    "customer_name": nome_cliente,
                     "customer_email": email_cliente,
                     "customer_phone": telefone,
-                    "customer_cpf":   cpf,
-
+                    "customer_cpf": cpf,
                     "product_title": it.get("title"),
                     "variant_title": it.get("variant_title"),
-                    "variant_id":    it.get("variant_id"),
-                    "sku":           it.get("sku"),
-
-                    "quantity":     qtd,
-                    "price":        preco,
+                    "variant_id": it.get("variant_id"),
+                    "sku": it.get("sku"),
+                    "quantity": qtd,
+                    "price": preco,
                     "line_revenue": preco * qtd,
-
                     "forma_entrega": shipping_lines[0].get("title", "N/A"),
                     "endereco": endereco,
-                    "bairro":   bairro,
-                    "cidade":   cidade,
-                    "estado":   estado,
-                    "cep":      cep,
-                    "pais":     pais,
+                    "bairro": bairro,
+                    "cidade": cidade,
+                    "estado": estado,
+                    "cep": cep,
+                    "pais": pais,
                 })
 
         url = r.links.get("next", {}).get("url")
@@ -367,48 +250,54 @@ def get_orders(start_date, end_date, limit=250):
 
 
 # =====================================================
-# 🔍 BUSCA DE PEDIDOS (NOME, EMAIL, Nº DO PEDIDO)
+# Buscar clientes/pedidos na Shopify (nome, e-mail ou número do pedido)
 # =====================================================
-
 @st.cache_data(ttl=300)
 def search_orders_shopify(query: str, limit=100):
     """
     Busca pedidos diretamente na Shopify com base em nome, e-mail ou número do pedido.
+    Ignora outros campos e evita baixar todos os pedidos.
     """
     if not query.strip():
         return pd.DataFrame()
 
     search_q = query.strip()
 
-    # Número do pedido
+    # 🔍 Caso pareça número (pedido ou ID)
     if search_q.isdigit():
         url = f"{BASE_URL}/orders.json?limit={limit}&status=any&name={search_q}"
-
-    # Email
-    elif "@" in search_q:
-        url = f"{BASE_URL}/orders.json?limit={limit}&status=any&email={search_q}"
-
-    # Nome
     else:
-        url = f"{BASE_URL}/orders.json?limit={limit}&status=any&query=customer_name:{search_q}"
+        # 🔍 Caso seja e-mail ou nome (Shopify aceita filtro direto por e-mail)
+        if "@" in search_q:
+            url = f"{BASE_URL}/orders.json?limit={limit}&status=any&email={search_q}"
+        else:
+            # 🔍 Caso seja nome (fazemos busca genérica mas apenas pelo campo de cliente)
+            url = f"{BASE_URL}/orders.json?limit={limit}&status=any&query=customer_name:{search_q}"
 
     s = _get_session()
     r = s.get(url, headers=HEADERS, timeout=60)
     r.raise_for_status()
-    orders = r.json().get("orders", [])
+    data = r.json().get("orders", [])
 
     all_rows = []
-
-    for o in orders:
+    for o in data:
         customer = o.get("customer") or {}
         shipping = o.get("shipping_address") or {}
         shipping_lines = o.get("shipping_lines") or [{}]
-
         nome_cliente = (
-            f"{customer.get('first_name','')} {customer.get('last_name','')}".strip()
+            f"{customer.get('first_name', '')} {customer.get('last_name', '')}".strip()
             or "(Cliente não informado)"
         )
 
+        # 🔎 Filtra novamente localmente, só para garantir correspondência precisa
+        if (
+            search_q.lower() not in nome_cliente.lower()
+            and search_q.lower() not in str(o.get("order_number", "")).lower()
+            and search_q.lower() not in str(customer.get("email", "")).lower()
+        ):
+            continue
+
+        # ✅ Captura de e-mail mais robusta
         email_cliente = (
             customer.get("email")
             or o.get("email")
@@ -417,6 +306,8 @@ def search_orders_shopify(query: str, limit=100):
         )
 
         for it in o.get("line_items", []):
+            preco = float(it.get("price") or 0)
+            qtd = int(it.get("quantity", 0))
             all_rows.append({
                 "order_id": o.get("id"),
                 "order_number": o.get("order_number"),
@@ -429,9 +320,9 @@ def search_orders_shopify(query: str, limit=100):
                 "variant_title": it.get("variant_title"),
                 "variant_id": it.get("variant_id"),
                 "sku": it.get("sku"),
-                "quantity": it.get("quantity"),
-                "price": float(it.get("price") or 0),
-                "line_revenue": float(it.get("price") or 0) * int(it.get("quantity") or 0),
+                "quantity": qtd,
+                "price": preco,
+                "line_revenue": preco * qtd,
                 "forma_entrega": shipping_lines[0].get("title", "N/A"),
                 "estado": shipping.get("province", "N/A"),
                 "cidade": shipping.get("city", "N/A"),
@@ -440,14 +331,13 @@ def search_orders_shopify(query: str, limit=100):
     return pd.DataFrame(all_rows)
 
 
-
 # =====================================================
-# 📦 Fulfillment — versão robusta com fallback 422 DSers
+# Fulfillment (processar pedido) — versão com fallback 422 DSers
 # =====================================================
-
 def create_fulfillment(order_id, tracking_number=None, tracking_company="Correios"):
     """
     Cria fulfillment pela API da Shopify, mesmo para pedidos DSers.
+    Se ocorrer erro 422, reatribui automaticamente o fulfillment_order e tenta novamente.
     """
 
     headers = {
@@ -455,6 +345,7 @@ def create_fulfillment(order_id, tracking_number=None, tracking_company="Correio
         "X-Shopify-Access-Token": ACCESS_TOKEN
     }
 
+    # 1️⃣ Buscar fulfillment orders do pedido
     f_orders_url = f"{BASE_URL}/orders/{order_id}/fulfillment_orders.json"
     f_orders_resp = requests.get(f_orders_url, headers=headers)
     f_orders_resp.raise_for_status()
@@ -465,6 +356,7 @@ def create_fulfillment(order_id, tracking_number=None, tracking_company="Correio
 
     fulfillment_orders = f_orders["fulfillment_orders"]
 
+    # 2️⃣ Tentar criar fulfillment para cada fulfillment_order encontrado
     for f_order in fulfillment_orders:
         fulfillment_order_id = f_order["id"]
 
@@ -484,7 +376,7 @@ def create_fulfillment(order_id, tracking_number=None, tracking_company="Correio
         url_fulfillment = f"{BASE_URL}/fulfillments.json"
         resp = requests.post(url_fulfillment, headers=headers, json=payload)
 
-        # fallback 422 DSers
+        # 3️⃣ Se der erro 422 → reatribui o fulfillment order para o seu location e tenta novamente
         if resp.status_code == 422:
             try:
                 new_location_id = f_order.get("assigned_location_id")
@@ -492,26 +384,27 @@ def create_fulfillment(order_id, tracking_number=None, tracking_company="Correio
                     move_url = f"{BASE_URL}/fulfillment_orders/{fulfillment_order_id}/move.json"
                     move_payload = {"fulfillment_order": {"new_location_id": new_location_id}}
                     move_resp = requests.post(move_url, headers=headers, json=move_payload)
-
                     if move_resp.status_code in [200, 201]:
+                        # tenta novamente após mover
                         resp = requests.post(url_fulfillment, headers=headers, json=payload)
-
             except Exception as err:
                 print(f"⚠️ Erro ao reatribuir fulfillment order: {err}")
 
+        # 4️⃣ Se funcionar, retorna o resultado
         if resp.status_code in [200, 201]:
             return resp.json()
+        else:
+            print(f"❌ Falha ao criar fulfillment (Pedido {order_id}): {resp.status_code} → {resp.text}")
 
+    # 5️⃣ Se nenhuma tentativa funcionar, lança erro
     raise Exception(f"❌ Não foi possível criar fulfillment para o pedido {order_id}")
 
-
 # =====================================================
-# 📝 LOGGING (opcional)
+# 🚀 LOGGING (opcional)
 # =====================================================
 def log_fulfillment(order_id):
     with open("fulfillment_log.txt", "a", encoding="utf-8") as f:
         f.write(f"{datetime.now(APP_TZ)} - Pedido {order_id} processado\n")
-
 
 # =============== Config & Estilos ===============
 st.markdown("""
@@ -912,15 +805,7 @@ def fetch_insights_daily(act_id: str, token: str, api_version: str,
                 if code == 100 and _try_extra:
                     # refaz sem extras só para ESTA janela
                     return _fetch_range(_since, _until, _try_extra=False)
-
-                # =====================================================
-                #  🔧 CORREÇÃO: NÃO QUEBRA O APP AO INVÉS DO RAISE
-                # =====================================================
-                st.warning(
-                    f"⚠️ Meta Ads retornou erro {resp.status_code} "
-                    f"(code={code}, subcode={sub}): {msg}"
-                )
-                return []  # devolve vazio e segue sem travar
+                raise RuntimeError(f"Graph API error {resp.status_code} | code={code} subcode={sub} | {msg}")
 
             for rec in payload.get("data", []):
                 actions = rec.get("actions") or []
@@ -1461,8 +1346,8 @@ if menu == "📊 Dashboard – Tráfego Pago":
 
             if pedidos_cached.empty or (not range_covers(loaded_range, start_date, end_date)):
                 with st.spinner(f"🔄 Carregando pedidos de {produto} de {start_date:%d/%m/%Y} a {end_date:%d/%m/%Y}..."):
-                    pedidos_new = get_orders(start_date=start_date, end_date=end_date)
-                    pedidos_new["ProdutoFiltro"] = produto
+                    pedidos_new = get_orders(start_date=start_date, end_date=end_date, only_paid=True)
+                    pedidos_new["ProdutoFiltro"] = produto  # 👈 cache separado por produto
                     st.session_state["pedidos"] = pedidos_new
                     st.session_state["periodo_atual"] = (start_date, end_date)
                     return pedidos_new
@@ -1606,7 +1491,7 @@ if menu == "📊 Dashboard – Tráfego Pago":
         def carregar_planilha_custos(fornecedor):
             """Carrega a planilha de custos e cria cache separado por fornecedor."""
             client = get_gsheet_client()
-            sheet = client.open_by_key(st.secrets["sheets"]["spreadsheet_id"]).worksheet("Produto | Precificação")
+            sheet = client.open_by_key(st.secrets["sheets"]["spreadsheet_id"]).sheet1
             df = pd.DataFrame(sheet.get_all_records())
             df.columns = df.columns.str.strip()
 
@@ -2436,7 +2321,7 @@ if menu == "📊 Dashboard – Tráfego Pago":
 
                 creds = Credentials.from_service_account_info(gcp_info, scopes=scopes)
                 client = gspread.authorize(creds)
-                sheet = client.open_by_key(st.secrets["sheets"]["spreadsheet_id"]).worksheet("Produto | Precificação")
+                sheet = client.open_by_key(st.secrets["sheets"]["spreadsheet_id"]).sheet1
 
                 df_safe = (
                     df.copy()
@@ -4488,7 +4373,7 @@ if menu == "📦 Dashboard – Logística":
         elif periodo_atual != (start_date, end_date):
             with st.spinner("🔄 Carregando dados da Shopify..."):
                 produtos = get_products_with_variants()
-                pedidos = get_orders(start_date, end_date)
+                pedidos = get_orders(start_date=start_date, end_date=end_date)
                 st.session_state["produtos"] = produtos
                 st.session_state["pedidos"] = pedidos
                 st.session_state["periodo_atual"] = (start_date, end_date)
@@ -4927,18 +4812,10 @@ if menu == "📦 Dashboard – Logística":
 
         @st.cache_data(ttl=600)
         def carregar_planilha_custos():
-            """
-            Carrega custos da aba 'Produto | Precificação' da planilha.
-            """
             client = get_gsheet_client()
-
-            # 👉 Puxa a aba correta (ANTES estava sheet1)
-            sh = client.open_by_key(st.secrets["sheets"]["spreadsheet_id"])
-            sheet = sh.worksheet("Produto | Precificação")
-
+            sheet = client.open_by_key(st.secrets["sheets"]["spreadsheet_id"]).sheet1
             df = pd.DataFrame(sheet.get_all_records())
             df.columns = df.columns.str.strip()
-
             mapa_colunas = {
                 "Produto": "Produto",
                 "Variantes": "Variante",
@@ -4953,7 +4830,6 @@ if menu == "📦 Dashboard – Logística":
         except Exception as e:
             st.error(f"❌ Erro ao carregar planilha de custos: {e}")
             df_custos = pd.DataFrame(columns=["Produto", "Variante", "Custo AliExpress (R$)", "Custo Estoque (R$)"])
-
 
         # =====================================================
         # 🧾 Cria versão formatada da planilha para edição
@@ -4973,7 +4849,7 @@ if menu == "📦 Dashboard – Logística":
             """Atualiza dados na planilha de custos no Google Sheets"""
             try:
                 client = get_gsheet_client()
-                sheet = client.open_by_key(st.secrets["sheets"]["spreadsheet_id"]).worksheet("Produto | Precificação")
+                sheet = client.open_by_key(st.secrets["sheets"]["spreadsheet_id"]).sheet1
 
                 df_safe = (
                     df.copy()
@@ -5021,225 +4897,7 @@ if menu == "📦 Dashboard – Logística":
             st.rerun()
 
     # =====================================================
-    # 🚚 ABA 3 — ENTREGAS (COM RASPAGEM REAL DO RASTREIO)
+    # 🚚 ABA 3 — ENTREGAS
     # =====================================================
     with aba3:
-        st.title("🚚 Rastreamento de Entregas — Sportech")
-
-        # -----------------------------------------------
-        # 🔐 Verifica se já existem pedidos carregados
-        # -----------------------------------------------
-        if "pedidos" not in st.session_state or st.session_state["pedidos"].empty:
-            st.info("Carregue pedidos na aba 'Controle Operacional' para ver entregas.")
-            st.stop()
-
-        # Agora df_entregas já vem com fulfillments incorporado
-        df_entregas = get_all_paid_orders().copy()
-
-        # -----------------------------------------------
-        # 📌 Funções auxiliares
-        # -----------------------------------------------
-        import base64
-        from bs4 import BeautifulSoup
-        import re
-        import requests
-
-        def gerar_link_rastreio(codigo):
-            if not codigo or str(codigo).strip() == "":
-                return ""
-            b64 = base64.urlsafe_b64encode(str(codigo).encode()).decode()
-            return f"https://lojasportech.com/pages/rastreio?t={b64}"
-
-        # -----------------------------------------------
-        # 📦 Extrair tracking de fulfillment SEM nova requisição
-        # -----------------------------------------------
-        st.info("🔄 Obtendo códigos de rastreio direto da Shopify…")
-
-        def extract_tracking(f):
-            if isinstance(f, list) and len(f) > 0:
-                info = f[0].get("tracking_info", {})
-                return info.get("number", "") or ""
-            return ""
-
-        df_entregas["tracking_number"] = df_entregas["fulfillments"].apply(extract_tracking)
-
-        df_entregas = df_entregas[df_entregas["tracking_number"] != ""]
-        df_entregas["tracking_link"] = df_entregas["tracking_number"].apply(gerar_link_rastreio)
-
-        if df_entregas.empty:
-            st.warning("Nenhum pedido com rastreio encontrado.")
-            st.stop()
-
-        # -----------------------------------------------
-        # 🕷 ROBÔ — RASPAGEM REAL
-        # -----------------------------------------------
-        def extrair_status_rastreio(link):
-            try:
-                html = requests.get(link, timeout=10).text
-                soup = BeautifulSoup(html, "html.parser")
-
-                bloco = soup.select_one(".tracking-event, .event, .linha")
-                if not bloco:
-                    return ("Não encontrado", "", "")
-
-                texto = bloco.get_text(separator=" ", strip=True)
-                status = texto.split(" - ")[0] if " - " in texto else texto
-                obs = texto
-
-                data = ""
-                m = re.search(r"\d{2}/\d{2}/\d{4}|\d{2}/\d{2} \d{2}:\d{2}", texto)
-                if m:
-                    data = m.group(0)
-
-                return (status, data, obs)
-            except:
-                return ("Erro ao consultar", "", "")
-
-        st.info("📡 Lendo atualizações reais dos Correios…")
-        df_entregas["status"], df_entregas["data_evento"], df_entregas["observacao"] = zip(
-            *df_entregas["tracking_link"].apply(extrair_status_rastreio)
-        )
-
-        # -------------------------------------------------
-        # 📊 Tabela visual
-        # -------------------------------------------------
-        tabela = df_entregas[[
-            "order_number","customer_name","product_title","tracking_number",
-            "status","data_evento","observacao","tracking_link"
-        ]].rename(columns={
-            "order_number": "Pedido",
-            "customer_name": "Cliente",
-            "product_title": "Produto",
-            "tracking_number": "Código",
-            "status": "Status",
-            "data_evento": "Última atualização",
-            "observacao": "Observação",
-            "tracking_link": "Link"
-        })
-
-        st.dataframe(tabela, use_container_width=True)
-
-        # =====================================================
-        # 📤 EXPORTAÇÃO PROGRESSIVA — 20 LINHAS POR LOTE
-        # =====================================================
-        import gspread
-        from google.oauth2.service_account import Credentials
-
-        def get_gsheet_client():
-            scopes = [
-                "https://www.googleapis.com/auth/spreadsheets",
-                "https://www.googleapis.com/auth/drive"
-            ]
-            gcp_info = dict(st.secrets["gcp_service_account"])
-            if isinstance(gcp_info.get("private_key"), str):
-                gcp_info["private_key"] = gcp_info["private_key"].replace("\\n", "\n")
-            creds = Credentials.from_service_account_info(gcp_info, scopes=scopes)
-            return gspread.authorize(creds)
-
-        def carregar_aba_logistica():
-            client = get_gsheet_client()
-            sh = client.open_by_key(st.secrets["sheets"]["spreadsheet_id"])
-            try:
-                sheet = sh.worksheet("Logística")
-            except:
-                sheet = sh.add_worksheet("Logística", rows=6000, cols=20)
-            return sheet
-
-        def exportar_todos_pedidos_progressivo():
-            st.info("🔄 Exportando pedidos aos poucos (20 por lote)...")
-
-            sheet = carregar_aba_logistica()
-
-            HEADER = [
-                "DATA","CLIENTE","STATUS","PRODUTO","QTD","EMAIL",
-                "ORDER_ID","RASTREIO","LINK"
-            ]
-
-            sheet.clear()
-            sheet.append_row(HEADER)
-
-            s = _get_session()
-            url = f"{BASE_URL}/orders.json?status=any&limit=50&order=created_at asc"
-
-            progresso = st.progress(0)
-            log = st.empty()
-            total_processado = 0
-            lote = []
-
-            while url:
-                r = s.get(url, headers=HEADERS, timeout=60)
-                r.raise_for_status()
-                pedidos = r.json().get("orders", [])
-
-                for o in pedidos:
-
-                    if o.get("financial_status") not in ["paid","partially_paid"]:
-                        continue
-
-                    customer = o.get("customer") or {}
-                    nome = f"{customer.get('first_name','')} {customer.get('last_name','')}".strip()
-                    email = customer.get("email") or "(sem email)"
-
-                    # tracking já vem no fulfillment da própria requisição
-                    try:
-                        fulf = o.get("fulfillments", [])
-                        tracking = (
-                            fulf[0].get("tracking_info", {}).get("number", "")
-                            if fulf else ""
-                        )
-                    except:
-                        tracking = ""
-
-                    link = gerar_link_rastreio(tracking)
-
-                    for it in o.get("line_items", []):
-
-                        linha = [
-                            str(o.get("created_at",""))[:10],
-                            nome,
-                            o.get("financial_status",""),
-                            it.get("title",""),
-                            it.get("quantity",""),
-                            email,
-                            str(o.get("id","")),
-                            tracking,
-                            link
-                        ]
-
-                        lote.append(linha)
-                        total_processado += 1
-
-                        if len(lote) == 20:
-                            sheet.append_rows(lote, value_input_option="USER_ENTERED")
-                            lote = []
-                            log.write(f"📦 Processados: {total_processado} linhas...")
-                            progresso.progress(min(1.0, total_processado / 5000))
-
-                url = r.links.get("next", {}).get("url")
-
-            if lote:
-                sheet.append_rows(lote, value_input_option="USER_ENTERED")
-
-            progresso.progress(1.0)
-            st.success(f"✅ Exportação concluída! Total exportado: {total_processado} linhas.")
-
-        st.markdown("---")
-        if st.button("📤 Exportar TODOS — Modo Progressivo (20 por lote)"):
-            exportar_todos_pedidos_progressivo()
-
-        # -----------------------------------------------
-        # 🔎 Busca manual
-        # -----------------------------------------------
-        st.subheader("🔎 Rastrear manualmente")
-        codigo_manual = st.text_input("Código de rastreio:")
-
-        if codigo_manual:
-            link_manual = gerar_link_rastreio(codigo_manual)
-            st.markdown(f"▶️ **Abrir rastreio:** [{link_manual}]({link_manual})")
-
-            status_m, data_m, obs_m = extrair_status_rastreio(link_manual)
-
-            st.info(f"**Status:** {status_m}")
-            st.info(f"**Data:** {data_m}")
-            st.write(f"**Observação completa:** {obs_m}")
-            st.components.v1.iframe(link_manual, height=600, scrolling=True)
+        st.info("📍 Em breve: status de fretes, prazos e devoluções.")
