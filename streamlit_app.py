@@ -140,35 +140,37 @@ def get_products_with_variants(limit=250):
     return df_variants
 
 # =====================================================
-# Pedidos
+# 📦 PEDIDOS — BUSCA COMPLETA DE TODOS OS PAGOS
 # =====================================================
-@st.cache_data(ttl=600)
-def get_orders(start_date=None, end_date=None, only_paid=True, limit=250):
-    """Baixa pedidos da Shopify com filtro dinâmico de período, garantindo o e-mail do cliente e puxando CPF, telefone e endereço."""
-    hoje = datetime.now(APP_TZ).date()
-    if start_date is None:
-        start_date = hoje
-    if end_date is None:
-        end_date = hoje
 
-    start_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=APP_TZ)
-    end_dt = datetime.combine(end_date, datetime.max.time(), tzinfo=APP_TZ)
+@st.cache_data(ttl=900)
+def get_all_paid_orders(limit=250):
+    """
+    Baixa TODOS os pedidos pagos da Shopify.
+    Usa paginação automática e retorna uma linha por item.
+    """
 
-    start_str = start_dt.strftime("%Y-%m-%dT%H:%M:%S%z")
-    end_str = end_dt.strftime("%Y-%m-%dT%H:%M:%S%z")
-
-    url = f"{BASE_URL}/orders.json?limit={limit}&status=any&created_at_min={start_str}&created_at_max={end_str}"
+    url = f"{BASE_URL}/orders.json?status=any&limit={limit}&order=created_at asc"
     all_rows = []
-
     s = _get_session()
+
     while url:
         r = s.get(url, headers=HEADERS, timeout=60)
         r.raise_for_status()
+
         data = r.json()
         orders = data.get("orders", [])
 
+        if not orders:
+            break
+
+        # -------------------------------------
+        # PROCESSA CADA PEDIDO
+        # -------------------------------------
         for o in orders:
-            if only_paid and o.get("financial_status") not in ["paid", "partially_paid"]:
+
+            # 🔥 pega só pedidos pagos
+            if o.get("financial_status") not in ["paid", "partially_paid"]:
                 continue
 
             customer = o.get("customer") or {}
@@ -176,7 +178,7 @@ def get_orders(start_date=None, end_date=None, only_paid=True, limit=250):
             shipping_lines = o.get("shipping_lines") or [{}]
 
             nome_cliente = (
-                f"{customer.get('first_name', '')} {customer.get('last_name', '')}".strip()
+                f"{customer.get('first_name','')} {customer.get('last_name','')}".strip()
                 or "(Cliente não informado)"
             )
 
@@ -187,7 +189,6 @@ def get_orders(start_date=None, end_date=None, only_paid=True, limit=250):
                 or "(sem email)"
             )
 
-            # 📞 Telefone e CPF
             telefone = (
                 shipping.get("phone")
                 or customer.get("phone")
@@ -195,108 +196,112 @@ def get_orders(start_date=None, end_date=None, only_paid=True, limit=250):
                 or "(sem telefone)"
             )
 
-            # 🧾 CPF pode vir de vários lugares
+            # CPF (vários possíveis lugares)
             cpf = None
-            # 1️⃣ Em note_attributes (checkout customizado)
             for attr in o.get("note_attributes", []):
-                if "cpf" in str(attr.get("name", "")).lower():
+                if "cpf" in str(attr.get("name", "").lower()):
                     cpf = attr.get("value")
                     break
-            # 2️⃣ Às vezes vem no campo company (Shopify padrão)
             if not cpf:
                 cpf = shipping.get("company") or "(sem cpf)"
 
-            # 🏠 Endereço completo
+            # Endereço
             endereco = shipping.get("address1", "(sem endereço)")
-            bairro = shipping.get("address2", "(sem bairro)")
-            cidade = shipping.get("city", "(sem cidade)")
-            estado = shipping.get("province", "(sem estado)")
-            cep = shipping.get("zip", "(sem cep)")
-            pais = shipping.get("country", "(sem país)")
+            bairro   = shipping.get("address2", "(sem bairro)")
+            cidade   = shipping.get("city",     "(sem cidade)")
+            estado   = shipping.get("province", "(sem estado)")
+            cep      = shipping.get("zip",      "(sem cep)")
+            pais     = shipping.get("country",  "(sem país)")
 
+            # -------------------------------------
+            # PROCESSA ITENS DO PEDIDO
+            # -------------------------------------
             for it in o.get("line_items", []):
                 preco = float(it.get("price") or 0)
-                qtd = int(it.get("quantity", 0))
+                qtd   = int(it.get("quantity") or 0)
+
                 all_rows.append({
-                    "order_id": o.get("id"),
-                    "order_number": o.get("order_number"),
-                    "created_at": o.get("created_at"),
-                    "financial_status": o.get("financial_status"),
+                    "order_id":           o.get("id"),
+                    "order_number":       o.get("order_number"),
+                    "created_at":         o.get("created_at"),
+                    "financial_status":   o.get("financial_status"),
                     "fulfillment_status": o.get("fulfillment_status"),
-                    "customer_name": nome_cliente,
+
+                    "customer_name":  nome_cliente,
                     "customer_email": email_cliente,
                     "customer_phone": telefone,
-                    "customer_cpf": cpf,
-                    "product_title": it.get("title"),
-                    "variant_title": it.get("variant_title"),
-                    "variant_id": it.get("variant_id"),
-                    "sku": it.get("sku"),
-                    "quantity": qtd,
-                    "price": preco,
-                    "line_revenue": preco * qtd,
+                    "customer_cpf":   cpf,
+
+                    "product_title":  it.get("title"),
+                    "variant_title":  it.get("variant_title"),
+                    "variant_id":     it.get("variant_id"),
+                    "sku":            it.get("sku"),
+
+                    "quantity":       qtd,
+                    "price":          preco,
+                    "line_revenue":   preco * qtd,
+
                     "forma_entrega": shipping_lines[0].get("title", "N/A"),
                     "endereco": endereco,
-                    "bairro": bairro,
-                    "cidade": cidade,
-                    "estado": estado,
-                    "cep": cep,
-                    "pais": pais,
+                    "bairro":   bairro,
+                    "cidade":   cidade,
+                    "estado":   estado,
+                    "cep":      cep,
+                    "pais":     pais,
                 })
 
+        # -------------------------------------
+        # PAGINAÇÃO - LINK HEADER
+        # -------------------------------------
         url = r.links.get("next", {}).get("url")
 
     return pd.DataFrame(all_rows)
 
 
+
 # =====================================================
-# Buscar clientes/pedidos na Shopify (nome, e-mail ou número do pedido)
+# 🔍 BUSCA DE PEDIDOS (NOME, EMAIL, Nº DO PEDIDO)
 # =====================================================
+
 @st.cache_data(ttl=300)
 def search_orders_shopify(query: str, limit=100):
     """
     Busca pedidos diretamente na Shopify com base em nome, e-mail ou número do pedido.
-    Ignora outros campos e evita baixar todos os pedidos.
     """
     if not query.strip():
         return pd.DataFrame()
 
     search_q = query.strip()
 
-    # 🔍 Caso pareça número (pedido ou ID)
+    # Número do pedido
     if search_q.isdigit():
         url = f"{BASE_URL}/orders.json?limit={limit}&status=any&name={search_q}"
+
+    # Email
+    elif "@" in search_q:
+        url = f"{BASE_URL}/orders.json?limit={limit}&status=any&email={search_q}"
+
+    # Nome
     else:
-        # 🔍 Caso seja e-mail ou nome (Shopify aceita filtro direto por e-mail)
-        if "@" in search_q:
-            url = f"{BASE_URL}/orders.json?limit={limit}&status=any&email={search_q}"
-        else:
-            # 🔍 Caso seja nome (fazemos busca genérica mas apenas pelo campo de cliente)
-            url = f"{BASE_URL}/orders.json?limit={limit}&status=any&query=customer_name:{search_q}"
+        url = f"{BASE_URL}/orders.json?limit={limit}&status=any&query=customer_name:{search_q}"
 
     s = _get_session()
     r = s.get(url, headers=HEADERS, timeout=60)
     r.raise_for_status()
-    data = r.json().get("orders", [])
+    orders = r.json().get("orders", [])
 
     all_rows = []
-    for o in data:
+
+    for o in orders:
         customer = o.get("customer") or {}
         shipping = o.get("shipping_address") or {}
         shipping_lines = o.get("shipping_lines") or [{}]
+
         nome_cliente = (
-            f"{customer.get('first_name', '')} {customer.get('last_name', '')}".strip()
+            f"{customer.get('first_name','')} {customer.get('last_name','')}".strip()
             or "(Cliente não informado)"
         )
 
-        # 🔎 Filtra novamente localmente, só para garantir correspondência precisa
-        if (
-            search_q.lower() not in nome_cliente.lower()
-            and search_q.lower() not in str(o.get("order_number", "")).lower()
-            and search_q.lower() not in str(customer.get("email", "")).lower()
-        ):
-            continue
-
-        # ✅ Captura de e-mail mais robusta
         email_cliente = (
             customer.get("email")
             or o.get("email")
@@ -305,8 +310,6 @@ def search_orders_shopify(query: str, limit=100):
         )
 
         for it in o.get("line_items", []):
-            preco = float(it.get("price") or 0)
-            qtd = int(it.get("quantity", 0))
             all_rows.append({
                 "order_id": o.get("id"),
                 "order_number": o.get("order_number"),
@@ -319,9 +322,9 @@ def search_orders_shopify(query: str, limit=100):
                 "variant_title": it.get("variant_title"),
                 "variant_id": it.get("variant_id"),
                 "sku": it.get("sku"),
-                "quantity": qtd,
-                "price": preco,
-                "line_revenue": preco * qtd,
+                "quantity": it.get("quantity"),
+                "price": float(it.get("price") or 0),
+                "line_revenue": float(it.get("price") or 0) * int(it.get("quantity") or 0),
                 "forma_entrega": shipping_lines[0].get("title", "N/A"),
                 "estado": shipping.get("province", "N/A"),
                 "cidade": shipping.get("city", "N/A"),
@@ -330,13 +333,14 @@ def search_orders_shopify(query: str, limit=100):
     return pd.DataFrame(all_rows)
 
 
+
 # =====================================================
-# Fulfillment (processar pedido) — versão com fallback 422 DSers
+# 📦 Fulfillment — versão robusta com fallback 422 DSers
 # =====================================================
+
 def create_fulfillment(order_id, tracking_number=None, tracking_company="Correios"):
     """
     Cria fulfillment pela API da Shopify, mesmo para pedidos DSers.
-    Se ocorrer erro 422, reatribui automaticamente o fulfillment_order e tenta novamente.
     """
 
     headers = {
@@ -344,7 +348,6 @@ def create_fulfillment(order_id, tracking_number=None, tracking_company="Correio
         "X-Shopify-Access-Token": ACCESS_TOKEN
     }
 
-    # 1️⃣ Buscar fulfillment orders do pedido
     f_orders_url = f"{BASE_URL}/orders/{order_id}/fulfillment_orders.json"
     f_orders_resp = requests.get(f_orders_url, headers=headers)
     f_orders_resp.raise_for_status()
@@ -355,7 +358,6 @@ def create_fulfillment(order_id, tracking_number=None, tracking_company="Correio
 
     fulfillment_orders = f_orders["fulfillment_orders"]
 
-    # 2️⃣ Tentar criar fulfillment para cada fulfillment_order encontrado
     for f_order in fulfillment_orders:
         fulfillment_order_id = f_order["id"]
 
@@ -375,7 +377,7 @@ def create_fulfillment(order_id, tracking_number=None, tracking_company="Correio
         url_fulfillment = f"{BASE_URL}/fulfillments.json"
         resp = requests.post(url_fulfillment, headers=headers, json=payload)
 
-        # 3️⃣ Se der erro 422 → reatribui o fulfillment order para o seu location e tenta novamente
+        # fallback 422 DSers
         if resp.status_code == 422:
             try:
                 new_location_id = f_order.get("assigned_location_id")
@@ -383,27 +385,26 @@ def create_fulfillment(order_id, tracking_number=None, tracking_company="Correio
                     move_url = f"{BASE_URL}/fulfillment_orders/{fulfillment_order_id}/move.json"
                     move_payload = {"fulfillment_order": {"new_location_id": new_location_id}}
                     move_resp = requests.post(move_url, headers=headers, json=move_payload)
+
                     if move_resp.status_code in [200, 201]:
-                        # tenta novamente após mover
                         resp = requests.post(url_fulfillment, headers=headers, json=payload)
+
             except Exception as err:
                 print(f"⚠️ Erro ao reatribuir fulfillment order: {err}")
 
-        # 4️⃣ Se funcionar, retorna o resultado
         if resp.status_code in [200, 201]:
             return resp.json()
-        else:
-            print(f"❌ Falha ao criar fulfillment (Pedido {order_id}): {resp.status_code} → {resp.text}")
 
-    # 5️⃣ Se nenhuma tentativa funcionar, lança erro
     raise Exception(f"❌ Não foi possível criar fulfillment para o pedido {order_id}")
 
+
 # =====================================================
-# 🚀 LOGGING (opcional)
+# 📝 LOGGING (opcional)
 # =====================================================
 def log_fulfillment(order_id):
     with open("fulfillment_log.txt", "a", encoding="utf-8") as f:
         f.write(f"{datetime.now(APP_TZ)} - Pedido {order_id} processado\n")
+
 
 # =============== Config & Estilos ===============
 st.markdown("""
