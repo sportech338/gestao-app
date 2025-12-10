@@ -4291,63 +4291,6 @@ def extrair_status_rastreio(link):
     except Exception as e:
         return f"Erro ao rastrear: {e}"
 
-# =====================================================
-# 🔍 EXTRAÇÃO AUTOMÁTICA DO STATUS (VERSÃO SELENIUM)
-# =====================================================
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-
-def extrair_status_rastreio_selenium(link):
-    """Extrai TODOS os eventos do rastreio usando Selenium."""
-    try:
-        options = Options()
-        options.add_argument("--headless=new")
-        options.add_argument("--no-sandbox")
-        options.add_argument("--disable-dev-shm-usage")
-        options.add_argument("--window-size=1920,1080")
-
-        driver = webdriver.Chrome(options=options)
-
-        driver.get(link)
-
-        # Espera carregar os eventos via JS
-        WebDriverWait(driver, 25).until(
-            EC.presence_of_all_elements_located((By.CLASS_NAME, "rptn-order-tracking-event"))
-        )
-
-        eventos_html = driver.find_elements(By.CLASS_NAME, "rptn-order-tracking-event")
-        eventos = []
-
-        for ev in eventos_html:
-            txt = ev.find_element(By.CLASS_NAME, "rptn-order-tracking-text")
-
-            def get(class_name):
-                try: return txt.find_element(By.CLASS_NAME, class_name).text.strip()
-                except: return ""
-
-            data = get("rptn-order-tracking-date")
-            label = get("rptn-order-tracking-label")
-            local = get("rptn-order-tracking-location")
-            desc = get("rptn-order-tracking-description")
-
-            linha = f"{data} — {label}"
-            if local: linha += f" — {local}"
-            if desc: linha += f" — {desc}"
-
-            eventos.append(linha)
-
-        driver.quit()
-
-        return "\n".join(eventos) if eventos else "Sem eventos encontrados"
-
-    except Exception as e:
-        return f"Erro Selenium: {e}"
-
-
 
 def atualizar_observacoes(df):
     """Atualiza a coluna OBSERVAÇÕES baseada no LINK"""
@@ -4357,7 +4300,7 @@ def atualizar_observacoes(df):
     resultados = []
     for link in df["LINK"]:
         if isinstance(link, str) and link.startswith("http"):
-            resultados.append(extrair_status_rastreio_selenium(link))
+            resultados.append(extrair_status_rastreio(link))
         else:
             resultados.append("Sem link")
 
@@ -5201,7 +5144,7 @@ if menu == "📦 Dashboard – Logística":
                         continue
 
                     # Extrai a informação da página de rastreio
-                    status = extrair_status_rastreio_selenium(link)
+                    status = extrair_status_rastreio(link)
 
                     # Atualiza apenas a célula da observação
                     sheet.update_cell(linha_planilha, col_obs, status)
