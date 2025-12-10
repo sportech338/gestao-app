@@ -1,22 +1,28 @@
 import time
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
+
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.chrome.service import Service
+from webdriver_manager.chrome import ChromeDriverManager
 
 
 # ---------------------------------------------------------
 # 🔐 AUTENTICAÇÃO GOOGLE SHEETS
 # ---------------------------------------------------------
 def get_sheet():
-    scope = ['https://spreadsheets.google.com/feeds','https://www.googleapis.com/auth/drive']
-    creds = ServiceAccountCredentials.from_json_keyfile_name('credentials.json', scope)
+    scope = [
+        "https://spreadsheets.google.com/feeds",
+        "https://www.googleapis.com/auth/drive"
+    ]
+    creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
     client = gspread.authorize(creds)
 
-    # ⬅️ ALTERE AQUI O ID DA PLANILHA
+    # PLANILHA LOGÍSTICA
     sheet = client.open_by_key("1WTEiRnm1OFxzn6ag1MfI8VnlQCbL8xwxY3LeanCsdxk").worksheet("Logística")
     return sheet
 
@@ -33,7 +39,12 @@ def extrair_eventos_selenium(link):
         options.add_argument("--no-sandbox")
         options.add_argument("--window-size=1920,1080")
 
-        driver = webdriver.Chrome(options=options)
+        # 👇 AQUI ESTÁ A CORREÇÃO IMPORTANTE  
+        driver = webdriver.Chrome(
+            service=Service(ChromeDriverManager().install()),
+            options=options
+        )
+
         driver.get(link)
 
         # Aguarda eventos carregarem
