@@ -29,7 +29,7 @@ jobs:
 
       - name: Criar arquivo credentials.json
         run: |
-          echo '${{ secrets.GSHEETS_CREDENTIALS }}' > credentials.json
+          echo '${{ secrets.GCP_SERVICE_ACCOUNT }}' > credentials.json
 
       - name: Rodar atualizador Selenium
         run: python tracking_updater/selenium_updater.py
