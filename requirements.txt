@@ -12,6 +12,3 @@ gspread
 google-auth
 streamlit-date-picker==0.0.4
 streamlit-aggrid==1.0.5
-selenium==4.20.0
-webdriver-manager==4.0.1
-beautifulsoup4
