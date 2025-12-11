@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import requests, json, time
-from bs4 import BeautifulSoup
 from datetime import date, timedelta, datetime
 from zoneinfo import ZoneInfo
 APP_TZ = ZoneInfo("America/Sao_Paulo")
@@ -4256,58 +4255,6 @@ if menu == "📊 Dashboard – Tráfego Pago":
                     f"Período A: **{_fmt_range_br(since_A, until_A)}** | "
                     f"Período B: **{_fmt_range_br(since_B, until_B)}**"
                 )
-
-
-# =====================================================
-# 🔍 EXTRAÇÃO AUTOMÁTICA DO STATUS DE RASTREIO
-# =====================================================
-def extrair_status_rastreio(link):
-    """Extrai o evento mais recente do rastreio via HTML"""
-    try:
-        r = requests.get(link, timeout=30)
-        r.raise_for_status()
-        soup = BeautifulSoup(r.text, "html.parser")
-
-        evento = soup.find("div", class_="rptn-order-tracking-event")
-        if not evento:
-            return "Sem eventos"
-
-        data = evento.find("div", class_="rptn-order-tracking-date")
-        label = evento.find("div", class_="rptn-order-tracking-label")
-        local = evento.find("div", class_="rptn-order-tracking-location")
-        desc = evento.find("div", class_="rptn-order-tracking-description")
-
-        data = data.text.strip() if data else ""
-        label = label.text.strip() if label else ""
-        local = local.text.strip() if local else ""
-        desc = desc.text.strip() if desc else ""
-
-        resumo = f"{data} — {label} — {local}"
-        if desc:
-            resumo += f" — {desc}"
-
-        return resumo
-
-    except Exception as e:
-        return f"Erro ao rastrear: {e}"
-
-
-def atualizar_observacoes(df):
-    """Atualiza a coluna OBSERVAÇÕES baseada no LINK"""
-    if "LINK" not in df.columns:
-        return df
-
-    resultados = []
-    for link in df["LINK"]:
-        if isinstance(link, str) and link.startswith("http"):
-            resultados.append(extrair_status_rastreio(link))
-        else:
-            resultados.append("Sem link")
-
-    df["OBSERVAÇÕES"] = resultados
-    return df
-
-
 
 # =====================================================
 # 📦 DASHBOARD – LOGÍSTICA
