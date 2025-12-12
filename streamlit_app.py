@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -4291,6 +4290,7 @@ if menu == "📦 Dashboard – Logística":
         # ENVIO
         # ---------------------------
         with subtab_envios:
+            st.subheader("📦 Envios")
             
             # 🧭 SIDEBAR — Filtro lateral de período
             st.sidebar.header("📅 Período rápido")
@@ -4350,7 +4350,7 @@ if menu == "📦 Dashboard – Logística":
             elif periodo_atual != (start_date, end_date):
                 with st.spinner("🔄 Carregando dados da Shopify..."):
                     produtos = get_products_with_variants()
-                    pedidos = get_orders(start_date=start_date, end=end_date)
+                    pedidos = get_orders(start_date=start_date, end_date=end_date)
                     st.session_state["produtos"] = produtos
                     st.session_state["pedidos"] = pedidos
                     st.session_state["periodo_atual"] = (start_date, end_date)
@@ -4414,9 +4414,19 @@ if menu == "📦 Dashboard – Logística":
         else:
             base["created_at"] = pd.NaT
 
-        base["price"] = pd.to_numeric(base.get("price", 0), errors="coerce").fillna(0)
-        base["quantity"] = pd.to_numeric(base.get("quantity", 0), errors="coerce").fillna(0)
+
+        if "price" in base.columns:
+            base["price"] = pd.to_numeric(base["price"], errors="coerce").fillna(0)
+        else:
+            base["price"] = 0
+
+        if "quantity" in base.columns:
+            base["quantity"] = pd.to_numeric(base["quantity"], errors="coerce").fillna(0)
+        else:
+            base["quantity"] = 0
+
         base["line_revenue"] = base["price"] * base["quantity"]
+
 
         # -------------------------------------------------
         # 🧠 Aplicação de filtros
@@ -4439,7 +4449,6 @@ if menu == "📦 Dashboard – Logística":
         colA, colB, colC, colD = st.columns(4)
         colA.metric("🧾 Pedidos", total_pedidos)
         colB.metric("📦 Unidades vendidas", int(total_unidades))
-
         def formatar_moeda(valor):
             try:
                 return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
