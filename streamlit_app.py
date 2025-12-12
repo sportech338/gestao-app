@@ -4939,7 +4939,6 @@ with aba3:
         client = gspread.authorize(creds)
 
         sheet = client.open_by_key(st.secrets["sheets"]["spreadsheet_id"]).worksheet("Logística")
-
         df_sheet = pd.DataFrame(sheet.get_all_records())
         df_sheet.columns = df_sheet.columns.str.strip()
 
@@ -4990,7 +4989,7 @@ with aba3:
     # -------------------------------
     # Criar tres sub-abas
     # -------------------------------
-    aba_alie, aba_estoque = st.tabs(["📄 Aliexpress", "📦 Estoque","Dados"])
+    aba_alie, aba_estoque, aba_dados = st.tabs(["📄 Aliexpress", "📦 Estoque", "🆕 Dados"])
 
     # -------------------------------
     # Aba 1: Aliexpress (remove rastreio 888)
@@ -5040,11 +5039,20 @@ with aba3:
         if df_estoque.empty:
             st.warning("Nenhum pedido com rastreio começando com 888.")
         else:
-            # Ajuste índice
             df_estoque = df_estoque.reset_index(drop=True)
             df_estoque.index = (df_estoque.index + 1).astype(str)
             df_estoque.index.name = "Nº"
             st.dataframe(df_estoque, use_container_width=True)
+
+    # -------------------------------
+    # Aba 3: Dados Gerais (vazia)
+    # -------------------------------
+    with aba_dados:
+        st.subheader("📋 Dados Gerais - Aba Vazia")
+        colunas = ["DATA", "CLIENTE", "STATUS", "PRODUTO", "QUANTIDADE", 
+                   "EMAIL", "PEDIDO", "RASTREIO", "LINK", "OBSERVAÇÕES"]
+        df_vazio = pd.DataFrame(columns=colunas)
+        st.dataframe(df_vazio, use_container_width=True)
 
     # -------------------------------
     # Botão de sincronização
@@ -5055,9 +5063,3 @@ with aba3:
         st.success(resultado)
         st.cache_data.clear()
         st.rerun()
-        with aba_dados:
-    st.subheader("📋 Dados Gerais - Aba Vazia")
-    colunas = ["DATA", "CLIENTE", "STATUS", "PRODUTO", "QUANTIDADE", "EMAIL", "PEDIDO", "RASTREIO", "LINK", "OBSERVAÇÕES"]
-    df_vazio = pd.DataFrame(columns=colunas)
-    st.dataframe(df_vazio, use_container_width=True)
-
