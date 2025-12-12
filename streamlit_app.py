@@ -4272,7 +4272,7 @@ if menu == "📦 Dashboard – Logística":
     # =====================================================
     aba1, aba2, aba3 = st.tabs([
         "📋 Controle Operacional",
-        "📦 Estoque",
+        "💲 Valores",
         "🚚 Entregas"
     ])
 
@@ -4771,7 +4771,7 @@ if menu == "📦 Dashboard – Logística":
         # Aqui entra todo o código que você já tinha para reenvios
 
     # =====================================================
-    # 📦 ABA 2 — ESTOQUE
+    # 📦 ABA 2 — 💲 Valores
     # =====================================================
     with aba2:
         st.subheader("Comparativo de Saídas e Custos por Variante:")
