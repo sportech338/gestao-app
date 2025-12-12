@@ -4896,9 +4896,9 @@ with aba3:
     import gspread
     from google.oauth2.service_account import Credentials
 
-    # =====================================================
+    # -------------------------------
     # 🔐 Google Sheets
-    # =====================================================
+    # -------------------------------
     def get_gsheet_client():
         scopes = [
             "https://www.googleapis.com/auth/spreadsheets",
@@ -4946,7 +4946,7 @@ with aba3:
     pedidos_falha = set(df_falha["PEDIDO"].astype(str)) if "PEDIDO" in df_falha.columns else set()
 
     # =====================================================
-    # 🔀 SEPARAÇÃO ALIEXPRESS x ESTOQUE
+    # 🔀 SEPARAÇÃO POR ORIGEM (888)
     # =====================================================
     if "RASTREIO" in df_log.columns:
         df_log_aliexpress = df_log[~df_log["RASTREIO"].astype(str).str.startswith("888", na=False)]
@@ -4974,7 +4974,7 @@ with aba3:
     ])
 
     # =====================================================
-    # 🟡 AGUARDANDO (SEM SEPARAÇÃO)
+    # 🟡 AGUARDANDO (TUDO JUNTO)
     # =====================================================
     with t1:
         df = df_log[df_log["RASTREIO"].astype(str).str.strip() == ""] if "RASTREIO" in df_log.columns else pd.DataFrame()
@@ -5015,14 +5015,15 @@ with aba3:
             st.dataframe(safe_dataframe(df_entregue_estoque), use_container_width=True) if not df_entregue_estoque.empty else st.info("Nenhum estoque entregue.")
 
     # =====================================================
-    # 📮 CORREIOS
+    # 📮 CORREIOS (TUDO JUNTO)
     # =====================================================
     with t4:
-        st.info("📮 Aba Correios — nenhuma regra aplicada.")
+        st.info("📮 Aba Correios — nenhuma regra aplicada ainda.")
 
     # =====================================================
-    # ⛔ IMPORTAÇÃO NÃO AUTORIZADA
+    # ⛔ IMPORTAÇÃO NÃO AUTORIZADA (TUDO JUNTO)
     # =====================================================
     with t5:
         st.dataframe(safe_dataframe(df_falha), use_container_width=True) if not df_falha.empty else st.info("Nenhuma falha de importação.")
+
 
