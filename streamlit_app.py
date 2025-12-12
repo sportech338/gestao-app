@@ -4887,7 +4887,7 @@ def safe_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 # =====================================================
-# 🚚 ABA 3 — ENTREGAS
+# 🚚 ABA 3 — ENTREGAS (ESTÁVEL / SEM ERROS)
 # =====================================================
 with aba3:
 
@@ -4906,9 +4906,8 @@ with aba3:
         ]
         info = dict(st.secrets["gcp_service_account"])
         info["private_key"] = info["private_key"].replace("\\n", "\n")
-        return gspread.authorize(
-            Credentials.from_service_account_info(info, scopes=scopes)
-        )
+        creds = Credentials.from_service_account_info(info, scopes=scopes)
+        return gspread.authorize(creds)
 
     @st.cache_data(ttl=300)
     def carregar_aba(nome):
@@ -4922,15 +4921,17 @@ with aba3:
         except:
             return pd.DataFrame()
 
-    # =====================================================
-    # 📥 BASES
-    # =====================================================
+    # -------------------------------
+    # 📥 CARREGA BASES
+    # -------------------------------
     df_log = carregar_aba("Logística")
     df_entregue = carregar_aba("Entrega realizada")
     df_falha = carregar_aba("Falha na importação")
 
+    # -------------------------------
+    # 🧹 DEDUP POR PEDIDO
+    # -------------------------------
     def dedup(df):
-        df = df.copy()
         if "PEDIDO" in df.columns:
             if "DATA" in df.columns:
                 df["DATA"] = pd.to_datetime(df["DATA"], errors="coerce")
@@ -4945,26 +4946,15 @@ with aba3:
     pedidos_entregues = set(df_entregue["PEDIDO"].astype(str)) if "PEDIDO" in df_entregue.columns else set()
     pedidos_falha = set(df_falha["PEDIDO"].astype(str)) if "PEDIDO" in df_falha.columns else set()
 
-    # =====================================================
-    # 🔀 SEPARAÇÃO POR ORIGEM (888)
-    # =====================================================
-    if "RASTREIO" in df_log.columns:
-        df_log_aliexpress = df_log[~df_log["RASTREIO"].astype(str).str.startswith("888", na=False)]
-        df_log_estoque = df_log[df_log["RASTREIO"].astype(str).str.startswith("888", na=False)]
-    else:
-        df_log_aliexpress = pd.DataFrame()
-        df_log_estoque = pd.DataFrame()
+    # -------------------------------
+    # 📦 ORIGEM (888 = ESTOQUE)
+    # -------------------------------
+    def is_estoque(df):
+        return df["RASTREIO"].astype(str).str.startswith("888", na=False)
 
-    if "RASTREIO" in df_entregue.columns:
-        df_entregue_aliexpress = df_entregue[~df_entregue["RASTREIO"].astype(str).str.startswith("888", na=False)]
-        df_entregue_estoque = df_entregue[df_entregue["RASTREIO"].astype(str).str.startswith("888", na=False)]
-    else:
-        df_entregue_aliexpress = pd.DataFrame()
-        df_entregue_estoque = pd.DataFrame()
-
-    # =====================================================
+    # -------------------------------
     # 🧭 ABAS PRINCIPAIS
-    # =====================================================
+    # -------------------------------
     t1, t2, t3, t4, t5 = st.tabs([
         "🟡 Aguardando",
         "🚚 Em Trânsito",
@@ -4974,56 +4964,72 @@ with aba3:
     ])
 
     # =====================================================
-    # 🟡 AGUARDANDO (TUDO JUNTO)
+    # 🟡 AGUARDANDO — TUDO JUNTO
     # =====================================================
     with t1:
-        df = df_log[df_log["RASTREIO"].astype(str).str.strip() == ""] if "RASTREIO" in df_log.columns else pd.DataFrame()
-        st.dataframe(safe_dataframe(df), use_container_width=True) if not df.empty else st.info("Nenhum pedido aguardando.")
+        if "RASTREIO" not in df_log.columns:
+            st.info("Coluna RASTREIO não encontrada.")
+        else:
+            df = df_log[df_log["RASTREIO"].astype(str).str.strip() == ""]
+            if df.empty:
+                st.info("Nenhum pedido aguardando rastreio.")
+            else:
+                st.dataframe(df, use_container_width=True)
 
     # =====================================================
-    # 🚚 EM TRÂNSITO (SEPARADO)
+    # 🚚 EM TRÂNSITO — ALIEXPRESS / ESTOQUE
     # =====================================================
     with t2:
-        sa, se = st.tabs(["🛒 AliExpress", "📦 Estoque"])
+        a1, a2 = st.tabs(["🛒 AliExpress", "📦 Estoque"])
 
-        with sa:
-            df = df_log_aliexpress[
-                (df_log_aliexpress["RASTREIO"].astype(str).str.strip() != "") &
-                (~df_log_aliexpress["PEDIDO"].astype(str).isin(pedidos_entregues)) &
-                (~df_log_aliexpress["PEDIDO"].astype(str).isin(pedidos_falha))
-            ]
-            st.dataframe(safe_dataframe(df), use_container_width=True) if not df.empty else st.info("Nenhum AliExpress em trânsito.")
+        base = df_log[
+            (df_log["RASTREIO"].astype(str).str.strip() != "") &
+            (~df_log["PEDIDO"].astype(str).isin(pedidos_entregues)) &
+            (~df_log["PEDIDO"].astype(str).isin(pedidos_falha))
+        ]
 
-        with se:
-            df = df_log_estoque[
-                (df_log_estoque["RASTREIO"].astype(str).str.strip() != "") &
-                (~df_log_estoque["PEDIDO"].astype(str).isin(pedidos_entregues)) &
-                (~df_log_estoque["PEDIDO"].astype(str).isin(pedidos_falha))
-            ]
-            st.dataframe(safe_dataframe(df), use_container_width=True) if not df.empty else st.info("Nenhum estoque em trânsito.")
+        with a1:
+            df = base[~is_estoque(base)] if "RASTREIO" in base.columns else pd.DataFrame()
+            st.dataframe(df, use_container_width=True) if not df.empty else st.info("Nenhum AliExpress em trânsito.")
+
+        with a2:
+            df = base[is_estoque(base)] if "RASTREIO" in base.columns else pd.DataFrame()
+            st.dataframe(df, use_container_width=True) if not df.empty else st.info("Nenhum Estoque em trânsito.")
 
     # =====================================================
-    # ✅ ENTREGUE (SEPARADO)
+    # ✅ ENTREGUE — ALIEXPRESS / ESTOQUE
     # =====================================================
     with t3:
-        sa, se = st.tabs(["🛒 AliExpress", "📦 Estoque"])
+        a1, a2 = st.tabs(["🛒 AliExpress", "📦 Estoque"])
 
-        with sa:
-            st.dataframe(safe_dataframe(df_entregue_aliexpress), use_container_width=True) if not df_entregue_aliexpress.empty else st.info("Nenhum AliExpress entregue.")
+        if "RASTREIO" in df_entregue.columns:
+            ali = df_entregue[~is_estoque(df_entregue)]
+            est = df_entregue[is_estoque(df_entregue)]
+        else:
+            pedidos_estoque = set(df_log[is_estoque(df_log)]["PEDIDO"].astype(str))
+            ali = df_entregue[~df_entregue["PEDIDO"].astype(str).isin(pedidos_estoque)]
+            est = df_entregue[df_entregue["PEDIDO"].astype(str).isin(pedidos_estoque)]
 
-        with se:
-            st.dataframe(safe_dataframe(df_entregue_estoque), use_container_width=True) if not df_entregue_estoque.empty else st.info("Nenhum estoque entregue.")
+        with a1:
+            st.dataframe(ali, use_container_width=True) if not ali.empty else st.info("Nenhum AliExpress entregue.")
+
+        with a2:
+            st.dataframe(est, use_container_width=True) if not est.empty else st.info("Nenhum Estoque entregue.")
 
     # =====================================================
-    # 📮 CORREIOS (TUDO JUNTO)
+    # 📮 CORREIOS — TUDO JUNTO (SEM REGRA)
     # =====================================================
     with t4:
-        st.info("📮 Aba Correios — nenhuma regra aplicada ainda.")
+        st.info("📮 Correios — nenhuma regra aplicada ainda.")
 
     # =====================================================
-    # ⛔ IMPORTAÇÃO NÃO AUTORIZADA (TUDO JUNTO)
+    # ⛔ IMPORTAÇÃO NÃO AUTORIZADA — TUDO JUNTO
     # =====================================================
     with t5:
-        st.dataframe(safe_dataframe(df_falha), use_container_width=True) if not df_falha.empty else st.info("Nenhuma falha de importação.")
+        if df_falha.empty:
+            st.info("Nenhuma falha de importação.")
+        else:
+            st.dataframe(df_falha, use_container_width=True)
+
 
 
