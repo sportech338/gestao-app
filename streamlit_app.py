@@ -4768,7 +4768,7 @@ if menu == "📦 Dashboard – Logística":
     # ---------------------------
     with subtab_reenvios:
         st.subheader("🔄 Reenvios")
-        # Aqui entra todo o código que você já tinha para reenvios
+       
 
     # =====================================================
     # 📦 ABA 2 — 💲 Valores
