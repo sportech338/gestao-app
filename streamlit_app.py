@@ -4763,44 +4763,11 @@ if menu == "📦 Dashboard – Logística":
                 render_coluna(pedidos_lista[2*quarto:3*quarto])
             with col4:
                 render_coluna(pedidos_lista[3*quarto:])
-  # ===============================
-# 🔄 Sub-aba Reenvios
-# ===============================
-with subtab_reenvios:
-    st.subheader("🔄 Reenvios — Falha na importação")
-    
-    # -------------------------------
-    # Tentar carregar planilha de logística
-    # -------------------------------
-    try:
-        df_reenvios = carregar_planilha_logistica()
-    except Exception as e:
-        st.error(f"❌ Falha ao carregar planilha de logística: {e}")
-        df_reenvios = pd.DataFrame()  # garante que a variável exista
-
-    # -------------------------------
-    # Exibir apenas falhas na importação
-    # -------------------------------
-    if df_reenvios.empty:
-        st.warning("Nenhum dado disponível. Verifique a planilha ou a conexão.")
-    else:
-        # Colunas que esperamos
-        colunas_esperadas = [
-            "PEDIDO", "CLIENTE", "PRODUTO", "QUANTIDADE", "RASTREIO", "STATUS"
-        ]
-        colunas_existentes = [c for c in colunas_esperadas if c in df_reenvios.columns]
-
-        # Seleciona apenas linhas com algum dado faltando
-        df_falha = df_reenvios[df_reenvios[colunas_existentes].isnull().any(axis=1)].copy()
-
-        if df_falha.empty:
-            st.info("Nenhum problema identificado nos dados da planilha.")
-        else:
-            df_falha = df_falha.reset_index(drop=True)
-            df_falha.index = (df_falha.index + 1).astype(str)
-            df_falha.index.name = "Nº"
-            st.dataframe(df_falha, use_container_width=True)
-
+    # ---------------------------
+    # REENVIO
+    # ---------------------------
+    with subtab_reenvios:
+        st.subheader("🔄 Reenvios")
        
 
     # =====================================================
