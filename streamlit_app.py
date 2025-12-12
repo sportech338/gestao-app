@@ -4277,96 +4277,98 @@ if menu == "📦 Dashboard – Logística":
     ])
 
     # =====================================================
-    # 📋 ABA 1 — CONTROLE OPERACIONAL
-    # =====================================================
-    with aba1:
-            st.subheader("📦 Envios")
-            
-            # 🧭 SIDEBAR — Filtro lateral de período
-            st.sidebar.header("📅 Período rápido")
-            hoje = datetime.now(APP_TZ).date()
-            opcoes_periodo = [
-                "Hoje", "Ontem", "Últimos 7 dias", "Últimos 14 dias",
-                "Últimos 30 dias", "Últimos 90 dias", "Esta semana",
-                "Este mês", "Máximo", "Personalizado"
-            ]
-            escolha_periodo = st.sidebar.radio("Selecione:", opcoes_periodo, index=0)
+# 📋 ABA 1 — CONTROLE OPERACIONAL
+# =====================================================
+with aba1:
+    st.subheader("📦 Envios")
+    
+    # 🧭 SIDEBAR — Filtro lateral de período
+    st.sidebar.header("📅 Período rápido")
+    hoje = datetime.now(APP_TZ).date()
+    opcoes_periodo = [
+        "Hoje", "Ontem", "Últimos 7 dias", "Últimos 14 dias",
+        "Últimos 30 dias", "Últimos 90 dias", "Esta semana",
+        "Este mês", "Máximo", "Personalizado"
+    ]
+    escolha_periodo = st.sidebar.radio("Selecione:", opcoes_periodo, index=0)
 
-            if escolha_periodo == "Hoje":
-                start_date, end_date = hoje, hoje
-            elif escolha_periodo == "Ontem":
-                start_date, end_date = hoje - timedelta(days=1), hoje - timedelta(days=1)
-            elif escolha_periodo == "Últimos 7 dias":
-                start_date, end_date = hoje - timedelta(days=7), hoje - timedelta(days=1)
-            elif escolha_periodo == "Últimos 14 dias":
-                start_date, end_date = hoje - timedelta(days=14), hoje - timedelta(days=1)
-            elif escolha_periodo == "Últimos 30 dias":
-                start_date, end_date = hoje - timedelta(days=30), hoje - timedelta(days=1)
-            elif escolha_periodo == "Últimos 90 dias":
-                start_date, end_date = hoje - timedelta(days=90), hoje - timedelta(days=1)
-            elif escolha_periodo == "Esta semana":
-                start_date, end_date = hoje - timedelta(days=hoje.weekday()), hoje
-            elif escolha_periodo == "Este mês":
-                start_date, end_date = hoje.replace(day=1), hoje
-            elif escolha_periodo == "Máximo":
-                start_date, end_date = date(2020, 1, 1), hoje
-            else:
-                periodo = st.sidebar.date_input(
-                    "📆 Selecione o intervalo:", (hoje, hoje), format="DD/MM/YYYY"
-                )
-                if isinstance(periodo, tuple) and len(periodo) == 2:
-                    start_date, end_date = periodo
-                else:
-                    st.sidebar.warning("🟡 Selecione o fim do período.")
-                    st.stop()
-
-            st.sidebar.markdown(f"**Desde:** {start_date}  \n**Até:** {end_date}")
-
-            # 🔍 Busca rápida
-            st.subheader("🔍 Busca rápida")
-            busca = st.text_input("Digite parte do nome do cliente, email ou número do pedido:")
-
-            # 🔄 Carregamento de dados
-            periodo_atual = st.session_state.get("periodo_atual")
-
-            if busca.strip():
-                with st.spinner(f"🔍 Buscando '{busca}' diretamente na Shopify..."):
-                    produtos = get_products_with_variants()
-                    pedidos = search_orders_shopify(busca)
-                st.success(f"✅ {len(pedidos)} pedido(s) encontrados para '{busca}'.")
-                st.session_state["produtos"] = produtos
-                st.session_state["pedidos"] = pedidos
-
-            elif periodo_atual != (start_date, end_date):
-                with st.spinner("🔄 Carregando dados da Shopify..."):
-                    produtos = get_products_with_variants()
-                    pedidos = get_orders(start_date=start_date, end_date=end_date)
-                    st.session_state["produtos"] = produtos
-                    st.session_state["pedidos"] = pedidos
-                    st.session_state["periodo_atual"] = (start_date, end_date)
-                st.success(f"✅ Dados carregados de {start_date.strftime('%d/%m/%Y')} até {end_date.strftime('%d/%m/%Y')}")
-
-        # -------------------------------------------------
-        # 🧩 Garantir que 'pedidos' existe mesmo se ainda não foi carregado
-        # -------------------------------------------------
-        if "pedidos" not in st.session_state or st.session_state["pedidos"].empty:
-            pedidos = pd.DataFrame()
+    if escolha_periodo == "Hoje":
+        start_date, end_date = hoje, hoje
+    elif escolha_periodo == "Ontem":
+        start_date, end_date = hoje - timedelta(days=1), hoje - timedelta(days=1)
+    elif escolha_periodo == "Últimos 7 dias":
+        start_date, end_date = hoje - timedelta(days=7), hoje - timedelta(days=1)
+    elif escolha_periodo == "Últimos 14 dias":
+        start_date, end_date = hoje - timedelta(days=14), hoje - timedelta(days=1)
+    elif escolha_periodo == "Últimos 30 dias":
+        start_date, end_date = hoje - timedelta(days=30), hoje - timedelta(days=1)
+    elif escolha_periodo == "Últimos 90 dias":
+        start_date, end_date = hoje - timedelta(days=90), hoje - timedelta(days=1)
+    elif escolha_periodo == "Esta semana":
+        start_date, end_date = hoje - timedelta(days=hoje.weekday()), hoje
+    elif escolha_periodo == "Este mês":
+        start_date, end_date = hoje.replace(day=1), hoje
+    elif escolha_periodo == "Máximo":
+        start_date, end_date = date(2020, 1, 1), hoje
+    else:
+        periodo = st.sidebar.date_input(
+            "📆 Selecione o intervalo:", (hoje, hoje), format="DD/MM/YYYY"
+        )
+        if isinstance(periodo, tuple) and len(periodo) == 2:
+            start_date, end_date = periodo
         else:
-            pedidos = st.session_state["pedidos"]
+            st.sidebar.warning("🟡 Selecione o fim do período.")
+            st.stop()
 
-        # -------------------------------------------------
-        # 🧩 Garantir que 'produtos' existe mesmo se ainda não foi carregado
-        # -------------------------------------------------
-        if "produtos" not in st.session_state or st.session_state["produtos"].empty:
-            try:
-                with st.spinner("🔄 Carregando lista de produtos da Shopify..."):
-                    produtos = get_products_with_variants()
-                    st.session_state["produtos"] = produtos
-            except Exception as e:
-                st.error(f"❌ Erro ao carregar produtos da Shopify: {e}")
-                produtos = pd.DataFrame()
-        else:
-            produtos = st.session_state["produtos"]
+    st.sidebar.markdown(f"**Desde:** {start_date}  \n**Até:** {end_date}")
+
+    # 🔍 Busca rápida
+    st.subheader("🔍 Busca rápida")
+    busca = st.text_input("Digite parte do nome do cliente, email ou número do pedido:")
+
+    periodo_atual = st.session_state.get("periodo_atual")
+
+    if busca.strip():
+        with st.spinner(f"🔍 Buscando '{busca}' diretamente na Shopify..."):
+            produtos = get_products_with_variants()
+            pedidos = search_orders_shopify(busca)
+        st.success(f"✅ {len(pedidos)} pedido(s) encontrados para '{busca}'.")
+        st.session_state["produtos"] = produtos
+        st.session_state["pedidos"] = pedidos
+
+    elif periodo_atual != (start_date, end_date):
+        with st.spinner("🔄 Carregando dados da Shopify..."):
+            produtos = get_products_with_variants()
+            pedidos = get_orders(start_date=start_date, end_date=end_date)
+            st.session_state["produtos"] = produtos
+            st.session_state["pedidos"] = pedidos
+            st.session_state["periodo_atual"] = (start_date, end_date)
+        st.success(
+            f"✅ Dados carregados de {start_date.strftime('%d/%m/%Y')} até {end_date.strftime('%d/%m/%Y')}"
+        )
+
+# -------------------------------------------------
+# 🧩 Garantir que 'pedidos' existe mesmo se ainda não foi carregado
+# -------------------------------------------------
+if "pedidos" not in st.session_state or st.session_state["pedidos"].empty:
+    pedidos = pd.DataFrame()
+else:
+    pedidos = st.session_state["pedidos"]
+
+# -------------------------------------------------
+# 🧩 Garantir que 'produtos' existe mesmo se ainda não foi carregado
+# -------------------------------------------------
+if "produtos" not in st.session_state or st.session_state["produtos"].empty:
+    try:
+        with st.spinner("🔄 Carregando lista de produtos da Shopify..."):
+            produtos = get_products_with_variants()
+            st.session_state["produtos"] = produtos
+    except Exception as e:
+        st.error(f"❌ Erro ao carregar produtos da Shopify: {e}")
+        produtos = pd.DataFrame()
+else:
+    produtos = st.session_state["produtos"]
+
 
         # -------------------------------------------------
         # 🧩 Preparação dos dados
