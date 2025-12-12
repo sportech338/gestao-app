@@ -4871,10 +4871,29 @@ if menu == "📦 Dashboard – Logística":
             st.rerun()
 
     # =====================================================
-    # 🚚 ABA 3 — ENTREGAS
-    # =====================================================
-    with aba3:
+# 🚚 ABA 3 — ENTREGAS
+# =====================================================
+with aba3:
 
+    st.subheader("🚚 Gestão de Entregas")
+
+    # Criação das sub-abas dentro da aba "Entregas"
+    sub1, sub2, sub3 = st.tabs([
+        "📊 Dados Gerais",
+        "🛒 AliExpress",
+        "📦 Estoque"
+    ])
+
+    # =====================================================
+    # 📊 SUB-ABA — DADOS GERAIS (Vazia)
+    # =====================================================
+    with sub1:
+        st.info("📊 Área reservada para dados gerais de entregas. (Não exibindo nada aqui por enquanto.)")
+
+    # =====================================================
+    # 🛒 SUB-ABA — ALIEXPRESS
+    # =====================================================
+    with sub2:
         import gspread
         from google.oauth2.service_account import Credentials
 
@@ -4908,9 +4927,9 @@ if menu == "📦 Dashboard – Logística":
                 "EMAIL", "PEDIDO", "RASTREIO", "LINK", "OBSERVAÇÕES"
             ]]
 
-        # -------------------------------------------------------
+        # -------------------------------
         # 🔥 FUNÇÃO DEFINITIVA — SEM DUPLICAÇÃO / SEM API ERROR
-        # -------------------------------------------------------
+        # -------------------------------
         def sync_shopify_to_sheet():
 
             def normalizar_pedido(p):
@@ -5042,7 +5061,6 @@ if menu == "📦 Dashboard – Logística":
                 .str.replace(".0", "")
                 .str.strip()
             )
-                
 
         # ----------------------------------------
         # 🔧 AJUSTE DO ÍNDICE (REMOVE A VÍRGULA)
@@ -5050,7 +5068,6 @@ if menu == "📦 Dashboard – Logística":
         df_exibir = df_exibir.reset_index(drop=True)
         df_exibir.index = (df_exibir.index + 1).astype(str)
         df_exibir.index.name = "Nº"
-             
 
         # -------------------------------
         # 6) Mostrar tabela
@@ -5067,3 +5084,26 @@ if menu == "📦 Dashboard – Logística":
             st.success(resultado)
             st.cache_data.clear()
             st.rerun()
+
+    # =====================================================
+    # 📦 SUB-ABA — ESTOQUE (RASTREIO contém 888)
+    # =====================================================
+    with sub3:
+        st.subheader("📦 Pedidos de Estoque (RASTREIO contém 888)")
+
+        if "RASTREIO" not in df_log.columns:
+            st.warning("⚠️ Coluna RASTREIO não encontrada na planilha.")
+        else:
+            df_estoque = df_log[
+                df_log["RASTREIO"].astype(str).str.contains("888", na=False)
+            ].copy()
+
+            if df_estoque.empty:
+                st.info("✅ Nenhum pedido de estoque encontrado.")
+            else:
+                # Ajuste visual igual ao padrão
+                df_estoque = df_estoque.reset_index(drop=True)
+                df_estoque.index = (df_estoque.index + 1).astype(str)
+                df_estoque.index.name = "Nº"
+
+                st.dataframe(df_estoque, use_container_width=True)
