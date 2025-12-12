@@ -5047,44 +5047,6 @@ with aba_dados:
     st.subheader("📋 Dados Gerais - Visão Geral")
 
     # -------------------------------
-    # KPIs principais
-    # -------------------------------
-    total_pedidos = len(df_log)
-    com_rastreio = df_log[df_log["RASTREIO"].astype(str).str.strip() != ""].shape[0] if "RASTREIO" in df_log.columns else 0
-    sem_rastreio = total_pedidos - com_rastreio
-    pedidos_estoque = df_log[df_log["RASTREIO"].astype(str).str.startswith("888")].shape[0] if "RASTREIO" in df_log.columns else 0
-    pedidos_aliexpress = total_pedidos - pedidos_estoque
-
-    col1, col2, col3, col4, col5 = st.columns(5)
-    col1.metric("Total de Pedidos", total_pedidos)
-    col2.metric("Com Rastreamento", com_rastreio)
-    col3.metric("Sem Rastreamento", sem_rastreio)
-    col4.metric("Pedidos Estoque", pedidos_estoque)
-    col5.metric("Pedidos Aliexpress", pedidos_aliexpress)
-
-    # -------------------------------
-    # Tabela completa (apenas colunas existentes)
-    # -------------------------------
-    colunas_desejadas = ["DATA", "CLIENTE", "STATUS", "PRODUTO", "QUANTIDADE",
-                         "EMAIL", "PEDIDO", "RASTREIO", "LINK", "OBSERVAÇÕES"]
-
-    colunas_existentes = [c for c in colunas_desejadas if c in df_log.columns]
-    df_vazio = df_log[colunas_existentes].copy()
-    df_vazio = df_vazio.reset_index(drop=True)
-    df_vazio.index = (df_vazio.index + 1).astype(str)
-    df_vazio.index.name = "Nº"
-
-    # -------------------------------
-    # Busca e filtro simples
-    # -------------------------------
-    termo = st.text_input("🔍 Buscar na aba Dados Gerais", key="search_dados")
-    if termo.strip():
-        termo_lower = termo.lower()
-        df_vazio = df_vazio[df_vazio.apply(lambda row: termo_lower in str(row).lower(), axis=1)]
-
-    st.dataframe(df_vazio, use_container_width=True)
-
-    # -------------------------------
     # Botão de sincronização
     # -------------------------------
     st.subheader("🔄 Sincronização Shopify")
