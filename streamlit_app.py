@@ -4284,7 +4284,7 @@ if menu == "📦 Dashboard – Logística":
         # ---------------------------
         # Sub-abas dentro do Controle Operacional
         # ---------------------------
-        subtab_envios= st.tabs(["📦 Envios"])
+        subtab_envios, subtab_reenvios = st.tabs(["📦 Envios", "🔄 Reenvios"])
 
         # ---------------------------
         # ENVIO
@@ -4763,54 +4763,12 @@ if menu == "📦 Dashboard – Logística":
                 render_coluna(pedidos_lista[2*quarto:3*quarto])
             with col4:
                 render_coluna(pedidos_lista[3*quarto:])
-# ---------------------------
-# REENVIO — Apenas planilha
-# ---------------------------
-with subtab_reenvios:
-    st.subheader("🔄 Reenvios — Apenas leitura")
-
-    import gspread
-    from google.oauth2.service_account import Credentials
-
     # ---------------------------
-    # Função para conectar à planilha
+    # REENVIO
     # ---------------------------
-    @st.cache_data(ttl=300)
-    def carregar_planilha_reenvios():
-        try:
-            scopes = [
-                "https://www.googleapis.com/auth/spreadsheets.readonly",
-                "https://www.googleapis.com/auth/drive.readonly"
-            ]
-            gcp_info = dict(st.secrets["gcp_service_account"])
-            if isinstance(gcp_info.get("private_key"), str):
-                gcp_info["private_key"] = gcp_info["private_key"].replace("\\n", "\n")
-            creds = Credentials.from_service_account_info(gcp_info, scopes=scopes)
-            client = gspread.authorize(creds)
-
-            # Abre a planilha pelo ID e pela aba "Falha na importação"
-            spreadsheet_id = "1WTEiRnm1OFxzn6ag1MfI8VnlQCbL8xwxY3LeanCsdxk"
-            sheet = client.open_by_key(spreadsheet_id).worksheet("Falha na importação")
-
-            dados = pd.DataFrame(sheet.get_all_records())
-            return dados
-
-        except Exception as e:
-            st.error(f"❌ Erro ao carregar planilha: {e}")
-            return pd.DataFrame()
-
-    # ---------------------------
-    # Carrega e exibe os dados
-    # ---------------------------
-    df_reenvios = carregar_planilha_reenvios()
-
-    if df_reenvios.empty:
-        st.warning("Nenhum dado encontrado na aba 'Falha na importação'.")
-    else:
-        df_reenvios.index = range(1, len(df_reenvios) + 1)
-        df_reenvios.index.name = "Nº"
-        st.dataframe(df_reenvios, use_container_width=True)
-      
+    with subtab_reenvios:
+        st.subheader("🔄 Reenvios")
+        # Aqui entra todo o código que você já tinha para reenvios
 
     # =====================================================
     # 📦 ABA 2 — 💲 Valores
@@ -4921,148 +4879,85 @@ with subtab_reenvios:
             st.cache_data.clear()
             st.rerun()
 
-# =====================================================
-# 🚚 ABA 3 — ENTREGAS
-# =====================================================
-with aba3:
-    import gspread
-    from google.oauth2.service_account import Credentials
+# -------------------------------
+# Criar três sub-abas
+# -------------------------------
+aba_alie, aba_estoque, aba_vazia = st.tabs(["📄 Aliexpress", "📦 Estoque", "🆕 Dados Gerais"])
 
-    # -------------------------------
-    # 🔁 Função para buscar pedidos pagos hoje
-    # -------------------------------
-    @st.cache_data(ttl=300)
-    def get_paid_orders_today():
-        hoje = datetime.now(APP_TZ).date()
-        df = get_orders(start_date=hoje, end_date=hoje, only_paid=True)
-        if df.empty:
-            return pd.DataFrame()
+# -------------------------------
+# Aba 1: Aliexpress (remove rastreio 888)
+# -------------------------------
+with aba_alie:
+    st.subheader("📄 Registros da Logística - Aliexpress")
+    df_alie = df_log[~df_log["RASTREIO"].astype(str).str.startswith("888")].copy()
 
-        df = df.rename(columns={
-            "order_number": "PEDIDO",
-            "created_at": "DATA",
-            "customer_name": "CLIENTE",
-            "financial_status": "STATUS",
-            "product_title": "PRODUTO",
-            "quantity": "QUANTIDADE",
-            "customer_email": "EMAIL"
-        })
+    # Métricas
+    total = len(df_alie)
+    com_rastreio = df_alie[df_alie["RASTREIO"].astype(str).str.strip() != ""]
+    sem_rastreio = total - len(com_rastreio)
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Total de linhas", total)
+    col2.metric("Com código de rastreio", len(com_rastreio))
+    col3.metric("Sem rastreio", sem_rastreio)
 
-        df["PEDIDO"] = df["PEDIDO"].astype(str)
-        df["RASTREIO"] = ""
-        df["LINK"] = ""
-        df["OBSERVAÇÕES"] = ""
-
-        return df[[ 
-            "DATA", "CLIENTE", "STATUS", "PRODUTO", "QUANTIDADE",
-            "EMAIL", "PEDIDO", "RASTREIO", "LINK", "OBSERVAÇÕES"
-        ]]
-
-    # -------------------------------
-    # 🔄 Aba de Reenvios dentro de Entregas
-    # -------------------------------
-    @st.cache_data(ttl=300)
-    def carregar_planilha_reenvios():
-        try:
-            scopes = [
-                "https://www.googleapis.com/auth/spreadsheets.readonly",
-                "https://www.googleapis.com/auth/drive.readonly"
-            ]
-            gcp_info = dict(st.secrets["gcp_service_account"])
-            if isinstance(gcp_info.get("private_key"), str):
-                gcp_info["private_key"] = gcp_info["private_key"].replace("\\n", "\n")
-            creds = Credentials.from_service_account_info(gcp_info, scopes=scopes)
-            client = gspread.authorize(creds)
-
-            spreadsheet_id = "1WTEiRnm1OFxzn6ag1MfI8VnlQCbL8xwxY3LeanCsdxk"
-            sheet = client.open_by_key(spreadsheet_id).worksheet("Falha na importação")
-
-            dados = pd.DataFrame(sheet.get_all_records())
-            return dados
-
-        except Exception as e:
-            st.error(f"❌ Erro ao carregar planilha: {e}")
-            return pd.DataFrame()
-
-    # -------------------------------
-    # Criar sub-abas dentro de Entregas
-    # -------------------------------
-    aba_alie, aba_estoque, aba_dados, aba_reenvios = st.tabs([
-        "📄 Aliexpress", 
-        "📦 Estoque", 
-        "🆕 Dados", 
-        "🔄 Reenvios"
-    ])
-
-    # -------------------------------
-    # Aba 1: Aliexpress
-    # -------------------------------
-    with aba_alie:
-        st.subheader("📄 Registros da Logística - Aliexpress")
-        df_alie = df_log[~df_log["RASTREIO"].astype(str).str.startswith("888")].copy()
-        total = len(df_alie)
-        com_rastreio = df_alie[df_alie["RASTREIO"].astype(str).str.strip() != ""]
-        sem_rastreio = total - len(com_rastreio)
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Total de linhas", total)
-        col2.metric("Com código de rastreio", len(com_rastreio))
-        col3.metric("Sem rastreio", sem_rastreio)
-
-        termo = st.text_input("🔍 Buscar na planilha Aliexpress", key="search_alie")
-        df_exibir = df_alie.copy()
-        if termo.strip():
-            termo_lower = termo.lower()
-            if termo.startswith("#") and "PEDIDO" in df_exibir.columns:
-                df_exibir = df_exibir[df_exibir["PEDIDO"].astype(str).str.lower().str.contains(termo_lower)]
-            else:
-                df_exibir = df_exibir[df_exibir.apply(lambda row: termo_lower in str(row).lower(), axis=1)]
-
-        if "DATA" in df_exibir.columns:
-            df_exibir["DATA"] = pd.to_datetime(df_exibir["DATA"], errors="coerce")
-            df_exibir = df_exibir.sort_values("DATA", ascending=False)
-
-        if "PEDIDO" in df_exibir.columns:
-            df_exibir["PEDIDO"] = df_exibir["PEDIDO"].astype(str).str.replace(",", "").str.replace(".0", "").str.strip()
-        df_exibir = df_exibir.reset_index(drop=True)
-        df_exibir.index = (df_exibir.index + 1).astype(str)
-        df_exibir.index.name = "Nº"
-        st.dataframe(df_exibir, use_container_width=True)
-
-    # -------------------------------
-    # Aba 2: Estoque
-    # -------------------------------
-    with aba_estoque:
-        st.subheader("📦 Pedidos Estoque")
-        df_estoque = df_log[df_log["RASTREIO"].astype(str).str.startswith("888")].copy()
-        if df_estoque.empty:
-            st.warning("Nenhum pedido com rastreio começando com 888.")
+    # Busca
+    termo = st.text_input("🔍 Buscar na planilha Aliexpress", key="search_alie")
+    df_exibir = df_alie.copy()
+    if termo.strip():
+        termo_lower = termo.lower()
+        if termo.startswith("#") and "PEDIDO" in df_exibir.columns:
+            df_exibir = df_exibir[df_exibir["PEDIDO"].astype(str).str.lower().str.contains(termo_lower)]
         else:
-            df_estoque = df_estoque.reset_index(drop=True)
-            df_estoque.index = (df_estoque.index + 1).astype(str)
-            df_estoque.index.name = "Nº"
-            st.dataframe(df_estoque, use_container_width=True)
+            df_exibir = df_exibir[df_exibir.apply(lambda row: termo_lower in str(row).lower(), axis=1)]
 
-    # -------------------------------
-    # Aba 3: Dados
-    # -------------------------------
-    with aba_dados:
-        st.subheader("📋 Dados Gerais - Visão Geral")
-        st.subheader("🔄 Sincronização Shopify")
-        if st.button("📥 Buscar pedidos pagos de hoje"):
-            resultado = sync_shopify_to_sheet()
-            st.success(resultado)
-            st.cache_data.clear()
-            st.rerun()
+    # Ordenação por DATA
+    if "DATA" in df_exibir.columns:
+        df_exibir["DATA"] = pd.to_datetime(df_exibir["DATA"], errors="coerce")
+        df_exibir = df_exibir.sort_values("DATA", ascending=False)
 
-    # -------------------------------
-    # Aba 4: Reenvios
-    # -------------------------------
-    with aba_reenvios:
-        st.subheader("🔄 Reenvios — Apenas leitura")
-        df_reenvios = carregar_planilha_reenvios()
-        if df_reenvios.empty:
-            st.warning("Nenhum dado encontrado na aba 'Falha na importação'.")
-        else:
-            df_reenvios.index = range(1, len(df_reenvios) + 1)
-            df_reenvios.index.name = "Nº"
-            st.dataframe(df_reenvios, use_container_width=True)
+    # Ajuste coluna PEDIDO e índice
+    if "PEDIDO" in df_exibir.columns:
+        df_exibir["PEDIDO"] = df_exibir["PEDIDO"].astype(str).str.replace(",", "").str.replace(".0", "").str.strip()
+    df_exibir = df_exibir.reset_index(drop=True)
+    df_exibir.index = (df_exibir.index + 1).astype(str)
+    df_exibir.index.name = "Nº"
+    st.dataframe(df_exibir, use_container_width=True)
+
+# -------------------------------
+# Aba 2: Estoque (RASTREIO começa com 888)
+# -------------------------------
+with aba_estoque:
+    st.subheader("📦 Pedidos Estoque")
+    df_estoque = df_log[df_log["RASTREIO"].astype(str).str.startswith("888")].copy()
+    if df_estoque.empty:
+        st.warning("Nenhum pedido com rastreio começando com 888.")
+    else:
+        df_estoque = df_estoque.reset_index(drop=True)
+        df_estoque.index = (df_estoque.index + 1).astype(str)
+        df_estoque.index.name = "Nº"
+        st.dataframe(df_estoque, use_container_width=True)
+
+# -------------------------------
+# Aba 3: Dados Gerais (vazia)
+# -------------------------------
+with aba_vazia:
+    st.subheader("📋 Dados Gerais - Aba Vazia")
+    
+    # Colunas padrão
+    colunas = ["DATA", "CLIENTE", "STATUS", "PRODUTO", "QUANTIDADE", "EMAIL", "PEDIDO", "RASTREIO", "LINK", "OBSERVAÇÕES"]
+    
+    # DataFrame vazio
+    df_vazio = pd.DataFrame(columns=colunas)
+    
+    # Mostrar tabela
+    st.dataframe(df_vazio, use_container_width=True)
+
+# -------------------------------
+# Botão de sincronização
+# -------------------------------
+st.subheader("🔄 Sincronização Shopify")
+if st.button("📥 Buscar pedidos pagos de hoje"):
+    resultado = sync_shopify_to_sheet()
+    st.success(resultado)
+    st.cache_data.clear()
+    st.rerun()
