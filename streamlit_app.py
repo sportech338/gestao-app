@@ -4988,9 +4988,9 @@ with aba3:
         st.stop()
 
     # -------------------------------
-    # Criar duas sub-abas
+    # Criar tres sub-abas
     # -------------------------------
-    aba_alie, aba_estoque = st.tabs(["📄 Aliexpress", "📦 Estoque"])
+    aba_alie, aba_estoque = st.tabs(["📄 Aliexpress", "📦 Estoque","Dados"])
 
     # -------------------------------
     # Aba 1: Aliexpress (remove rastreio 888)
