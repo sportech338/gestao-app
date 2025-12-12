@@ -4272,89 +4272,98 @@ if menu == "📦 Dashboard – Logística":
     # =====================================================
     aba1, aba2, aba3 = st.tabs([
         "📋 Controle Operacional",
-        "💲 Valores",
+        "📦 Estoque",
         "🚚 Entregas"
     ])
 
     # =====================================================
     # 📋 ABA 1 — CONTROLE OPERACIONAL
     # =====================================================
-    with aba1:
+  with aba1:
+    # ---------------------------
+    # Sub-abas dentro do Controle Operacional
+    # ---------------------------
+    subtab_envios, subtab_reenvios = st.tabs(["📦 Envios", "🔄 Reenvios"])
 
-        # ---------------------------
-        # Sub-abas dentro do Controle Operacional
-        # ---------------------------
-        subtab_envios, subtab_reenvios = st.tabs(["📦 Envios", "🔄 Reenvios"])
+    # ---------------------------
+    # ENVIO
+    # ---------------------------
+    with subtab_envios:
+        st.subheader("📦 Envios")
+        # Aqui entra todo o código que você já tinha para envios,
+        # métricas, duplicados, filtros e processamento
+        # -------------------------------------------------
+        # 🧭 SIDEBAR — Filtro lateral de período
+        # -------------------------------------------------
+        st.sidebar.header("📅 Período rápido")
 
-        # ---------------------------
-        # ENVIO
-        # ---------------------------
-        with subtab_envios:
-            st.subheader("📦 Envios")
-            
-            # 🧭 SIDEBAR — Filtro lateral de período
-            st.sidebar.header("📅 Período rápido")
-            hoje = datetime.now(APP_TZ).date()
-            opcoes_periodo = [
-                "Hoje", "Ontem", "Últimos 7 dias", "Últimos 14 dias",
-                "Últimos 30 dias", "Últimos 90 dias", "Esta semana",
-                "Este mês", "Máximo", "Personalizado"
-            ]
-            escolha_periodo = st.sidebar.radio("Selecione:", opcoes_periodo, index=0)
+        hoje = datetime.now(APP_TZ).date()  
 
-            if escolha_periodo == "Hoje":
-                start_date, end_date = hoje, hoje
-            elif escolha_periodo == "Ontem":
-                start_date, end_date = hoje - timedelta(days=1), hoje - timedelta(days=1)
-            elif escolha_periodo == "Últimos 7 dias":
-                start_date, end_date = hoje - timedelta(days=7), hoje - timedelta(days=1)
-            elif escolha_periodo == "Últimos 14 dias":
-                start_date, end_date = hoje - timedelta(days=14), hoje - timedelta(days=1)
-            elif escolha_periodo == "Últimos 30 dias":
-                start_date, end_date = hoje - timedelta(days=30), hoje - timedelta(days=1)
-            elif escolha_periodo == "Últimos 90 dias":
-                start_date, end_date = hoje - timedelta(days=90), hoje - timedelta(days=1)
-            elif escolha_periodo == "Esta semana":
-                start_date, end_date = hoje - timedelta(days=hoje.weekday()), hoje
-            elif escolha_periodo == "Este mês":
-                start_date, end_date = hoje.replace(day=1), hoje
-            elif escolha_periodo == "Máximo":
-                start_date, end_date = date(2020, 1, 1), hoje
+        opcoes_periodo = [
+            "Hoje", "Ontem", "Últimos 7 dias", "Últimos 14 dias",
+            "Últimos 30 dias", "Últimos 90 dias", "Esta semana",
+            "Este mês", "Máximo", "Personalizado"
+        ]
+
+        escolha_periodo = st.sidebar.radio("Selecione:", opcoes_periodo, index=0)
+
+        if escolha_periodo == "Hoje":
+            start_date, end_date = hoje, hoje
+        elif escolha_periodo == "Ontem":
+            start_date, end_date = hoje - timedelta(days=1), hoje - timedelta(days=1)
+        elif escolha_periodo == "Últimos 7 dias":
+            start_date, end_date = hoje - timedelta(days=7), hoje - timedelta(days=1)
+        elif escolha_periodo == "Últimos 14 dias":
+            start_date, end_date = hoje - timedelta(days=14), hoje - timedelta(days=1)
+        elif escolha_periodo == "Últimos 30 dias":
+            start_date, end_date = hoje - timedelta(days=30), hoje - timedelta(days=1)
+        elif escolha_periodo == "Últimos 90 dias":
+            start_date, end_date = hoje - timedelta(days=90), hoje - timedelta(days=1)
+        elif escolha_periodo == "Esta semana":
+            start_date, end_date = hoje - timedelta(days=hoje.weekday()), hoje
+        elif escolha_periodo == "Este mês":
+            start_date = hoje.replace(day=1)
+            end_date = hoje
+        elif escolha_periodo == "Máximo":
+            start_date = date(2020, 1, 1)
+            end_date = hoje
+        else:
+            periodo = st.sidebar.date_input("📆 Selecione o intervalo:", (hoje, hoje), format="DD/MM/YYYY")
+            if isinstance(periodo, tuple) and len(periodo) == 2:
+                start_date, end_date = periodo
             else:
-                periodo = st.sidebar.date_input(
-                    "📆 Selecione o intervalo:", (hoje, hoje), format="DD/MM/YYYY"
-                )
-                if isinstance(periodo, tuple) and len(periodo) == 2:
-                    start_date, end_date = periodo
-                else:
-                    st.sidebar.warning("🟡 Selecione o fim do período.")
-                    st.stop()
+                st.sidebar.warning("🟡 Selecione o fim do período.")
+                st.stop()
 
-            st.sidebar.markdown(f"**Desde:** {start_date}  \n**Até:** {end_date}")
+        st.sidebar.markdown(f"**Desde:** {start_date}  \n**Até:** {end_date}")
 
-            # 🔍 Busca rápida
-            st.subheader("🔍 Busca rápida")
-            busca = st.text_input("Digite parte do nome do cliente, email ou número do pedido:")
+        # -------------------------------------------------
+        # 🔍 Busca rápida (no topo)
+        # -------------------------------------------------
+        st.subheader("🔍 Busca rápida")
+        busca = st.text_input("Digite parte do nome do cliente, email ou número do pedido:")
 
-            # 🔄 Carregamento de dados
-            periodo_atual = st.session_state.get("periodo_atual")
+        # -------------------------------------------------
+        # 🔄 Carregamento de dados
+        # -------------------------------------------------
+        periodo_atual = st.session_state.get("periodo_atual")
 
-            if busca.strip():
-                with st.spinner(f"🔍 Buscando '{busca}' diretamente na Shopify..."):
-                    produtos = get_products_with_variants()
-                    pedidos = search_orders_shopify(busca)
-                st.success(f"✅ {len(pedidos)} pedido(s) encontrados para '{busca}'.")
+        if busca.strip():
+            with st.spinner(f"🔍 Buscando '{busca}' diretamente na Shopify..."):
+                produtos = get_products_with_variants()
+                pedidos = search_orders_shopify(busca)
+            st.success(f"✅ {len(pedidos)} pedido(s) encontrados para '{busca}'. (busca direta na Shopify)")
+            st.session_state["produtos"] = produtos
+            st.session_state["pedidos"] = pedidos
+
+        elif periodo_atual != (start_date, end_date):
+            with st.spinner("🔄 Carregando dados da Shopify..."):
+                produtos = get_products_with_variants()
+                pedidos = get_orders(start_date=start_date, end_date=end_date)
                 st.session_state["produtos"] = produtos
                 st.session_state["pedidos"] = pedidos
-
-            elif periodo_atual != (start_date, end_date):
-                with st.spinner("🔄 Carregando dados da Shopify..."):
-                    produtos = get_products_with_variants()
-                    pedidos = get_orders(start_date=start_date, end_date=end_date)
-                    st.session_state["produtos"] = produtos
-                    st.session_state["pedidos"] = pedidos
-                    st.session_state["periodo_atual"] = (start_date, end_date)
-                st.success(f"✅ Dados carregados de {start_date.strftime('%d/%m/%Y')} até {end_date.strftime('%d/%m/%Y')}")
+                st.session_state["periodo_atual"] = (start_date, end_date)
+            st.success(f"✅ Dados carregados de {start_date.strftime('%d/%m/%Y')} até {end_date.strftime('%d/%m/%Y')}")
 
         # -------------------------------------------------
         # 🧩 Garantir que 'pedidos' existe mesmo se ainda não foi carregado
@@ -4771,7 +4780,7 @@ if menu == "📦 Dashboard – Logística":
         # Aqui entra todo o código que você já tinha para reenvios
 
     # =====================================================
-    # 📦 ABA 2 — 💲 Valores
+    # 📦 ABA 2 — ESTOQUE
     # =====================================================
     with aba2:
         st.subheader("Comparativo de Saídas e Custos por Variante:")
@@ -4879,124 +4888,129 @@ if menu == "📦 Dashboard – Logística":
             st.cache_data.clear()
             st.rerun()
 
-# =====================================================
-# 🚚 ABA 3 — ENTREGAS
-# =====================================================
-with aba3:
-    import gspread
-    from google.oauth2.service_account import Credentials
+    # =====================================================
+    # 🚚 ABA 3 — ENTREGAS
+    # =====================================================
+    with aba3:
 
-    # -------------------------------
-    # 🔁 Função para buscar pedidos pagos hoje
-    # -------------------------------
-    @st.cache_data(ttl=300)
-    def get_paid_orders_today():
-        hoje = datetime.now(APP_TZ).date()
-        df = get_orders(start_date=hoje, end_date=hoje, only_paid=True)
-        if df.empty:
-            return pd.DataFrame()
+        import gspread
+        from google.oauth2.service_account import Credentials
 
-        df = df.rename(columns={
-            "order_number": "PEDIDO",
-            "created_at": "DATA",
-            "customer_name": "CLIENTE",
-            "financial_status": "STATUS",
-            "product_title": "PRODUTO",
-            "quantity": "QUANTIDADE",
-            "customer_email": "EMAIL"
-        })
+        # -------------------------------
+        # 🔁 SINCRONIZAR SHOPIFY → PLANILHA
+        # -------------------------------
+        @st.cache_data(ttl=300)
+        def get_paid_orders_today():
+            hoje = datetime.now(APP_TZ).date()
+            df = get_orders(start_date=hoje, end_date=hoje, only_paid=True)
+            if df.empty:
+                return pd.DataFrame()
 
-        df["PEDIDO"] = df["PEDIDO"].astype(str)
-        df["RASTREIO"] = ""
-        df["LINK"] = ""
-        df["OBSERVAÇÕES"] = ""
+            df = df.rename(columns={
+                "order_number": "PEDIDO",
+                "created_at": "DATA",
+                "customer_name": "CLIENTE",
+                "financial_status": "STATUS",
+                "product_title": "PRODUTO",
+                "quantity": "QUANTIDADE",
+                "customer_email": "EMAIL"
+            })
 
-        return df[[ 
-            "DATA", "CLIENTE", "STATUS", "PRODUTO", "QUANTIDADE",
-            "EMAIL", "PEDIDO", "RASTREIO", "LINK", "OBSERVAÇÕES"
-        ]]
+            df["PEDIDO"] = df["PEDIDO"].astype(str)
+            df["RASTREIO"] = ""
+            df["LINK"] = ""
+            df["OBSERVAÇÕES"] = ""
 
-    # -------------------------------
-    # 🔥 Função de sincronização
-    # -------------------------------
-    def sync_shopify_to_sheet():
-        def normalizar_pedido(p):
-            if pd.isna(p):
-                return None
-            return str(p).replace("#", "").strip()
+            return df[[ 
+                "DATA", "CLIENTE", "STATUS", "PRODUTO", "QUANTIDADE",
+                "EMAIL", "PEDIDO", "RASTREIO", "LINK", "OBSERVAÇÕES"
+            ]]
 
-        df_new = get_paid_orders_today()
-        if df_new.empty:
-            return "Nenhum pedido pago novo encontrado hoje."
+        # -------------------------------------------------------
+        # 🔥 FUNÇÃO DEFINITIVA — SEM DUPLICAÇÃO / SEM API ERROR
+        # -------------------------------------------------------
+        def sync_shopify_to_sheet():
 
-        scopes = [
-            "https://www.googleapis.com/auth/spreadsheets",
-            "https://www.googleapis.com/auth/drive"
-        ]
-        gcp_info = dict(st.secrets["gcp_service_account"])
-        gcp_info["private_key"] = gcp_info["private_key"].replace("\\n", "\n")
-        creds = Credentials.from_service_account_info(gcp_info, scopes=scopes)
-        client = gspread.authorize(creds)
+            def normalizar_pedido(p):
+                if pd.isna(p):
+                    return None
+                return str(p).replace("#", "").strip()
 
-        sheet = client.open_by_key(st.secrets["sheets"]["spreadsheet_id"]).worksheet("Logística")
+            df_new = get_paid_orders_today()
+            if df_new.empty:
+                return "Nenhum pedido pago novo encontrado hoje."
 
-        df_sheet = pd.DataFrame(sheet.get_all_records())
-        df_sheet.columns = df_sheet.columns.str.strip()
-
-        if "PEDIDO" not in df_sheet.columns:
-            df_sheet["PEDIDO"] = ""
-
-        pedidos_existentes = set(df_sheet["PEDIDO"].apply(normalizar_pedido))
-        df_new["PEDIDO_LIMPO"] = df_new["PEDIDO"].apply(normalizar_pedido)
-        novos = df_new[~df_new["PEDIDO_LIMPO"].isin(pedidos_existentes)]
-        if novos.empty:
-            return "Nenhum pedido novo para adicionar."
-
-        linhas = novos.drop(columns=["PEDIDO_LIMPO"]).astype(str).values.tolist()
-        sheet.append_rows(linhas, value_input_option="USER_ENTERED")
-        return f"{len(linhas)} pedido(s) novo(s) adicionados com sucesso!"
-
-    # -------------------------------
-    # 1) Conectar ao Google Sheets
-    # -------------------------------
-    def get_gsheet_client():
-        scopes = [
-            "https://www.googleapis.com/auth/spreadsheets",
-            "https://www.googleapis.com/auth/drive"
-        ]
-        gcp_info = dict(st.secrets["gcp_service_account"])
-        if isinstance(gcp_info.get("private_key"), str):
+            scopes = [
+                "https://www.googleapis.com/auth/spreadsheets",
+                "https://www.googleapis.com/auth/drive"
+            ]
+            gcp_info = dict(st.secrets["gcp_service_account"])
             gcp_info["private_key"] = gcp_info["private_key"].replace("\\n", "\n")
-        creds = Credentials.from_service_account_info(gcp_info, scopes=scopes)
-        return gspread.authorize(creds)
+            creds = Credentials.from_service_account_info(gcp_info, scopes=scopes)
+            client = gspread.authorize(creds)
 
-    @st.cache_data(ttl=300)
-    def carregar_planilha_logistica():
-        client = get_gsheet_client()
-        sheet = client.open_by_key(st.secrets["sheets"]["spreadsheet_id"]).worksheet("Logística")
-        df = pd.DataFrame(sheet.get_all_records())
-        df.columns = df.columns.str.strip()
-        return df
+            sheet = client.open_by_key(st.secrets["sheets"]["spreadsheet_id"]).worksheet("Logística")
 
-    # -------------------------------
-    # 2) Tentar carregar dados
-    # -------------------------------
-    try:
-        df_log = carregar_planilha_logistica()
-    except Exception as e:
-        st.error(f"❌ Erro ao carregar planilha de logística: {e}")
-        st.stop()
+            df_sheet = pd.DataFrame(sheet.get_all_records())
+            df_sheet.columns = df_sheet.columns.str.strip()
 
-    # -------------------------------
-    # Criar três sub-abas
-    # -------------------------------
-    aba_geral, aba_alie, aba_estoque = st.tabs(["📊 Geral", "📄 Aliexpress", "📦 Estoque"])
+            # Garantir coluna PEDIDO
+            if "PEDIDO" not in df_sheet.columns:
+                df_sheet["PEDIDO"] = ""
 
-    # -------------------------------
-    # Aba 1: Geral (todos os pedidos)
-    # -------------------------------
-    with aba_geral:
-        st.subheader("📊 Dados Gerais da Logística")
+            pedidos_existentes = set(df_sheet["PEDIDO"].apply(normalizar_pedido))
+
+            df_new["PEDIDO_LIMPO"] = df_new["PEDIDO"].apply(normalizar_pedido)
+
+            novos = df_new[~df_new["PEDIDO_LIMPO"].isin(pedidos_existentes)]
+
+            if novos.empty:
+                return "Nenhum pedido novo para adicionar."
+
+            novos = novos.drop(columns=["PEDIDO_LIMPO"])
+
+            linhas = novos.astype(str).values.tolist()
+
+            sheet.append_rows(linhas, value_input_option="USER_ENTERED")
+
+            return f"{len(linhas)} pedido(s) novo(s) adicionados com sucesso!"
+
+        # -------------------------------
+        # 1) Conectar ao Google Sheets
+        # -------------------------------
+        def get_gsheet_client():
+            scopes = [
+                "https://www.googleapis.com/auth/spreadsheets",
+                "https://www.googleapis.com/auth/drive"
+            ]
+            gcp_info = dict(st.secrets["gcp_service_account"])
+            if isinstance(gcp_info.get("private_key"), str):
+                gcp_info["private_key"] = gcp_info["private_key"].replace("\\n", "\n")
+            creds = Credentials.from_service_account_info(gcp_info, scopes=scopes)
+            return gspread.authorize(creds)
+
+        @st.cache_data(ttl=300)
+        def carregar_planilha_logistica():
+            client = get_gsheet_client()
+            sheet = client.open_by_key(st.secrets["sheets"]["spreadsheet_id"]).worksheet("Logística")
+            df = pd.DataFrame(sheet.get_all_records())
+            df.columns = df.columns.str.strip()
+            return df
+
+        # -------------------------------
+        # 2) Tentar carregar dados
+        # -------------------------------
+        try:
+            df_log = carregar_planilha_logistica()
+        except Exception as e:
+            st.error(f"❌ Erro ao carregar planilha de logística: {e}")
+            st.stop()
+
+        # -------------------------------
+        # 3) Exibir métricas gerais
+        # -------------------------------
+        st.subheader("📦 Visão Geral")
+
         total = len(df_log)
         com_rastreio = df_log[df_log["RASTREIO"].astype(str).str.strip() != ""]
         sem_rastreio = total - len(com_rastreio)
@@ -5006,83 +5020,68 @@ with aba3:
         col2.metric("Com código de rastreio", len(com_rastreio))
         col3.metric("Sem rastreio", sem_rastreio)
 
-        termo = st.text_input("🔍 Buscar na planilha Geral", key="search_geral")
+        # -------------------------------
+        # 4) Campo de busca
+        # -------------------------------
+        st.subheader("🔍 Buscar na planilha")
+        termo = st.text_input("Digite parte do nome, pedido (#12345), rastreio ou email:")
+
         df_exibir = df_log.copy()
         if termo.strip():
             termo_lower = termo.lower()
-            if termo.startswith("#") and "PEDIDO" in df_exibir.columns:
-                df_exibir = df_exibir[df_exibir["PEDIDO"].astype(str).str.lower().str.contains(termo_lower)]
+
+            if termo.startswith("#") and "PEDIDO" in df_log.columns:
+                df_exibir = df_log[
+                    df_log["PEDIDO"].astype(str).str.lower().str.contains(termo_lower)
+                ]
             else:
-                df_exibir = df_exibir[df_exibir.apply(lambda row: termo_lower in str(row).lower(), axis=1)]
+                df_exibir = df_log[
+                    df_log.apply(lambda row: termo_lower in str(row).lower(), axis=1)
+                ]
 
+        # -------------------------------
+        # 5) Ordenação por data (se existir)
+        # -------------------------------
         if "DATA" in df_exibir.columns:
-            df_exibir["DATA"] = pd.to_datetime(df_exibir["DATA"], errors="coerce")
-            df_exibir = df_exibir.sort_values("DATA", ascending=False)
+            try:
+                df_exibir["DATA"] = pd.to_datetime(df_exibir["DATA"], errors="coerce")
+                df_exibir = df_exibir.sort_values("DATA", ascending=False)
+            except:
+                pass
 
+        # ----------------------------------------
+        # 🔧 AJUSTE DA COLUNA PEDIDO (Remove vírgulas do número)
+        # ----------------------------------------
         if "PEDIDO" in df_exibir.columns:
-            df_exibir["PEDIDO"] = df_exibir["PEDIDO"].astype(str).str.replace(",", "").str.replace(".0", "").str.strip()
+            df_exibir["PEDIDO"] = (
+                df_exibir["PEDIDO"]
+                .astype(str)
+                .str.replace(",", "")
+                .str.replace(".0", "")
+                .str.strip()
+            )
+                
 
+        # ----------------------------------------
+        # 🔧 AJUSTE DO ÍNDICE (REMOVE A VÍRGULA)
+        # ----------------------------------------
         df_exibir = df_exibir.reset_index(drop=True)
         df_exibir.index = (df_exibir.index + 1).astype(str)
         df_exibir.index.name = "Nº"
+             
+
+        # -------------------------------
+        # 6) Mostrar tabela
+        # -------------------------------
+        st.subheader("📄 Registros da Logística (Planilha)")
         st.dataframe(df_exibir, use_container_width=True)
 
-    # -------------------------------
-    # Aba 2: Aliexpress (remove rastreio 888)
-    # -------------------------------
-    with aba_alie:
-        st.subheader("📄 Registros da Logística - Aliexpress")
-        df_alie = df_log[~df_log["RASTREIO"].astype(str).str.startswith("888")].copy()
-
-        total = len(df_alie)
-        com_rastreio = df_alie[df_alie["RASTREIO"].astype(str).str.strip() != ""]
-        sem_rastreio = total - len(com_rastreio)
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Total de linhas", total)
-        col2.metric("Com código de rastreio", len(com_rastreio))
-        col3.metric("Sem rastreio", sem_rastreio)
-
-        termo = st.text_input("🔍 Buscar na planilha Aliexpress", key="search_alie")
-        df_exibir = df_alie.copy()
-        if termo.strip():
-            termo_lower = termo.lower()
-            if termo.startswith("#") and "PEDIDO" in df_exibir.columns:
-                df_exibir = df_exibir[df_exibir["PEDIDO"].astype(str).str.lower().str.contains(termo_lower)]
-            else:
-                df_exibir = df_exibir[df_exibir.apply(lambda row: termo_lower in str(row).lower(), axis=1)]
-
-        if "DATA" in df_exibir.columns:
-            df_exibir["DATA"] = pd.to_datetime(df_exibir["DATA"], errors="coerce")
-            df_exibir = df_exibir.sort_values("DATA", ascending=False)
-
-        if "PEDIDO" in df_exibir.columns:
-            df_exibir["PEDIDO"] = df_exibir["PEDIDO"].astype(str).str.replace(",", "").str.replace(".0", "").str.strip()
-
-        df_exibir = df_exibir.reset_index(drop=True)
-        df_exibir.index = (df_exibir.index + 1).astype(str)
-        df_exibir.index.name = "Nº"
-        st.dataframe(df_exibir, use_container_width=True)
-
-    # -------------------------------
-    # Aba 3: Estoque (RASTREIO começa com 888)
-    # -------------------------------
-    with aba_estoque:
-        st.subheader("📦 Pedidos Estoque")
-        df_estoque = df_log[df_log["RASTREIO"].astype(str).str.startswith("888")].copy()
-        if df_estoque.empty:
-            st.warning("Nenhum pedido com rastreio começando com 888.")
-        else:
-            df_estoque = df_estoque.reset_index(drop=True)
-            df_estoque.index = (df_estoque.index + 1).astype(str)
-            df_estoque.index.name = "Nº"
-            st.dataframe(df_estoque, use_container_width=True)
-
-    # -------------------------------
-    # Botão de sincronização
-    # -------------------------------
-    st.subheader("🔄 Sincronização Shopify")
-    if st.button("📥 Buscar pedidos pagos de hoje"):
-        resultado = sync_shopify_to_sheet()
-        st.success(resultado)
-        st.cache_data.clear()
-        st.rerun()
+        # ---------------------------------------
+        # Botão de sincronização
+        # ---------------------------------------
+        st.subheader("🔄 Sincronização Shopify")
+        if st.button("📥 Buscar pedidos pagos de hoje"):
+            resultado = sync_shopify_to_sheet()
+            st.success(resultado)
+            st.cache_data.clear()
+            st.rerun()
