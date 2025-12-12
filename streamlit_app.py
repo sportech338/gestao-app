@@ -4869,6 +4869,22 @@ if menu == "📦 Dashboard – Logística":
             atualizar_planilha_custos(edit_df)
             st.cache_data.clear()
             st.rerun()
+def safe_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+
+    # Garante colunas
+    df.columns = df.columns.astype(str)
+
+    # Tudo string (React-safe)
+    for col in df.columns:
+        df[col] = df[col].astype(str).fillna("")
+
+    # Índice simples
+    df = df.reset_index(drop=True)
+    df.index = (df.index + 1).astype(str)
+    df.index.name = "Nº"
+
+    return df
 
 # =====================================================
 # 🚚 ABA 3 — ENTREGAS
