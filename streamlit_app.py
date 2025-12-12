@@ -4284,7 +4284,7 @@ if menu == "📦 Dashboard – Logística":
         # ---------------------------
         # Sub-abas dentro do Controle Operacional
         # ---------------------------
-        subtab_envios, subtab_reenvios = st.tabs(["📦 Envios", "🔄 Reenvios"])
+        subtab_envios = st.tabs(["📦 Envios"])
 
         # ---------------------------
         # ENVIO
