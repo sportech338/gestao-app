@@ -4887,7 +4887,7 @@ def safe_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 # =====================================================
-# 🚚 ABA 3 — ENTREGAS (SUB-ABAS VIRAM ABAS)
+# 🚚 ABA 3 — ENTREGAS
 # =====================================================
 with aba3:
 
@@ -4896,9 +4896,9 @@ with aba3:
     import gspread
     from google.oauth2.service_account import Credentials
 
-    # -------------------------------
+    # =====================================================
     # 🔐 Google Sheets
-    # -------------------------------
+    # =====================================================
     def get_gsheet_client():
         scopes = [
             "https://www.googleapis.com/auth/spreadsheets",
@@ -4923,14 +4923,13 @@ with aba3:
             return pd.DataFrame()
 
     # =====================================================
-    # 📥 Carregar bases uma vez (para todas as abas)
+    # 📥 BASES
     # =====================================================
-    df_log_raw = carregar_aba("Logística")
-    df_entregue_raw = carregar_aba("Entrega realizada")
-    df_falha_raw = carregar_aba("Falha na importação")
+    df_log = carregar_aba("Logística")
+    df_entregue = carregar_aba("Entrega realizada")
+    df_falha = carregar_aba("Falha na importação")
 
-    # Dedup por PEDIDO (se existir)
-    def dedup_por_pedido(df: pd.DataFrame) -> pd.DataFrame:
+    def dedup(df):
         df = df.copy()
         if "PEDIDO" in df.columns:
             if "DATA" in df.columns:
@@ -4939,38 +4938,32 @@ with aba3:
             df = df.drop_duplicates(subset=["PEDIDO"], keep="first")
         return df
 
-    df_log_raw = dedup_por_pedido(df_log_raw)
-    df_entregue_raw = dedup_por_pedido(df_entregue_raw)
-    df_falha_raw = dedup_por_pedido(df_falha_raw)
+    df_log = dedup(df_log)
+    df_entregue = dedup(df_entregue)
+    df_falha = dedup(df_falha)
 
-    # Conjuntos auxiliares
-    pedidos_entregues = set(df_entregue_raw["PEDIDO"].astype(str)) if "PEDIDO" in df_entregue_raw.columns else set()
-    pedidos_falha = set(df_falha_raw["PEDIDO"].astype(str)) if "PEDIDO" in df_falha_raw.columns else set()
+    pedidos_entregues = set(df_entregue["PEDIDO"].astype(str)) if "PEDIDO" in df_entregue.columns else set()
+    pedidos_falha = set(df_falha["PEDIDO"].astype(str)) if "PEDIDO" in df_falha.columns else set()
 
-    # Quebra em AliExpress vs Estoque (pela regra do 888 no rastreio)
-    if "RASTREIO" in df_log_raw.columns:
-        df_log_aliexpress = df_log_raw[~df_log_raw["RASTREIO"].astype(str).str.startswith("888", na=False)].copy()
-        df_log_estoque   = df_log_raw[df_log_raw["RASTREIO"].astype(str).str.startswith("888", na=False)].copy()
+    # =====================================================
+    # 🔀 SEPARAÇÃO ALIEXPRESS x ESTOQUE
+    # =====================================================
+    if "RASTREIO" in df_log.columns:
+        df_log_aliexpress = df_log[~df_log["RASTREIO"].astype(str).str.startswith("888", na=False)]
+        df_log_estoque = df_log[df_log["RASTREIO"].astype(str).str.startswith("888", na=False)]
     else:
         df_log_aliexpress = pd.DataFrame()
         df_log_estoque = pd.DataFrame()
 
-    # Para as abas "Entregue": vamos filtrar também por 888 em Entrega realizada
-    if "RASTREIO" in df_entregue_raw.columns:
-        df_entregue_aliexpress = df_entregue_raw[~df_entregue_raw["RASTREIO"].astype(str).str.startswith("888", na=False)].copy()
-        df_entregue_estoque   = df_entregue_raw[df_entregue_raw["RASTREIO"].astype(str).str.startswith("888", na=False)].copy()
+    if "RASTREIO" in df_entregue.columns:
+        df_entregue_aliexpress = df_entregue[~df_entregue["RASTREIO"].astype(str).str.startswith("888", na=False)]
+        df_entregue_estoque = df_entregue[df_entregue["RASTREIO"].astype(str).str.startswith("888", na=False)]
     else:
-        # fallback: se não tiver rastreio na aba entregue, separa pelo que existe na logística
-        pedidos_estoque = set(df_log_estoque["PEDIDO"].astype(str)) if "PEDIDO" in df_log_estoque.columns else set()
-        if "PEDIDO" in df_entregue_raw.columns:
-            df_entregue_estoque = df_entregue_raw[df_entregue_raw["PEDIDO"].astype(str).isin(pedidos_estoque)].copy()
-            df_entregue_aliexpress = df_entregue_raw[~df_entregue_raw["PEDIDO"].astype(str).isin(pedidos_estoque)].copy()
-        else:
-            df_entregue_aliexpress = pd.DataFrame()
-            df_entregue_estoque = pd.DataFrame()
+        df_entregue_aliexpress = pd.DataFrame()
+        df_entregue_estoque = pd.DataFrame()
 
     # =====================================================
-    # 🧭 Abas principais (antes eram sub-abas)
+    # 🧭 ABAS PRINCIPAIS
     # =====================================================
     t1, t2, t3, t4, t5 = st.tabs([
         "🟡 Aguardando",
@@ -4981,117 +4974,55 @@ with aba3:
     ])
 
     # =====================================================
-    # 🟡 AGUARDANDO (sem rastreio na logística)
+    # 🟡 AGUARDANDO (SEM SEPARAÇÃO)
     # =====================================================
     with t1:
-        sa, se = st.tabs(["🛒 AliExpress", "📦 Estoque"])
-
-        with sa:
-            df = df_log_aliexpress[df_log_aliexpress["RASTREIO"].astype(str).str.strip() == ""] if "RASTREIO" in df_log_aliexpress.columns else pd.DataFrame()
-            if not df.empty:
-                st.dataframe(safe_dataframe(df), use_container_width=True)
-            else:
-                st.info("Nenhum pedido AliExpress aguardando rastreio.")
-
-        with se:
-            df = df_log_estoque[df_log_estoque["RASTREIO"].astype(str).str.strip() == ""] if "RASTREIO" in df_log_estoque.columns else pd.DataFrame()
-            if not df.empty:
-                st.dataframe(safe_dataframe(df), use_container_width=True)
-            else:
-                st.info("Nenhum pedido de Estoque aguardando rastreio.")
+        df = df_log[df_log["RASTREIO"].astype(str).str.strip() == ""] if "RASTREIO" in df_log.columns else pd.DataFrame()
+        st.dataframe(safe_dataframe(df), use_container_width=True) if not df.empty else st.info("Nenhum pedido aguardando.")
 
     # =====================================================
-    # 🚚 EM TRÂNSITO (tem rastreio e não está entregue nem falha)
+    # 🚚 EM TRÂNSITO (SEPARADO)
     # =====================================================
     with t2:
         sa, se = st.tabs(["🛒 AliExpress", "📦 Estoque"])
 
         with sa:
-            if df_log_aliexpress.empty or "RASTREIO" not in df_log_aliexpress.columns or "PEDIDO" not in df_log_aliexpress.columns:
-                st.info("Nenhum pedido AliExpress em trânsito.")
-            else:
-                df = df_log_aliexpress[
-                    (df_log_aliexpress["RASTREIO"].astype(str).str.strip() != "") &
-                    (~df_log_aliexpress["PEDIDO"].astype(str).isin(pedidos_entregues)) &
-                    (~df_log_aliexpress["PEDIDO"].astype(str).isin(pedidos_falha))
-                ].copy()
-                if not df.empty:
-                    st.dataframe(safe_dataframe(df), use_container_width=True)
-                else:
-                    st.info("Nenhum pedido AliExpress em trânsito.")
+            df = df_log_aliexpress[
+                (df_log_aliexpress["RASTREIO"].astype(str).str.strip() != "") &
+                (~df_log_aliexpress["PEDIDO"].astype(str).isin(pedidos_entregues)) &
+                (~df_log_aliexpress["PEDIDO"].astype(str).isin(pedidos_falha))
+            ]
+            st.dataframe(safe_dataframe(df), use_container_width=True) if not df.empty else st.info("Nenhum AliExpress em trânsito.")
 
         with se:
-            if df_log_estoque.empty or "RASTREIO" not in df_log_estoque.columns or "PEDIDO" not in df_log_estoque.columns:
-                st.info("Nenhum pedido de Estoque em trânsito.")
-            else:
-                df = df_log_estoque[
-                    (df_log_estoque["RASTREIO"].astype(str).str.strip() != "") &
-                    (~df_log_estoque["PEDIDO"].astype(str).isin(pedidos_entregues)) &
-                    (~df_log_estoque["PEDIDO"].astype(str).isin(pedidos_falha))
-                ].copy()
-                if not df.empty:
-                    st.dataframe(safe_dataframe(df), use_container_width=True)
-                else:
-                    st.info("Nenhum pedido de Estoque em trânsito.")
+            df = df_log_estoque[
+                (df_log_estoque["RASTREIO"].astype(str).str.strip() != "") &
+                (~df_log_estoque["PEDIDO"].astype(str).isin(pedidos_entregues)) &
+                (~df_log_estoque["PEDIDO"].astype(str).isin(pedidos_falha))
+            ]
+            st.dataframe(safe_dataframe(df), use_container_width=True) if not df.empty else st.info("Nenhum estoque em trânsito.")
 
     # =====================================================
-    # ✅ ENTREGUE (vem da aba "Entrega realizada")
+    # ✅ ENTREGUE (SEPARADO)
     # =====================================================
     with t3:
         sa, se = st.tabs(["🛒 AliExpress", "📦 Estoque"])
 
         with sa:
-            if not df_entregue_aliexpress.empty:
-                st.dataframe(safe_dataframe(df_entregue_aliexpress), use_container_width=True)
-            else:
-                st.info("Nenhum pedido AliExpress entregue.")
+            st.dataframe(safe_dataframe(df_entregue_aliexpress), use_container_width=True) if not df_entregue_aliexpress.empty else st.info("Nenhum AliExpress entregue.")
 
         with se:
-            if not df_entregue_estoque.empty:
-                st.dataframe(safe_dataframe(df_entregue_estoque), use_container_width=True)
-            else:
-                st.info("Nenhum pedido de Estoque entregue.")
+            st.dataframe(safe_dataframe(df_entregue_estoque), use_container_width=True) if not df_entregue_estoque.empty else st.info("Nenhum estoque entregue.")
 
     # =====================================================
-    # 📮 CORREIOS (sem regra por enquanto)
+    # 📮 CORREIOS
     # =====================================================
     with t4:
-        sa, se = st.tabs(["🛒 AliExpress", "📦 Estoque"])
-        with sa:
-            st.info("📮 Correios (AliExpress) — nenhuma regra aplicada ainda.")
-        with se:
-            st.info("📮 Correios (Estoque) — nenhuma regra aplicada ainda.")
+        st.info("📮 Aba Correios — nenhuma regra aplicada.")
 
     # =====================================================
-    # ⛔ IMPORTAÇÃO NÃO AUTORIZADA (vem da aba "Falha na importação")
+    # ⛔ IMPORTAÇÃO NÃO AUTORIZADA
     # =====================================================
     with t5:
-        sa, se = st.tabs(["🛒 AliExpress", "📦 Estoque"])
-
-        # Se a planilha de falha tiver rastreio, separa pelo 888.
-        if not df_falha_raw.empty and "RASTREIO" in df_falha_raw.columns:
-            df_falha_aliexpress = df_falha_raw[~df_falha_raw["RASTREIO"].astype(str).str.startswith("888", na=False)].copy()
-            df_falha_estoque   = df_falha_raw[df_falha_raw["RASTREIO"].astype(str).str.startswith("888", na=False)].copy()
-        else:
-            # fallback: separa pela lista de pedidos de estoque na logística
-            pedidos_estoque = set(df_log_estoque["PEDIDO"].astype(str)) if "PEDIDO" in df_log_estoque.columns else set()
-            if "PEDIDO" in df_falha_raw.columns:
-                df_falha_estoque = df_falha_raw[df_falha_raw["PEDIDO"].astype(str).isin(pedidos_estoque)].copy()
-                df_falha_aliexpress = df_falha_raw[~df_falha_raw["PEDIDO"].astype(str).isin(pedidos_estoque)].copy()
-            else:
-                df_falha_aliexpress = pd.DataFrame()
-                df_falha_estoque = pd.DataFrame()
-
-        with sa:
-            if not df_falha_aliexpress.empty:
-                st.dataframe(safe_dataframe(df_falha_aliexpress), use_container_width=True)
-            else:
-                st.info("Nenhuma falha de importação (AliExpress).")
-
-        with se:
-            if not df_falha_estoque.empty:
-                st.dataframe(safe_dataframe(df_falha_estoque), use_container_width=True)
-            else:
-                st.info("Nenhuma falha de importação (Estoque).")
-
+        st.dataframe(safe_dataframe(df_falha), use_container_width=True) if not df_falha.empty else st.info("Nenhuma falha de importação.")
 
