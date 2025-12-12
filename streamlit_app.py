@@ -4879,123 +4879,200 @@ if menu == "📦 Dashboard – Logística":
             st.cache_data.clear()
             st.rerun()
 
-# =====================================================
-# 🚚 ABA 3 — ENTREGAS
-# =====================================================
-with aba3:
-    st.subheader("🚚 Entregas e Estoque Aliexpress")
+    # =====================================================
+    # 🚚 ABA 3 — ENTREGAS
+    # =====================================================
+    with aba3:
 
-    import gspread
-    from google.oauth2.service_account import Credentials
+        import gspread
+        from google.oauth2.service_account import Credentials
 
-    # -------------------------------
-    # 🔁 Função para buscar pedidos pagos hoje
-    # -------------------------------
-    @st.cache_data(ttl=300)
-    def get_paid_orders_today():
-        hoje = datetime.now(APP_TZ).date()
-        df = get_orders(start_date=hoje, end_date=hoje, only_paid=True)
-        if df.empty:
-            return pd.DataFrame()
+        # -------------------------------
+        # 🔁 SINCRONIZAR SHOPIFY → PLANILHA
+        # -------------------------------
+        @st.cache_data(ttl=300)
+        def get_paid_orders_today():
+            hoje = datetime.now(APP_TZ).date()
+            df = get_orders(start_date=hoje, end_date=hoje, only_paid=True)
+            if df.empty:
+                return pd.DataFrame()
 
-        df = df.rename(columns={
-            "order_number": "PEDIDO",
-            "created_at": "DATA",
-            "customer_name": "CLIENTE",
-            "financial_status": "STATUS",
-            "product_title": "PRODUTO",
-            "quantity": "QUANTIDADE",
-            "customer_email": "EMAIL",
-            "tracking_number": "RASTREIO"  # caso já exista
-        })
+            df = df.rename(columns={
+                "order_number": "PEDIDO",
+                "created_at": "DATA",
+                "customer_name": "CLIENTE",
+                "financial_status": "STATUS",
+                "product_title": "PRODUTO",
+                "quantity": "QUANTIDADE",
+                "customer_email": "EMAIL"
+            })
 
-        df["PEDIDO"] = df["PEDIDO"].astype(str)
-        df["RASTREIO"] = df.get("RASTREIO", "")  # se não existir
-        df["LINK"] = ""
-        df["OBSERVAÇÕES"] = ""
+            df["PEDIDO"] = df["PEDIDO"].astype(str)
+            df["RASTREIO"] = ""
+            df["LINK"] = ""
+            df["OBSERVAÇÕES"] = ""
 
-        return df[[ 
-            "DATA", "CLIENTE", "STATUS", "PRODUTO", "QUANTIDADE",
-            "EMAIL", "PEDIDO", "RASTREIO", "LINK", "OBSERVAÇÕES"
-        ]]
+            return df[[ 
+                "DATA", "CLIENTE", "STATUS", "PRODUTO", "QUANTIDADE",
+                "EMAIL", "PEDIDO", "RASTREIO", "LINK", "OBSERVAÇÕES"
+            ]]
 
-    # -------------------------------
-    # 🔥 Função de sincronização
-    # -------------------------------
-    def sync_shopify_to_sheet():
-        def normalizar_pedido(p):
-            if pd.isna(p):
-                return None
-            return str(p).replace("#", "").strip()
+        # -------------------------------------------------------
+        # 🔥 FUNÇÃO DEFINITIVA — SEM DUPLICAÇÃO / SEM API ERROR
+        # -------------------------------------------------------
+        def sync_shopify_to_sheet():
 
-        df_new = get_paid_orders_today()
-        if df_new.empty:
-            return "Nenhum pedido pago novo encontrado hoje."
+            def normalizar_pedido(p):
+                if pd.isna(p):
+                    return None
+                return str(p).replace("#", "").strip()
 
-        scopes = [
-            "https://www.googleapis.com/auth/spreadsheets",
-            "https://www.googleapis.com/auth/drive"
-        ]
-        gcp_info = dict(st.secrets["gcp_service_account"])
-        gcp_info["private_key"] = gcp_info["private_key"].replace("\\n", "\n")
-        creds = Credentials.from_service_account_info(gcp_info, scopes=scopes)
-        client = gspread.authorize(creds)
+            df_new = get_paid_orders_today()
+            if df_new.empty:
+                return "Nenhum pedido pago novo encontrado hoje."
 
-        sheet = client.open_by_key(st.secrets["sheets"]["spreadsheet_id"]).worksheet("Logística")
+            scopes = [
+                "https://www.googleapis.com/auth/spreadsheets",
+                "https://www.googleapis.com/auth/drive"
+            ]
+            gcp_info = dict(st.secrets["gcp_service_account"])
+            gcp_info["private_key"] = gcp_info["private_key"].replace("\\n", "\n")
+            creds = Credentials.from_service_account_info(gcp_info, scopes=scopes)
+            client = gspread.authorize(creds)
 
-        df_sheet = pd.DataFrame(sheet.get_all_records())
-        df_sheet.columns = df_sheet.columns.str.strip()
-        if "PEDIDO" not in df_sheet.columns:
-            df_sheet["PEDIDO"] = ""
+            sheet = client.open_by_key(st.secrets["sheets"]["spreadsheet_id"]).worksheet("Logística")
 
-        pedidos_existentes = set(df_sheet["PEDIDO"].apply(normalizar_pedido))
-        df_new["PEDIDO_LIMPO"] = df_new["PEDIDO"].apply(normalizar_pedido)
-        novos = df_new[~df_new["PEDIDO_LIMPO"].isin(pedidos_existentes)]
-        if novos.empty:
-            return "Nenhum pedido novo para adicionar."
+            df_sheet = pd.DataFrame(sheet.get_all_records())
+            df_sheet.columns = df_sheet.columns.str.strip()
 
-        linhas = novos.drop(columns=["PEDIDO_LIMPO"]).astype(str).values.tolist()
-        sheet.append_rows(linhas, value_input_option="USER_ENTERED")
-        return f"{len(linhas)} pedido(s) novo(s) adicionados com sucesso!"
+            # Garantir coluna PEDIDO
+            if "PEDIDO" not in df_sheet.columns:
+                df_sheet["PEDIDO"] = ""
 
-    # -------------------------------
-    # Sub-abas: Logística + Aliexpress
-    # -------------------------------
-    aba_log, aba_alie = st.tabs(["📄 Logística", "📦 Estoque / Aliexpress"])
+            pedidos_existentes = set(df_sheet["PEDIDO"].apply(normalizar_pedido))
 
-    # -------------------------------
-    # Filtrar pedidos pagos
-    # -------------------------------
-    df_log = get_paid_orders_today()
-    if df_log.empty:
-        st.warning("Nenhum pedido pago encontrado hoje.")
-        st.stop()
+            df_new["PEDIDO_LIMPO"] = df_new["PEDIDO"].apply(normalizar_pedido)
 
-    # Dividir por prefixo do rastreio
-    df_aliexpress = df_log[df_log["RASTREIO"].astype(str).str.startswith("888")].copy()
-    df_log_remain = df_log[~df_log["RASTREIO"].astype(str).str.startswith("888")].copy()
+            novos = df_new[~df_new["PEDIDO_LIMPO"].isin(pedidos_existentes)]
 
-    # -------------------------------
-    # Aba Logística (RASTREIO != 888)
-    # -------------------------------
-    with aba_log:
-        st.subheader("📄 Pedidos Logística")
-        st.dataframe(df_log_remain, use_container_width=True)
+            if novos.empty:
+                return "Nenhum pedido novo para adicionar."
 
-    # -------------------------------
-    # Aba Estoque / Aliexpress (RASTREIO começa com 888)
-    # -------------------------------
-    with aba_alie:
-        st.subheader("📦 Pedidos Estoque / Aliexpress")
-        st.dataframe(df_aliexpress, use_container_width=True)
+            novos = novos.drop(columns=["PEDIDO_LIMPO"])
 
-    # -------------------------------
-    # Botão de sincronização geral
-    # -------------------------------
-    st.subheader("🔄 Sincronização Shopify")
-    if st.button("📥 Buscar pedidos pagos de hoje"):
-        resultado = sync_shopify_to_sheet()
-        st.success(resultado)
-        st.cache_data.clear()
-        st.rerun()
+            linhas = novos.astype(str).values.tolist()
 
+            sheet.append_rows(linhas, value_input_option="USER_ENTERED")
+
+            return f"{len(linhas)} pedido(s) novo(s) adicionados com sucesso!"
+
+        # -------------------------------
+        # 1) Conectar ao Google Sheets
+        # -------------------------------
+        def get_gsheet_client():
+            scopes = [
+                "https://www.googleapis.com/auth/spreadsheets",
+                "https://www.googleapis.com/auth/drive"
+            ]
+            gcp_info = dict(st.secrets["gcp_service_account"])
+            if isinstance(gcp_info.get("private_key"), str):
+                gcp_info["private_key"] = gcp_info["private_key"].replace("\\n", "\n")
+            creds = Credentials.from_service_account_info(gcp_info, scopes=scopes)
+            return gspread.authorize(creds)
+
+        @st.cache_data(ttl=300)
+        def carregar_planilha_logistica():
+            client = get_gsheet_client()
+            sheet = client.open_by_key(st.secrets["sheets"]["spreadsheet_id"]).worksheet("Logística")
+            df = pd.DataFrame(sheet.get_all_records())
+            df.columns = df.columns.str.strip()
+            return df
+
+        # -------------------------------
+        # 2) Tentar carregar dados
+        # -------------------------------
+        try:
+            df_log = carregar_planilha_logistica()
+        except Exception as e:
+            st.error(f"❌ Erro ao carregar planilha de logística: {e}")
+            st.stop()
+
+        # -------------------------------
+        # 3) Exibir métricas gerais
+        # -------------------------------
+        st.subheader("📦 Visão Geral")
+
+        total = len(df_log)
+        com_rastreio = df_log[df_log["RASTREIO"].astype(str).str.strip() != ""]
+        sem_rastreio = total - len(com_rastreio)
+
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Total de linhas", total)
+        col2.metric("Com código de rastreio", len(com_rastreio))
+        col3.metric("Sem rastreio", sem_rastreio)
+
+        # -------------------------------
+        # 4) Campo de busca
+        # -------------------------------
+        st.subheader("🔍 Buscar na planilha")
+        termo = st.text_input("Digite parte do nome, pedido (#12345), rastreio ou email:")
+
+        df_exibir = df_log.copy()
+        if termo.strip():
+            termo_lower = termo.lower()
+
+            if termo.startswith("#") and "PEDIDO" in df_log.columns:
+                df_exibir = df_log[
+                    df_log["PEDIDO"].astype(str).str.lower().str.contains(termo_lower)
+                ]
+            else:
+                df_exibir = df_log[
+                    df_log.apply(lambda row: termo_lower in str(row).lower(), axis=1)
+                ]
+
+        # -------------------------------
+        # 5) Ordenação por data (se existir)
+        # -------------------------------
+        if "DATA" in df_exibir.columns:
+            try:
+                df_exibir["DATA"] = pd.to_datetime(df_exibir["DATA"], errors="coerce")
+                df_exibir = df_exibir.sort_values("DATA", ascending=False)
+            except:
+                pass
+
+        # ----------------------------------------
+        # 🔧 AJUSTE DA COLUNA PEDIDO (Remove vírgulas do número)
+        # ----------------------------------------
+        if "PEDIDO" in df_exibir.columns:
+            df_exibir["PEDIDO"] = (
+                df_exibir["PEDIDO"]
+                .astype(str)
+                .str.replace(",", "")
+                .str.replace(".0", "")
+                .str.strip()
+            )
+                
+
+        # ----------------------------------------
+        # 🔧 AJUSTE DO ÍNDICE (REMOVE A VÍRGULA)
+        # ----------------------------------------
+        df_exibir = df_exibir.reset_index(drop=True)
+        df_exibir.index = (df_exibir.index + 1).astype(str)
+        df_exibir.index.name = "Nº"
+             
+
+        # -------------------------------
+        # 6) Mostrar tabela
+        # -------------------------------
+        st.subheader("📄 Registros da Logística (Planilha)")
+        st.dataframe(df_exibir, use_container_width=True)
+
+        # ---------------------------------------
+        # Botão de sincronização
+        # ---------------------------------------
+        st.subheader("🔄 Sincronização Shopify")
+        if st.button("📥 Buscar pedidos pagos de hoje"):
+            resultado = sync_shopify_to_sheet()
+            st.success(resultado)
+            st.cache_data.clear()
+            st.rerun()
