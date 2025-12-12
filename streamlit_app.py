@@ -4988,18 +4988,52 @@ with aba3:
         st.stop()
 
     # -------------------------------
-    # Criar duas sub-abas
+    # Criar três sub-abas
     # -------------------------------
-    aba_alie, aba_estoque = st.tabs(["📄 Aliexpress", "📦 Estoque"])
+    aba_geral, aba_alie, aba_estoque = st.tabs(["📊 Geral", "📄 Aliexpress", "📦 Estoque"])
 
     # -------------------------------
-    # Aba 1: Aliexpress (remove rastreio 888)
+    # Aba 1: Geral (todos os pedidos)
+    # -------------------------------
+    with aba_geral:
+        st.subheader("📊 Dados Gerais da Logística")
+        total = len(df_log)
+        com_rastreio = df_log[df_log["RASTREIO"].astype(str).str.strip() != ""]
+        sem_rastreio = total - len(com_rastreio)
+
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Total de linhas", total)
+        col2.metric("Com código de rastreio", len(com_rastreio))
+        col3.metric("Sem rastreio", sem_rastreio)
+
+        termo = st.text_input("🔍 Buscar na planilha Geral", key="search_geral")
+        df_exibir = df_log.copy()
+        if termo.strip():
+            termo_lower = termo.lower()
+            if termo.startswith("#") and "PEDIDO" in df_exibir.columns:
+                df_exibir = df_exibir[df_exibir["PEDIDO"].astype(str).str.lower().str.contains(termo_lower)]
+            else:
+                df_exibir = df_exibir[df_exibir.apply(lambda row: termo_lower in str(row).lower(), axis=1)]
+
+        if "DATA" in df_exibir.columns:
+            df_exibir["DATA"] = pd.to_datetime(df_exibir["DATA"], errors="coerce")
+            df_exibir = df_exibir.sort_values("DATA", ascending=False)
+
+        if "PEDIDO" in df_exibir.columns:
+            df_exibir["PEDIDO"] = df_exibir["PEDIDO"].astype(str).str.replace(",", "").str.replace(".0", "").str.strip()
+
+        df_exibir = df_exibir.reset_index(drop=True)
+        df_exibir.index = (df_exibir.index + 1).astype(str)
+        df_exibir.index.name = "Nº"
+        st.dataframe(df_exibir, use_container_width=True)
+
+    # -------------------------------
+    # Aba 2: Aliexpress (remove rastreio 888)
     # -------------------------------
     with aba_alie:
         st.subheader("📄 Registros da Logística - Aliexpress")
         df_alie = df_log[~df_log["RASTREIO"].astype(str).str.startswith("888")].copy()
 
-        # Métricas
         total = len(df_alie)
         com_rastreio = df_alie[df_alie["RASTREIO"].astype(str).str.strip() != ""]
         sem_rastreio = total - len(com_rastreio)
@@ -5008,7 +5042,6 @@ with aba3:
         col2.metric("Com código de rastreio", len(com_rastreio))
         col3.metric("Sem rastreio", sem_rastreio)
 
-        # Busca
         termo = st.text_input("🔍 Buscar na planilha Aliexpress", key="search_alie")
         df_exibir = df_alie.copy()
         if termo.strip():
@@ -5018,21 +5051,20 @@ with aba3:
             else:
                 df_exibir = df_exibir[df_exibir.apply(lambda row: termo_lower in str(row).lower(), axis=1)]
 
-        # Ordenação por DATA
         if "DATA" in df_exibir.columns:
             df_exibir["DATA"] = pd.to_datetime(df_exibir["DATA"], errors="coerce")
             df_exibir = df_exibir.sort_values("DATA", ascending=False)
 
-        # Ajuste coluna PEDIDO e índice
         if "PEDIDO" in df_exibir.columns:
             df_exibir["PEDIDO"] = df_exibir["PEDIDO"].astype(str).str.replace(",", "").str.replace(".0", "").str.strip()
+
         df_exibir = df_exibir.reset_index(drop=True)
         df_exibir.index = (df_exibir.index + 1).astype(str)
         df_exibir.index.name = "Nº"
         st.dataframe(df_exibir, use_container_width=True)
 
     # -------------------------------
-    # Aba 2: Estoque (RASTREIO começa com 888)
+    # Aba 3: Estoque (RASTREIO começa com 888)
     # -------------------------------
     with aba_estoque:
         st.subheader("📦 Pedidos Estoque")
@@ -5040,7 +5072,6 @@ with aba3:
         if df_estoque.empty:
             st.warning("Nenhum pedido com rastreio começando com 888.")
         else:
-            # Ajuste índice
             df_estoque = df_estoque.reset_index(drop=True)
             df_estoque.index = (df_estoque.index + 1).astype(str)
             df_estoque.index.name = "Nº"
