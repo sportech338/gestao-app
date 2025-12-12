@@ -4910,8 +4910,6 @@ def render_df(df: pd.DataFrame, empty_msg: str):
 # =====================================================
 with aba3:
 
-    st.subheader("🚚 Gestão de Entregas")
-
     import gspread
     from google.oauth2.service_account import Credentials
 
