@@ -4764,7 +4764,7 @@ if menu == "📦 Dashboard – Logística":
             with col4:
                 render_coluna(pedidos_lista[3*quarto:])
 # ---------------------------
-# REENVIO
+# REENVIO — Apenas planilha
 # ---------------------------
 with subtab_reenvios:
     st.subheader("🔄 Reenvios — Apenas leitura")
@@ -4807,26 +4807,10 @@ with subtab_reenvios:
     if df_reenvios.empty:
         st.warning("Nenhum dado encontrado na aba 'Falha na importação'.")
     else:
-        # Ajuste visual: índice da tabela
-        df_reenvios.index = range(1, len(df_reenvios) + 1)
-        df_reenvios.index.name = "Nº"
-
-        # Exibe apenas a tabela de leitura
-        st.dataframe(df_reenvios, use_container_width=True)
-
-    # ---------------------------
-    # Carrega e exibe os dados
-    # ---------------------------
-    df_reenvios = carregar_planilha_reenvios()
-
-    if df_reenvios.empty:
-        st.warning("Nenhum dado encontrado na aba 'Falha na importação'.")
-    else:
         df_reenvios.index = range(1, len(df_reenvios) + 1)
         df_reenvios.index.name = "Nº"
         st.dataframe(df_reenvios, use_container_width=True)
-
-       
+      
 
     # =====================================================
     # 📦 ABA 2 — 💲 Valores
