@@ -4763,7 +4763,7 @@ if menu == "📦 Dashboard – Logística":
                 render_coluna(pedidos_lista[2*quarto:3*quarto])
             with col4:
                 render_coluna(pedidos_lista[3*quarto:])
-  # ---------------------------
+# ---------------------------
 # REENVIO
 # ---------------------------
 with subtab_reenvios:
@@ -4798,6 +4798,21 @@ with subtab_reenvios:
         except Exception as e:
             st.error(f"❌ Erro ao carregar planilha: {e}")
             return pd.DataFrame()
+
+    # ---------------------------
+    # Carrega e exibe os dados
+    # ---------------------------
+    df_reenvios = carregar_planilha_reenvios()
+
+    if df_reenvios.empty:
+        st.warning("Nenhum dado encontrado na aba 'Falha na importação'.")
+    else:
+        # Ajuste visual: índice da tabela
+        df_reenvios.index = range(1, len(df_reenvios) + 1)
+        df_reenvios.index.name = "Nº"
+
+        # Exibe apenas a tabela de leitura
+        st.dataframe(df_reenvios, use_container_width=True)
 
     # ---------------------------
     # Carrega e exibe os dados
