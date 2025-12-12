@@ -4280,90 +4280,81 @@ if menu == "📦 Dashboard – Logística":
     # 📋 ABA 1 — CONTROLE OPERACIONAL
     # =====================================================
     with aba1:
-    # ---------------------------
-    # Sub-abas dentro do Controle Operacional
-    # ---------------------------
-    subtab_envios, subtab_reenvios = st.tabs(["📦 Envios", "🔄 Reenvios"])
 
-    # ---------------------------
-    # ENVIO
-    # ---------------------------
-    with subtab_envios:
-        st.subheader("📦 Envios")
-        # Aqui entra todo o código que você já tinha para envios,
-        # métricas, duplicados, filtros e processamento
-        # -------------------------------------------------
-        # 🧭 SIDEBAR — Filtro lateral de período
-        # -------------------------------------------------
-        st.sidebar.header("📅 Período rápido")
+        # ---------------------------
+        # Sub-abas dentro do Controle Operacional
+        # ---------------------------
+        subtab_envios, subtab_reenvios = st.tabs(["📦 Envios", "🔄 Reenvios"])
 
-        hoje = datetime.now(APP_TZ).date()  
+        # ---------------------------
+        # ENVIO
+        # ---------------------------
+        with subtab_envios:
+            st.subheader("📦 Envios")
+            
+            # 🧭 SIDEBAR — Filtro lateral de período
+            st.sidebar.header("📅 Período rápido")
+            hoje = datetime.now(APP_TZ).date()
+            opcoes_periodo = [
+                "Hoje", "Ontem", "Últimos 7 dias", "Últimos 14 dias",
+                "Últimos 30 dias", "Últimos 90 dias", "Esta semana",
+                "Este mês", "Máximo", "Personalizado"
+            ]
+            escolha_periodo = st.sidebar.radio("Selecione:", opcoes_periodo, index=0)
 
-        opcoes_periodo = [
-            "Hoje", "Ontem", "Últimos 7 dias", "Últimos 14 dias",
-            "Últimos 30 dias", "Últimos 90 dias", "Esta semana",
-            "Este mês", "Máximo", "Personalizado"
-        ]
-
-        escolha_periodo = st.sidebar.radio("Selecione:", opcoes_periodo, index=0)
-
-        if escolha_periodo == "Hoje":
-            start_date, end_date = hoje, hoje
-        elif escolha_periodo == "Ontem":
-            start_date, end_date = hoje - timedelta(days=1), hoje - timedelta(days=1)
-        elif escolha_periodo == "Últimos 7 dias":
-            start_date, end_date = hoje - timedelta(days=7), hoje - timedelta(days=1)
-        elif escolha_periodo == "Últimos 14 dias":
-            start_date, end_date = hoje - timedelta(days=14), hoje - timedelta(days=1)
-        elif escolha_periodo == "Últimos 30 dias":
-            start_date, end_date = hoje - timedelta(days=30), hoje - timedelta(days=1)
-        elif escolha_periodo == "Últimos 90 dias":
-            start_date, end_date = hoje - timedelta(days=90), hoje - timedelta(days=1)
-        elif escolha_periodo == "Esta semana":
-            start_date, end_date = hoje - timedelta(days=hoje.weekday()), hoje
-        elif escolha_periodo == "Este mês":
-            start_date = hoje.replace(day=1)
-            end_date = hoje
-        elif escolha_periodo == "Máximo":
-            start_date = date(2020, 1, 1)
-            end_date = hoje
-        else:
-            periodo = st.sidebar.date_input("📆 Selecione o intervalo:", (hoje, hoje), format="DD/MM/YYYY")
-            if isinstance(periodo, tuple) and len(periodo) == 2:
-                start_date, end_date = periodo
+            if escolha_periodo == "Hoje":
+                start_date, end_date = hoje, hoje
+            elif escolha_periodo == "Ontem":
+                start_date, end_date = hoje - timedelta(days=1), hoje - timedelta(days=1)
+            elif escolha_periodo == "Últimos 7 dias":
+                start_date, end_date = hoje - timedelta(days=7), hoje - timedelta(days=1)
+            elif escolha_periodo == "Últimos 14 dias":
+                start_date, end_date = hoje - timedelta(days=14), hoje - timedelta(days=1)
+            elif escolha_periodo == "Últimos 30 dias":
+                start_date, end_date = hoje - timedelta(days=30), hoje - timedelta(days=1)
+            elif escolha_periodo == "Últimos 90 dias":
+                start_date, end_date = hoje - timedelta(days=90), hoje - timedelta(days=1)
+            elif escolha_periodo == "Esta semana":
+                start_date, end_date = hoje - timedelta(days=hoje.weekday()), hoje
+            elif escolha_periodo == "Este mês":
+                start_date, end_date = hoje.replace(day=1), hoje
+            elif escolha_periodo == "Máximo":
+                start_date, end_date = date(2020, 1, 1), hoje
             else:
-                st.sidebar.warning("🟡 Selecione o fim do período.")
-                st.stop()
+                periodo = st.sidebar.date_input(
+                    "📆 Selecione o intervalo:", (hoje, hoje), format="DD/MM/YYYY"
+                )
+                if isinstance(periodo, tuple) and len(periodo) == 2:
+                    start_date, end_date = periodo
+                else:
+                    st.sidebar.warning("🟡 Selecione o fim do período.")
+                    st.stop()
 
-        st.sidebar.markdown(f"**Desde:** {start_date}  \n**Até:** {end_date}")
+            st.sidebar.markdown(f"**Desde:** {start_date}  \n**Até:** {end_date}")
 
-        # -------------------------------------------------
-        # 🔍 Busca rápida (no topo)
-        # -------------------------------------------------
-        st.subheader("🔍 Busca rápida")
-        busca = st.text_input("Digite parte do nome do cliente, email ou número do pedido:")
+            # 🔍 Busca rápida
+            st.subheader("🔍 Busca rápida")
+            busca = st.text_input("Digite parte do nome do cliente, email ou número do pedido:")
 
-        # -------------------------------------------------
-        # 🔄 Carregamento de dados
-        # -------------------------------------------------
-        periodo_atual = st.session_state.get("periodo_atual")
+            # 🔄 Carregamento de dados
+            periodo_atual = st.session_state.get("periodo_atual")
 
-        if busca.strip():
-            with st.spinner(f"🔍 Buscando '{busca}' diretamente na Shopify..."):
-                produtos = get_products_with_variants()
-                pedidos = search_orders_shopify(busca)
-            st.success(f"✅ {len(pedidos)} pedido(s) encontrados para '{busca}'. (busca direta na Shopify)")
-            st.session_state["produtos"] = produtos
-            st.session_state["pedidos"] = pedidos
-
-        elif periodo_atual != (start_date, end_date):
-            with st.spinner("🔄 Carregando dados da Shopify..."):
-                produtos = get_products_with_variants()
-                pedidos = get_orders(start_date=start_date, end_date=end_date)
+            if busca.strip():
+                with st.spinner(f"🔍 Buscando '{busca}' diretamente na Shopify..."):
+                    produtos = get_products_with_variants()
+                    pedidos = search_orders_shopify(busca)
+                st.success(f"✅ {len(pedidos)} pedido(s) encontrados para '{busca}'.")
                 st.session_state["produtos"] = produtos
                 st.session_state["pedidos"] = pedidos
-                st.session_state["periodo_atual"] = (start_date, end_date)
-            st.success(f"✅ Dados carregados de {start_date.strftime('%d/%m/%Y')} até {end_date.strftime('%d/%m/%Y')}")
+
+            elif periodo_atual != (start_date, end_date):
+                with st.spinner("🔄 Carregando dados da Shopify..."):
+                    produtos = get_products_with_variants()
+                    pedidos = get_orders(start_date=start_date, end_date=end_date)
+                    st.session_state["produtos"] = produtos
+                    st.session_state["pedidos"] = pedidos
+                    st.session_state["periodo_atual"] = (start_date, end_date)
+                st.success(f"✅ Dados carregados de {start_date.strftime('%d/%m/%Y')} até {end_date.strftime('%d/%m/%Y')}")
 
         # -------------------------------------------------
         # 🧩 Garantir que 'pedidos' existe mesmo se ainda não foi carregado
