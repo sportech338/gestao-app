@@ -5058,7 +5058,7 @@ with aba3:
 # -------------------------------
 # Aba 3: Dados Gerais (vazia)
 # -------------------------------
-aba_vazia = st.tab("🆕 Dados Gerais")
+with aba_vazia = st.tab("🆕 Dados Gerais")
 
 with aba_vazia:
     st.subheader("📋 Dados Gerais - Aba Vazia")
