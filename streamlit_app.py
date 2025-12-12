@@ -4893,7 +4893,6 @@ with aba3:
 
     st.subheader("🚚 Gestão de Entregas")
 
-    # Abas principais
     sub1, sub2, sub3 = st.tabs([
         "📊 Dados Gerais",
         "🛒 AliExpress",
@@ -4913,71 +4912,52 @@ with aba3:
         import gspread
         from google.oauth2.service_account import Credentials
 
-        # -------------------------------
-        # 🔐 Google Sheets
-        # -------------------------------
         def get_gsheet_client():
             scopes = [
                 "https://www.googleapis.com/auth/spreadsheets",
                 "https://www.googleapis.com/auth/drive"
             ]
-            gcp_info = dict(st.secrets["gcp_service_account"])
-            gcp_info["private_key"] = gcp_info["private_key"].replace("\\n", "\n")
-            creds = Credentials.from_service_account_info(gcp_info, scopes=scopes)
-            return gspread.authorize(creds)
+            info = dict(st.secrets["gcp_service_account"])
+            info["private_key"] = info["private_key"].replace("\\n", "\n")
+            return gspread.authorize(
+                Credentials.from_service_account_info(info, scopes=scopes)
+            )
 
         @st.cache_data(ttl=300)
         def carregar_aba(nome):
-            client = get_gsheet_client()
-            sheet = client.open_by_key(
-                st.secrets["sheets"]["spreadsheet_id"]
-            ).worksheet(nome)
-            df = pd.DataFrame(sheet.get_all_records())
-            df.columns = df.columns.str.strip()
-            return df
+            try:
+                ws = get_gsheet_client().open_by_key(
+                    st.secrets["sheets"]["spreadsheet_id"]
+                ).worksheet(nome)
+                df = pd.DataFrame(ws.get_all_records())
+                df.columns = df.columns.str.strip()
+                return df
+            except:
+                return pd.DataFrame()
 
-        # -------------------------------
-        # 📥 BASE LOGÍSTICA (DEDUPLICADA)
-        # -------------------------------
-        df_log = (
-            carregar_aba("Logística")
-            .sort_values("DATA", ascending=False)
-            .drop_duplicates(subset=["PEDIDO"], keep="first")
-            .copy()
-        )
+        # ---------- BASE LOGÍSTICA ----------
+        df_log = carregar_aba("Logística")
 
-        # Remove estoque (888)
+        if "PEDIDO" in df_log.columns:
+            if "DATA" in df_log.columns:
+                df_log["DATA"] = pd.to_datetime(df_log["DATA"], errors="coerce")
+                df_log = df_log.sort_values("DATA", ascending=False)
+            df_log = df_log.drop_duplicates(subset=["PEDIDO"], keep="first")
+
+        # Remove estoque
         if "RASTREIO" in df_log.columns:
             df_log = df_log[
                 ~df_log["RASTREIO"].astype(str).str.startswith("888", na=False)
             ]
 
-        # Abas externas
-        try:
-            df_entregue = (
-                carregar_aba("Entrega realizada")
-                .sort_values("DATA", ascending=False)
-                .drop_duplicates(subset=["PEDIDO"], keep="first")
-            )
-            pedidos_entregues = set(df_entregue["PEDIDO"].astype(str))
-        except:
-            df_entregue = pd.DataFrame()
-            pedidos_entregues = set()
+        # ---------- OUTRAS ABAS ----------
+        df_entregue = carregar_aba("Entrega realizada")
+        pedidos_entregues = set(df_entregue["PEDIDO"].astype(str)) if "PEDIDO" in df_entregue.columns else set()
 
-        try:
-            df_falha = (
-                carregar_aba("Falha na importação")
-                .sort_values("DATA", ascending=False)
-                .drop_duplicates(subset=["PEDIDO"], keep="first")
-            )
-            pedidos_falha = set(df_falha["PEDIDO"].astype(str))
-        except:
-            df_falha = pd.DataFrame()
-            pedidos_falha = set()
+        df_falha = carregar_aba("Falha na importação")
+        pedidos_falha = set(df_falha["PEDIDO"].astype(str)) if "PEDIDO" in df_falha.columns else set()
 
-        # -------------------------------
-        # Sub-abas AliExpress
-        # -------------------------------
+        # ---------- SUB-ABAS ----------
         a1, a2, a3, a4, a5 = st.tabs([
             "🟡 Aguardando",
             "🚚 Em Trânsito",
@@ -4986,81 +4966,79 @@ with aba3:
             "⛔ Importação não autorizada"
         ])
 
-        # 🟡 AGUARDANDO
         with a1:
             df = df_log[df_log["RASTREIO"].astype(str).str.strip() == ""]
-            st.dataframe(safe_dataframe(df), use_container_width=True) if not df.empty else st.info("Nenhum pedido aguardando.")
+            if not df.empty:
+                st.dataframe(safe_dataframe(df), use_container_width=True)
+            else:
+                st.info("Nenhum pedido aguardando.")
 
-        # 🚚 EM TRÂNSITO
         with a2:
             df = df_log[
                 (df_log["RASTREIO"].astype(str).str.strip() != "") &
                 (~df_log["PEDIDO"].astype(str).isin(pedidos_entregues)) &
                 (~df_log["PEDIDO"].astype(str).isin(pedidos_falha))
             ]
-            st.dataframe(safe_dataframe(df), use_container_width=True) if not df.empty else st.info("Nenhum pedido em trânsito.")
+            if not df.empty:
+                st.dataframe(safe_dataframe(df), use_container_width=True)
+            else:
+                st.info("Nenhum pedido em trânsito.")
 
-        # ✅ ENTREGUE
         with a3:
-            st.dataframe(safe_dataframe(df_entregue), use_container_width=True) if not df_entregue.empty else st.info("Nenhum pedido entregue.")
+            if not df_entregue.empty:
+                st.dataframe(safe_dataframe(df_entregue), use_container_width=True)
+            else:
+                st.info("Nenhum pedido entregue.")
 
-        # 📮 CORREIOS
         with a4:
-            st.info("📮 Aba Correios — nenhuma regra aplicada ainda.")
+            st.info("📮 Aba Correios — sem regra aplicada.")
 
-        # ⛔ IMPORTAÇÃO NÃO AUTORIZADA
         with a5:
-            st.dataframe(safe_dataframe(df_falha), use_container_width=True) if not df_falha.empty else st.info("Nenhuma falha de importação.")
+            if not df_falha.empty:
+                st.dataframe(safe_dataframe(df_falha), use_container_width=True)
+            else:
+                st.info("Nenhuma falha de importação.")
 
     # =====================================================
-    # 📦 ESTOQUE (RASTREIO 888)
+    # 📦 ESTOQUE
     # =====================================================
     with sub3:
 
         st.subheader("📦 Pedidos de Estoque")
 
-        e1, e2 = st.tabs([
-            "🚚 Em Trânsito",
-            "✅ Entregue"
-        ])
+        e1, e2 = st.tabs(["🚚 Em Trânsito", "✅ Entregue"])
 
-        df_full = (
-            carregar_aba("Logística")
-            .sort_values("DATA", ascending=False)
-            .drop_duplicates(subset=["PEDIDO"], keep="first")
-            .copy()
-        )
+        df_full = carregar_aba("Logística")
 
-        if "RASTREIO" not in df_full.columns:
-            st.warning("Coluna RASTREIO não encontrada.")
-        else:
-            df_estoque = df_full[
-                df_full["RASTREIO"].astype(str).str.startswith("888", na=False)
-            ]
+        if "PEDIDO" in df_full.columns:
+            if "DATA" in df_full.columns:
+                df_full["DATA"] = pd.to_datetime(df_full["DATA"], errors="coerce")
+                df_full = df_full.sort_values("DATA", ascending=False)
+            df_full = df_full.drop_duplicates(subset=["PEDIDO"], keep="first")
 
-        try:
-            df_entregue_est = (
-                carregar_aba("Entrega realizada")
-                .sort_values("DATA", ascending=False)
-                .drop_duplicates(subset=["PEDIDO"], keep="first")
-            )
-            pedidos_entregues_est = set(df_entregue_est["PEDIDO"].astype(str))
-        except:
-            df_entregue_est = pd.DataFrame()
-            pedidos_entregues_est = set()
+        df_estoque = df_full[
+            df_full["RASTREIO"].astype(str).str.startswith("888", na=False)
+        ] if "RASTREIO" in df_full.columns else pd.DataFrame()
 
-        # 🚚 ESTOQUE EM TRÂNSITO
+        df_entregue_est = carregar_aba("Entrega realizada")
+        pedidos_entregues_est = set(df_entregue_est["PEDIDO"].astype(str)) if "PEDIDO" in df_entregue_est.columns else set()
+
         with e1:
             df = df_estoque[
                 ~df_estoque["PEDIDO"].astype(str).isin(pedidos_entregues_est)
             ]
-            st.dataframe(safe_dataframe(df), use_container_width=True) if not df.empty else st.info("Nenhum estoque em trânsito.")
+            if not df.empty:
+                st.dataframe(safe_dataframe(df), use_container_width=True)
+            else:
+                st.info("Nenhum estoque em trânsito.")
 
-        # ✅ ESTOQUE ENTREGUE
         with e2:
             df = df_entregue_est[
                 df_entregue_est["PEDIDO"].astype(str).isin(
                     df_estoque["PEDIDO"].astype(str)
                 )
             ]
-            st.dataframe(safe_dataframe(df), use_container_width=True) if not df.empty else st.info("Nenhum estoque entregue.")
+            if not df.empty:
+                st.dataframe(safe_dataframe(df), use_container_width=True)
+            else:
+                st.info("Nenhum estoque entregue.")
