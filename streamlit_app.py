@@ -4279,19 +4279,7 @@ if menu == "📦 Dashboard – Logística":
     # =====================================================
     # 📋 ABA 1 — CONTROLE OPERACIONAL
     # =====================================================
-  with aba1:
-    # ---------------------------
-    # Sub-abas dentro do Controle Operacional
-    # ---------------------------
-    subtab_envios, subtab_reenvios = st.tabs(["📦 Envios", "🔄 Reenvios"])
-
-    # ---------------------------
-    # ENVIO
-    # ---------------------------
-    with subtab_envios:
-        st.subheader("📦 Envios")
-        # Aqui entra todo o código que você já tinha para envios,
-        # métricas, duplicados, filtros e processamento
+    with aba1:
         # -------------------------------------------------
         # 🧭 SIDEBAR — Filtro lateral de período
         # -------------------------------------------------
@@ -4772,12 +4760,6 @@ if menu == "📦 Dashboard – Logística":
                 render_coluna(pedidos_lista[2*quarto:3*quarto])
             with col4:
                 render_coluna(pedidos_lista[3*quarto:])
-    # ---------------------------
-    # REENVIO
-    # ---------------------------
-    with subtab_reenvios:
-        st.subheader("🔄 Reenvios")
-        # Aqui entra todo o código que você já tinha para reenvios
 
     # =====================================================
     # 📦 ABA 2 — ESTOQUE
