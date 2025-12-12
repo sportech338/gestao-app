@@ -4284,7 +4284,7 @@ if menu == "📦 Dashboard – Logística":
         # ---------------------------
         # Sub-abas dentro do Controle Operacional
         # ---------------------------
-        subtab_envios = st.tabs(["📦 Envios"])
+        subtab_envios, subtab_reenvios = st.tabs(["📦 Envios", "🔄 Reenvios"])
 
         # ---------------------------
         # ENVIO
@@ -4763,6 +4763,54 @@ if menu == "📦 Dashboard – Logística":
                 render_coluna(pedidos_lista[2*quarto:3*quarto])
             with col4:
                 render_coluna(pedidos_lista[3*quarto:])
+# ---------------------------
+# REENVIO — Apenas planilha
+# ---------------------------
+with subtab_reenvios:
+    st.subheader("🔄 Reenvios — Apenas leitura")
+
+    import gspread
+    from google.oauth2.service_account import Credentials
+
+    # ---------------------------
+    # Função para conectar à planilha
+    # ---------------------------
+    @st.cache_data(ttl=300)
+    def carregar_planilha_reenvios():
+        try:
+            scopes = [
+                "https://www.googleapis.com/auth/spreadsheets.readonly",
+                "https://www.googleapis.com/auth/drive.readonly"
+            ]
+            gcp_info = dict(st.secrets["gcp_service_account"])
+            if isinstance(gcp_info.get("private_key"), str):
+                gcp_info["private_key"] = gcp_info["private_key"].replace("\\n", "\n")
+            creds = Credentials.from_service_account_info(gcp_info, scopes=scopes)
+            client = gspread.authorize(creds)
+
+            # Abre a planilha pelo ID e pela aba "Falha na importação"
+            spreadsheet_id = "1WTEiRnm1OFxzn6ag1MfI8VnlQCbL8xwxY3LeanCsdxk"
+            sheet = client.open_by_key(spreadsheet_id).worksheet("Falha na importação")
+
+            dados = pd.DataFrame(sheet.get_all_records())
+            return dados
+
+        except Exception as e:
+            st.error(f"❌ Erro ao carregar planilha: {e}")
+            return pd.DataFrame()
+
+    # ---------------------------
+    # Carrega e exibe os dados
+    # ---------------------------
+    df_reenvios = carregar_planilha_reenvios()
+
+    if df_reenvios.empty:
+        st.warning("Nenhum dado encontrado na aba 'Falha na importação'.")
+    else:
+        df_reenvios.index = range(1, len(df_reenvios) + 1)
+        df_reenvios.index.name = "Nº"
+        st.dataframe(df_reenvios, use_container_width=True)
+      
 
     # =====================================================
     # 📦 ABA 2 — 💲 Valores
@@ -4872,6 +4920,7 @@ if menu == "📦 Dashboard – Logística":
             atualizar_planilha_custos(edit_df)
             st.cache_data.clear()
             st.rerun()
+
 # =====================================================
 # 🚚 ABA 3 — ENTREGAS
 # =====================================================
@@ -5017,4 +5066,3 @@ with aba3:
             df_reenvios.index = range(1, len(df_reenvios) + 1)
             df_reenvios.index.name = "Nº"
             st.dataframe(df_reenvios, use_container_width=True)
-
