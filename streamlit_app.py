@@ -4272,7 +4272,7 @@ if menu == "📦 Dashboard – Logística":
     # =====================================================
     aba1, aba2, aba3 = st.tabs([
         "📋 Controle Operacional",
-        "📦 Estoque",
+        "💲 Valores",
         "🚚 Entregas"
     ])
 
@@ -5089,8 +5089,7 @@ with aba3:
     # 📦 SUB-ABA — ESTOQUE (RASTREIO contém 888)
     # =====================================================
     with sub3:
-        st.subheader("📦 Pedidos de Estoque (RASTREIO contém 888)")
-
+        
         if "RASTREIO" not in df_log.columns:
             st.warning("⚠️ Coluna RASTREIO não encontrada na planilha.")
         else:
