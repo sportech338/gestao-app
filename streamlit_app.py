@@ -4906,16 +4906,71 @@ def render_df(df: pd.DataFrame, empty_msg: str):
 
 
 # =====================================================
-# 🚚 ABA 3 — ENTREGAS
+# 🚚 ABA 3 — ENTREGAS (CÓDIGO FINAL E ESTÁVEL)
 # =====================================================
 with aba3:
 
     import gspread
     from google.oauth2.service_account import Credentials
+    import pandas as pd
+    from datetime import datetime, timedelta
 
-    # -------------------------------
-    # 🔐 Google Sheets
-    # -------------------------------
+    # =====================================================
+    # 🧰 FUNÇÕES AUXILIARES (NÃO REMOVER)
+    # =====================================================
+    def render_df(df: pd.DataFrame, empty_msg: str):
+        if df is None or not isinstance(df, pd.DataFrame) or df.empty:
+            st.info(empty_msg)
+            return
+
+        df = df.copy()
+        df = df.loc[:, ~df.columns.duplicated()]
+        df = df.reset_index(drop=True)
+
+        for col in df.columns:
+            df[col] = df[col].apply(
+                lambda x: str(x) if isinstance(x, (list, dict, tuple, set)) else x
+            )
+
+        df = df.fillna("")
+        st.dataframe(df, use_container_width=True)
+
+    def aplicar_filtro_data(df, data_ini, data_fim):
+        if df.empty or "DATA" not in df.columns:
+            return df
+
+        df = df.copy()
+        df["DATA"] = pd.to_datetime(df["DATA"], errors="coerce")
+
+        return df[
+            (df["DATA"] >= pd.to_datetime(data_ini)) &
+            (df["DATA"] <= pd.to_datetime(data_fim) + pd.Timedelta(days=1))
+        ]
+
+    def dedup(df):
+        if df.empty:
+            return df
+        if "PEDIDO" in df.columns:
+            df["PEDIDO"] = df["PEDIDO"].astype(str)
+            if "DATA" in df.columns:
+                df["DATA"] = pd.to_datetime(df["DATA"], errors="coerce")
+                df = df.sort_values("DATA", ascending=False)
+            df = df.drop_duplicates(subset=["PEDIDO"], keep="first")
+        return df
+
+    # =====================================================
+    # 📅 FILTRO DE DATA (SIDEBAR)
+    # =====================================================
+    with st.sidebar:
+        st.markdown("### 📅 Filtro de Data")
+
+        hoje = datetime.now().date()
+        data_inicio = st.date_input("De:", value=hoje)
+        data_fim = st.date_input("Até:", value=hoje)
+
+    # =====================================================
+    # 🔐 GOOGLE SHEETS
+    # =====================================================
     def get_gsheet_client():
         scopes = [
             "https://www.googleapis.com/auth/spreadsheets",
@@ -4940,34 +4995,38 @@ with aba3:
             return pd.DataFrame()
 
     # =====================================================
-    # 📥 BASES
+    # 📥 CARREGAR BASES
     # =====================================================
-    df_log = carregar_aba("Logística")
-    df_entregue = carregar_aba("Entrega realizada")
-    df_falha = carregar_aba("Falha na importação")
+    df_log = dedup(carregar_aba("Logística"))
+    df_entregue = dedup(carregar_aba("Entrega realizada"))
+    df_falha = dedup(carregar_aba("Falha na importação"))
 
-    # Dedup por PEDIDO
-    def dedup(df):
-        if "PEDIDO" in df.columns:
-            if "DATA" in df.columns:
-                df["DATA"] = pd.to_datetime(df["DATA"], errors="coerce")
-                df = df.sort_values("DATA", ascending=False)
-            df = df.drop_duplicates(subset=["PEDIDO"], keep="first")
-        return df
-
-    df_log = dedup(df_log)
-    df_entregue = dedup(df_entregue)
-    df_falha = dedup(df_falha)
+    # =====================================================
+    # 📆 APLICAR FILTRO DE DATA
+    # =====================================================
+    df_log = aplicar_filtro_data(df_log, data_inicio, data_fim)
+    df_entregue = aplicar_filtro_data(df_entregue, data_inicio, data_fim)
+    df_falha = aplicar_filtro_data(df_falha, data_inicio, data_fim)
 
     pedidos_entregues = set(df_entregue["PEDIDO"]) if "PEDIDO" in df_entregue.columns else set()
     pedidos_falha = set(df_falha["PEDIDO"]) if "PEDIDO" in df_falha.columns else set()
 
-    # AliExpress vs Estoque (888)
-    df_aliexpress = df_log[~df_log["RASTREIO"].astype(str).str.startswith("888", na=False)] if "RASTREIO" in df_log.columns else pd.DataFrame()
-    df_estoque = df_log[df_log["RASTREIO"].astype(str).str.startswith("888", na=False)] if "RASTREIO" in df_log.columns else pd.DataFrame()
+    # =====================================================
+    # 🔀 ALIEXPRESS x ESTOQUE (RASTREIO 888)
+    # =====================================================
+    if "RASTREIO" in df_log.columns:
+        df_aliexpress = df_log[~df_log["RASTREIO"].astype(str).str.startswith("888", na=False)]
+        df_estoque = df_log[df_log["RASTREIO"].astype(str).str.startswith("888", na=False)]
+    else:
+        df_aliexpress = pd.DataFrame()
+        df_estoque = pd.DataFrame()
 
-    df_entregue_aliexpress = df_entregue[~df_entregue["RASTREIO"].astype(str).str.startswith("888", na=False)] if "RASTREIO" in df_entregue.columns else pd.DataFrame()
-    df_entregue_estoque = df_entregue[df_entregue["RASTREIO"].astype(str).str.startswith("888", na=False)] if "RASTREIO" in df_entregue.columns else pd.DataFrame()
+    if "RASTREIO" in df_entregue.columns:
+        df_entregue_aliexpress = df_entregue[~df_entregue["RASTREIO"].astype(str).str.startswith("888", na=False)]
+        df_entregue_estoque = df_entregue[df_entregue["RASTREIO"].astype(str).str.startswith("888", na=False)]
+    else:
+        df_entregue_aliexpress = pd.DataFrame()
+        df_entregue_estoque = pd.DataFrame()
 
     # =====================================================
     # 🧭 ABAS
@@ -4980,12 +5039,12 @@ with aba3:
         "⛔ Importação não autorizada"
     ])
 
-    # 🟡 AGUARDANDO — tudo junto
+    # 🟡 AGUARDANDO
     with t1:
         df = df_log[df_log["RASTREIO"].astype(str).str.strip() == ""] if "RASTREIO" in df_log.columns else pd.DataFrame()
         render_df(df, "Nenhum pedido aguardando rastreio.")
 
-    # 🚚 EM TRÂNSITO — separado
+    # 🚚 EM TRÂNSITO
     with t2:
         a, e = st.tabs(["🛒 AliExpress", "📦 Estoque"])
 
@@ -4994,7 +5053,7 @@ with aba3:
                 (df_aliexpress["RASTREIO"].astype(str).str.strip() != "") &
                 (~df_aliexpress["PEDIDO"].isin(pedidos_entregues)) &
                 (~df_aliexpress["PEDIDO"].isin(pedidos_falha))
-            ]
+            ] if not df_aliexpress.empty else pd.DataFrame()
             render_df(df, "Nenhum AliExpress em trânsito.")
 
         with e:
@@ -5002,10 +5061,10 @@ with aba3:
                 (df_estoque["RASTREIO"].astype(str).str.strip() != "") &
                 (~df_estoque["PEDIDO"].isin(pedidos_entregues)) &
                 (~df_estoque["PEDIDO"].isin(pedidos_falha))
-            ]
+            ] if not df_estoque.empty else pd.DataFrame()
             render_df(df, "Nenhum estoque em trânsito.")
 
-    # ✅ ENTREGUE — separado
+    # ✅ ENTREGUE
     with t3:
         a, e = st.tabs(["🛒 AliExpress", "📦 Estoque"])
         with a:
@@ -5013,11 +5072,11 @@ with aba3:
         with e:
             render_df(df_entregue_estoque, "Nenhum estoque entregue.")
 
-    # 📮 CORREIOS — tudo junto
+    # 📮 CORREIOS
     with t4:
         st.info("📮 Correios — nenhuma regra aplicada ainda.")
 
-    # ⛔ IMPORTAÇÃO NÃO AUTORIZADA — tudo junto
+    # ⛔ IMPORTAÇÃO NÃO AUTORIZADA
     with t5:
         render_df(df_falha, "Nenhuma falha de importação.")
 
