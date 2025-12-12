@@ -5055,3 +5055,20 @@ with aba3:
         st.success(resultado)
         st.cache_data.clear()
         st.rerun()
+# -------------------------------
+# Aba 3: Dados Gerais (vazia)
+# -------------------------------
+aba_vazia = st.tab("🆕 Dados Gerais")
+
+with aba_vazia:
+    st.subheader("📋 Dados Gerais - Aba Vazia")
+    
+    # Colunas padrão
+    colunas = ["DATA", "CLIENTE", "STATUS", "PRODUTO", "QUANTIDADE", "EMAIL", "PEDIDO", "RASTREIO", "LINK", "OBSERVAÇÕES"]
+    
+    # DataFrame vazio
+    df_vazio = pd.DataFrame(columns=colunas)
+    
+    # Mostrar tabela
+    st.dataframe(df_vazio, use_container_width=True)
+
