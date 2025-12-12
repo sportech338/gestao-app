@@ -4894,139 +4894,161 @@ with aba3:
     # 🛒 SUB-ABA — ALIEXPRESS
     # =====================================================
     with sub2:
-       # =====================================================
-# 🛒 SUB-ABA — ALIEXPRESS (DIVIDIDA EM 5 ABAS)
-# =====================================================
+        import gspread
+        from google.oauth2.service_account import Credentials
 
-st.subheader("🛒 AliExpress — Gestão de Envios")
+        # -------------------------------
+        # 🔁 PEDIDOS PAGOS DE HOJE
+        # -------------------------------
+        @st.cache_data(ttl=300)
+        def get_paid_orders_today():
+            hoje = datetime.now(APP_TZ).date()
+            df = get_orders(start_date=hoje, end_date=hoje, only_paid=True)
+            if df.empty:
+                return pd.DataFrame()
 
-aba_a, aba_b, aba_c, aba_d, aba_e = st.tabs([
-    "🟡 Aguardando",
-    "🚚 Em Trânsito",
-    "✅ Entregue",
-    "📮 Correios",
-    "⛔ Importação não autorizada"
-])
+            df = df.rename(columns={
+                "order_number": "PEDIDO",
+                "created_at": "DATA",
+                "customer_name": "CLIENTE",
+                "financial_status": "STATUS",
+                "product_title": "PRODUTO",
+                "quantity": "QUANTIDADE",
+                "customer_email": "EMAIL"
+            })
 
-# -------------------------------------------------
-# 📥 FUNÇÃO BASE — CARREGAR ABA LOGÍSTICA
-# -------------------------------------------------
-@st.cache_data(ttl=300)
-def carregar_logistica(aba_nome="Logística"):
-    client = get_gsheet_client()
-    sheet = client.open_by_key(
-        st.secrets["sheets"]["spreadsheet_id"]
-    ).worksheet(aba_nome)
-    df = pd.DataFrame(sheet.get_all_records())
-    df.columns = df.columns.str.strip()
-    return df
+            df["PEDIDO"] = df["PEDIDO"].astype(str)
+            df["RASTREIO"] = ""
+            df["LINK"] = ""
+            df["OBSERVAÇÕES"] = ""
 
+            return df[[ 
+                "DATA", "CLIENTE", "STATUS", "PRODUTO", "QUANTIDADE",
+                "EMAIL", "PEDIDO", "RASTREIO", "LINK", "OBSERVAÇÕES"
+            ]]
 
-# Base principal (AliExpress = Logística SEM 888)
-df_base = carregar_logistica("Logística")
+        # -------------------------------
+        # 🔥 SYNC SHOPIFY → SHEETS
+        # -------------------------------
+        def sync_shopify_to_sheet():
 
-if "RASTREIO" in df_base.columns:
-    df_base = df_base[
-        ~df_base["RASTREIO"].astype(str).str.startswith("888", na=False)
-    ].copy()
+            def normalizar_pedido(p):
+                if pd.isna(p):
+                    return None
+                return str(p).replace("#", "").strip()
 
+            df_new = get_paid_orders_today()
+            if df_new.empty:
+                return "Nenhum pedido pago novo encontrado hoje."
 
-# =====================================================
-# 🟡 ABA 1 — AGUARDANDO (SEM RASTREIO)
-# =====================================================
-with aba_a:
-    df_aguardando = df_base[
-        df_base["RASTREIO"].astype(str).str.strip() == ""
-    ].copy()
+            scopes = [
+                "https://www.googleapis.com/auth/spreadsheets",
+                "https://www.googleapis.com/auth/drive"
+            ]
+            gcp_info = dict(st.secrets["gcp_service_account"])
+            gcp_info["private_key"] = gcp_info["private_key"].replace("\\n", "\n")
+            creds = Credentials.from_service_account_info(gcp_info, scopes=scopes)
+            client = gspread.authorize(creds)
 
-    if df_aguardando.empty:
-        st.info("Nenhum pedido aguardando rastreio.")
-    else:
-        df_aguardando = df_aguardando.reset_index(drop=True)
-        df_aguardando.index = (df_aguardando.index + 1).astype(str)
-        df_aguardando.index.name = "Nº"
-        st.dataframe(df_aguardando, use_container_width=True)
+            sheet = client.open_by_key(
+                st.secrets["sheets"]["spreadsheet_id"]
+            ).worksheet("Logística")
 
+            df_sheet = pd.DataFrame(sheet.get_all_records())
+            df_sheet.columns = df_sheet.columns.str.strip()
 
-# =====================================================
-# ⛔ BASE — IMPORTAÇÃO NÃO AUTORIZADA
-# =====================================================
-try:
-    df_falha = carregar_logistica("Falha na importação")
-except:
-    df_falha = pd.DataFrame()
+            if "PEDIDO" not in df_sheet.columns:
+                df_sheet["PEDIDO"] = ""
 
-pedidos_falha = set(df_falha["PEDIDO"].astype(str)) if "PEDIDO" in df_falha.columns else set()
+            pedidos_existentes = set(df_sheet["PEDIDO"].apply(normalizar_pedido))
+            df_new["PEDIDO_LIMPO"] = df_new["PEDIDO"].apply(normalizar_pedido)
 
+            novos = df_new[~df_new["PEDIDO_LIMPO"].isin(pedidos_existentes)]
 
-# =====================================================
-# ✅ BASE — ENTREGUE
-# =====================================================
-try:
-    df_entregue = carregar_logistica("Entrega realizada")
-except:
-    df_entregue = pd.DataFrame()
+            if novos.empty:
+                return "Nenhum pedido novo para adicionar."
 
-pedidos_entregues = set(df_entregue["PEDIDO"].astype(str)) if "PEDIDO" in df_entregue.columns else set()
-
-
-# =====================================================
-# 🚚 ABA 2 — EM TRÂNSITO (RESTANTE)
-# =====================================================
-with aba_b:
-    df_transito = df_base.copy()
-
-    if "PEDIDO" in df_transito.columns:
-        df_transito = df_transito[
-            ~df_transito["PEDIDO"].astype(str).isin(
-                pedidos_falha | pedidos_entregues
+            sheet.append_rows(
+                novos.drop(columns=["PEDIDO_LIMPO"]).astype(str).values.tolist(),
+                value_input_option="USER_ENTERED"
             )
-        ]
 
-    df_transito = df_transito[
-        df_transito["RASTREIO"].astype(str).str.strip() != ""
-    ]
+            return f"{len(novos)} pedido(s) novo(s) adicionados."
 
-    if df_transito.empty:
-        st.info("Nenhum pedido em trânsito.")
-    else:
-        df_transito = df_transito.reset_index(drop=True)
-        df_transito.index = (df_transito.index + 1).astype(str)
-        df_transito.index.name = "Nº"
-        st.dataframe(df_transito, use_container_width=True)
+        # -------------------------------
+        # 📥 CARREGAR PLANILHA
+        # -------------------------------
+        def get_gsheet_client():
+            scopes = [
+                "https://www.googleapis.com/auth/spreadsheets",
+                "https://www.googleapis.com/auth/drive"
+            ]
+            gcp_info = dict(st.secrets["gcp_service_account"])
+            gcp_info["private_key"] = gcp_info["private_key"].replace("\\n", "\n")
+            creds = Credentials.from_service_account_info(gcp_info, scopes=scopes)
+            return gspread.authorize(creds)
 
+        @st.cache_data(ttl=300)
+        def carregar_planilha_logistica():
+            client = get_gsheet_client()
+            sheet = client.open_by_key(
+                st.secrets["sheets"]["spreadsheet_id"]
+            ).worksheet("Logística")
+            df = pd.DataFrame(sheet.get_all_records())
+            df.columns = df.columns.str.strip()
+            return df
 
-# =====================================================
-# ✅ ABA 3 — ENTREGUE (ABA ENTREGA REALIZADA)
-# =====================================================
-with aba_c:
-    if df_entregue.empty:
-        st.info("Nenhum pedido entregue encontrado.")
-    else:
-        df_entregue = df_entregue.reset_index(drop=True)
-        df_entregue.index = (df_entregue.index + 1).astype(str)
-        df_entregue.index.name = "Nº"
-        st.dataframe(df_entregue, use_container_width=True)
+        try:
+            df_log = carregar_planilha_logistica()
+        except Exception as e:
+            st.error(f"Erro ao carregar logística: {e}")
+            st.stop()
 
+        # -------------------------------------------------
+        # 🔥 REMOVE ESTOQUE (RASTREIO começa com 888)
+        # -------------------------------------------------
+        if "RASTREIO" in df_log.columns:
+            df_log = df_log[
+                ~df_log["RASTREIO"].astype(str).str.startswith("888", na=False)
+            ].copy()
 
-# =====================================================
-# 📮 ABA 4 — CORREIOS (VAZIA POR ENQUANTO)
-# =====================================================
-with aba_d:
-    st.info("📮 Aba Correios — nenhuma regra aplicada ainda.")
+        # -------------------------------
+        # 🔍 BUSCA
+        # -------------------------------
+        termo = st.text_input("🔍 Buscar (pedido, cliente, email ou rastreio)")
+        df_exibir = df_log.copy()
 
+        if termo.strip():
+            termo = termo.lower()
+            df_exibir = df_log[
+                df_log.apply(lambda r: termo in str(r).lower(), axis=1)
+            ]
 
-# =====================================================
-# ⛔ ABA 5 — IMPORTAÇÃO NÃO AUTORIZADA
-# =====================================================
-with aba_e:
-    if df_falha.empty:
-        st.info("Nenhum pedido com falha de importação.")
-    else:
-        df_falha = df_falha.reset_index(drop=True)
-        df_falha.index = (df_falha.index + 1).astype(str)
-        df_falha.index.name = "Nº"
-        st.dataframe(df_falha, use_container_width=True)
+        # -------------------------------
+        # 🧾 AJUSTES VISUAIS
+        # -------------------------------
+        if "DATA" in df_exibir.columns:
+            df_exibir["DATA"] = pd.to_datetime(df_exibir["DATA"], errors="coerce")
+            df_exibir = df_exibir.sort_values("DATA", ascending=False)
+
+        if "PEDIDO" in df_exibir.columns:
+            df_exibir["PEDIDO"] = (
+                df_exibir["PEDIDO"]
+                .astype(str)
+                .str.replace(",", "")
+                .str.replace(".0", "")
+            )
+
+        df_exibir = df_exibir.reset_index(drop=True)
+        df_exibir.index = (df_exibir.index + 1).astype(str)
+        df_exibir.index.name = "Nº"
+
+        st.dataframe(df_exibir, use_container_width=True)
+
+        if st.button("📥 Buscar pedidos pagos de hoje"):
+            st.success(sync_shopify_to_sheet())
+            st.cache_data.clear()
+            st.rerun()
 
     # =====================================================
     # 📦 SUB-ABA — ESTOQUE (RASTREIO começa com 888)
