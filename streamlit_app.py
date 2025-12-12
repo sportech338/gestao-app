@@ -4273,7 +4273,7 @@ if menu == "📦 Dashboard – Logística":
     aba1, aba2, aba3 = st.tabs([
         "📋 Controle Operacional",
         "💲 Valores",
-        "🚚 Entregas"
+        "🚚 Gestão de entregas"
     ])
 
     # =====================================================
