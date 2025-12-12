@@ -4877,7 +4877,7 @@ with aba3:
 
     st.subheader("🚚 Gestão de Entregas")
 
-    # Sub-abas
+    # Abas principais
     sub1, sub2, sub3 = st.tabs([
         "📊 Dados Gerais",
         "🛒 AliExpress",
@@ -4898,85 +4898,7 @@ with aba3:
         from google.oauth2.service_account import Credentials
 
         # -------------------------------
-        # 🔁 PEDIDOS PAGOS DE HOJE
-        # -------------------------------
-        @st.cache_data(ttl=300)
-        def get_paid_orders_today():
-            hoje = datetime.now(APP_TZ).date()
-            df = get_orders(start_date=hoje, end_date=hoje, only_paid=True)
-            if df.empty:
-                return pd.DataFrame()
-
-            df = df.rename(columns={
-                "order_number": "PEDIDO",
-                "created_at": "DATA",
-                "customer_name": "CLIENTE",
-                "financial_status": "STATUS",
-                "product_title": "PRODUTO",
-                "quantity": "QUANTIDADE",
-                "customer_email": "EMAIL"
-            })
-
-            df["PEDIDO"] = df["PEDIDO"].astype(str)
-            df["RASTREIO"] = ""
-            df["LINK"] = ""
-            df["OBSERVAÇÕES"] = ""
-
-            return df[[ 
-                "DATA", "CLIENTE", "STATUS", "PRODUTO", "QUANTIDADE",
-                "EMAIL", "PEDIDO", "RASTREIO", "LINK", "OBSERVAÇÕES"
-            ]]
-
-        # -------------------------------
-        # 🔥 SYNC SHOPIFY → SHEETS
-        # -------------------------------
-        def sync_shopify_to_sheet():
-
-            def normalizar_pedido(p):
-                if pd.isna(p):
-                    return None
-                return str(p).replace("#", "").strip()
-
-            df_new = get_paid_orders_today()
-            if df_new.empty:
-                return "Nenhum pedido pago novo encontrado hoje."
-
-            scopes = [
-                "https://www.googleapis.com/auth/spreadsheets",
-                "https://www.googleapis.com/auth/drive"
-            ]
-            gcp_info = dict(st.secrets["gcp_service_account"])
-            gcp_info["private_key"] = gcp_info["private_key"].replace("\\n", "\n")
-            creds = Credentials.from_service_account_info(gcp_info, scopes=scopes)
-            client = gspread.authorize(creds)
-
-            sheet = client.open_by_key(
-                st.secrets["sheets"]["spreadsheet_id"]
-            ).worksheet("Logística")
-
-            df_sheet = pd.DataFrame(sheet.get_all_records())
-            df_sheet.columns = df_sheet.columns.str.strip()
-
-            if "PEDIDO" not in df_sheet.columns:
-                df_sheet["PEDIDO"] = ""
-
-            pedidos_existentes = set(df_sheet["PEDIDO"].apply(normalizar_pedido))
-            df_new["PEDIDO_LIMPO"] = df_new["PEDIDO"].apply(normalizar_pedido)
-
-            novos = df_new[~df_new["PEDIDO_LIMPO"].isin(pedidos_existentes)]
-
-            if novos.empty:
-                return "Nenhum pedido novo para adicionar."
-
-            sheet.append_rows(
-                novos.drop(columns=["PEDIDO_LIMPO"]).astype(str).values.tolist(),
-                value_input_option="USER_ENTERED"
-            )
-
-            return f"{len(novos)} pedido(s) novo(s) adicionados."
-
-        # -------------------------------
-        # 📥 CARREGAR PLANILHA
+        # 🔐 Google Sheets
         # -------------------------------
         def get_gsheet_client():
             scopes = [
@@ -4989,66 +4911,117 @@ with aba3:
             return gspread.authorize(creds)
 
         @st.cache_data(ttl=300)
-        def carregar_planilha_logistica():
+        def carregar_aba(nome_aba):
             client = get_gsheet_client()
             sheet = client.open_by_key(
                 st.secrets["sheets"]["spreadsheet_id"]
-            ).worksheet("Logística")
+            ).worksheet(nome_aba)
             df = pd.DataFrame(sheet.get_all_records())
             df.columns = df.columns.str.strip()
             return df
 
-        try:
-            df_log = carregar_planilha_logistica()
-        except Exception as e:
-            st.error(f"Erro ao carregar logística: {e}")
-            st.stop()
+        # -------------------------------
+        # 📥 Carrega abas necessárias
+        # -------------------------------
+        df_log = carregar_aba("Logística")
 
-        # -------------------------------------------------
-        # 🔥 REMOVE ESTOQUE (RASTREIO começa com 888)
-        # -------------------------------------------------
+        # Remove pedidos de estoque (888)
         if "RASTREIO" in df_log.columns:
             df_log = df_log[
                 ~df_log["RASTREIO"].astype(str).str.startswith("888", na=False)
             ].copy()
 
-        # -------------------------------
-        # 🔍 BUSCA
-        # -------------------------------
-        termo = st.text_input("🔍 Buscar (pedido, cliente, email ou rastreio)")
-        df_exibir = df_log.copy()
+        # Abas externas
+        try:
+            df_entregue = carregar_aba("Entrega realizada")
+            pedidos_entregues = set(df_entregue["PEDIDO"].astype(str))
+        except:
+            df_entregue = pd.DataFrame()
+            pedidos_entregues = set()
 
-        if termo.strip():
-            termo = termo.lower()
-            df_exibir = df_log[
-                df_log.apply(lambda r: termo in str(r).lower(), axis=1)
+        try:
+            df_falha = carregar_aba("Falha na importação")
+            pedidos_falha = set(df_falha["PEDIDO"].astype(str))
+        except:
+            df_falha = pd.DataFrame()
+            pedidos_falha = set()
+
+        # -------------------------------
+        # 🔀 Sub-abas AliExpress
+        # -------------------------------
+        a1, a2, a3, a4, a5 = st.tabs([
+            "🟡 Aguardando",
+            "🚚 Em Trânsito",
+            "✅ Entregue",
+            "📮 Correios",
+            "⛔ Importação não autorizada"
+        ])
+
+        # =====================================================
+        # 🟡 AGUARDANDO — sem rastreio
+        # =====================================================
+        with a1:
+            df_aguardando = df_log[
+                df_log["RASTREIO"].astype(str).str.strip() == ""
+            ].copy()
+
+            if df_aguardando.empty:
+                st.info("Nenhum pedido aguardando rastreio.")
+            else:
+                df_aguardando = df_aguardando.reset_index(drop=True)
+                df_aguardando.index = (df_aguardando.index + 1).astype(str)
+                df_aguardando.index.name = "Nº"
+                st.dataframe(df_aguardando, use_container_width=True)
+
+        # =====================================================
+        # 🚚 EM TRÂNSITO — tudo que não está nas outras condições
+        # =====================================================
+        with a2:
+            df_transito = df_log.copy()
+
+            df_transito = df_transito[
+                (df_transito["RASTREIO"].astype(str).str.strip() != "") &
+                (~df_transito["PEDIDO"].astype(str).isin(pedidos_entregues)) &
+                (~df_transito["PEDIDO"].astype(str).isin(pedidos_falha))
             ]
 
-        # -------------------------------
-        # 🧾 AJUSTES VISUAIS
-        # -------------------------------
-        if "DATA" in df_exibir.columns:
-            df_exibir["DATA"] = pd.to_datetime(df_exibir["DATA"], errors="coerce")
-            df_exibir = df_exibir.sort_values("DATA", ascending=False)
+            if df_transito.empty:
+                st.info("Nenhum pedido em trânsito.")
+            else:
+                df_transito = df_transito.reset_index(drop=True)
+                df_transito.index = (df_transito.index + 1).astype(str)
+                df_transito.index.name = "Nº"
+                st.dataframe(df_transito, use_container_width=True)
 
-        if "PEDIDO" in df_exibir.columns:
-            df_exibir["PEDIDO"] = (
-                df_exibir["PEDIDO"]
-                .astype(str)
-                .str.replace(",", "")
-                .str.replace(".0", "")
-            )
+        # =====================================================
+        # ✅ ENTREGUE — vem da aba Entrega realizada
+        # =====================================================
+        with a3:
+            if df_entregue.empty:
+                st.info("Nenhum pedido entregue.")
+            else:
+                df_entregue = df_entregue.reset_index(drop=True)
+                df_entregue.index = (df_entregue.index + 1).astype(str)
+                df_entregue.index.name = "Nº"
+                st.dataframe(df_entregue, use_container_width=True)
 
-        df_exibir = df_exibir.reset_index(drop=True)
-        df_exibir.index = (df_exibir.index + 1).astype(str)
-        df_exibir.index.name = "Nº"
+        # =====================================================
+        # 📮 CORREIOS — vazio por enquanto
+        # =====================================================
+        with a4:
+            st.info("📮 Aba Correios — nenhuma regra aplicada ainda.")
 
-        st.dataframe(df_exibir, use_container_width=True)
-
-        if st.button("📥 Buscar pedidos pagos de hoje"):
-            st.success(sync_shopify_to_sheet())
-            st.cache_data.clear()
-            st.rerun()
+        # =====================================================
+        # ⛔ IMPORTAÇÃO NÃO AUTORIZADA — Falha na importação
+        # =====================================================
+        with a5:
+            if df_falha.empty:
+                st.info("Nenhum pedido com falha de importação.")
+            else:
+                df_falha = df_falha.reset_index(drop=True)
+                df_falha.index = (df_falha.index + 1).astype(str)
+                df_falha.index.name = "Nº"
+                st.dataframe(df_falha, use_container_width=True)
 
     # =====================================================
     # 📦 SUB-ABA — ESTOQUE (RASTREIO começa com 888)
@@ -5057,7 +5030,7 @@ with aba3:
 
         st.subheader("📦 Pedidos de Estoque (RASTREIO 888)")
 
-        df_full = carregar_planilha_logistica()
+        df_full = carregar_aba("Logística")
 
         if "RASTREIO" not in df_full.columns:
             st.warning("Coluna RASTREIO não encontrada.")
@@ -5072,5 +5045,6 @@ with aba3:
                 df_estoque = df_estoque.reset_index(drop=True)
                 df_estoque.index = (df_estoque.index + 1).astype(str)
                 df_estoque.index.name = "Nº"
+                st.dataframe(df_estoque, use_container_width=True)
 
                 st.dataframe(df_estoque, use_container_width=True)
