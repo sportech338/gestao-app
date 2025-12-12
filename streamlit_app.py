@@ -5029,15 +5029,11 @@ with sub3:
 
     st.subheader("📦 Pedidos de Estoque")
 
-    # Sub-abas internas do Estoque
     e1, e2 = st.tabs([
         "🚚 Em Trânsito",
         "✅ Entregue"
     ])
 
-    # -------------------------------------------------
-    # 📥 Carregar bases necessárias
-    # -------------------------------------------------
     df_full = carregar_aba("Logística")
 
     try:
@@ -5051,38 +5047,37 @@ with sub3:
         st.warning("Coluna RASTREIO não encontrada.")
         st.stop()
 
-    # Base ESTOQUE (888)
+    # Base estoque
     df_estoque_base = df_full[
         df_full["RASTREIO"].astype(str).str.startswith("888", na=False)
     ].copy()
 
     # =====================================================
-    # 🚚 ESTOQUE — EM TRÂNSITO
+    # 🚚 EM TRÂNSITO
     # =====================================================
     with e1:
-        df_estoque_transito = df_estoque_base.copy()
+        df_transito = df_estoque_base.copy()
 
-        if "PEDIDO" in df_estoque_transito.columns:
-            df_estoque_transito = df_estoque_transito[
-                ~df_estoque_transito["PEDIDO"].astype(str).isin(pedidos_entregues)
+        if "PEDIDO" in df_transito.columns:
+            df_transito = df_transito[
+                ~df_transito["PEDIDO"].astype(str).isin(pedidos_entregues)
             ]
 
-        if df_estoque_transito.empty:
+        if df_transito.empty:
             st.info("Nenhum pedido de estoque em trânsito.")
         else:
-            df_estoque_transito = df_estoque_transito.reset_index(drop=True)
-            df_estoque_transito.index = (df_estoque_transito.index + 1).astype(str)
-            df_estoque_transito.index.name = "Nº"
-            st.dataframe(df_estoque_transito, use_container_width=True)
+            st.dataframe(
+                safe_dataframe(df_transito),
+                use_container_width=True
+            )
 
     # =====================================================
-    # ✅ ESTOQUE — ENTREGUE (ABA ENTREGA REALIZADA)
+    # ✅ ENTREGUE
     # =====================================================
     with e2:
         if df_entregue.empty:
             st.info("Nenhum pedido de estoque entregue.")
         else:
-            # Filtra apenas pedidos de estoque (888) que estão entregues
             df_estoque_entregue = df_entregue[
                 df_entregue["PEDIDO"].astype(str).isin(
                     df_estoque_base["PEDIDO"].astype(str)
@@ -5092,9 +5087,10 @@ with sub3:
             if df_estoque_entregue.empty:
                 st.info("Nenhum pedido de estoque entregue.")
             else:
-                df_estoque_entregue = df_estoque_entregue.reset_index(drop=True)
-                df_estoque_entregue.index = (df_estoque_entregue.index + 1).astype(str)
-                df_estoque_entregue.index.name = "Nº"
-                st.dataframe(df_estoque_entregue, use_container_width=True)
+                st.dataframe(
+                    safe_dataframe(df_estoque_entregue),
+                    use_container_width=True
+                )
+
 
 
