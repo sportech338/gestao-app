@@ -4993,34 +4993,37 @@ with aba3:
     aba_alie, aba_estoque = st.tabs(["📄 Aliexpress", "📦 Estoque"])
 
     # -------------------------------
-    # Aba 1: Aliexpress (mantém todo o código existente)
+    # Aba 1: Aliexpress (remove rastreio 888)
     # -------------------------------
     with aba_alie:
-        st.subheader("📄 Registros da Logística")
-        # ===============================
-        # Aqui entra todo o código que você já tem para exibir a tabela,
-        # métricas, busca, ordenação por DATA, ajustes de índice e PEDIDO.
-        # ===============================
-        # Exemplo resumido para manter legibilidade:
-        total = len(df_log)
-        com_rastreio = df_log[df_log["RASTREIO"].astype(str).str.strip() != ""]
+        st.subheader("📄 Registros da Logística - Aliexpress")
+        df_alie = df_log[~df_log["RASTREIO"].astype(str).str.startswith("888")].copy()
+
+        # Métricas
+        total = len(df_alie)
+        com_rastreio = df_alie[df_alie["RASTREIO"].astype(str).str.strip() != ""]
         sem_rastreio = total - len(com_rastreio)
         col1, col2, col3 = st.columns(3)
         col1.metric("Total de linhas", total)
         col2.metric("Com código de rastreio", len(com_rastreio))
         col3.metric("Sem rastreio", sem_rastreio)
 
-        termo = st.text_input("🔍 Buscar na planilha", key="search_alie")
-        df_exibir = df_log.copy()
+        # Busca
+        termo = st.text_input("🔍 Buscar na planilha Aliexpress", key="search_alie")
+        df_exibir = df_alie.copy()
         if termo.strip():
             termo_lower = termo.lower()
-            if termo.startswith("#") and "PEDIDO" in df_log.columns:
-                df_exibir = df_log[df_log["PEDIDO"].astype(str).str.lower().str.contains(termo_lower)]
+            if termo.startswith("#") and "PEDIDO" in df_exibir.columns:
+                df_exibir = df_exibir[df_exibir["PEDIDO"].astype(str).str.lower().str.contains(termo_lower)]
             else:
-                df_exibir = df_log[df_log.apply(lambda row: termo_lower in str(row).lower(), axis=1)]
+                df_exibir = df_exibir[df_exibir.apply(lambda row: termo_lower in str(row).lower(), axis=1)]
+
+        # Ordenação por DATA
         if "DATA" in df_exibir.columns:
             df_exibir["DATA"] = pd.to_datetime(df_exibir["DATA"], errors="coerce")
             df_exibir = df_exibir.sort_values("DATA", ascending=False)
+
+        # Ajuste coluna PEDIDO e índice
         if "PEDIDO" in df_exibir.columns:
             df_exibir["PEDIDO"] = df_exibir["PEDIDO"].astype(str).str.replace(",", "").str.replace(".0", "").str.strip()
         df_exibir = df_exibir.reset_index(drop=True)
@@ -5037,6 +5040,7 @@ with aba3:
         if df_estoque.empty:
             st.warning("Nenhum pedido com rastreio começando com 888.")
         else:
+            # Ajuste índice
             df_estoque = df_estoque.reset_index(drop=True)
             df_estoque.index = (df_estoque.index + 1).astype(str)
             df_estoque.index.name = "Nº"
