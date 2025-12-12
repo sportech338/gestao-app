@@ -4284,7 +4284,7 @@ if menu == "📦 Dashboard – Logística":
         # ---------------------------
         # Sub-abas dentro do Controle Operacional
         # ---------------------------
-        subtab_envios, subtab_reenvios = st.tabs(["📦 Envios", "🔄 Reenvios"])
+        subtab_envios = st.tabs(["📦 Envios"])
 
         # ---------------------------
         # ENVIO
@@ -4763,54 +4763,6 @@ if menu == "📦 Dashboard – Logística":
                 render_coluna(pedidos_lista[2*quarto:3*quarto])
             with col4:
                 render_coluna(pedidos_lista[3*quarto:])
-# ---------------------------
-# REENVIO — Apenas planilha
-# ---------------------------
-with subtab_reenvios:
-    st.subheader("🔄 Reenvios — Apenas leitura")
-
-    import gspread
-    from google.oauth2.service_account import Credentials
-
-    # ---------------------------
-    # Função para conectar à planilha
-    # ---------------------------
-    @st.cache_data(ttl=300)
-    def carregar_planilha_reenvios():
-        try:
-            scopes = [
-                "https://www.googleapis.com/auth/spreadsheets.readonly",
-                "https://www.googleapis.com/auth/drive.readonly"
-            ]
-            gcp_info = dict(st.secrets["gcp_service_account"])
-            if isinstance(gcp_info.get("private_key"), str):
-                gcp_info["private_key"] = gcp_info["private_key"].replace("\\n", "\n")
-            creds = Credentials.from_service_account_info(gcp_info, scopes=scopes)
-            client = gspread.authorize(creds)
-
-            # Abre a planilha pelo ID e pela aba "Falha na importação"
-            spreadsheet_id = "1WTEiRnm1OFxzn6ag1MfI8VnlQCbL8xwxY3LeanCsdxk"
-            sheet = client.open_by_key(spreadsheet_id).worksheet("Falha na importação")
-
-            dados = pd.DataFrame(sheet.get_all_records())
-            return dados
-
-        except Exception as e:
-            st.error(f"❌ Erro ao carregar planilha: {e}")
-            return pd.DataFrame()
-
-    # ---------------------------
-    # Carrega e exibe os dados
-    # ---------------------------
-    df_reenvios = carregar_planilha_reenvios()
-
-    if df_reenvios.empty:
-        st.warning("Nenhum dado encontrado na aba 'Falha na importação'.")
-    else:
-        df_reenvios.index = range(1, len(df_reenvios) + 1)
-        df_reenvios.index.name = "Nº"
-        st.dataframe(df_reenvios, use_container_width=True)
-      
 
     # =====================================================
     # 📦 ABA 2 — 💲 Valores
@@ -4920,7 +4872,6 @@ with subtab_reenvios:
             atualizar_planilha_custos(edit_df)
             st.cache_data.clear()
             st.rerun()
-
 # =====================================================
 # 🚚 ABA 3 — ENTREGAS
 # =====================================================
@@ -4959,87 +4910,47 @@ with aba3:
         ]]
 
     # -------------------------------
-    # 🔥 Função de sincronização
+    # 🔄 Aba de Reenvios dentro de Entregas
     # -------------------------------
-    def sync_shopify_to_sheet():
-        def normalizar_pedido(p):
-            if pd.isna(p):
-                return None
-            return str(p).replace("#", "").strip()
-
-        df_new = get_paid_orders_today()
-        if df_new.empty:
-            return "Nenhum pedido pago novo encontrado hoje."
-
-        scopes = [
-            "https://www.googleapis.com/auth/spreadsheets",
-            "https://www.googleapis.com/auth/drive"
-        ]
-        gcp_info = dict(st.secrets["gcp_service_account"])
-        gcp_info["private_key"] = gcp_info["private_key"].replace("\\n", "\n")
-        creds = Credentials.from_service_account_info(gcp_info, scopes=scopes)
-        client = gspread.authorize(creds)
-
-        sheet = client.open_by_key(st.secrets["sheets"]["spreadsheet_id"]).worksheet("Logística")
-        df_sheet = pd.DataFrame(sheet.get_all_records())
-        df_sheet.columns = df_sheet.columns.str.strip()
-
-        if "PEDIDO" not in df_sheet.columns:
-            df_sheet["PEDIDO"] = ""
-
-        pedidos_existentes = set(df_sheet["PEDIDO"].apply(normalizar_pedido))
-        df_new["PEDIDO_LIMPO"] = df_new["PEDIDO"].apply(normalizar_pedido)
-        novos = df_new[~df_new["PEDIDO_LIMPO"].isin(pedidos_existentes)]
-        if novos.empty:
-            return "Nenhum pedido novo para adicionar."
-
-        linhas = novos.drop(columns=["PEDIDO_LIMPO"]).astype(str).values.tolist()
-        sheet.append_rows(linhas, value_input_option="USER_ENTERED")
-        return f"{len(linhas)} pedido(s) novo(s) adicionados com sucesso!"
-
-    # -------------------------------
-    # 1) Conectar ao Google Sheets
-    # -------------------------------
-    def get_gsheet_client():
-        scopes = [
-            "https://www.googleapis.com/auth/spreadsheets",
-            "https://www.googleapis.com/auth/drive"
-        ]
-        gcp_info = dict(st.secrets["gcp_service_account"])
-        if isinstance(gcp_info.get("private_key"), str):
-            gcp_info["private_key"] = gcp_info["private_key"].replace("\\n", "\n")
-        creds = Credentials.from_service_account_info(gcp_info, scopes=scopes)
-        return gspread.authorize(creds)
-
     @st.cache_data(ttl=300)
-    def carregar_planilha_logistica():
-        client = get_gsheet_client()
-        sheet = client.open_by_key(st.secrets["sheets"]["spreadsheet_id"]).worksheet("Logística")
-        df = pd.DataFrame(sheet.get_all_records())
-        df.columns = df.columns.str.strip()
-        return df
+    def carregar_planilha_reenvios():
+        try:
+            scopes = [
+                "https://www.googleapis.com/auth/spreadsheets.readonly",
+                "https://www.googleapis.com/auth/drive.readonly"
+            ]
+            gcp_info = dict(st.secrets["gcp_service_account"])
+            if isinstance(gcp_info.get("private_key"), str):
+                gcp_info["private_key"] = gcp_info["private_key"].replace("\\n", "\n")
+            creds = Credentials.from_service_account_info(gcp_info, scopes=scopes)
+            client = gspread.authorize(creds)
+
+            spreadsheet_id = "1WTEiRnm1OFxzn6ag1MfI8VnlQCbL8xwxY3LeanCsdxk"
+            sheet = client.open_by_key(spreadsheet_id).worksheet("Falha na importação")
+
+            dados = pd.DataFrame(sheet.get_all_records())
+            return dados
+
+        except Exception as e:
+            st.error(f"❌ Erro ao carregar planilha: {e}")
+            return pd.DataFrame()
 
     # -------------------------------
-    # 2) Tentar carregar dados
+    # Criar sub-abas dentro de Entregas
     # -------------------------------
-    try:
-        df_log = carregar_planilha_logistica()
-    except Exception as e:
-        st.error(f"❌ Erro ao carregar planilha de logística: {e}")
-        st.stop()
+    aba_alie, aba_estoque, aba_dados, aba_reenvios = st.tabs([
+        "📄 Aliexpress", 
+        "📦 Estoque", 
+        "🆕 Dados", 
+        "🔄 Reenvios"
+    ])
 
     # -------------------------------
-    # Criar tres sub-abas
-    # -------------------------------
-    aba_alie, aba_estoque, aba_dados = st.tabs(["📄 Aliexpress", "📦 Estoque", "🆕 Dados"])
-
-    # -------------------------------
-    # Aba 1: Aliexpress (remove rastreio 888)
+    # Aba 1: Aliexpress
     # -------------------------------
     with aba_alie:
         st.subheader("📄 Registros da Logística - Aliexpress")
         df_alie = df_log[~df_log["RASTREIO"].astype(str).str.startswith("888")].copy()
-
         total = len(df_alie)
         com_rastreio = df_alie[df_alie["RASTREIO"].astype(str).str.strip() != ""]
         sem_rastreio = total - len(com_rastreio)
@@ -5069,7 +4980,7 @@ with aba3:
         st.dataframe(df_exibir, use_container_width=True)
 
     # -------------------------------
-    # Aba 2: Estoque (RASTREIO começa com 888)
+    # Aba 2: Estoque
     # -------------------------------
     with aba_estoque:
         st.subheader("📦 Pedidos Estoque")
@@ -5082,18 +4993,28 @@ with aba3:
             df_estoque.index.name = "Nº"
             st.dataframe(df_estoque, use_container_width=True)
 
-   # -------------------------------
-# Aba 3: Dados Gerais (visão geral)
-# -------------------------------
-with aba_dados:
-    st.subheader("📋 Dados Gerais - Visão Geral")
+    # -------------------------------
+    # Aba 3: Dados
+    # -------------------------------
+    with aba_dados:
+        st.subheader("📋 Dados Gerais - Visão Geral")
+        st.subheader("🔄 Sincronização Shopify")
+        if st.button("📥 Buscar pedidos pagos de hoje"):
+            resultado = sync_shopify_to_sheet()
+            st.success(resultado)
+            st.cache_data.clear()
+            st.rerun()
 
     # -------------------------------
-    # Botão de sincronização
+    # Aba 4: Reenvios
     # -------------------------------
-    st.subheader("🔄 Sincronização Shopify")
-    if st.button("📥 Buscar pedidos pagos de hoje"):
-        resultado = sync_shopify_to_sheet()
-        st.success(resultado)
-        st.cache_data.clear()
-        st.rerun()
+    with aba_reenvios:
+        st.subheader("🔄 Reenvios — Apenas leitura")
+        df_reenvios = carregar_planilha_reenvios()
+        if df_reenvios.empty:
+            st.warning("Nenhum dado encontrado na aba 'Falha na importação'.")
+        else:
+            df_reenvios.index = range(1, len(df_reenvios) + 1)
+            df_reenvios.index.name = "Nº"
+            st.dataframe(df_reenvios, use_container_width=True)
+
