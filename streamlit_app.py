@@ -4870,14 +4870,14 @@ if menu == "📦 Dashboard – Logística":
             st.cache_data.clear()
             st.rerun()
 
-    # =====================================================
+# =====================================================
 # 🚚 ABA 3 — ENTREGAS
 # =====================================================
 with aba3:
 
     st.subheader("🚚 Gestão de Entregas")
 
-    # Criação das sub-abas dentro da aba "Entregas"
+    # Sub-abas
     sub1, sub2, sub3 = st.tabs([
         "📊 Dados Gerais",
         "🛒 AliExpress",
@@ -4885,10 +4885,10 @@ with aba3:
     ])
 
     # =====================================================
-    # 📊 SUB-ABA — DADOS GERAIS (Vazia)
+    # 📊 SUB-ABA — DADOS GERAIS (vazia)
     # =====================================================
     with sub1:
-        st.info("📊 Área reservada para dados gerais de entregas. (Não exibindo nada aqui por enquanto.)")
+        st.info("📊 Área reservada para dados gerais de entregas.")
 
     # =====================================================
     # 🛒 SUB-ABA — ALIEXPRESS
@@ -4898,7 +4898,7 @@ with aba3:
         from google.oauth2.service_account import Credentials
 
         # -------------------------------
-        # 🔁 SINCRONIZAR SHOPIFY → PLANILHA
+        # 🔁 PEDIDOS PAGOS DE HOJE
         # -------------------------------
         @st.cache_data(ttl=300)
         def get_paid_orders_today():
@@ -4928,7 +4928,7 @@ with aba3:
             ]]
 
         # -------------------------------
-        # 🔥 FUNÇÃO DEFINITIVA — SEM DUPLICAÇÃO / SEM API ERROR
+        # 🔥 SYNC SHOPIFY → SHEETS
         # -------------------------------
         def sync_shopify_to_sheet():
 
@@ -4950,17 +4950,17 @@ with aba3:
             creds = Credentials.from_service_account_info(gcp_info, scopes=scopes)
             client = gspread.authorize(creds)
 
-            sheet = client.open_by_key(st.secrets["sheets"]["spreadsheet_id"]).worksheet("Logística")
+            sheet = client.open_by_key(
+                st.secrets["sheets"]["spreadsheet_id"]
+            ).worksheet("Logística")
 
             df_sheet = pd.DataFrame(sheet.get_all_records())
             df_sheet.columns = df_sheet.columns.str.strip()
 
-            # Garantir coluna PEDIDO
             if "PEDIDO" not in df_sheet.columns:
                 df_sheet["PEDIDO"] = ""
 
             pedidos_existentes = set(df_sheet["PEDIDO"].apply(normalizar_pedido))
-
             df_new["PEDIDO_LIMPO"] = df_new["PEDIDO"].apply(normalizar_pedido)
 
             novos = df_new[~df_new["PEDIDO_LIMPO"].isin(pedidos_existentes)]
@@ -4968,16 +4968,15 @@ with aba3:
             if novos.empty:
                 return "Nenhum pedido novo para adicionar."
 
-            novos = novos.drop(columns=["PEDIDO_LIMPO"])
+            sheet.append_rows(
+                novos.drop(columns=["PEDIDO_LIMPO"]).astype(str).values.tolist(),
+                value_input_option="USER_ENTERED"
+            )
 
-            linhas = novos.astype(str).values.tolist()
-
-            sheet.append_rows(linhas, value_input_option="USER_ENTERED")
-
-            return f"{len(linhas)} pedido(s) novo(s) adicionados com sucesso!"
+            return f"{len(novos)} pedido(s) novo(s) adicionados."
 
         # -------------------------------
-        # 1) Conectar ao Google Sheets
+        # 📥 CARREGAR PLANILHA
         # -------------------------------
         def get_gsheet_client():
             scopes = [
@@ -4985,124 +4984,94 @@ with aba3:
                 "https://www.googleapis.com/auth/drive"
             ]
             gcp_info = dict(st.secrets["gcp_service_account"])
-            if isinstance(gcp_info.get("private_key"), str):
-                gcp_info["private_key"] = gcp_info["private_key"].replace("\\n", "\n")
+            gcp_info["private_key"] = gcp_info["private_key"].replace("\\n", "\n")
             creds = Credentials.from_service_account_info(gcp_info, scopes=scopes)
             return gspread.authorize(creds)
 
         @st.cache_data(ttl=300)
         def carregar_planilha_logistica():
             client = get_gsheet_client()
-            sheet = client.open_by_key(st.secrets["sheets"]["spreadsheet_id"]).worksheet("Logística")
+            sheet = client.open_by_key(
+                st.secrets["sheets"]["spreadsheet_id"]
+            ).worksheet("Logística")
             df = pd.DataFrame(sheet.get_all_records())
             df.columns = df.columns.str.strip()
             return df
 
-        # -------------------------------
-        # 2) Tentar carregar dados
-        # -------------------------------
         try:
             df_log = carregar_planilha_logistica()
         except Exception as e:
-            st.error(f"❌ Erro ao carregar planilha de logística: {e}")
+            st.error(f"Erro ao carregar logística: {e}")
             st.stop()
 
-        # -------------------------------
-        # 3) Exibir métricas gerais
-        # -------------------------------
-        st.subheader("📦 Visão Geral")
-
-        total = len(df_log)
-        com_rastreio = df_log[df_log["RASTREIO"].astype(str).str.strip() != ""]
-        sem_rastreio = total - len(com_rastreio)
-
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Total de linhas", total)
-        col2.metric("Com código de rastreio", len(com_rastreio))
-        col3.metric("Sem rastreio", sem_rastreio)
+        # -------------------------------------------------
+        # 🔥 REMOVE ESTOQUE (RASTREIO começa com 888)
+        # -------------------------------------------------
+        if "RASTREIO" in df_log.columns:
+            df_log = df_log[
+                ~df_log["RASTREIO"].astype(str).str.startswith("888", na=False)
+            ].copy()
 
         # -------------------------------
-        # 4) Campo de busca
+        # 🔍 BUSCA
         # -------------------------------
-        st.subheader("🔍 Buscar na planilha")
-        termo = st.text_input("Digite parte do nome, pedido (#12345), rastreio ou email:")
-
+        termo = st.text_input("🔍 Buscar (pedido, cliente, email ou rastreio)")
         df_exibir = df_log.copy()
-        if termo.strip():
-            termo_lower = termo.lower()
 
-            if termo.startswith("#") and "PEDIDO" in df_log.columns:
-                df_exibir = df_log[
-                    df_log["PEDIDO"].astype(str).str.lower().str.contains(termo_lower)
-                ]
-            else:
-                df_exibir = df_log[
-                    df_log.apply(lambda row: termo_lower in str(row).lower(), axis=1)
-                ]
+        if termo.strip():
+            termo = termo.lower()
+            df_exibir = df_log[
+                df_log.apply(lambda r: termo in str(r).lower(), axis=1)
+            ]
 
         # -------------------------------
-        # 5) Ordenação por data (se existir)
+        # 🧾 AJUSTES VISUAIS
         # -------------------------------
         if "DATA" in df_exibir.columns:
-            try:
-                df_exibir["DATA"] = pd.to_datetime(df_exibir["DATA"], errors="coerce")
-                df_exibir = df_exibir.sort_values("DATA", ascending=False)
-            except:
-                pass
+            df_exibir["DATA"] = pd.to_datetime(df_exibir["DATA"], errors="coerce")
+            df_exibir = df_exibir.sort_values("DATA", ascending=False)
 
-        # ----------------------------------------
-        # 🔧 AJUSTE DA COLUNA PEDIDO (Remove vírgulas do número)
-        # ----------------------------------------
         if "PEDIDO" in df_exibir.columns:
             df_exibir["PEDIDO"] = (
                 df_exibir["PEDIDO"]
                 .astype(str)
                 .str.replace(",", "")
                 .str.replace(".0", "")
-                .str.strip()
             )
 
-        # ----------------------------------------
-        # 🔧 AJUSTE DO ÍNDICE (REMOVE A VÍRGULA)
-        # ----------------------------------------
         df_exibir = df_exibir.reset_index(drop=True)
         df_exibir.index = (df_exibir.index + 1).astype(str)
         df_exibir.index.name = "Nº"
 
-        # -------------------------------
-        # 6) Mostrar tabela
-        # -------------------------------
-        st.subheader("📄 Registros da Logística (Planilha)")
         st.dataframe(df_exibir, use_container_width=True)
 
-        # ---------------------------------------
-        # Botão de sincronização
-        # ---------------------------------------
-        st.subheader("🔄 Sincronização Shopify")
         if st.button("📥 Buscar pedidos pagos de hoje"):
-            resultado = sync_shopify_to_sheet()
-            st.success(resultado)
+            st.success(sync_shopify_to_sheet())
             st.cache_data.clear()
             st.rerun()
 
     # =====================================================
-    # 📦 SUB-ABA — ESTOQUE (RASTREIO contém 888)
+    # 📦 SUB-ABA — ESTOQUE (RASTREIO começa com 888)
     # =====================================================
     with sub3:
-        
-        if "RASTREIO" not in df_log.columns:
-            st.warning("⚠️ Coluna RASTREIO não encontrada na planilha.")
+
+        st.subheader("📦 Pedidos de Estoque (RASTREIO 888)")
+
+        df_full = carregar_planilha_logistica()
+
+        if "RASTREIO" not in df_full.columns:
+            st.warning("Coluna RASTREIO não encontrada.")
         else:
-            df_estoque = df_log[
-                df_log["RASTREIO"].astype(str).str.contains("888", na=False)
+            df_estoque = df_full[
+                df_full["RASTREIO"].astype(str).str.startswith("888", na=False)
             ].copy()
 
             if df_estoque.empty:
-                st.info("✅ Nenhum pedido de estoque encontrado.")
+                st.info("Nenhum pedido de estoque.")
             else:
-                # Ajuste visual igual ao padrão
                 df_estoque = df_estoque.reset_index(drop=True)
                 df_estoque.index = (df_estoque.index + 1).astype(str)
                 df_estoque.index.name = "Nº"
 
                 st.dataframe(df_estoque, use_container_width=True)
+
