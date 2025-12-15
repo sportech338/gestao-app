@@ -4300,25 +4300,68 @@ if menu == "📊 Dashboard – Tráfego Pago":
 
         tabela["grupo_id"] = tabela.apply(chave_grupo, axis=1)
 # =====================================================
+# 🔐 GOOGLE SHEETS — FUNÇÕES GLOBAIS
+# =====================================================
+import gspread
+from google.oauth2.service_account import Credentials
+
+def get_gsheet_client():
+    scopes = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive"
+    ]
+    info = dict(st.secrets["gcp_service_account"])
+    info["private_key"] = info["private_key"].replace("\\n", "\n")
+    return gspread.authorize(
+        Credentials.from_service_account_info(info, scopes=scopes)
+    )
+
+@st.cache_data(ttl=300)
+def carregar_aba(nome_aba):
+    try:
+        ws = get_gsheet_client().open_by_key(
+            st.secrets["sheets"]["spreadsheet_id"]
+        ).worksheet(nome_aba)
+        df = pd.DataFrame(ws.get_all_records())
+        df.columns = df.columns.astype(str).str.strip()
+        return df
+    except Exception:
+        return pd.DataFrame()
+
+def atualizar_por_pedido(nome_aba, df_editado):
+    ws = get_gsheet_client().open_by_key(
+        st.secrets["sheets"]["spreadsheet_id"]
+    ).worksheet(nome_aba)
+
+    base = pd.DataFrame(ws.get_all_records())
+    base.columns = base.columns.astype(str).str.strip()
+
+    for _, row in df_editado.iterrows():
+        pedido = str(row.get("PEDIDO", "")).strip()
+        if not pedido:
+            continue
+
+        idx = base[base["PEDIDO"].astype(str) == pedido].index
+        if idx.empty:
+            continue
+
+        linha = idx[0] + 2
+        valores = [str(row.get(col, "")) for col in base.columns]
+        ws.update(f"A{linha}:Z{linha}", [valores])
+
+# =====================================================
 # 📦 DASHBOARD – LOGÍSTICA
 # =====================================================
 if menu == "📦 Dashboard – Logística":
 
-    # =====================================================
-    # 🧭 Cabeçalho fixo principal
-    # =====================================================
     st.title("📦 DASHBOARD — LOGÍSTICA")
     st.caption("Visualização completa de pedidos, estoque, entregas e indicadores.")
 
-    # =====================================================
-    # 🗂️ Abas principais da Logística
-    # =====================================================
     aba1, aba2, aba3 = st.tabs([
         "📋 Controle Operacional",
         "💲 Valores",
         "🚚 Gestão de entregas"
     ])
-
     # =====================================================
     # 📋 ABA 1 — CONTROLE OPERACIONAL
     # =====================================================
@@ -4910,383 +4953,64 @@ def render_df(df: pd.DataFrame, empty_msg: str):
 # =====================================================
 with aba3:
 
-    import gspread
-    from google.oauth2.service_account import Credentials
+        df_log = carregar_aba("Logística")
+        df_entregue = carregar_aba("Entrega realizada")
+        df_falha = carregar_aba("Falha na importação")
 
-    # =====================================================
-    # 🔐 Google Sheets
-    # =====================================================
-    def get_gsheet_client():
-        scopes = [
-            "https://www.googleapis.com/auth/spreadsheets",
-            "https://www.googleapis.com/auth/drive"
-        ]
-        info = dict(st.secrets["gcp_service_account"])
-        info["private_key"] = info["private_key"].replace("\\n", "\n")
-        return gspread.authorize(
-            Credentials.from_service_account_info(info, scopes=scopes)
-        )
-
-    # =====================================================
-    # 📥 Carregar aba específica
-    # =====================================================
-    @st.cache_data(ttl=300)
-    def carregar_aba(nome_aba):
-        try:
-            ws = get_gsheet_client().open_by_key(
-                st.secrets["sheets"]["spreadsheet_id"]
-            ).worksheet(nome_aba)
-            df = pd.DataFrame(ws.get_all_records())
-            df.columns = df.columns.astype(str).str.strip()
+        def dedup(df):
+            if "PEDIDO" in df.columns:
+                return df.drop_duplicates(subset=["PEDIDO"], keep="last")
             return df
-        except:
-            return pd.DataFrame()
 
-    # =====================================================
-    # 💾 Atualizar linhas pelo PEDIDO
-    # =====================================================
-    def atualizar_por_pedido(nome_aba, df_editado):
-        client = get_gsheet_client()
-        ws = client.open_by_key(
-            st.secrets["sheets"]["spreadsheet_id"]
-        ).worksheet(nome_aba)
+        df_log = dedup(df_log)
+        df_entregue = dedup(df_entregue)
+        df_falha = dedup(df_falha)
 
-        base = pd.DataFrame(ws.get_all_records())
-        base.columns = base.columns.astype(str).str.strip()
+        t1, t2, t3, t4, t5 = st.tabs([
+            "🟡 Aguardando",
+            "🚚 Em Trânsito",
+            "✅ Entregue",
+            "📮 Correios",
+            "⛔ Importação não autorizada"
+        ])
 
-        for _, row in df_editado.iterrows():
-            pedido = str(row.get("PEDIDO", "")).strip()
-            if pedido == "":
-                continue
-
-            idx = base[base["PEDIDO"].astype(str) == pedido].index
-            if idx.empty:
-                continue
-
-            linha_sheet = idx[0] + 2  # header +1 (Sheets começa em 1)
-
-            valores = [
-                str(row.get(col, "")).strip()
-                for col in base.columns
-            ]
-
-            ws.update(
-                f"A{linha_sheet}:{chr(64+len(valores))}{linha_sheet}",
-                [valores]
-            )
-
-    # =====================================================
-    # 📊 Bases
-    # =====================================================
-    df_log = carregar_aba("Logística")
-    df_entregue = carregar_aba("Entrega realizada")
-    df_falha = carregar_aba("Falha na importação")
-
-    def dedup(df):
-        if "PEDIDO" in df.columns:
-            df = df.drop_duplicates(subset=["PEDIDO"], keep="last")
-        return df
-
-    df_log = dedup(df_log)
-    df_entregue = dedup(df_entregue)
-    df_falha = dedup(df_falha)
-
-    # =====================================================
-    # 🧭 Sub-abas
-    # =====================================================
-    t1, t2, t3, t4, t5 = st.tabs([
-        "🟡 Aguardando",
-        "🚚 Em Trânsito",
-        "✅ Entregue",
-        "📮 Correios",
-        "⛔ Importação não autorizada"
-    ])
-
-    # =====================================================
-    # 🟡 AGUARDANDO
-    # =====================================================
-    with t1:
-        df = df_log[df_log["RASTREIO"].astype(str).str.strip() == ""] if "RASTREIO" in df_log.columns else pd.DataFrame()
-
-        edit_df = st.data_editor(
-            df,
-            use_container_width=True,
-            num_rows="fixed",
-            disabled=["PEDIDO"]
-        )
-
-        if st.button("💾 Salvar alterações — Aguardando"):
-            atualizar_por_pedido("Logística", edit_df)
-            st.cache_data.clear()
-            st.success("✅ Atualizado com sucesso")
-            st.rerun()
-
-    # =====================================================
-    # 🚚 EM TRÂNSITO
-    # =====================================================
-    with t2:
-        a, e = st.tabs(["🛒 AliExpress", "📦 Estoque"])
-
-        with a:
-            df = df_log[
-                (df_log["RASTREIO"].astype(str).str.strip() != "") &
-                (~df_log["RASTREIO"].astype(str).str.startswith("888", na=False))
-            ]
-
-            edit_df = st.data_editor(df, use_container_width=True, disabled=["PEDIDO"])
-            if st.button("💾 Salvar — AliExpress"):
+        # 🟡 AGUARDANDO
+        with t1:
+            df = df_log[df_log["RASTREIO"].astype(str).str.strip() == ""]
+            edit_df = st.data_editor(df, disabled=["PEDIDO"], use_container_width=True)
+            if st.button("💾 Salvar — Aguardando"):
                 atualizar_por_pedido("Logística", edit_df)
                 st.cache_data.clear()
-                st.success("✅ Atualizado")
                 st.rerun()
 
-        with e:
-            df = df_log[
-                df_log["RASTREIO"].astype(str).str.startswith("888", na=False)
-            ]
-
-            edit_df = st.data_editor(df, use_container_width=True, disabled=["PEDIDO"])
-            if st.button("💾 Salvar — Estoque"):
+        # 🚚 EM TRÂNSITO
+        with t2:
+            edit_df = st.data_editor(df_log, disabled=["PEDIDO"], use_container_width=True)
+            if st.button("💾 Salvar — Em Trânsito"):
                 atualizar_por_pedido("Logística", edit_df)
                 st.cache_data.clear()
-                st.success("✅ Atualizado")
                 st.rerun()
 
-    # =====================================================
-    # ✅ ENTREGUE
-    # =====================================================
-    with t3:
-        edit_df = st.data_editor(
-            df_entregue,
-            use_container_width=True,
-            disabled=["PEDIDO"]
-        )
+        # ✅ ENTREGUE
+        with t3:
+            edit_df = st.data_editor(df_entregue, disabled=["PEDIDO"], use_container_width=True)
+            if st.button("💾 Salvar — Entregues"):
+                atualizar_por_pedido("Entrega realizada", edit_df)
+                st.cache_data.clear()
+                st.rerun()
 
-        if st.button("💾 Salvar — Entregues"):
-            atualizar_por_pedido("Entrega realizada", edit_df)
-            st.cache_data.clear()
-            st.success("✅ Entregas atualizadas")
-            st.rerun()
-
-    # =====================================================
-    # 📮 CORREIOS
-    # =====================================================
-    with t4:
-        edit_df = st.data_editor(
-            df_log,
-            use_container_width=True,
-            disabled=["PEDIDO"]
-        )
-
-        if st.button("💾 Salvar — Correios"):
-            atualizar_por_pedido("Logística", edit_df)
-            st.cache_data.clear()
-            st.success("✅ Correios atualizado")
-            st.rerun()
-
-    # =====================================================
-    # ⛔ IMPORTAÇÃO NÃO AUTORIZADA
-    # =====================================================
-    with t5:
-        edit_df = st.data_editor(
-            df_falha,
-            use_container_width=True,
-            disabled=["PEDIDO"]
-        )
-
-        if st.button("💾 Salvar — Falhas"):
-            atualizar_por_pedido("Falha na importação", edit_df)
-            st.cache_data.clear()
-            st.success("✅ Falhas atualizadas")
-            st.rerun()
-with aba3:
-
-    import gspread
-    from google.oauth2.service_account import Credentials
-
-    # =====================================================
-    # 🔐 Google Sheets
-    # =====================================================
-    def get_gsheet_client():
-        scopes = [
-            "https://www.googleapis.com/auth/spreadsheets",
-            "https://www.googleapis.com/auth/drive"
-        ]
-        info = dict(st.secrets["gcp_service_account"])
-        info["private_key"] = info["private_key"].replace("\\n", "\n")
-        return gspread.authorize(
-            Credentials.from_service_account_info(info, scopes=scopes)
-        )
-
-    # =====================================================
-    # 📥 Carregar aba específica
-    # =====================================================
-    @st.cache_data(ttl=300)
-    def carregar_aba(nome_aba):
-        try:
-            ws = get_gsheet_client().open_by_key(
-                st.secrets["sheets"]["spreadsheet_id"]
-            ).worksheet(nome_aba)
-            df = pd.DataFrame(ws.get_all_records())
-            df.columns = df.columns.astype(str).str.strip()
-            return df
-        except:
-            return pd.DataFrame()
-
-    # =====================================================
-    # 💾 Atualizar linhas pelo PEDIDO
-    # =====================================================
-    def atualizar_por_pedido(nome_aba, df_editado):
-        client = get_gsheet_client()
-        ws = client.open_by_key(
-            st.secrets["sheets"]["spreadsheet_id"]
-        ).worksheet(nome_aba)
-
-        base = pd.DataFrame(ws.get_all_records())
-        base.columns = base.columns.astype(str).str.strip()
-
-        for _, row in df_editado.iterrows():
-            pedido = str(row.get("PEDIDO", "")).strip()
-            if pedido == "":
-                continue
-
-            idx = base[base["PEDIDO"].astype(str) == pedido].index
-            if idx.empty:
-                continue
-
-            linha_sheet = idx[0] + 2  # header +1 (Sheets começa em 1)
-
-            valores = [
-                str(row.get(col, "")).strip()
-                for col in base.columns
-            ]
-
-            ws.update(
-                f"A{linha_sheet}:{chr(64+len(valores))}{linha_sheet}",
-                [valores]
-            )
-
-    # =====================================================
-    # 📊 Bases
-    # =====================================================
-    df_log = carregar_aba("Logística")
-    df_entregue = carregar_aba("Entrega realizada")
-    df_falha = carregar_aba("Falha na importação")
-
-    def dedup(df):
-        if "PEDIDO" in df.columns:
-            df = df.drop_duplicates(subset=["PEDIDO"], keep="last")
-        return df
-
-    df_log = dedup(df_log)
-    df_entregue = dedup(df_entregue)
-    df_falha = dedup(df_falha)
-
-    # =====================================================
-    # 🧭 Sub-abas
-    # =====================================================
-    t1, t2, t3, t4, t5 = st.tabs([
-        "🟡 Aguardando",
-        "🚚 Em Trânsito",
-        "✅ Entregue",
-        "📮 Correios",
-        "⛔ Importação não autorizada"
-    ])
-
-    # =====================================================
-    # 🟡 AGUARDANDO
-    # =====================================================
-    with t1:
-        df = df_log[df_log["RASTREIO"].astype(str).str.strip() == ""] if "RASTREIO" in df_log.columns else pd.DataFrame()
-
-        edit_df = st.data_editor(
-            df,
-            use_container_width=True,
-            num_rows="fixed",
-            disabled=["PEDIDO"]
-        )
-
-        if st.button("💾 Salvar alterações — Aguardando"):
-            atualizar_por_pedido("Logística", edit_df)
-            st.cache_data.clear()
-            st.success("✅ Atualizado com sucesso")
-            st.rerun()
-
-    # =====================================================
-    # 🚚 EM TRÂNSITO
-    # =====================================================
-    with t2:
-        a, e = st.tabs(["🛒 AliExpress", "📦 Estoque"])
-
-        with a:
-            df = df_log[
-                (df_log["RASTREIO"].astype(str).str.strip() != "") &
-                (~df_log["RASTREIO"].astype(str).str.startswith("888", na=False))
-            ]
-
-            edit_df = st.data_editor(df, use_container_width=True, disabled=["PEDIDO"])
-            if st.button("💾 Salvar — AliExpress"):
+        # 📮 CORREIOS
+        with t4:
+            edit_df = st.data_editor(df_log, disabled=["PEDIDO"], use_container_width=True)
+            if st.button("💾 Salvar — Correios"):
                 atualizar_por_pedido("Logística", edit_df)
                 st.cache_data.clear()
-                st.success("✅ Atualizado")
                 st.rerun()
 
-        with e:
-            df = df_log[
-                df_log["RASTREIO"].astype(str).str.startswith("888", na=False)
-            ]
-
-            edit_df = st.data_editor(df, use_container_width=True, disabled=["PEDIDO"])
-            if st.button("💾 Salvar — Estoque"):
-                atualizar_por_pedido("Logística", edit_df)
+        # ⛔ IMPORTAÇÃO NÃO AUTORIZADA
+        with t5:
+            edit_df = st.data_editor(df_falha, disabled=["PEDIDO"], use_container_width=True)
+            if st.button("💾 Salvar — Falhas"):
+                atualizar_por_pedido("Falha na importação", edit_df)
                 st.cache_data.clear()
-                st.success("✅ Atualizado")
                 st.rerun()
-
-    # =====================================================
-    # ✅ ENTREGUE
-    # =====================================================
-    with t3:
-        edit_df = st.data_editor(
-            df_entregue,
-            use_container_width=True,
-            disabled=["PEDIDO"]
-        )
-
-        if st.button("💾 Salvar — Entregues"):
-            atualizar_por_pedido("Entrega realizada", edit_df)
-            st.cache_data.clear()
-            st.success("✅ Entregas atualizadas")
-            st.rerun()
-
-    # =====================================================
-    # 📮 CORREIOS
-    # =====================================================
-    with t4:
-        edit_df = st.data_editor(
-            df_log,
-            use_container_width=True,
-            disabled=["PEDIDO"]
-        )
-
-        if st.button("💾 Salvar — Correios"):
-            atualizar_por_pedido("Logística", edit_df)
-            st.cache_data.clear()
-            st.success("✅ Correios atualizado")
-            st.rerun()
-
-    # =====================================================
-    # ⛔ IMPORTAÇÃO NÃO AUTORIZADA
-    # =====================================================
-    with t5:
-        edit_df = st.data_editor(
-            df_falha,
-            use_container_width=True,
-            disabled=["PEDIDO"]
-        )
-
-        if st.button("💾 Salvar — Falhas"):
-            atualizar_por_pedido("Falha na importação", edit_df)
-            st.cache_data.clear()
-            st.success("✅ Falhas atualizadas")
-            st.rerun()
