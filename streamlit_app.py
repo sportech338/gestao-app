@@ -5017,7 +5017,7 @@ with aba3:
     "🚚 Em Trânsito",
     "⛔ Importação não autorizada",
     "🔁 Reenvio",
-    "📮 Correios",
+    "📮 Aguardando retirada",
     "✅ Entregue"
 ])
 
@@ -5050,8 +5050,6 @@ with t_transito:
 
 # ⛔ IMPORTAÇÃO NÃO AUTORIZADA (EDITÁVEL)
 with t_importacao:
-    st.warning("⚠️ Aba editável")
-
     df_edit = st.data_editor(
         df_falha,
         num_rows="dynamic",
@@ -5067,9 +5065,7 @@ with t_importacao:
 
 # 🔁 REENVIO (EDITÁVEL)
 with t_reenvio:
-    st.warning("⚠️ Aba editável")
-
-    df_edit = st.data_editor(
+        df_edit = st.data_editor(
         df_reenvio,
         num_rows="dynamic",
         use_container_width=True,
