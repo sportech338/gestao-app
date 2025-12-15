@@ -5093,9 +5093,10 @@ with t_reenvio:
         st.rerun()
 
 
-# 📮 CORREIOS
+# 📮 CORREIOS — Aguardando retirada
 with t_correios:
-    st.info("📮 Correios — nenhuma regra aplicada ainda.")
+    df_aguardando = carregar_aba("Aguardando retirada")
+    render_df(df_aguardando, "Nenhum pedido aguardando retirada.")
 
 
 # ✅ ENTREGUE
