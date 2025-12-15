@@ -5071,8 +5071,14 @@ with t_reenvio:
 
     df_reenvio = carregar_aba("Reenvio")
 
-    if df_reenvio.empty:
-        st.warning("Nenhum registro de reenvio ainda.")
+    if "NUMERO_PEDIDO" in df_reenvio.columns:
+        df_reenvio["NUMERO_PEDIDO"] = (
+            df_reenvio["NUMERO_PEDIDO"]
+            .astype(str)
+            .str.replace(",", "", regex=False)
+            .str.replace(".0", "", regex=False)
+            .str.strip()
+        )
 
     df_edit = st.data_editor(
         df_reenvio,
@@ -5085,8 +5091,6 @@ with t_reenvio:
         atualizar_reenvio(df_edit)
         st.cache_data.clear()
         st.rerun()
-
-
 
 
 # 📮 CORREIOS
