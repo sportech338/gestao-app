@@ -4984,7 +4984,7 @@ with aba3:
     df_log = carregar_aba("Logística")
     df_entregue = carregar_aba("Entrega realizada")
     df_falha = carregar_aba("Falha na importação")
-    df_reenvio = carregar_aba("Reenvio_TESTE")
+    df_reenvio = carregar_aba("Reenvio")
 
     # Dedup por PEDIDO
     def dedup(df):
