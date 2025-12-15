@@ -4937,8 +4937,45 @@ with aba3:
             df = pd.DataFrame(ws.get_all_records())
             df.columns = df.columns.str.strip()
             return df
-        except:
+        except Exception:
             return pd.DataFrame()
+
+    # -------------------------------
+    # ✏️ FUNÇÕES DE SALVAR (EDITÁVEIS)
+    # -------------------------------
+    def atualizar_falha_importacao(df):
+        try:
+            client = get_gsheet_client()
+            ws = client.open_by_key(
+                st.secrets["sheets"]["spreadsheet_id"]
+            ).worksheet("Falha na importação")
+
+            df_safe = df.fillna("").astype(str)
+            body = [df_safe.columns.tolist()] + df_safe.values.tolist()
+
+            ws.batch_clear(["A:Z"])
+            ws.update(body)
+
+            st.success("✅ Falha na importação atualizada com sucesso!")
+        except Exception as e:
+            st.error(f"❌ Erro ao salvar Falha: {e}")
+
+    def atualizar_reenvio(df):
+        try:
+            client = get_gsheet_client()
+            ws = client.open_by_key(
+                st.secrets["sheets"]["spreadsheet_id"]
+            ).worksheet("Reenvio")
+
+            df_safe = df.fillna("").astype(str)
+            body = [df_safe.columns.tolist()] + df_safe.values.tolist()
+
+            ws.batch_clear(["A:Z"])
+            ws.update(body)
+
+            st.success("✅ Reenvio atualizado com sucesso!")
+        except Exception as e:
+            st.error(f"❌ Erro ao salvar Reenvio: {e}")
 
     # =====================================================
     # 📥 BASES
@@ -4946,6 +4983,7 @@ with aba3:
     df_log = carregar_aba("Logística")
     df_entregue = carregar_aba("Entrega realizada")
     df_falha = carregar_aba("Falha na importação")
+    df_reenvio = carregar_aba("Reenvio")
 
     # Dedup por PEDIDO
     def dedup(df):
@@ -4959,6 +4997,7 @@ with aba3:
     df_log = dedup(df_log)
     df_entregue = dedup(df_entregue)
     df_falha = dedup(df_falha)
+    df_reenvio = dedup(df_reenvio)
 
     pedidos_entregues = set(df_entregue["PEDIDO"]) if "PEDIDO" in df_entregue.columns else set()
     pedidos_falha = set(df_falha["PEDIDO"]) if "PEDIDO" in df_falha.columns else set()
@@ -4973,20 +5012,21 @@ with aba3:
     # =====================================================
     # 🧭 ABAS
     # =====================================================
-    t1, t2, t3, t4, t5 = st.tabs([
+    t1, t2, t3, t4, t5, t6 = st.tabs([
         "🟡 Aguardando",
         "🚚 Em Trânsito",
         "✅ Entregue",
         "📮 Correios",
-        "⛔ Importação não autorizada"
+        "⛔ Importação não autorizada",
+        "🔁 Reenvio"
     ])
 
-    # 🟡 AGUARDANDO — tudo junto
+    # 🟡 AGUARDANDO
     with t1:
         df = df_log[df_log["RASTREIO"].astype(str).str.strip() == ""] if "RASTREIO" in df_log.columns else pd.DataFrame()
         render_df(df, "Nenhum pedido aguardando rastreio.")
 
-    # 🚚 EM TRÂNSITO — separado
+    # 🚚 EM TRÂNSITO
     with t2:
         a, e = st.tabs(["🛒 AliExpress", "📦 Estoque"])
 
@@ -5006,7 +5046,7 @@ with aba3:
             ]
             render_df(df, "Nenhum estoque em trânsito.")
 
-    # ✅ ENTREGUE — separado
+    # ✅ ENTREGUE
     with t3:
         a, e = st.tabs(["🛒 AliExpress", "📦 Estoque"])
         with a:
@@ -5014,13 +5054,13 @@ with aba3:
         with e:
             render_df(df_entregue_estoque, "Nenhum estoque entregue.")
 
-    # 📮 CORREIOS — tudo junto
+    # 📮 CORREIOS
     with t4:
         st.info("📮 Correios — nenhuma regra aplicada ainda.")
 
-    # ⛔ IMPORTAÇÃO NÃO AUTORIZADA — tudo junto
+    # ⛔ IMPORTAÇÃO NÃO AUTORIZADA (EDITÁVEL)
     with t5:
-        st.warning("⚠️ Esta aba é EDITÁVEL. As demais são somente leitura.")
+        st.warning("⚠️ Aba editável")
 
         df_edit = st.data_editor(
             df_falha,
@@ -5029,7 +5069,23 @@ with aba3:
             key="falha_importacao_editor"
         )
 
-        if st.button("💾 Salvar alterações"):
+        if st.button("💾 Salvar Falha na importação"):
             atualizar_falha_importacao(df_edit)
+            st.cache_data.clear()
+            st.rerun()
+
+    # 🔁 REENVIO (EDITÁVEL)
+    with t6:
+        st.warning("⚠️ Aba editável")
+
+        df_edit = st.data_editor(
+            df_reenvio,
+            num_rows="dynamic",
+            use_container_width=True,
+            key="reenvio_editor"
+        )
+
+        if st.button("💾 Salvar Reenvio"):
+            atualizar_reenvio(df_edit)
             st.cache_data.clear()
             st.rerun()
