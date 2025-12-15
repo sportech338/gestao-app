@@ -4762,113 +4762,114 @@ if menu == "📦 Dashboard – Logística":
                 render_coluna(pedidos_lista[3*quarto:])
 
     # =====================================================
-    # 📦 ABA 2 — ESTOQUE
+# 📦 ABA 2 — ESTOQUE
+# =====================================================
+with aba2:
+    st.subheader("Comparativo de Saídas e Custos por Variante:")
+
     # =====================================================
-    with aba2:
-        st.subheader("Comparativo de Saídas e Custos por Variante:")
+    # 📥 Carregar planilha de custos (garantir existência de df_custos)
+    # =====================================================
+    import gspread
+    from google.oauth2.service_account import Credentials
 
-        # =====================================================
-        # 📥 Carregar planilha de custos (garantir existência de df_custos)
-        # =====================================================
-        import gspread
-        from google.oauth2.service_account import Credentials
+    def get_gsheet_client():
+        scopes = [
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive"
+        ]
+        gcp_info = dict(st.secrets["gcp_service_account"])
+        if isinstance(gcp_info.get("private_key"), str):
+            gcp_info["private_key"] = gcp_info["private_key"].replace("\\n", "\n")
+        creds = Credentials.from_service_account_info(gcp_info, scopes=scopes)
+        return gspread.authorize(creds)
 
-        def get_gsheet_client():
-            scopes = [
-                "https://www.googleapis.com/auth/spreadsheets",
-                "https://www.googleapis.com/auth/drive"
-            ]
-            gcp_info = dict(st.secrets["gcp_service_account"])
-            if isinstance(gcp_info.get("private_key"), str):
-                gcp_info["private_key"] = gcp_info["private_key"].replace("\\n", "\n")
-            creds = Credentials.from_service_account_info(gcp_info, scopes=scopes)
-            return gspread.authorize(creds)
+    @st.cache_data(ttl=600)
+    def carregar_planilha_custos():
+        client = get_gsheet_client()
+        sheet = client.open_by_key(st.secrets["sheets"]["spreadsheet_id"]).sheet1
+        df = pd.DataFrame(sheet.get_all_records())
+        df.columns = df.columns.str.strip()
+        mapa_colunas = {
+            "Produto": "Produto",
+            "Variantes": "Variante",
+            "Custo | Aliexpress": "Custo AliExpress (R$)",
+            "Custo | Estoque": "Custo Estoque (R$)",
+        }
+        df.rename(columns=mapa_colunas, inplace=True)
+        return df
 
-        @st.cache_data(ttl=600)
-        def carregar_planilha_custos():
+    try:
+        df_custos = carregar_planilha_custos()
+    except Exception as e:
+        st.error(f"❌ Erro ao carregar planilha de custos: {e}")
+        df_custos = pd.DataFrame(columns=["Produto", "Variante", "Custo AliExpress (R$)", "Custo Estoque (R$)"])
+
+    # =====================================================
+    # 🧾 Cria versão formatada da planilha para edição
+    # =====================================================
+    df_display = df_custos.copy()
+    for col in ["Custo AliExpress (R$)", "Custo Estoque (R$)"]:
+        if col in df_display.columns:
+            df_display[col] = df_display[col].apply(
+                lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                if pd.notna(x) else ""
+            )
+
+    # -------------------------------------------------
+    # 🔄 Função para atualizar planilha de custos
+    # -------------------------------------------------
+    def atualizar_planilha_custos(df):
+        """Atualiza dados na planilha de custos no Google Sheets"""
+        try:
             client = get_gsheet_client()
             sheet = client.open_by_key(st.secrets["sheets"]["spreadsheet_id"]).sheet1
-            df = pd.DataFrame(sheet.get_all_records())
-            df.columns = df.columns.str.strip()
-            mapa_colunas = {
-                "Produto": "Produto",
-                "Variantes": "Variante",
-                "Custo | Aliexpress": "Custo AliExpress (R$)",
-                "Custo | Estoque": "Custo Estoque (R$)",
-            }
-            df.rename(columns=mapa_colunas, inplace=True)
-            return df
 
-        try:
-            df_custos = carregar_planilha_custos()
+            df_safe = (
+                df.copy()
+                .fillna("")
+                .astype(str)
+                .replace("nan", "", regex=False)
+            )
+
+            body = [df_safe.columns.values.tolist()] + df_safe.values.tolist()
+            sheet.batch_clear(["A:Z"])
+            sheet.update(body)
+
+            st.success("✅ Planilha atualizada com sucesso!")
         except Exception as e:
-            st.error(f"❌ Erro ao carregar planilha de custos: {e}")
-            df_custos = pd.DataFrame(columns=["Produto", "Variante", "Custo AliExpress (R$)", "Custo Estoque (R$)"])
+            st.error(f"❌ Erro ao atualizar planilha: {e}")
 
-        # =====================================================
-        # 🧾 Cria versão formatada da planilha para edição
-        # =====================================================
-        df_display = df_custos.copy()
+    # =====================================================
+    # 📝 Edição direta da planilha no app
+    # =====================================================
+    st.subheader("📝 Custos por Variante")
+
+    edit_df = st.data_editor(
+        df_display,
+        num_rows="dynamic",
+        use_container_width=True
+    )
+
+    if st.button("💾 Salvar alterações na planilha"):
+        # ⚙️ Converte R$ 25,00 → 25.00 antes de enviar
         for col in ["Custo AliExpress (R$)", "Custo Estoque (R$)"]:
-            if col in df_display.columns:
-                df_display[col] = df_display[col].apply(
-                    lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-                    if pd.notna(x) else ""
-                )
-
-        # -------------------------------------------------
-        # 🔄 Função para atualizar planilha de custos
-        # -------------------------------------------------
-        def atualizar_planilha_custos(df):
-            """Atualiza dados na planilha de custos no Google Sheets"""
-            try:
-                client = get_gsheet_client()
-                sheet = client.open_by_key(st.secrets["sheets"]["spreadsheet_id"]).sheet1
-
-                df_safe = (
-                    df.copy()
-                    .fillna("")
+            if col in edit_df.columns:
+                edit_df[col] = (
+                    edit_df[col]
                     .astype(str)
-                    .replace("nan", "", regex=False)
+                    .str.replace("R$", "", regex=False)
+                    .str.replace(".", "", regex=False)
+                    .str.replace(",", ".", regex=False)
+                    .str.strip()
+                    .replace("", np.nan)
+                    .astype(float)
                 )
 
-                body = [df_safe.columns.values.tolist()] + df_safe.values.tolist()
-                sheet.batch_clear(["A:Z"])
-                sheet.update(body)
+        atualizar_planilha_custos(edit_df)
+        st.cache_data.clear()
+        st.rerun()
 
-                st.success("✅ Planilha atualizada com sucesso!")
-            except Exception as e:
-                st.error(f"❌ Erro ao atualizar planilha: {e}")
-
-        # =====================================================
-        # 📝 Edição direta da planilha no app
-        # =====================================================
-        st.subheader("📝 Custos por Variante")
-
-        edit_df = st.data_editor(
-            df_display,
-            num_rows="dynamic",
-            use_container_width=True
-        )
-
-        if st.button("💾 Salvar alterações na planilha"):
-            # ⚙️ Converte R$ 25,00 → 25.00 antes de enviar
-            for col in ["Custo AliExpress (R$)", "Custo Estoque (R$)"]:
-                if col in edit_df.columns:
-                    edit_df[col] = (
-                        edit_df[col]
-                        .astype(str)
-                        .str.replace("R$", "", regex=False)
-                        .str.replace(".", "", regex=False)
-                        .str.replace(",", ".", regex=False)
-                        .str.strip()
-                        .replace("", np.nan)
-                        .astype(float)
-                    )
-
-            atualizar_planilha_custos(edit_df)
-            st.cache_data.clear()
-            st.rerun()
 def safe_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
 
@@ -4938,28 +4939,6 @@ with aba3:
             return df
         except:
             return pd.DataFrame()
-            def atualizar_falha_importacao(df):
-    try:
-        client = get_gsheet_client()
-        ws = client.open_by_key(
-            st.secrets["sheets"]["spreadsheet_id"]
-        ).worksheet("Falha na importação")
-
-        df_safe = (
-            df.copy()
-            .fillna("")
-            .astype(str)
-            .replace("nan", "", regex=False)
-        )
-
-        body = [df_safe.columns.values.tolist()] + df_safe.values.tolist()
-
-        ws.batch_clear(["A:Z"])
-        ws.update(body)
-
-        st.success("✅ Falha na importação atualizada com sucesso!")
-    except Exception as e:
-        st.error(f"❌ Erro ao salvar: {e}")
 
     # =====================================================
     # 📥 BASES
@@ -5041,16 +5020,16 @@ with aba3:
 
     # ⛔ IMPORTAÇÃO NÃO AUTORIZADA — tudo junto
     with t5:
-    st.warning("⚠️ Esta aba é EDITÁVEL. As demais são somente leitura.")
+        st.warning("⚠️ Esta aba é EDITÁVEL. As demais são somente leitura.")
 
-    df_edit = st.data_editor(
-        df_falha,
-        num_rows="dynamic",
-        use_container_width=True,
-        key="falha_importacao_editor"
-    )
+        df_edit = st.data_editor(
+            df_falha,
+            num_rows="dynamic",
+            use_container_width=True,
+            key="falha_importacao_editor"
+        )
 
-    if st.button("💾 Salvar alterações"):
-        atualizar_falha_importacao(df_edit)
-        st.cache_data.clear()
-        st.rerun()
+        if st.button("💾 Salvar alterações"):
+            atualizar_falha_importacao(df_edit)
+            st.cache_data.clear()
+            st.rerun()
