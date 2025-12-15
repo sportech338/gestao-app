@@ -5009,37 +5009,53 @@ with aba3:
 
     df_entregue_aliexpress = df_entregue[~df_entregue["RASTREIO"].astype(str).str.startswith("888", na=False)] if "RASTREIO" in df_entregue.columns else pd.DataFrame()
     df_entregue_estoque = df_entregue[df_entregue["RASTREIO"].astype(str).str.startswith("888", na=False)] if "RASTREIO" in df_entregue.columns else pd.DataFrame()
-  # =====================================================
-    # 📊 CONTADORES OPERACIONAIS (TOPO)
-    # =====================================================
-    def contar(df):
-        return 0 if df is None or df.empty else len(df)
+ # =====================================================
+# 📊 CONTADORES OPERACIONAIS (TOPO)
+# =====================================================
+def contar(df):
+    return 0 if df is None or df.empty else len(df)
 
-    qtd_aguardando = (
-        contar(df_log[df_log["RASTREIO"].astype(str).str.strip() == ""])
-        if "RASTREIO" in df_log.columns else 0
-    )
+# 🟡 Aguardando (sem rastreio)
+qtd_aguardando = (
+    contar(df_log[df_log["RASTREIO"].astype(str).str.strip() == ""])
+    if "RASTREIO" in df_log.columns else 0
+)
 
-    qtd_transito = 0
-    if not df_log.empty and "RASTREIO" in df_log.columns and "PEDIDO" in df_log.columns:
-        df_transito = df_log[
-            (df_log["RASTREIO"].astype(str).str.strip() != "") &
-            (~df_log["PEDIDO"].isin(pedidos_entregues)) &
-            (~df_log["PEDIDO"].isin(pedidos_falha))
-        ]
-        qtd_transito = len(df_transito)
+# 🚚 Em trânsito
+qtd_transito = 0
+if (
+    not df_log.empty and
+    "RASTREIO" in df_log.columns and
+    "PEDIDO" in df_log.columns
+):
+    df_transito = df_log[
+        (df_log["RASTREIO"].astype(str).str.strip() != "") &
+        (~df_log["PEDIDO"].isin(pedidos_entregues)) &
+        (~df_log["PEDIDO"].isin(pedidos_falha))
+    ]
+    qtd_transito = len(df_transito)
 
-    qtd_importacao = contar(df_falha)
-    qtd_reenvio = contar(df_reenvio)
-    qtd_entregue = contar(df_entregue)
+# ⛔ Importação
+qtd_importacao = contar(df_falha)
 
-    c1, c2, c3, c4, c5 = st.columns(5)
-    c1.metric("🟡 Aguardando", qtd_aguardando)
-    c2.metric("🚚 Em trânsito", qtd_transito)
-    c3.metric("⛔ Importação", qtd_importacao)
-    c4.metric("🔁 Reenvio", qtd_reenvio)
-    c5.metric("📮 Aguardando retirada", qtd_retirada)
-    c6.metric("✅ Entregue", qtd_entregue)
+# 🔁 Reenvio
+qtd_reenvio = contar(df_reenvio)
+
+# 📮 Aguardando retirada
+qtd_retirada = contar(df_aguardando_retirada)
+
+# ✅ Entregue
+qtd_entregue = contar(df_entregue)
+
+# 🧱 Cards
+c1, c2, c3, c4, c5, c6 = st.columns(6)
+
+c1.metric("🟡 Aguardando", qtd_aguardando)
+c2.metric("🚚 Em trânsito", qtd_transito)
+c3.metric("⛔ Importação", qtd_importacao)
+c4.metric("🔁 Reenvio", qtd_reenvio)
+c5.metric("📮 Aguardando retirada", qtd_retirada)
+c6.metric("✅ Entregue", qtd_entregue)
 
 
     # =====================================================
