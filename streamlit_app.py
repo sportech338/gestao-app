@@ -5068,7 +5068,7 @@ with t_importacao:
 
 # 🔁 REENVIO (EDITÁVEL)
 with t_reenvio:
-st.error("CHEGUEI NA ABA REENVIO")
+    st.error("CHEGUEI NA ABA REENVIO")
 
     df_edit = st.data_editor(
         df_reenvio,
