@@ -5009,7 +5009,7 @@ with aba3:
 
     df_entregue_aliexpress = df_entregue[~df_entregue["RASTREIO"].astype(str).str.startswith("888", na=False)] if "RASTREIO" in df_entregue.columns else pd.DataFrame()
     df_entregue_estoque = df_entregue[df_entregue["RASTREIO"].astype(str).str.startswith("888", na=False)] if "RASTREIO" in df_entregue.columns else pd.DataFrame()
-# =====================================================
+    # =====================================================
 # 📊 CONTADORES OPERACIONAIS (TOPO)
 # =====================================================
 def contar(df):
@@ -5038,6 +5038,7 @@ c2.metric("🚚 Em trânsito", qtd_transito)
 c3.metric("⛔ Importação", qtd_importacao)
 c4.metric("🔁 Reenvio", qtd_reenvio)
 c5.metric("✅ Entregue", qtd_entregue)
+
 
     # =====================================================
     # 🧭 ABAS
