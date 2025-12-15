@@ -5009,13 +5009,13 @@ with aba3:
 
     df_entregue_aliexpress = df_entregue[~df_entregue["RASTREIO"].astype(str).str.startswith("888", na=False)] if "RASTREIO" in df_entregue.columns else pd.DataFrame()
     df_entregue_estoque = df_entregue[df_entregue["RASTREIO"].astype(str).str.startswith("888", na=False)] if "RASTREIO" in df_entregue.columns else pd.DataFrame()
- # =====================================================
+# =====================================================
 # 📊 CONTADORES OPERACIONAIS (TOPO)
 # =====================================================
 def contar(df):
     return 0 if df is None or df.empty else len(df)
 
-# 🟡 Aguardando (sem rastreio)
+# 🟡 Aguardando
 qtd_aguardando = (
     contar(df_log[df_log["RASTREIO"].astype(str).str.strip() == ""])
     if "RASTREIO" in df_log.columns else 0
@@ -5049,15 +5049,12 @@ qtd_entregue = contar(df_entregue)
 
 # 🧱 Cards
 c1, c2, c3, c4, c5, c6 = st.columns(6)
-
 c1.metric("🟡 Aguardando", qtd_aguardando)
 c2.metric("🚚 Em trânsito", qtd_transito)
 c3.metric("⛔ Importação", qtd_importacao)
 c4.metric("🔁 Reenvio", qtd_reenvio)
 c5.metric("📮 Aguardando retirada", qtd_retirada)
 c6.metric("✅ Entregue", qtd_entregue)
-
-
     # =====================================================
     # 🧭 ABAS
     # =====================================================
