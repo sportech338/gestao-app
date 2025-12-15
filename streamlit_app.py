@@ -4938,6 +4938,28 @@ with aba3:
             return df
         except:
             return pd.DataFrame()
+            def atualizar_falha_importacao(df):
+    try:
+        client = get_gsheet_client()
+        ws = client.open_by_key(
+            st.secrets["sheets"]["spreadsheet_id"]
+        ).worksheet("Falha na importação")
+
+        df_safe = (
+            df.copy()
+            .fillna("")
+            .astype(str)
+            .replace("nan", "", regex=False)
+        )
+
+        body = [df_safe.columns.values.tolist()] + df_safe.values.tolist()
+
+        ws.batch_clear(["A:Z"])
+        ws.update(body)
+
+        st.success("✅ Falha na importação atualizada com sucesso!")
+    except Exception as e:
+        st.error(f"❌ Erro ao salvar: {e}")
 
     # =====================================================
     # 📥 BASES
@@ -5019,4 +5041,16 @@ with aba3:
 
     # ⛔ IMPORTAÇÃO NÃO AUTORIZADA — tudo junto
     with t5:
-        render_df(df_falha, "Nenhuma falha de importação.")
+    st.warning("⚠️ Esta aba é EDITÁVEL. As demais são somente leitura.")
+
+    df_edit = st.data_editor(
+        df_falha,
+        num_rows="dynamic",
+        use_container_width=True,
+        key="falha_importacao_editor"
+    )
+
+    if st.button("💾 Salvar alterações"):
+        atualizar_falha_importacao(df_edit)
+        st.cache_data.clear()
+        st.rerun()
