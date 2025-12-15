@@ -5038,7 +5038,8 @@ with aba3:
     c2.metric("🚚 Em trânsito", qtd_transito)
     c3.metric("⛔ Importação", qtd_importacao)
     c4.metric("🔁 Reenvio", qtd_reenvio)
-    c5.metric("✅ Entregue", qtd_entregue)
+    c5.metric("📮 Aguardando retirada", qtd_retirada)
+    c6.metric("✅ Entregue", qtd_entregue)
 
 
     # =====================================================
