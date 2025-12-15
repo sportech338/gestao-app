@@ -5018,7 +5018,7 @@ with aba3:
     "🚚 Em Trânsito",
     "⛔ Importação não autorizada",
     "🔁 Reenvio",
-    "📮 Correios",
+    "📮 Aguardando retirada",
     "✅ Entregue"
 ])
 
