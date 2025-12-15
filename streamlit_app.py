@@ -5068,7 +5068,6 @@ with t_importacao:
 
 # 🔁 REENVIO (EDITÁVEL)
 with t_reenvio:
-   
 
     df_edit = st.data_editor(
         df_reenvio,
@@ -5081,6 +5080,7 @@ with t_reenvio:
         atualizar_reenvio(df_edit)
         st.cache_data.clear()
         st.rerun()
+
 
 
 # 📮 CORREIOS
