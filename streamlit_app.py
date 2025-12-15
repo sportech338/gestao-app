@@ -5015,10 +5015,10 @@ with aba3:
     t1, t2, t3, t4, t5, t6 = st.tabs([
         "🟡 Aguardando",
         "🚚 Em Trânsito",
-        "✅ Entregue",
-        "📮 Correios",
         "⛔ Importação não autorizada",
-        "🔁 Reenvio"
+        "🔁 Reenvio",
+        "📮 Aguardando retirada",
+        "✅ Entregue"
     ])
 
     # 🟡 AGUARDANDO
