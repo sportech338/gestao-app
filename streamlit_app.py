@@ -12,7 +12,7 @@ facebook_secrets = st.secrets.get("facebook", {})
 
 act_id = (
     facebook_secrets.get("ad_account_id")
-    or facebook_secrets.get("DEFAULT_ACT_ID") 
+    or facebook_secrets.get("DEFAULT_ACT_ID")
     or None
 )
 
@@ -4256,112 +4256,26 @@ if menu == "📊 Dashboard – Tráfego Pago":
                     f"Período B: **{_fmt_range_br(since_B, until_B)}**"
                 )
 
-
-            email = str(row.get("E-mail", "")).strip().lower()
-            cpf = str(row.get("CPF", "")).strip()
-            tel = str(row.get("Telefone", "")).strip()
-            end = str(row.get("Endereço", "")).strip().lower()
-
-            ignorar = ["(sem cpf)", "(sem email)", "(sem telefone)", "(sem endereço)", "(sem bairro)"]
-
-            if cpf and cpf not in ignorar and df_ref["CPF"].eq(cpf).sum() > 1:
-                return True
-            if email and email not in ignorar and df_ref["E-mail"].str.lower().eq(email).sum() > 1:
-                return True
-            if nome and df_ref["Cliente"].str.lower().eq(nome).sum() > 1:
-                return True
-            if tel and tel not in ignorar and df_ref["Telefone"].eq(tel).sum() > 1:
-                return True
-            if end and end not in ignorar and df_ref["Endereço"].str.lower().eq(end).sum() > 1:
-                return True
-            return False
-
-        tabela["duplicado"] = tabela.apply(lambda row: identificar_duplicado(row, tabela), axis=1)
-        # -------------------------------------------------
-        # 🚚 Identificação de SEDEX e ordenação
-        # -------------------------------------------------
-        if "Frete" in tabela.columns:
-            tabela["is_sedex"] = tabela["Frete"].astype(str).str.contains("SEDEX", case=False, na=False)
-        else:
-            tabela["is_sedex"] = False  # cria coluna padrão
-
-        # -------------------------------------------------
-        # 🟩 Agrupamento lógico de duplicados (CPF, E-mail, Telefone, Nome, Endereço)
-        # -------------------------------------------------
-        def chave_grupo(row):
-            partes = [
-                str(row.get("CPF", "")).strip().lower(),
-                str(row.get("E-mail", "")).strip().lower(),
-                str(row.get("Telefone", "")).strip(),
-                str(row.get("Cliente", "")).strip().lower(),
-                str(row.get("Endereço", "")).strip().lower()
-            ]
-            return "|".join([p for p in partes if p and "(sem" not in p])
-
-        tabela["grupo_id"] = tabela.apply(chave_grupo, axis=1)
-# =====================================================
-# 🔐 GOOGLE SHEETS — FUNÇÕES GLOBAIS
-# =====================================================
-import gspread
-from google.oauth2.service_account import Credentials
-
-def get_gsheet_client():
-    scopes = [
-        "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/drive"
-    ]
-    info = dict(st.secrets["gcp_service_account"])
-    info["private_key"] = info["private_key"].replace("\\n", "\n")
-    return gspread.authorize(
-        Credentials.from_service_account_info(info, scopes=scopes)
-    )
-
-@st.cache_data(ttl=300)
-def carregar_aba(nome_aba):
-    try:
-        ws = get_gsheet_client().open_by_key(
-            st.secrets["sheets"]["spreadsheet_id"]
-        ).worksheet(nome_aba)
-        df = pd.DataFrame(ws.get_all_records())
-        df.columns = df.columns.astype(str).str.strip()
-        return df
-    except Exception:
-        return pd.DataFrame()
-
-def atualizar_por_pedido(nome_aba, df_editado):
-    ws = get_gsheet_client().open_by_key(
-        st.secrets["sheets"]["spreadsheet_id"]
-    ).worksheet(nome_aba)
-
-    base = pd.DataFrame(ws.get_all_records())
-    base.columns = base.columns.astype(str).str.strip()
-
-    for _, row in df_editado.iterrows():
-        pedido = str(row.get("PEDIDO", "")).strip()
-        if not pedido:
-            continue
-
-        idx = base[base["PEDIDO"].astype(str) == pedido].index
-        if idx.empty:
-            continue
-
-        linha = idx[0] + 2
-        valores = [str(row.get(col, "")) for col in base.columns]
-        ws.update(f"A{linha}:Z{linha}", [valores])
-
 # =====================================================
 # 📦 DASHBOARD – LOGÍSTICA
 # =====================================================
 if menu == "📦 Dashboard – Logística":
 
+    # =====================================================
+    # 🧭 Cabeçalho fixo principal
+    # =====================================================
     st.title("📦 DASHBOARD — LOGÍSTICA")
     st.caption("Visualização completa de pedidos, estoque, entregas e indicadores.")
 
+    # =====================================================
+    # 🗂️ Abas principais da Logística
+    # =====================================================
     aba1, aba2, aba3 = st.tabs([
         "📋 Controle Operacional",
         "💲 Valores",
         "🚚 Gestão de entregas"
     ])
+
     # =====================================================
     # 📋 ABA 1 — CONTROLE OPERACIONAL
     # =====================================================
@@ -4580,6 +4494,49 @@ if menu == "📦 Dashboard – Logística":
         # 🔝 Identificação de duplicados
         def identificar_duplicado(row, df_ref):
             nome = str(row.get("Cliente", "")).strip().lower()
+            email = str(row.get("E-mail", "")).strip().lower()
+            cpf = str(row.get("CPF", "")).strip()
+            tel = str(row.get("Telefone", "")).strip()
+            end = str(row.get("Endereço", "")).strip().lower()
+
+            ignorar = ["(sem cpf)", "(sem email)", "(sem telefone)", "(sem endereço)", "(sem bairro)"]
+
+            if cpf and cpf not in ignorar and df_ref["CPF"].eq(cpf).sum() > 1:
+                return True
+            if email and email not in ignorar and df_ref["E-mail"].str.lower().eq(email).sum() > 1:
+                return True
+            if nome and df_ref["Cliente"].str.lower().eq(nome).sum() > 1:
+                return True
+            if tel and tel not in ignorar and df_ref["Telefone"].eq(tel).sum() > 1:
+                return True
+            if end and end not in ignorar and df_ref["Endereço"].str.lower().eq(end).sum() > 1:
+                return True
+            return False
+
+        tabela["duplicado"] = tabela.apply(lambda row: identificar_duplicado(row, tabela), axis=1)
+        # -------------------------------------------------
+        # 🚚 Identificação de SEDEX e ordenação
+        # -------------------------------------------------
+        if "Frete" in tabela.columns:
+            tabela["is_sedex"] = tabela["Frete"].astype(str).str.contains("SEDEX", case=False, na=False)
+        else:
+            tabela["is_sedex"] = False  # cria coluna padrão
+
+        # -------------------------------------------------
+        # 🟩 Agrupamento lógico de duplicados (CPF, E-mail, Telefone, Nome, Endereço)
+        # -------------------------------------------------
+        def chave_grupo(row):
+            partes = [
+                str(row.get("CPF", "")).strip().lower(),
+                str(row.get("E-mail", "")).strip().lower(),
+                str(row.get("Telefone", "")).strip(),
+                str(row.get("Cliente", "")).strip().lower(),
+                str(row.get("Endereço", "")).strip().lower()
+            ]
+            return "|".join([p for p in partes if p and "(sem" not in p])
+
+        tabela["grupo_id"] = tabela.apply(chave_grupo, axis=1)
+
         # Se o grupo tiver mais de um item e pelo menos um SEDEX, marca todos como grupo_verde
         grupo_sedex = (
             tabela.groupby("grupo_id")["is_sedex"]
@@ -4953,64 +4910,113 @@ def render_df(df: pd.DataFrame, empty_msg: str):
 # =====================================================
 with aba3:
 
-        df_log = carregar_aba("Logística")
-        df_entregue = carregar_aba("Entrega realizada")
-        df_falha = carregar_aba("Falha na importação")
+    import gspread
+    from google.oauth2.service_account import Credentials
 
-        def dedup(df):
-            if "PEDIDO" in df.columns:
-                return df.drop_duplicates(subset=["PEDIDO"], keep="last")
+    # -------------------------------
+    # 🔐 Google Sheets
+    # -------------------------------
+    def get_gsheet_client():
+        scopes = [
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive"
+        ]
+        info = dict(st.secrets["gcp_service_account"])
+        info["private_key"] = info["private_key"].replace("\\n", "\n")
+        return gspread.authorize(
+            Credentials.from_service_account_info(info, scopes=scopes)
+        )
+
+    @st.cache_data(ttl=300)
+    def carregar_aba(nome):
+        try:
+            ws = get_gsheet_client().open_by_key(
+                st.secrets["sheets"]["spreadsheet_id"]
+            ).worksheet(nome)
+            df = pd.DataFrame(ws.get_all_records())
+            df.columns = df.columns.str.strip()
             return df
+        except:
+            return pd.DataFrame()
 
-        df_log = dedup(df_log)
-        df_entregue = dedup(df_entregue)
-        df_falha = dedup(df_falha)
+    # =====================================================
+    # 📥 BASES
+    # =====================================================
+    df_log = carregar_aba("Logística")
+    df_entregue = carregar_aba("Entrega realizada")
+    df_falha = carregar_aba("Falha na importação")
 
-        t1, t2, t3, t4, t5 = st.tabs([
-            "🟡 Aguardando",
-            "🚚 Em Trânsito",
-            "✅ Entregue",
-            "📮 Correios",
-            "⛔ Importação não autorizada"
-        ])
+    # Dedup por PEDIDO
+    def dedup(df):
+        if "PEDIDO" in df.columns:
+            if "DATA" in df.columns:
+                df["DATA"] = pd.to_datetime(df["DATA"], errors="coerce")
+                df = df.sort_values("DATA", ascending=False)
+            df = df.drop_duplicates(subset=["PEDIDO"], keep="first")
+        return df
 
-        # 🟡 AGUARDANDO
-        with t1:
-            df = df_log[df_log["RASTREIO"].astype(str).str.strip() == ""]
-            edit_df = st.data_editor(df, disabled=["PEDIDO"], use_container_width=True)
-            if st.button("💾 Salvar — Aguardando"):
-                atualizar_por_pedido("Logística", edit_df)
-                st.cache_data.clear()
-                st.rerun()
+    df_log = dedup(df_log)
+    df_entregue = dedup(df_entregue)
+    df_falha = dedup(df_falha)
 
-        # 🚚 EM TRÂNSITO
-        with t2:
-            edit_df = st.data_editor(df_log, disabled=["PEDIDO"], use_container_width=True)
-            if st.button("💾 Salvar — Em Trânsito"):
-                atualizar_por_pedido("Logística", edit_df)
-                st.cache_data.clear()
-                st.rerun()
+    pedidos_entregues = set(df_entregue["PEDIDO"]) if "PEDIDO" in df_entregue.columns else set()
+    pedidos_falha = set(df_falha["PEDIDO"]) if "PEDIDO" in df_falha.columns else set()
 
-        # ✅ ENTREGUE
-        with t3:
-            edit_df = st.data_editor(df_entregue, disabled=["PEDIDO"], use_container_width=True)
-            if st.button("💾 Salvar — Entregues"):
-                atualizar_por_pedido("Entrega realizada", edit_df)
-                st.cache_data.clear()
-                st.rerun()
+    # AliExpress vs Estoque (888)
+    df_aliexpress = df_log[~df_log["RASTREIO"].astype(str).str.startswith("888", na=False)] if "RASTREIO" in df_log.columns else pd.DataFrame()
+    df_estoque = df_log[df_log["RASTREIO"].astype(str).str.startswith("888", na=False)] if "RASTREIO" in df_log.columns else pd.DataFrame()
 
-        # 📮 CORREIOS
-        with t4:
-            edit_df = st.data_editor(df_log, disabled=["PEDIDO"], use_container_width=True)
-            if st.button("💾 Salvar — Correios"):
-                atualizar_por_pedido("Logística", edit_df)
-                st.cache_data.clear()
-                st.rerun()
+    df_entregue_aliexpress = df_entregue[~df_entregue["RASTREIO"].astype(str).str.startswith("888", na=False)] if "RASTREIO" in df_entregue.columns else pd.DataFrame()
+    df_entregue_estoque = df_entregue[df_entregue["RASTREIO"].astype(str).str.startswith("888", na=False)] if "RASTREIO" in df_entregue.columns else pd.DataFrame()
 
-        # ⛔ IMPORTAÇÃO NÃO AUTORIZADA
-        with t5:
-            edit_df = st.data_editor(df_falha, disabled=["PEDIDO"], use_container_width=True)
-            if st.button("💾 Salvar — Falhas"):
-                atualizar_por_pedido("Falha na importação", edit_df)
-                st.cache_data.clear()
-                st.rerun()
+    # =====================================================
+    # 🧭 ABAS
+    # =====================================================
+    t1, t2, t3, t4, t5 = st.tabs([
+        "🟡 Aguardando",
+        "🚚 Em Trânsito",
+        "✅ Entregue",
+        "📮 Correios",
+        "⛔ Importação não autorizada"
+    ])
+
+    # 🟡 AGUARDANDO — tudo junto
+    with t1:
+        df = df_log[df_log["RASTREIO"].astype(str).str.strip() == ""] if "RASTREIO" in df_log.columns else pd.DataFrame()
+        render_df(df, "Nenhum pedido aguardando rastreio.")
+
+    # 🚚 EM TRÂNSITO — separado
+    with t2:
+        a, e = st.tabs(["🛒 AliExpress", "📦 Estoque"])
+
+        with a:
+            df = df_aliexpress[
+                (df_aliexpress["RASTREIO"].astype(str).str.strip() != "") &
+                (~df_aliexpress["PEDIDO"].isin(pedidos_entregues)) &
+                (~df_aliexpress["PEDIDO"].isin(pedidos_falha))
+            ]
+            render_df(df, "Nenhum AliExpress em trânsito.")
+
+        with e:
+            df = df_estoque[
+                (df_estoque["RASTREIO"].astype(str).str.strip() != "") &
+                (~df_estoque["PEDIDO"].isin(pedidos_entregues)) &
+                (~df_estoque["PEDIDO"].isin(pedidos_falha))
+            ]
+            render_df(df, "Nenhum estoque em trânsito.")
+
+    # ✅ ENTREGUE — separado
+    with t3:
+        a, e = st.tabs(["🛒 AliExpress", "📦 Estoque"])
+        with a:
+            render_df(df_entregue_aliexpress, "Nenhum AliExpress entregue.")
+        with e:
+            render_df(df_entregue_estoque, "Nenhum estoque entregue.")
+
+    # 📮 CORREIOS — tudo junto
+    with t4:
+        st.info("📮 Correios — nenhuma regra aplicada ainda.")
+
+    # ⛔ IMPORTAÇÃO NÃO AUTORIZADA — tudo junto
+    with t5:
+        render_df(df_falha, "Nenhuma falha de importação.")
