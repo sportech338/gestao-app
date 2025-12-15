@@ -5107,3 +5107,34 @@ with t_entregue:
         render_df(df_entregue_aliexpress, "Nenhum AliExpress entregue.")
     with e:
         render_df(df_entregue_estoque, "Nenhum estoque entregue.")
+
+# =====================================================
+# 📊 CONTADORES OPERACIONAIS (TOPO)
+# =====================================================
+def contar(df):
+    return 0 if df is None or df.empty else len(df)
+
+# Contadores por status/aba
+qtd_aguardando = contar(df_log[df_log["RASTREIO"].astype(str).str.strip() == ""]) if "RASTREIO" in df_log.columns else 0
+
+qtd_transito = 0
+if not df_log.empty and "RASTREIO" in df_log.columns and "PEDIDO" in df_log.columns:
+    df_transito = df_log[
+        (df_log["RASTREIO"].astype(str).str.strip() != "") &
+        (~df_log["PEDIDO"].isin(pedidos_entregues)) &
+        (~df_log["PEDIDO"].isin(pedidos_falha))
+    ]
+    qtd_transito = len(df_transito)
+
+qtd_importacao = contar(df_falha)
+qtd_reenvio = contar(df_reenvio)
+qtd_entregue = contar(df_entregue)
+
+# Cards
+c1, c2, c3, c4, c5 = st.columns(5)
+c1.metric("🟡 Aguardando", qtd_aguardando)
+c2.metric("🚚 Em trânsito", qtd_transito)
+c3.metric("⛔ Importação", qtd_importacao)
+c4.metric("🔁 Reenvio", qtd_reenvio)
+c5.metric("✅ Entregue", qtd_entregue)
+
