@@ -5080,6 +5080,8 @@ st.write("VALORES RAW:", ws.get_all_values())
 
     df_edit = st.data_editor(
         df_reenvio,
+        ...
+    )
         num_rows="dynamic",
         use_container_width=True,
         key="reenvio_editor"
