@@ -5069,6 +5069,14 @@ with t_importacao:
 # 🔁 REENVIO (EDITÁVEL)
 with t_reenvio:
     st.error("CHEGUEI NA ABA REENVIO")
+    client = get_gsheet_client()
+
+ws = client.open_by_key(
+    st.secrets["sheets"]["spreadsheet_id"]
+).worksheet("Reenvio")
+
+st.success(f"ABA ENCONTRADA: {ws.title}")
+st.write("VALORES RAW:", ws.get_all_values())
 
     df_edit = st.data_editor(
         df_reenvio,
