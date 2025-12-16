@@ -399,6 +399,24 @@ def create_fulfillment(order_id, tracking_number=None, tracking_company="Correio
     raise Exception(f"❌ Não foi possível criar fulfillment para o pedido {order_id}")
 
 # =====================================================
+# 🔐 GOOGLE SHEETS — CLIENTE GLOBAL
+# =====================================================
+import gspread
+from google.oauth2.service_account import Credentials
+
+def get_gsheet_client():
+    scopes = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive"
+    ]
+    gcp_info = dict(st.secrets["gcp_service_account"])
+    if isinstance(gcp_info.get("private_key"), str):
+        gcp_info["private_key"] = gcp_info["private_key"].replace("\\n", "\n")
+    creds = Credentials.from_service_account_info(gcp_info, scopes=scopes)
+    return gspread.authorize(creds)
+
+
+# =====================================================
 # 🚀 LOGGING (opcional)
 # =====================================================
 def log_fulfillment(order_id):
@@ -423,6 +441,7 @@ def salvar_rastreio_na_aba_aguardando(numero_pedido, codigo_rastreio):
         if pedido_planilha == str(numero_pedido):
             ws.update_cell(i, 8, codigo_rastreio)  # COLUNA H = RASTREIO
             return
+
 
 # =============== Config & Estilos ===============
 st.markdown("""
@@ -1485,25 +1504,6 @@ if menu == "📊 Dashboard – Tráfego Pago":
             ["AliExpress", "Estoque"],
             horizontal=True
         )
-          
-
-        # =====================================================
-        # 💰 Carregar planilha de custos (dinâmica por fornecedor)
-        # =====================================================
-        import gspread
-        from google.oauth2.service_account import Credentials
-
-        def get_gsheet_client():
-            scopes = [
-                "https://www.googleapis.com/auth/spreadsheets",
-                "https://www.googleapis.com/auth/drive"
-            ]
-            gcp_info = dict(st.secrets["gcp_service_account"])
-            if isinstance(gcp_info.get("private_key"), str):
-                gcp_info["private_key"] = gcp_info["private_key"].replace("\\n", "\n")
-            creds = Credentials.from_service_account_info(gcp_info, scopes=scopes)
-            client = gspread.authorize(creds)
-            return client
 
         @st.cache_data(ttl=600)
         def carregar_planilha_custos(fornecedor):
@@ -4796,23 +4796,6 @@ if menu == "📦 Dashboard – Logística":
 with aba2:
     st.subheader("Comparativo de Saídas e Custos por Variante:")
 
-    # =====================================================
-    # 📥 Carregar planilha de custos (garantir existência de df_custos)
-    # =====================================================
-    import gspread
-    from google.oauth2.service_account import Credentials
-
-    def get_gsheet_client():
-        scopes = [
-            "https://www.googleapis.com/auth/spreadsheets",
-            "https://www.googleapis.com/auth/drive"
-        ]
-        gcp_info = dict(st.secrets["gcp_service_account"])
-        if isinstance(gcp_info.get("private_key"), str):
-            gcp_info["private_key"] = gcp_info["private_key"].replace("\\n", "\n")
-        creds = Credentials.from_service_account_info(gcp_info, scopes=scopes)
-        return gspread.authorize(creds)
-
     @st.cache_data(ttl=600)
     def carregar_planilha_custos():
         client = get_gsheet_client()
@@ -4939,23 +4922,6 @@ def render_df(df: pd.DataFrame, empty_msg: str):
 # 🚚 ABA 3 — ENTREGAS
 # =====================================================
 with aba3:
-
-    import gspread
-    from google.oauth2.service_account import Credentials
-
-    # -------------------------------
-    # 🔐 Google Sheets
-    # -------------------------------
-    def get_gsheet_client():
-        scopes = [
-            "https://www.googleapis.com/auth/spreadsheets",
-            "https://www.googleapis.com/auth/drive"
-        ]
-        info = dict(st.secrets["gcp_service_account"])
-        info["private_key"] = info["private_key"].replace("\\n", "\n")
-        return gspread.authorize(
-            Credentials.from_service_account_info(info, scopes=scopes)
-        )
 
     @st.cache_data(ttl=300)
     def carregar_aba(nome):
