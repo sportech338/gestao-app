@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -405,6 +404,44 @@ def create_fulfillment(order_id, tracking_number=None, tracking_company="Correio
 def log_fulfillment(order_id):
     with open("fulfillment_log.txt", "a", encoding="utf-8") as f:
         f.write(f"{datetime.now(APP_TZ)} - Pedido {order_id} processado\n")
+
+
+# =====================================================
+# 📄 SALVAR RASTREIO NA ABA "AGUARDANDO"
+# =====================================================
+def salvar_rastreio_na_aba_aguardando(numero_pedido, codigo_rastreio):
+    client = get_gsheet_client()
+    ws = client.open_by_key(
+        "1WTEiRnm1OFxzn6ag1MfI8VnlQCbL8xwxY3LeanCsdxk"
+    ).worksheet("Aguardando")
+
+    dados = ws.get_all_values()
+
+    for i, linha in enumerate(dados[1:], start=2):
+        pedido_planilha = str(linha[6]).strip()  # COLUNA G = NÚMERO DO PEDIDO
+
+        if pedido_planilha == str(numero_pedido):
+            ws.update_cell(i, 8, codigo_rastreio)  # COLUNA H = RASTREIO
+            return
+
+
+# =====================================================
+# 📄 SALVAR RASTREIO NA ABA "AGUARDANDO"
+# =====================================================
+def salvar_rastreio_na_aba_aguardando(numero_pedido, codigo_rastreio):
+    client = get_gsheet_client()
+    ws = client.open_by_key(
+        "1WTEiRnm1OFxzn6ag1MfI8VnlQCbL8xwxY3LeanCsdxk"
+    ).worksheet("Aguardando")
+
+    dados = ws.get_all_values()
+
+    for i, linha in enumerate(dados[1:], start=2):
+        pedido_planilha = str(linha[6]).strip()  # COLUNA G = NÚMERO DO PEDIDO
+
+        if pedido_planilha == str(numero_pedido):
+            ws.update_cell(i, 8, codigo_rastreio)  # COLUNA H = RASTREIO
+            return
 
 # =============== Config & Estilos ===============
 st.markdown("""
@@ -4662,12 +4699,21 @@ if menu == "📦 Dashboard – Logística":
                         if submitted:
                             try:
                                 with st.spinner(f"Processando pedido #{order_display}..."):
+
+                                    # ✅ SALVA O RASTREIO NA ABA "AGUARDANDO" ANTES DA SHOPIFY
+                                    if tracking_number:
+                                        salvar_rastreio_na_aba_aguardando(
+                                            numero_pedido=order_display,
+                                            codigo_rastreio=tracking_number
+                                        )
+
                                     result = create_fulfillment(
                                         row.order_id,
                                         tracking_number=tracking_number or None,
                                         tracking_company="Correios"
                                     )
                                     log_fulfillment(row.order_id)
+
                                 st.session_state[status_key] = f"✅ Pedido #{order_display} processado com sucesso!"
                                 if tracking_number:
                                     st.session_state[status_key] += f"\n📬 Código de rastreio: `{tracking_number}`"
@@ -4682,6 +4728,7 @@ if menu == "📦 Dashboard – Logística":
                             st.error(msg)
                         else:
                             st.info(msg)
+
 
         with col_status:
             # -------------------------------------------------
@@ -4906,6 +4953,7 @@ def render_df(df: pd.DataFrame, empty_msg: str):
 
     st.dataframe(df, use_container_width=True)
 
+
 # =====================================================
 # 🚚 ABA 3 — ENTREGAS
 # =====================================================
@@ -4913,8 +4961,6 @@ with aba3:
 
     import gspread
     from google.oauth2.service_account import Credentials
-    import pandas as pd
-    import streamlit as st
 
     # -------------------------------
     # 🔐 Google Sheets
@@ -4943,170 +4989,199 @@ with aba3:
             return pd.DataFrame()
 
     # -------------------------------
-    # ✏️ FUNÇÕES DE SALVAR
+    # ✏️ FUNÇÕES DE SALVAR (EDITÁVEIS)
     # -------------------------------
     def atualizar_falha_importacao(df):
-        client = get_gsheet_client()
-        ws = client.open_by_key(
-            st.secrets["sheets"]["spreadsheet_id"]
-        ).worksheet("Falha na importação")
+        try:
+            client = get_gsheet_client()
+            ws = client.open_by_key(
+                st.secrets["sheets"]["spreadsheet_id"]
+            ).worksheet("Falha na importação")
 
-        df_safe = df.fillna("").astype(str)
-        body = [df_safe.columns.tolist()] + df_safe.values.tolist()
+            df_safe = df.fillna("").astype(str)
+            body = [df_safe.columns.tolist()] + df_safe.values.tolist()
 
-        ws.batch_clear(["A:Z"])
-        ws.update(body)
-        st.success("✅ Falha na importação atualizada!")
+            ws.batch_clear(["A:Z"])
+            ws.update(body)
+
+            st.success("✅ Falha na importação atualizada com sucesso!")
+        except Exception as e:
+            st.error(f"❌ Erro ao salvar Falha: {e}")
 
     def atualizar_reenvio(df):
-        client = get_gsheet_client()
-        ws = client.open_by_key(
-            st.secrets["sheets"]["spreadsheet_id"]
-        ).worksheet("Reenvio")
+        try:
+            client = get_gsheet_client()
+            ws = client.open_by_key(
+                st.secrets["sheets"]["spreadsheet_id"]
+            ).worksheet("Reenvio")
 
-        df_safe = df.fillna("").astype(str)
-        body = [df_safe.columns.tolist()] + df_safe.values.tolist()
+            df_safe = df.fillna("").astype(str)
+            body = [df_safe.columns.tolist()] + df_safe.values.tolist()
 
-        ws.batch_clear(["A:Z"])
-        ws.update(body)
-        st.success("✅ Reenvio atualizado!")
+            ws.batch_clear(["A:Z"])
+            ws.update(body)
+
+            st.success("✅ Reenvio atualizado com sucesso!")
+        except Exception as e:
+            st.error(f"❌ Erro ao salvar Reenvio: {e}")
 
     # =====================================================
-    # 📥 BASES (ABAS REAIS DA PLANILHA)
+    # 📥 BASES
     # =====================================================
-    df_aguardando = carregar_aba("Aguardando")
-    df_transito = carregar_aba("Em trânsito")
+    df_log = carregar_aba("Aguardando")
     df_entregue = carregar_aba("Entrega realizada")
     df_falha = carregar_aba("Falha na importação")
     df_reenvio = carregar_aba("Reenvio")
 
+    # Dedup por PEDIDO
     def dedup(df):
-        if not df.empty and "PEDIDO" in df.columns:
+        if "PEDIDO" in df.columns:
             if "DATA" in df.columns:
                 df["DATA"] = pd.to_datetime(df["DATA"], errors="coerce")
                 df = df.sort_values("DATA", ascending=False)
             df = df.drop_duplicates(subset=["PEDIDO"], keep="first")
         return df
 
-    df_aguardando = dedup(df_aguardando)
-    df_transito = dedup(df_transito)
+    df_log = dedup(df_log)
     df_entregue = dedup(df_entregue)
     df_falha = dedup(df_falha)
     df_reenvio = dedup(df_reenvio)
 
-    # =====================================================
-    # 📊 CONTADORES
+    pedidos_entregues = set(df_entregue["PEDIDO"]) if "PEDIDO" in df_entregue.columns else set()
+    pedidos_falha = set(df_falha["PEDIDO"]) if "PEDIDO" in df_falha.columns else set()
+
+    # AliExpress vs Estoque (888)
+    df_aliexpress = df_log[~df_log["RASTREIO"].astype(str).str.startswith("888", na=False)] if "RASTREIO" in df_log.columns else pd.DataFrame()
+    df_estoque = df_log[df_log["RASTREIO"].astype(str).str.startswith("888", na=False)] if "RASTREIO" in df_log.columns else pd.DataFrame()
+
+    df_entregue_aliexpress = df_entregue[~df_entregue["RASTREIO"].astype(str).str.startswith("888", na=False)] if "RASTREIO" in df_entregue.columns else pd.DataFrame()
+    df_entregue_estoque = df_entregue[df_entregue["RASTREIO"].astype(str).str.startswith("888", na=False)] if "RASTREIO" in df_entregue.columns else pd.DataFrame()
+# =====================================================
+    # 📊 CONTADORES OPERACIONAIS (TOPO)
     # =====================================================
     def contar(df):
         return 0 if df is None or df.empty else len(df)
 
+    qtd_aguardando = (
+        contar(df_log[df_log["RASTREIO"].astype(str).str.strip() == ""])
+        if "RASTREIO" in df_log.columns else 0
+    )
+
+    qtd_transito = 0
+    if not df_log.empty and "RASTREIO" in df_log.columns and "PEDIDO" in df_log.columns:
+        df_transito = df_log[
+            (df_log["RASTREIO"].astype(str).str.strip() != "") &
+            (~df_log["PEDIDO"].isin(pedidos_entregues)) &
+            (~df_log["PEDIDO"].isin(pedidos_falha))
+        ]
+        qtd_transito = len(df_transito)
+
+    qtd_importacao = contar(df_falha)
+    qtd_reenvio = contar(df_reenvio)
+    qtd_entregue = contar(df_entregue)
+
     c1, c2, c3, c4, c5 = st.columns(5)
-    c1.metric("🟡 Aguardando", contar(df_aguardando))
-    c2.metric("🚚 Em trânsito", contar(df_transito))
-    c3.metric("⛔ Importação", contar(df_falha))
-    c4.metric("🔁 Reenvio", contar(df_reenvio))
-    c5.metric("✅ Entregue", contar(df_entregue))
+    c1.metric("🟡 Aguardando", qtd_aguardando)
+    c2.metric("🚚 Em trânsito", qtd_transito)
+    c3.metric("⛔ Importação", qtd_importacao)
+    c4.metric("🔁 Reenvio", qtd_reenvio)
+    c5.metric("✅ Entregue", qtd_entregue)
+
 
     # =====================================================
     # 🧭 ABAS
     # =====================================================
     t_aguardando, t_transito, t_importacao, t_reenvio, t_correios, t_entregue = st.tabs([
-        "🟡 Aguardando",
-        "🚚 Em Trânsito",
-        "⛔ Importação não autorizada",
-        "🔁 Reenvio",
-        "📮 Aguardando retirada",
-        "✅ Entregue"
-    ])
+    "🟡 Aguardando",
+    "🚚 Em Trânsito",
+    "⛔ Importação não autorizada",
+    "🔁 Reenvio",
+    "📮 Aguardando retirada",
+    "✅ Entregue"
+])
 
-    # =====================================================
     # 🟡 AGUARDANDO
-    # =====================================================
-    with t_aguardando:
-        render_df(df_aguardando, "Nenhum pedido aguardando rastreio.")
+with t_aguardando:
+    df = df_log[df_log["RASTREIO"].astype(str).str.strip() == ""] if "RASTREIO" in df_log.columns else pd.DataFrame()
+    render_df(df, "Nenhum pedido aguardando rastreio.")
 
-    # =====================================================
-    # 🚚 EM TRÂNSITO
-    # =====================================================
-    with t_transito:
-        a, e = st.tabs(["🛒 AliExpress", "📦 Estoque"])
 
-        with a:
-            df = df_transito[
-                ~df_transito["RASTREIO"]
-                .astype(str)
-                .str.startswith("888", na=False)
-            ] if not df_transito.empty else pd.DataFrame()
+# 🚚 EM TRÂNSITO
+with t_transito:
+    a, e = st.tabs(["🛒 AliExpress", "📦 Estoque"])
 
-            render_df(df, "Nenhum AliExpress em trânsito.")
+    with a:
+        df = df_aliexpress[
+            (df_aliexpress["RASTREIO"].astype(str).str.strip() != "") &
+            (~df_aliexpress["PEDIDO"].isin(pedidos_entregues)) &
+            (~df_aliexpress["PEDIDO"].isin(pedidos_falha))
+        ]
+        render_df(df, "Nenhum AliExpress em trânsito.")
 
-        with e:
-            df = df_transito[
-                df_transito["RASTREIO"]
-                .astype(str)
-                .str.startswith("888", na=False)
-            ] if not df_transito.empty else pd.DataFrame()
+    with e:
+        df = df_estoque[
+            (df_estoque["RASTREIO"].astype(str).str.strip() != "") &
+            (~df_estoque["PEDIDO"].isin(pedidos_entregues)) &
+            (~df_estoque["PEDIDO"].isin(pedidos_falha))
+        ]
+        render_df(df, "Nenhum estoque em trânsito.")
 
-            render_df(df, "Nenhum estoque em trânsito.")
 
-    # =====================================================
-    # ⛔ IMPORTAÇÃO NÃO AUTORIZADA
-    # =====================================================
-    with t_importacao:
-        df_edit = st.data_editor(
-            df_falha,
-            num_rows="dynamic",
-            use_container_width=True
+# ⛔ IMPORTAÇÃO NÃO AUTORIZADA (EDITÁVEL)
+with t_importacao:
+   
+
+    df_edit = st.data_editor(
+        df_falha,
+        num_rows="dynamic",
+        use_container_width=True,
+        key="falha_importacao_editor"
+    )
+
+    if st.button("💾 Salvar Falha na importação"):
+        atualizar_falha_importacao(df_edit)
+        st.cache_data.clear()
+        st.rerun()
+
+
+# 🔁 REENVIO (EDITÁVEL)
+with t_reenvio:
+
+    df_reenvio = carregar_aba("Reenvio")
+
+    if "NUMERO_PEDIDO" in df_reenvio.columns:
+        df_reenvio["NUMERO_PEDIDO"] = (
+            df_reenvio["NUMERO_PEDIDO"]
+            .astype(str)
+            .str.replace(",", "", regex=False)
+            .str.replace(".0", "", regex=False)
+            .str.strip()
         )
 
-        if st.button("💾 Salvar Falha na importação"):
-            atualizar_falha_importacao(df_edit)
-            st.cache_data.clear()
-            st.rerun()
+    df_edit = st.data_editor(
+        df_reenvio,
+        num_rows="dynamic",
+        use_container_width=True,
+        key="reenvio_editor"
+    )
 
-    # =====================================================
-    # 🔁 REENVIO
-    # =====================================================
-    with t_reenvio:
-        df_edit = st.data_editor(
-            df_reenvio,
-            num_rows="dynamic",
-            use_container_width=True
-        )
+    if st.button("💾 Salvar Reenvio"):
+        atualizar_reenvio(df_edit)
+        st.cache_data.clear()
+        st.rerun()
 
-        if st.button("💾 Salvar Reenvio"):
-            atualizar_reenvio(df_edit)
-            st.cache_data.clear()
-            st.rerun()
 
-    # =====================================================
-    # 📮 CORREIOS — AGUARDANDO RETIRADA
-    # =====================================================
-    with t_correios:
-        df_corr = carregar_aba("Aguardando retirada")
-        render_df(df_corr, "Nenhum pedido aguardando retirada.")
+# 📮 CORREIOS — Aguardando retirada
+with t_correios:
+    df_aguardando = carregar_aba("Aguardando retirada")
+    render_df(df_aguardando, "Nenhum pedido aguardando retirada.")
 
-    # =====================================================
-    # ✅ ENTREGUE
-    # =====================================================
-    with t_entregue:
-        a, e = st.tabs(["🛒 AliExpress", "📦 Estoque"])
 
-        with a:
-            df = df_entregue[
-                ~df_entregue["RASTREIO"]
-                .astype(str)
-                .str.startswith("888", na=False)
-            ] if not df_entregue.empty else pd.DataFrame()
+# ✅ ENTREGUE
+with t_entregue:
+    a, e = st.tabs(["🛒 AliExpress", "📦 Estoque"])
 
-            render_df(df, "Nenhum AliExpress entregue.")
-
-        with e:
-            df = df_entregue[
-                df_entregue["RASTREIO"]
-                .astype(str)
-                .str.startswith("888", na=False)
-            ] if not df_entregue.empty else pd.DataFrame()
-
-            render_df(df, "Nenhum estoque entregue.")
-
+    with a:
+        render_df(df_entregue_aliexpress, "Nenhum AliExpress entregue.")
+    with e:
+        render_df(df_entregue_estoque, "Nenhum estoque entregue.")
