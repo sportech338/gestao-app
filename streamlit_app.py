@@ -4919,12 +4919,12 @@ def render_df(df: pd.DataFrame, empty_msg: str):
 
 
 # =====================================================
-# 🚚 ABA 3 — ENTREGAS (LEITURA DIRETA DAS ABAS)
+# 🚚 ABA 3 — ENTREGAS (DATA SEMPRE NA COLUNA A)
 # =====================================================
 with aba3:
 
     # =====================================================
-    # 📥 FUNÇÃO GENÉRICA PARA CARREGAR ABA
+    # 📥 CARREGAR ABA DO GOOGLE SHEETS
     # =====================================================
     @st.cache_data(ttl=300)
     def carregar_aba(nome):
@@ -4933,13 +4933,13 @@ with aba3:
                 st.secrets["sheets"]["spreadsheet_id"]
             ).worksheet(nome)
             df = pd.DataFrame(ws.get_all_records())
-            df.columns = df.columns.str.strip()
+            df.columns = df.columns.astype(str).str.strip()
             return df
         except Exception:
             return pd.DataFrame()
 
     # =====================================================
-    # 🗺️ MAPA REAL DAS ABAS DA PLANILHA
+    # 🗺️ MAPA DAS ABAS REAIS
     # =====================================================
     ABAS_LOGISTICA = {
         "aguardando": "Aguardando",
@@ -4951,7 +4951,7 @@ with aba3:
     }
 
     # =====================================================
-    # 📊 BASES (LEITURA 1:1 COM PLANILHA)
+    # 📊 LEITURA 1:1 DAS ABAS
     # =====================================================
     df_aguardando = carregar_aba(ABAS_LOGISTICA["aguardando"])
     df_transito = carregar_aba(ABAS_LOGISTICA["transito"])
@@ -4961,13 +4961,15 @@ with aba3:
     df_entregue = carregar_aba(ABAS_LOGISTICA["entregue"])
 
     # =====================================================
-    # 🔁 DEDUP POR PEDIDO (SEGURANÇA)
+    # 🔁 DEDUP POR PEDIDO
     # =====================================================
     def dedup(df):
+        if df is None or df.empty:
+            return df
         if "PEDIDO" in df.columns:
-            if "DATA" in df.columns:
-                df["DATA"] = pd.to_datetime(df["DATA"], errors="coerce")
-                df = df.sort_values("DATA", ascending=False)
+            # DATA está sempre na COLUNA A
+            df.iloc[:, 0] = pd.to_datetime(df.iloc[:, 0], errors="coerce")
+            df = df.sort_values(df.columns[0], ascending=False)
             df = df.drop_duplicates(subset=["PEDIDO"], keep="first")
         return df
 
@@ -4979,10 +4981,59 @@ with aba3:
     df_entregue = dedup(df_entregue)
 
     # =====================================================
-    # 📦 SEPARAÇÃO ALIEXPRESS x ESTOQUE (888)
+    # 📅 FILTRO GLOBAL DE DATA (COLUNA A)
+    # =====================================================
+    st.markdown("### 📅 Filtro por data (Entregas)")
+
+    hoje = datetime.now(APP_TZ).date()
+    col1, col2 = st.columns(2)
+
+    with col1:
+        data_inicio = st.date_input(
+            "Data inicial",
+            value=hoje - timedelta(days=7),
+            format="DD/MM/YYYY",
+            key="aba3_data_inicio"
+        )
+
+    with col2:
+        data_fim = st.date_input(
+            "Data final",
+            value=hoje,
+            format="DD/MM/YYYY",
+            key="aba3_data_fim"
+        )
+
+    def aplicar_filtro_data(df):
+        if df is None or df.empty:
+            return df
+
+        # 📌 DATA SEMPRE NA COLUNA A
+        df = df.copy()
+        df.iloc[:, 0] = pd.to_datetime(df.iloc[:, 0], errors="coerce").dt.date
+
+        return df[
+            (df.iloc[:, 0] >= data_inicio) &
+            (df.iloc[:, 0] <= data_fim)
+        ]
+
+    df_aguardando = aplicar_filtro_data(df_aguardando)
+    df_transito = aplicar_filtro_data(df_transito)
+    df_importacao = aplicar_filtro_data(df_importacao)
+    df_reenvio = aplicar_filtro_data(df_reenvio)
+    df_correios = aplicar_filtro_data(df_correios)
+    df_entregue = aplicar_filtro_data(df_entregue)
+
+    st.caption(
+        f"Exibindo pedidos de {data_inicio.strftime('%d/%m/%Y')} "
+        f"até {data_fim.strftime('%d/%m/%Y')}"
+    )
+
+    # =====================================================
+    # 📦 ALIEXPRESS x ESTOQUE
     # =====================================================
     def separar_origem(df):
-        if "RASTREIO" not in df.columns:
+        if df is None or df.empty or "RASTREIO" not in df.columns:
             return pd.DataFrame(), pd.DataFrame()
         ali = df[~df["RASTREIO"].astype(str).str.startswith("888", na=False)]
         est = df[df["RASTREIO"].astype(str).str.startswith("888", na=False)]
@@ -4992,7 +5043,7 @@ with aba3:
     df_entregue_ali, df_entregue_est = separar_origem(df_entregue)
 
     # =====================================================
-    # 📊 CONTADORES (TOPO)
+    # 📊 CONTADORES
     # =====================================================
     def contar(df):
         return 0 if df is None or df.empty else len(df)
@@ -5005,7 +5056,7 @@ with aba3:
     c5.metric("✅ Entregue", contar(df_entregue))
 
     # =====================================================
-    # 🧭 ABAS DO DASHBOARD
+    # 🧭 ABAS
     # =====================================================
     t_aguardando, t_transito, t_importacao, t_reenvio, t_correios, t_entregue = st.tabs([
         "🟡 Aguardando",
@@ -5016,88 +5067,28 @@ with aba3:
         "✅ Entregue"
     ])
 
-    # -------------------------------
-    # 🟡 AGUARDANDO
-    # -------------------------------
     with t_aguardando:
         render_df(df_aguardando, "Nenhum pedido aguardando.")
 
-    # -------------------------------
-    # 🚚 EM TRÂNSITO
-    # -------------------------------
     with t_transito:
         a, e = st.tabs(["🛒 AliExpress", "📦 Estoque"])
-
         with a:
             render_df(df_transito_ali, "Nenhum AliExpress em trânsito.")
-
         with e:
             render_df(df_transito_est, "Nenhum estoque em trânsito.")
 
-    # -------------------------------
-    # ⛔ IMPORTAÇÃO (EDITÁVEL)
-    # -------------------------------
     with t_importacao:
-        df_edit = st.data_editor(
-            df_importacao,
-            num_rows="dynamic",
-            use_container_width=True,
-            key="falha_importacao_editor"
-        )
+        render_df(df_importacao, "Nenhum pedido em importação.")
 
-        if st.button("💾 Salvar Importação"):
-            client = get_gsheet_client()
-            ws = client.open_by_key(
-                st.secrets["sheets"]["spreadsheet_id"]
-            ).worksheet(ABAS_LOGISTICA["importacao"])
-
-            body = [df_edit.columns.tolist()] + df_edit.fillna("").astype(str).values.tolist()
-            ws.batch_clear(["A:Z"])
-            ws.update(body)
-
-            st.success("✅ Importação atualizada!")
-            st.cache_data.clear()
-            st.rerun()
-
-    # -------------------------------
-    # 🔁 REENVIO (EDITÁVEL)
-    # -------------------------------
     with t_reenvio:
-        df_edit = st.data_editor(
-            df_reenvio,
-            num_rows="dynamic",
-            use_container_width=True,
-            key="reenvio_editor"
-        )
+        render_df(df_reenvio, "Nenhum pedido em reenvio.")
 
-        if st.button("💾 Salvar Reenvio"):
-            client = get_gsheet_client()
-            ws = client.open_by_key(
-                st.secrets["sheets"]["spreadsheet_id"]
-            ).worksheet(ABAS_LOGISTICA["reenvio"])
-
-            body = [df_edit.columns.tolist()] + df_edit.fillna("").astype(str).values.tolist()
-            ws.batch_clear(["A:Z"])
-            ws.update(body)
-
-            st.success("✅ Reenvio atualizado!")
-            st.cache_data.clear()
-            st.rerun()
-
-    # -------------------------------
-    # 📮 AGUARDANDO RETIRADA
-    # -------------------------------
     with t_correios:
         render_df(df_correios, "Nenhum pedido aguardando retirada.")
 
-    # -------------------------------
-    # ✅ ENTREGUE
-    # -------------------------------
     with t_entregue:
         a, e = st.tabs(["🛒 AliExpress", "📦 Estoque"])
-
         with a:
             render_df(df_entregue_ali, "Nenhum AliExpress entregue.")
-
         with e:
             render_df(df_entregue_est, "Nenhum estoque entregue.")
