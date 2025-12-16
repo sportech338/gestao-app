@@ -424,25 +424,6 @@ def salvar_rastreio_na_aba_aguardando(numero_pedido, codigo_rastreio):
             ws.update_cell(i, 8, codigo_rastreio)  # COLUNA H = RASTREIO
             return
 
-
-# =====================================================
-# 📄 SALVAR RASTREIO NA ABA "AGUARDANDO"
-# =====================================================
-def salvar_rastreio_na_aba_aguardando(numero_pedido, codigo_rastreio):
-    client = get_gsheet_client()
-    ws = client.open_by_key(
-        "1WTEiRnm1OFxzn6ag1MfI8VnlQCbL8xwxY3LeanCsdxk"
-    ).worksheet("Aguardando")
-
-    dados = ws.get_all_values()
-
-    for i, linha in enumerate(dados[1:], start=2):
-        pedido_planilha = str(linha[6]).strip()  # COLUNA G = NÚMERO DO PEDIDO
-
-        if pedido_planilha == str(numero_pedido):
-            ws.update_cell(i, 8, codigo_rastreio)  # COLUNA H = RASTREIO
-            return
-
 # =============== Config & Estilos ===============
 st.markdown("""
 <style>
