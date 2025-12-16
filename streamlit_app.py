@@ -4976,6 +4976,7 @@ with aba3:
     # 📥 BASES
     # =====================================================
     df_log = carregar_aba("Aguardando")
+    df_log = carregar_aba("Em trânsito")
     df_entregue = carregar_aba("Entrega realizada")
     df_falha = carregar_aba("Falha na importação")
     df_reenvio = carregar_aba("Reenvio")
@@ -5058,12 +5059,17 @@ with t_transito:
     a, e = st.tabs(["🛒 AliExpress", "📦 Estoque"])
 
     with a:
-        df = df_aliexpress[
-            (df_aliexpress["RASTREIO"].astype(str).str.strip() != "") &
-            (~df_aliexpress["PEDIDO"].isin(pedidos_entregues)) &
-            (~df_aliexpress["PEDIDO"].isin(pedidos_falha))
+        df = df_transito[
+            ~df_transito["RASTREIO"].astype(str).str.startswith("888", na=False)
         ]
         render_df(df, "Nenhum AliExpress em trânsito.")
+
+    with e:
+        df = df_transito[
+            df_transito["RASTREIO"].astype(str).str.startswith("888", na=False)
+        ]
+        render_df(df, "Nenhum estoque em trânsito.")
+
 
     with e:
         df = df_estoque[
