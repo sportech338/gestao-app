@@ -5232,4 +5232,5 @@ with aba3:
 # =====================================================
 with aba4:
 
-
+    st.title("📈 KPIs Operacionais")
+    st.caption("Indicadores-chave de performance da operação")
