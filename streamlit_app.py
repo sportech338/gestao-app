@@ -5231,6 +5231,69 @@ with aba3:
 # 📈 ABA 4 — KPIs
 # =====================================================
 with aba4:
+import plotly.express as px
 
-    st.title("📈 KPIs Operacionais")
-    st.caption("Indicadores-chave de performance da operação")
+st.divider()
+st.subheader("🗺️ Distribuição de Pedidos no Brasil")
+
+# =====================================================
+# 🔢 BASE DE DADOS (SHOPIFY)
+# =====================================================
+if "pedidos" not in st.session_state or st.session_state["pedidos"].empty:
+    st.warning("⚠️ Nenhum dado disponível para o mapa.")
+else:
+    df_map = st.session_state["pedidos"].copy()
+
+    # Normaliza coluna de estado
+    df_map["estado"] = (
+        df_map.get("estado", "")
+        .astype(str)
+        .str.upper()
+        .str.strip()
+    )
+
+    # Remove registros inválidos
+    df_map = df_map[df_map["estado"].str.len() == 2]
+
+    # Agrupa pedidos por estado
+    mapa_estado = (
+        df_map
+        .groupby("estado")
+        .agg(pedidos=("order_id", "nunique"))
+        .reset_index()
+    )
+
+    # =====================================================
+    # 🗺️ MAPA COROPLÉTICO DO BRASIL
+    # =====================================================
+    fig = px.choropleth(
+        mapa_estado,
+        locations="estado",
+        locationmode="ISO-3166-2",
+        color="pedidos",
+        scope="south america",
+        color_continuous_scale="Blues",
+        labels={"pedidos": "Pedidos"},
+        title="Pedidos por Estado"
+    )
+
+    fig.update_geos(
+        visible=False,
+        resolution=50,
+        showcountries=True,
+        countrycolor="LightGray",
+        showcoastlines=True,
+        coastlinecolor="Gray"
+    )
+
+    fig.update_layout(
+        height=520,
+        margin=dict(l=0, r=0, t=40, b=0),
+        geo=dict(
+            center=dict(lat=-14.235, lon=-51.925),
+            projection_scale=2.6
+        )
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+
