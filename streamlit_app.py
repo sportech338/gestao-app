@@ -5230,7 +5230,111 @@ with aba3:
             # =====================================================
 # 📈 ABA 4 — KPIs
 # =====================================================
-    with aba4:
+with aba4:
+
     st.title("📈 KPIs Operacionais")
     st.caption("Indicadores-chave de performance da operação")
 
+    # -------------------------------------------------
+    # 🔢 Base de dados
+    # -------------------------------------------------
+    if "pedidos" not in st.session_state or st.session_state["pedidos"].empty:
+        st.warning("⚠️ Nenhum dado carregado para calcular KPIs.")
+        st.stop()
+
+    df_kpi = st.session_state["pedidos"].copy()
+
+    # Conversões seguras
+    df_kpi["quantity"] = pd.to_numeric(
+        df_kpi.get("quantity", 0), errors="coerce"
+    ).fillna(0)
+
+    df_kpi["line_revenue"] = pd.to_numeric(
+        df_kpi.get("line_revenue", 0), errors="coerce"
+    ).fillna(0)
+
+    # -------------------------------------------------
+    # 📊 KPIs GERAIS
+    # -------------------------------------------------
+    total_pedidos = df_kpi["order_id"].nunique()
+    total_itens = int(df_kpi["quantity"].sum())
+    faturamento = df_kpi["line_revenue"].sum()
+    ticket_medio = faturamento / total_pedidos if total_pedidos > 0 else 0
+
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("🧾 Pedidos", total_pedidos)
+    col2.metric("📦 Itens vendidos", total_itens)
+    col3.metric("💰 Faturamento", formatar_moeda(faturamento))
+    col4.metric("💸 Ticket médio", formatar_moeda(ticket_medio))
+
+    # -------------------------------------------------
+    # 🚚 KPIs DE PROCESSAMENTO
+    # -------------------------------------------------
+    st.divider()
+    st.subheader("🚚 Processamento de Pedidos")
+
+    processados = df_kpi[
+        df_kpi["fulfillment_status"].isin(["fulfilled", "shipped", "complete"])
+    ]
+
+    pendentes = df_kpi[
+        ~df_kpi["fulfillment_status"].isin(["fulfilled", "shipped", "complete"])
+    ]
+
+    col1, col2, col3 = st.columns(3)
+
+    col1.metric("✅ Processados", processados["order_id"].nunique())
+    col2.metric("🟡 Pendentes", pendentes["order_id"].nunique())
+
+    taxa_proc = (
+        (processados["order_id"].nunique() / total_pedidos) * 100
+        if total_pedidos > 0 else 0
+    )
+
+    col3.metric("📈 Taxa de processamento", f"{taxa_proc:.1f}%")
+
+    # -------------------------------------------------
+    # 📦 KPIs POR PRODUTO
+    # -------------------------------------------------
+    st.divider()
+    st.subheader("📦 Performance por Produto")
+
+    kpi_produto = (
+        df_kpi
+        .groupby("product_title", dropna=False)
+        .agg(
+            pedidos=("order_id", "nunique"),
+            unidades=("quantity", "sum"),
+            receita=("line_revenue", "sum")
+        )
+        .reset_index()
+        .sort_values("receita", ascending=False)
+    )
+
+    if not kpi_produto.empty:
+        st.dataframe(
+            kpi_produto.assign(
+                receita=kpi_produto["receita"].apply(formatar_moeda)
+            ),
+            use_container_width=True
+        )
+    else:
+        st.info("Nenhum dado de produto disponível.")
+
+    # -------------------------------------------------
+    # 📊 KPI DE CONCENTRAÇÃO
+    # -------------------------------------------------
+    st.divider()
+    st.subheader("🎯 Concentração de Receita")
+
+    if faturamento > 0:
+        top_prod = kpi_produto.iloc[0]
+        pct_top = (top_prod["receita"] / faturamento) * 100
+
+        st.metric(
+            "📌 % da receita no produto líder",
+            f"{pct_top:.1f}%",
+            help=f"Produto líder: {top_prod['product_title']}"
+        )
+    else:
+        st.info("Receita zerada no período.")
