@@ -5103,28 +5103,22 @@ with t_importacao:
 
     st.caption(
         "Clique no botão do pedido para enviar para automação. "
-        "Após o envio, o pedido sai desta aba."
+        "A coluna A (REGISTRO) receberá 'x'."
     )
 
-    # 🧹 Remove pedidos já enviados
-    if "REGISTRO" in df_importacao.columns:
-        df_importacao = df_importacao[
-            df_importacao["REGISTRO"].astype(str).str.lower() != "x"
-        ]
-
     if df_importacao.empty:
-        st.success("✅ Nenhum pedido pendente de importação.")
+        st.info("Nenhum pedido em importação.")
         st.stop()
 
     # =====================================================
-    # 🔁 RENDERIZA UM CARD POR PEDIDO
+    # 🔁 RENDERIZA UM BLOCO POR PEDIDO
     # =====================================================
     for idx, row in df_importacao.iterrows():
 
         pedido = str(row.get("PEDIDO", "")).strip()
         cliente = str(row.get("CLIENTE", "")).strip()
-        produto = str(row.get("PRODUTO", "")).strip()
         data = row.iloc[1]  # DATA está na coluna B
+        produto = str(row.get("PRODUTO", "")).strip()
 
         with st.container(border=True):
             col1, col2 = st.columns([4, 1])
@@ -5177,7 +5171,8 @@ with t_importacao:
                             st.warning("⚠️ Pedido não encontrado na planilha.")
 
                     except Exception as e:
-                        st.error(f"❌ Erro ao enviar pedido {pedido}: {e}")
+                        st.error(f"❌ Erro ao marcar pedido {pedido}: {e}")
+
 
 # -------------------------------
 # 🔁 REENVIO
