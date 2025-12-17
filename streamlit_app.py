@@ -5064,29 +5064,40 @@ with aba3:
     c4.metric("🔁 Reenvio", contar(df_reenvio))
     c5.metric("✅ Entregue", contar(df_entregue))
 
-    # =====================================================
-    # 🧭 ABAS DO DASHBOARD
-    # =====================================================
-    t_aguardando, t_transito, t_importacao, t_reenvio, t_correios, t_entregue = st.tabs([
-        "🟡 Aguardando",
-        "🚚 Em Trânsito",
-        "⛔ Importação não autorizada",
-        "🔁 Reenvio",
-        "📮 Aguardando retirada",
-        "✅ Entregue"
-    ])
+   # =====================================================
+# 🧭 ABAS DO DASHBOARD
+# =====================================================
+t_aguardando, t_transito, t_importacao, t_reenvio, t_correios, t_entregue = st.tabs([
+    "🟡 Aguardando",
+    "🚚 Em Trânsito",
+    "⛔ Importação não autorizada",
+    "🔁 Reenvio",
+    "📮 Aguardando retirada",
+    "✅ Entregue"
+])
 
-    with t_aguardando:
-        render_df(df_aguardando, "Nenhum pedido aguardando.")
+# -------------------------------
+# 🟡 AGUARDANDO
+# -------------------------------
+with t_aguardando:
+    render_df(df_aguardando, "Nenhum pedido aguardando.")
 
-    with t_transito:
-        a, e = st.tabs(["🛒 AliExpress", "📦 Estoque"])
-        with a:
-            render_df(df_transito_ali, "Nenhum AliExpress em trânsito.")
-        with e:
-            render_df(df_transito_est, "Nenhum estoque em trânsito.")
+# -------------------------------
+# 🚚 EM TRÂNSITO
+# -------------------------------
+with t_transito:
+    a, e = st.tabs(["🛒 AliExpress", "📦 Estoque"])
 
-  with t_importacao:
+    with a:
+        render_df(df_transito_ali, "Nenhum AliExpress em trânsito.")
+
+    with e:
+        render_df(df_transito_est, "Nenhum estoque em trânsito.")
+
+# -------------------------------
+# ⛔ IMPORTAÇÃO NÃO AUTORIZADA
+# -------------------------------
+with t_importacao:
 
     st.subheader("⛔ Importação não autorizada")
 
@@ -5095,9 +5106,7 @@ with aba3:
         "O script externo roda quando a coluna A recebe 'x'."
     )
 
-    # =====================================================
     # 📝 TABELA EDITÁVEL
-    # =====================================================
     df_importacao_edit = st.data_editor(
         df_importacao,
         use_container_width=True,
@@ -5106,9 +5115,7 @@ with aba3:
         hide_index=True
     )
 
-    # =====================================================
     # 🛑 BOTÃO — MARCAR 'X' NA COLUNA A
-    # =====================================================
     if st.button("🛑 Enviar para automação (marcar X)"):
         try:
             client = get_gsheet_client()
@@ -5137,17 +5144,13 @@ with aba3:
                 df_importacao_edit["PEDIDO"].astype(str).str.strip()
             )
 
-            # 🔹 Descobre índice da coluna PEDIDO
             pedido_col_idx = df_sheet.columns.get_loc("PEDIDO")
 
-            # 🔹 Marca X na COLUNA A
             updates = []
             for idx, row in df_sheet.iterrows():
                 pedido_planilha = str(row.iloc[pedido_col_idx]).strip()
-
                 if pedido_planilha in pedidos_dashboard:
-                    # Linha real no Sheets = idx + 2 (1 header + index base 0)
-                    updates.append(f"A{idx + 2}")
+                    updates.append(f"A{idx + 2}")  # +2 por causa do header
 
             if not updates:
                 st.warning("⚠️ Nenhum pedido correspondente encontrado para marcar.")
@@ -5163,17 +5166,26 @@ with aba3:
         except Exception as e:
             st.error(f"❌ Erro ao marcar pedidos: {e}")
 
+# -------------------------------
+# 🔁 REENVIO
+# -------------------------------
+with t_reenvio:
+    render_df(df_reenvio, "Nenhum pedido em reenvio.")
 
-    with t_reenvio:
-        render_df(df_reenvio, "Nenhum pedido em reenvio.")
+# -------------------------------
+# 📮 AGUARDANDO RETIRADA
+# -------------------------------
+with t_correios:
+    render_df(df_correios, "Nenhum pedido aguardando retirada.")
 
-    with t_correios:
-        render_df(df_correios, "Nenhum pedido aguardando retirada.")
+# -------------------------------
+# ✅ ENTREGUE
+# -------------------------------
+with t_entregue:
+    a, e = st.tabs(["🛒 AliExpress", "📦 Estoque"])
 
-    with t_entregue:
-        a, e = st.tabs(["🛒 AliExpress", "📦 Estoque"])
-        with a:
-            render_df(df_entregue_ali, "Nenhum AliExpress entregue.")
-        with e:
-            render_df(df_entregue_est, "Nenhum estoque entregue.")
+    with a:
+        render_df(df_entregue_ali, "Nenhum AliExpress entregue.")
 
+    with e:
+        render_df(df_entregue_est, "Nenhum estoque entregue.")
