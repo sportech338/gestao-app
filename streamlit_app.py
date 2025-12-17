@@ -5233,18 +5233,17 @@ with aba3:
 with aba4:
         import plotly.express as px
 
+import plotly.express as px
+
 st.divider()
 st.subheader("🗺️ Distribuição de Pedidos no Brasil")
 
-# =====================================================
-# 🔢 BASE DE DADOS (SHOPIFY)
-# =====================================================
 if "pedidos" not in st.session_state or st.session_state["pedidos"].empty:
     st.warning("⚠️ Nenhum dado disponível para o mapa.")
 else:
     df_map = st.session_state["pedidos"].copy()
 
-    # Normaliza coluna de estado
+    # Normaliza estado
     df_map["estado"] = (
         df_map.get("estado", "")
         .astype(str)
@@ -5252,23 +5251,24 @@ else:
         .str.strip()
     )
 
-    # Remove registros inválidos
+    # Mantém apenas siglas válidas
     df_map = df_map[df_map["estado"].str.len() == 2]
 
-    # Agrupa pedidos por estado
+    # 🔑 CONVERSÃO CORRETA PARA ISO-3166-2
+    df_map["estado_iso"] = "BR-" + df_map["estado"]
+
+    # Agrupa pedidos únicos por estado
     mapa_estado = (
         df_map
-        .groupby("estado")
+        .groupby("estado_iso")
         .agg(pedidos=("order_id", "nunique"))
         .reset_index()
     )
 
-    # =====================================================
-    # 🗺️ MAPA COROPLÉTICO DO BRASIL
-    # =====================================================
+    # 🗺️ MAPA
     fig = px.choropleth(
         mapa_estado,
-        locations="estado",
+        locations="estado_iso",
         locationmode="ISO-3166-2",
         color="pedidos",
         scope="south america",
@@ -5278,17 +5278,13 @@ else:
     )
 
     fig.update_geos(
-        visible=False,
-        resolution=50,
-        showcountries=True,
-        countrycolor="LightGray",
-        showcoastlines=True,
-        coastlinecolor="Gray"
+        fitbounds="locations",
+        visible=False
     )
 
     fig.update_layout(
         height=520,
-        margin=dict(l=0, r=0, t=40, b=0),
+        margin=dict(l=0, r=0, t=50, b=0),
         geo=dict(
             center=dict(lat=-14.235, lon=-51.925),
             projection_scale=2.6
