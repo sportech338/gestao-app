@@ -4919,7 +4919,7 @@ def render_df(df: pd.DataFrame, empty_msg: str):
 
 
 # =====================================================
-# 🚚 ABA 3 — ENTREGAS (DATA SEMPRE NA COLUNA A)
+# 🚚 ABA 3 — ENTREGAS (DATA A ou B conforme a aba)
 # =====================================================
 with aba3:
 
@@ -4954,34 +4954,36 @@ with aba3:
     # 📊 LEITURA 1:1 DAS ABAS
     # =====================================================
     df_aguardando = carregar_aba(ABAS_LOGISTICA["aguardando"])
-    df_transito = carregar_aba(ABAS_LOGISTICA["transito"])
+    df_transito   = carregar_aba(ABAS_LOGISTICA["transito"])
     df_importacao = carregar_aba(ABAS_LOGISTICA["importacao"])
-    df_reenvio = carregar_aba(ABAS_LOGISTICA["reenvio"])
-    df_correios = carregar_aba(ABAS_LOGISTICA["correios"])
-    df_entregue = carregar_aba(ABAS_LOGISTICA["entregue"])
+    df_reenvio    = carregar_aba(ABAS_LOGISTICA["reenvio"])
+    df_correios   = carregar_aba(ABAS_LOGISTICA["correios"])
+    df_entregue   = carregar_aba(ABAS_LOGISTICA["entregue"])
 
     # =====================================================
-    # 🔁 DEDUP POR PEDIDO
+    # 🔁 DEDUP POR PEDIDO (DATA POR COLUNA)
     # =====================================================
-    def dedup(df):
+    def dedup(df, date_col_idx=0):
         if df is None or df.empty:
             return df
         if "PEDIDO" in df.columns:
-            # DATA está sempre na COLUNA A
-            df.iloc[:, 0] = pd.to_datetime(df.iloc[:, 0], errors="coerce")
-            df = df.sort_values(df.columns[0], ascending=False)
+            df = df.copy()
+            df.iloc[:, date_col_idx] = pd.to_datetime(
+                df.iloc[:, date_col_idx], errors="coerce"
+            )
+            df = df.sort_values(df.columns[date_col_idx], ascending=False)
             df = df.drop_duplicates(subset=["PEDIDO"], keep="first")
         return df
 
-    df_aguardando = dedup(df_aguardando)
-    df_transito = dedup(df_transito)
-    df_importacao = dedup(df_importacao)
-    df_reenvio = dedup(df_reenvio)
-    df_correios = dedup(df_correios)
-    df_entregue = dedup(df_entregue)
+    df_aguardando = dedup(df_aguardando, date_col_idx=0)
+    df_transito   = dedup(df_transito,   date_col_idx=0)
+    df_importacao = dedup(df_importacao, date_col_idx=1)  # 👈 DATA NA COLUNA B
+    df_reenvio    = dedup(df_reenvio,    date_col_idx=0)
+    df_correios   = dedup(df_correios,   date_col_idx=0)
+    df_entregue   = dedup(df_entregue,   date_col_idx=0)
 
     # =====================================================
-    # 📅 FILTRO GLOBAL DE DATA (COLUNA A)
+    # 📅 FILTRO GLOBAL DE DATA
     # =====================================================
     st.markdown("### 📅 Filtro por data (Entregas)")
 
@@ -5004,25 +5006,24 @@ with aba3:
             key="aba3_data_fim"
         )
 
-    def aplicar_filtro_data(df):
+    def aplicar_filtro_data(df, date_col_idx=0):
         if df is None or df.empty:
             return df
-
-        # 📌 DATA SEMPRE NA COLUNA A
         df = df.copy()
-        df.iloc[:, 0] = pd.to_datetime(df.iloc[:, 0], errors="coerce").dt.date
-
+        df.iloc[:, date_col_idx] = pd.to_datetime(
+            df.iloc[:, date_col_idx], errors="coerce"
+        ).dt.date
         return df[
-            (df.iloc[:, 0] >= data_inicio) &
-            (df.iloc[:, 0] <= data_fim)
+            (df.iloc[:, date_col_idx] >= data_inicio) &
+            (df.iloc[:, date_col_idx] <= data_fim)
         ]
 
-    df_aguardando = aplicar_filtro_data(df_aguardando)
-    df_transito = aplicar_filtro_data(df_transito)
-    df_importacao = aplicar_filtro_data(df_importacao)
-    df_reenvio = aplicar_filtro_data(df_reenvio)
-    df_correios = aplicar_filtro_data(df_correios)
-    df_entregue = aplicar_filtro_data(df_entregue)
+    df_aguardando = aplicar_filtro_data(df_aguardando, date_col_idx=0)
+    df_transito   = aplicar_filtro_data(df_transito,   date_col_idx=0)
+    df_importacao = aplicar_filtro_data(df_importacao, date_col_idx=1)  # 👈 DATA NA COLUNA B
+    df_reenvio    = aplicar_filtro_data(df_reenvio,    date_col_idx=0)
+    df_correios   = aplicar_filtro_data(df_correios,   date_col_idx=0)
+    df_entregue   = aplicar_filtro_data(df_entregue,   date_col_idx=0)
 
     st.caption(
         f"Exibindo pedidos de {data_inicio.strftime('%d/%m/%Y')} "
