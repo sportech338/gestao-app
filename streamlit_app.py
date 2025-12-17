@@ -4289,10 +4289,11 @@ if menu == "📦 Dashboard – Logística":
     # =====================================================
     # 🗂️ Abas principais da Logística
     # =====================================================
-    aba1, aba2, aba3 = st.tabs([
+    aba1, aba2, aba3, aba4 = st.tabs([
         "📋 Controle Operacional",
         "💲 Valores",
         "🚚 Gestão de entregas"
+        "📈 KPIs"
     ])
 
     # =====================================================
@@ -5226,3 +5227,10 @@ with aba3:
             render_df(df_entregue_ali, "Nenhum AliExpress entregue.")
         with e:
             render_df(df_entregue_est, "Nenhum estoque entregue.")
+            # =====================================================
+# 📈 ABA 4 — KPIs
+# =====================================================
+    with aba4:
+    st.title("📈 KPIs Operacionais")
+    st.caption("Indicadores-chave de performance da operação")
+
