@@ -2,9 +2,6 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import requests, json, time
-import plotly.express as px
-import json
-import requests
 from datetime import date, timedelta, datetime
 from zoneinfo import ZoneInfo
 APP_TZ = ZoneInfo("America/Sao_Paulo")
@@ -5234,105 +5231,64 @@ with aba3:
 # 📈 ABA 4 — KPIs
 # =====================================================
 with aba4:
-     st.divider()
+        import plotly.express as px
+
+import plotly.express as px
+
+st.divider()
 st.subheader("🗺️ Distribuição de Pedidos no Brasil")
 
-# =====================================================
-# 🔢 BASE DE DADOS
-# =====================================================
 if "pedidos" not in st.session_state or st.session_state["pedidos"].empty:
     st.warning("⚠️ Nenhum dado disponível para o mapa.")
-    st.stop()
+else:
+    df_map = st.session_state["pedidos"].copy()
 
-df_map = st.session_state["pedidos"].copy()
+    # Normaliza estado
+    df_map["estado"] = (
+        df_map.get("estado", "")
+        .astype(str)
+        .str.upper()
+        .str.strip()
+    )
 
-# Normaliza estado (SIGLA)
-df_map["estado"] = (
-    df_map.get("estado", "")
-    .astype(str)
-    .str.upper()
-    .str.strip()
-)
+    # Mantém apenas siglas válidas
+    df_map = df_map[df_map["estado"].str.len() == 2]
 
-df_map = df_map[df_map["estado"].str.len() == 2]
+    # 🔑 CONVERSÃO CORRETA PARA ISO-3166-2
+    df_map["estado_iso"] = "BR-" + df_map["estado"]
 
-# =====================================================
-# 🔁 MAPA SIGLA → NOME COMPLETO
-# =====================================================
-MAPA_ESTADOS = {
-    "AC": "Acre",
-    "AL": "Alagoas",
-    "AP": "Amapá",
-    "AM": "Amazonas",
-    "BA": "Bahia",
-    "CE": "Ceará",
-    "DF": "Distrito Federal",
-    "ES": "Espírito Santo",
-    "GO": "Goiás",
-    "MA": "Maranhão",
-    "MT": "Mato Grosso",
-    "MS": "Mato Grosso do Sul",
-    "MG": "Minas Gerais",
-    "PA": "Pará",
-    "PB": "Paraíba",
-    "PR": "Paraná",
-    "PE": "Pernambuco",
-    "PI": "Piauí",
-    "RJ": "Rio de Janeiro",
-    "RN": "Rio Grande do Norte",
-    "RS": "Rio Grande do Sul",
-    "RO": "Rondônia",
-    "RR": "Roraima",
-    "SC": "Santa Catarina",
-    "SP": "São Paulo",
-    "SE": "Sergipe",
-    "TO": "Tocantins",
-}
+    # Agrupa pedidos únicos por estado
+    mapa_estado = (
+        df_map
+        .groupby("estado_iso")
+        .agg(pedidos=("order_id", "nunique"))
+        .reset_index()
+    )
 
-df_map["estado_nome"] = df_map["estado"].map(MAPA_ESTADOS)
+    # 🗺️ MAPA
+    fig = px.choropleth(
+        mapa_estado,
+        locations="estado_iso",
+        locationmode="ISO-3166-2",
+        color="pedidos",
+        scope="south america",
+        color_continuous_scale="Blues",
+        labels={"pedidos": "Pedidos"},
+        title="Pedidos por Estado"
+    )
 
-df_map = df_map.dropna(subset=["estado_nome"])
+    fig.update_geos(
+        fitbounds="locations",
+        visible=False
+    )
 
-# Agrupa pedidos
-mapa_estado = (
-    df_map
-    .groupby("estado_nome")
-    .agg(pedidos=("order_id", "nunique"))
-    .reset_index()
-)
+    fig.update_layout(
+        height=520,
+        margin=dict(l=0, r=0, t=50, b=0),
+        geo=dict(
+            center=dict(lat=-14.235, lon=-51.925),
+            projection_scale=2.6
+        )
+    )
 
-# =====================================================
-# 🌎 GEOJSON (ESTADOS DO BRASIL)
-# =====================================================
-@st.cache_data(ttl=86400)
-def carregar_geojson_brasil():
-    url = "https://raw.githubusercontent.com/codeforamerica/click_that_hood/master/public/data/brazil-states.geojson"
-    return requests.get(url).json()
-
-geojson_br = carregar_geojson_brasil()
-
-# =====================================================
-# 🗺️ MAPA
-# =====================================================
-fig = px.choropleth(
-    mapa_estado,
-    geojson=geojson_br,
-    locations="estado_nome",
-    featureidkey="properties.name",
-    color="pedidos",
-    color_continuous_scale="Blues",
-    labels={"pedidos": "Pedidos"},
-    title="Pedidos por Estado"
-)
-
-fig.update_geos(
-    fitbounds="locations",
-    visible=False
-)
-
-fig.update_layout(
-    height=550,
-    margin=dict(l=0, r=0, t=50, b=0)
-)
-
-st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, use_container_width=True)
