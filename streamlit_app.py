@@ -5227,7 +5227,7 @@ with aba3:
             render_df(df_entregue_ali, "Nenhum AliExpress entregue.")
         with e:
             render_df(df_entregue_est, "Nenhum estoque entregue.")
-     # =====================================================
+    # =====================================================
     # 🚚 KPIs LOGÍSTICOS AVANÇADOS
     # =====================================================
     st.divider()
@@ -5268,5 +5268,46 @@ with aba3:
 
         origem = (
             "📦 Estoque"
-            if str(row.get("RAS
+            if str(row.get("RASTREIO", "")).startswith("888")
+            else "🛒 AliExpress"
+        )
+
+        if origem == "📦 Estoque":
+            return dias <= 5
+        return dias <= 12
+
+    if "Dias em trânsito" not in entregues_ok.columns:
+        entregues_ok["Dias em trânsito"] = pd.to_numeric(
+            entregues_ok.iloc[:, 0], errors="coerce"
+        )
+
+    entregues_ok["OTD_OK"] = entregues_ok.apply(dentro_sla, axis=1)
+
+    otd = (
+        (entregues_ok["OTD_OK"].sum() / len(entregues_ok)) * 100
+        if len(entregues_ok) > 0 else 0
+    )
+
+    # -------------------------------
+    # Lead Time e Prazo de entrega
+    # -------------------------------
+    lead_times = pd.to_numeric(
+        entregues_ok["Dias em trânsito"], errors="coerce"
+    ).dropna()
+
+    lead_time_medio = lead_times.mean() if not lead_times.empty else 0
+    prazo_p90 = lead_times.quantile(0.90) if not lead_times.empty else 0
+
+    # =====================================================
+    # 📊 EXIBIÇÃO DOS KPIs
+    # =====================================================
+    c1, c2, c3, c4, c5, c6 = st.columns(6)
+
+    c1.metric("📦 OTD", f"{otd:.1f}%")
+    c2.metric("⛔ Importação", f"{pct_importacao:.1f}%")
+    c3.metric("🟡 Em risco", f"{pct_risco:.1f}%")
+    c4.metric("🔴 Atrasados", f"{pct_atrasado:.1f}%")
+    c5.metric("⏱ Lead Time médio", f"{lead_time_medio:.1f} dias")
+    c6.metric("📬 Prazo (P90)", f"{prazo_p90:.1f} dias")
+
 
