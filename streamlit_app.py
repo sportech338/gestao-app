@@ -5231,64 +5231,6 @@ with aba3:
 # 📈 ABA 4 — KPIs
 # =====================================================
 with aba4:
-        import plotly.express as px
 
-import plotly.express as px
-
-st.divider()
-st.subheader("🗺️ Distribuição de Pedidos no Brasil")
-
-if "pedidos" not in st.session_state or st.session_state["pedidos"].empty:
-    st.warning("⚠️ Nenhum dado disponível para o mapa.")
-else:
-    df_map = st.session_state["pedidos"].copy()
-
-    # Normaliza estado
-    df_map["estado"] = (
-        df_map.get("estado", "")
-        .astype(str)
-        .str.upper()
-        .str.strip()
-    )
-
-    # Mantém apenas siglas válidas
-    df_map = df_map[df_map["estado"].str.len() == 2]
-
-    # 🔑 CONVERSÃO CORRETA PARA ISO-3166-2
-    df_map["estado_iso"] = "BR-" + df_map["estado"]
-
-    # Agrupa pedidos únicos por estado
-    mapa_estado = (
-        df_map
-        .groupby("estado_iso")
-        .agg(pedidos=("order_id", "nunique"))
-        .reset_index()
-    )
-
-    # 🗺️ MAPA
-    fig = px.choropleth(
-        mapa_estado,
-        locations="estado_iso",
-        locationmode="ISO-3166-2",
-        color="pedidos",
-        scope="south america",
-        color_continuous_scale="Blues",
-        labels={"pedidos": "Pedidos"},
-        title="Pedidos por Estado"
-    )
-
-    fig.update_geos(
-        fitbounds="locations",
-        visible=False
-    )
-
-    fig.update_layout(
-        height=520,
-        margin=dict(l=0, r=0, t=50, b=0),
-        geo=dict(
-            center=dict(lat=-14.235, lon=-51.925),
-            projection_scale=2.6
-        )
-    )
-
-    st.plotly_chart(fig, use_container_width=True)
+    st.title("📈 KPIs Operacionais")
+    st.caption("Indicadores-chave de performance da operação")
