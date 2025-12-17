@@ -5079,54 +5079,64 @@ with aba3:
     # =====================================================
     # 🧠 CLASSIFICAÇÃO DE ATRASO (SLA DIFERENTE)
     # =====================================================
-    def classificar_atraso(df):
-        if df is None or df.empty:
-            return df
+  def classificar_atraso(df):
+    if df is None or df.empty:
+        return df
 
-        df = df.copy()
+    df = df.copy()
+    hoje = datetime.now(APP_TZ).date()
 
-        # Data de envio = coluna A
-        df.iloc[:, 0] = pd.to_datetime(df.iloc[:, 0], errors="coerce")
-        hoje = datetime.now(APP_TZ).date()
+    # Converte coluna A para datetime (sem usar .dt depois)
+    df["_data_envio"] = pd.to_datetime(df.iloc[:, 0], errors="coerce")
 
-        df["Dias em trânsito"] = df.iloc[:, 0].dt.date.apply(
-            lambda x: (hoje - x).days if pd.notna(x) else None
-        )
+    def calcular_dias(data):
+        if pd.isna(data):
+            return None
+        try:
+            return (hoje - data.date()).days
+        except Exception:
+            return None
 
-        # Origem
-        df["Origem"] = np.where(
-            df["RASTREIO"].astype(str).str.startswith("888", na=False),
-            "📦 Estoque",
-            "🛒 AliExpress"
-        )
+    df["Dias em trânsito"] = df["_data_envio"].apply(calcular_dias)
 
-        def status(row):
-            d = row["Dias em trânsito"]
-            origem = row["Origem"]
+    # Origem
+    df["Origem"] = np.where(
+        df["RASTREIO"].astype(str).str.startswith("888", na=False),
+        "📦 Estoque",
+        "🛒 AliExpress"
+    )
 
-            if d is None:
-                return "⚪ Sem data"
+    def status(row):
+        d = row["Dias em trânsito"]
+        origem = row["Origem"]
 
-            # 📦 ESTOQUE
-            if origem == "📦 Estoque":
-                if d <= 5:
-                    return "🟢 OK"
-                elif 6 <= d <= 10:
-                    return "🟡 Risco"
-                else:
-                    return "🔴 Atrasado"
+        if d is None:
+            return "⚪ Sem data"
 
-            # 🛒 ALIEXPRESS
-            if d <= 12:
+        # 📦 ESTOQUE
+        if origem == "📦 Estoque":
+            if d <= 5:
                 return "🟢 OK"
-            elif 13 <= d <= 18:
+            elif 6 <= d <= 10:
                 return "🟡 Risco"
             else:
                 return "🔴 Atrasado"
 
-        df["Status logístico"] = df.apply(status, axis=1)
+        # 🛒 ALIEXPRESS
+        if d <= 12:
+            return "🟢 OK"
+        elif 13 <= d <= 18:
+            return "🟡 Risco"
+        else:
+            return "🔴 Atrasado"
 
-        return df
+    df["Status logístico"] = df.apply(status, axis=1)
+
+    # Limpa coluna técnica
+    df.drop(columns=["_data_envio"], inplace=True)
+
+    return df
+
 
     # =====================================================
     # 🔄 APLICA CLASSIFICAÇÃO
