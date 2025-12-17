@@ -5064,136 +5064,115 @@ with aba3:
     c4.metric("🔁 Reenvio", contar(df_reenvio))
     c5.metric("✅ Entregue", contar(df_entregue))
 
-   # =====================================================
-# 🧭 ABAS DO DASHBOARD
-# =====================================================
-t_aguardando, t_transito, t_importacao, t_reenvio, t_correios, t_entregue = st.tabs([
-    "🟡 Aguardando",
-    "🚚 Em Trânsito",
-    "⛔ Importação não autorizada",
-    "🔁 Reenvio",
-    "📮 Aguardando retirada",
-    "✅ Entregue"
-])
+    # =====================================================
+    # 🧭 ABAS DO DASHBOARD
+    # =====================================================
+    t_aguardando, t_transito, t_importacao, t_reenvio, t_correios, t_entregue = st.tabs([
+        "🟡 Aguardando",
+        "🚚 Em Trânsito",
+        "⛔ Importação não autorizada",
+        "🔁 Reenvio",
+        "📮 Aguardando retirada",
+        "✅ Entregue"
+    ])
 
-# -------------------------------
-# 🟡 AGUARDANDO
-# -------------------------------
-with t_aguardando:
-    render_df(df_aguardando, "Nenhum pedido aguardando.")
+    with t_aguardando:
+        render_df(df_aguardando, "Nenhum pedido aguardando.")
 
-# -------------------------------
-# 🚚 EM TRÂNSITO
-# -------------------------------
-with t_transito:
-    a, e = st.tabs(["🛒 AliExpress", "📦 Estoque"])
+    with t_transito:
+        a, e = st.tabs(["🛒 AliExpress", "📦 Estoque"])
+        with a:
+            render_df(df_transito_ali, "Nenhum AliExpress em trânsito.")
+        with e:
+            render_df(df_transito_est, "Nenhum estoque em trânsito.")
 
-    with a:
-        render_df(df_transito_ali, "Nenhum AliExpress em trânsito.")
-
-    with e:
-        render_df(df_transito_est, "Nenhum estoque em trânsito.")
-
-# -------------------------------
-# ⛔ IMPORTAÇÃO NÃO AUTORIZADA
-# -------------------------------
-with t_importacao:
+  with t_importacao:
 
     st.subheader("⛔ Importação não autorizada")
 
     st.caption(
-        "Clique no botão do pedido para enviar para automação. "
-        "A coluna A (REGISTRO) receberá 'x'."
+        "Marque pedidos para automação. "
+        "O script externo roda quando a coluna A recebe 'x'."
     )
 
-    if df_importacao.empty:
-        st.info("Nenhum pedido em importação.")
-        st.stop()
+    # =====================================================
+    # 📝 TABELA EDITÁVEL
+    # =====================================================
+    df_importacao_edit = st.data_editor(
+        df_importacao,
+        use_container_width=True,
+        num_rows="dynamic",
+        key="importacao_editor",
+        hide_index=True
+    )
 
     # =====================================================
-    # 🔁 RENDERIZA UM BLOCO POR PEDIDO
+    # 🛑 BOTÃO — MARCAR 'X' NA COLUNA A
     # =====================================================
-    for idx, row in df_importacao.iterrows():
+    if st.button("🛑 Enviar para automação (marcar X)"):
+        try:
+            client = get_gsheet_client()
+            ws = client.open_by_key(
+                st.secrets["sheets"]["spreadsheet_id"]
+            ).worksheet("Falha na importação")
 
-        pedido = str(row.get("PEDIDO", "")).strip()
-        cliente = str(row.get("CLIENTE", "")).strip()
-        data = row.iloc[1]  # DATA está na coluna B
-        produto = str(row.get("PRODUTO", "")).strip()
+            # 🔹 Lê toda a aba (com cabeçalho)
+            sheet_values = ws.get_all_values()
 
-        with st.container(border=True):
-            col1, col2 = st.columns([4, 1])
+            if len(sheet_values) < 2:
+                st.warning("⚠️ Nenhum dado encontrado na planilha.")
+                st.stop()
 
-            with col1:
-                st.markdown(
-                    f"""
-                    **Pedido:** {pedido}  
-                    **Cliente:** {cliente}  
-                    **Produto:** {produto}  
-                    **Data:** {data}
-                    """
-                )
+            header = sheet_values[0]
+            rows = sheet_values[1:]
 
-            with col2:
-                btn_key = f"importacao_btn_{pedido}_{idx}"
+            df_sheet = pd.DataFrame(rows, columns=header)
 
-                if st.button("🛑 Enviar", key=btn_key):
+            if "PEDIDO" not in df_sheet.columns:
+                st.error("❌ Coluna 'PEDIDO' não encontrada na planilha.")
+                st.stop()
 
-                    try:
-                        client = get_gsheet_client()
-                        ws = client.open_by_key(
-                            st.secrets["sheets"]["spreadsheet_id"]
-                        ).worksheet("Falha na importação")
+            # 🔹 Pedidos visíveis no dashboard
+            pedidos_dashboard = set(
+                df_importacao_edit["PEDIDO"].astype(str).str.strip()
+            )
 
-                        sheet_values = ws.get_all_values()
-                        header = sheet_values[0]
-                        rows = sheet_values[1:]
+            # 🔹 Descobre índice da coluna PEDIDO
+            pedido_col_idx = df_sheet.columns.get_loc("PEDIDO")
 
-                        df_sheet = pd.DataFrame(rows, columns=header)
+            # 🔹 Marca X na COLUNA A
+            updates = []
+            for idx, row in df_sheet.iterrows():
+                pedido_planilha = str(row.iloc[pedido_col_idx]).strip()
 
-                        if "PEDIDO" not in df_sheet.columns:
-                            st.error("❌ Coluna 'PEDIDO' não encontrada na planilha.")
-                            st.stop()
+                if pedido_planilha in pedidos_dashboard:
+                    # Linha real no Sheets = idx + 2 (1 header + index base 0)
+                    updates.append(f"A{idx + 2}")
 
-                        pedido_col_idx = df_sheet.columns.get_loc("PEDIDO")
+            if not updates:
+                st.warning("⚠️ Nenhum pedido correspondente encontrado para marcar.")
+                st.stop()
 
-                        marcado = False
-                        for i, r in df_sheet.iterrows():
-                            if str(r.iloc[pedido_col_idx]).strip() == pedido:
-                                ws.update(f"A{i+2}", [["x"]])
-                                marcado = True
-                                break
+            for cell in updates:
+                ws.update(cell, "x")
 
-                        if marcado:
-                            st.success(f"✅ Pedido {pedido} enviado para automação.")
-                            st.cache_data.clear()
-                            st.rerun()
-                        else:
-                            st.warning("⚠️ Pedido não encontrado na planilha.")
+            st.success(f"✅ {len(updates)} pedido(s) enviados para automação.")
+            st.cache_data.clear()
+            st.rerun()
 
-                    except Exception as e:
-                        st.error(f"❌ Erro ao marcar pedido {pedido}: {e}")
+        except Exception as e:
+            st.error(f"❌ Erro ao marcar pedidos: {e}")
 
 
-# -------------------------------
-# 🔁 REENVIO
-# -------------------------------
-with t_reenvio:
-    render_df(df_reenvio, "Nenhum pedido em reenvio.")
+    with t_reenvio:
+        render_df(df_reenvio, "Nenhum pedido em reenvio.")
 
-# -------------------------------
-# 📮 AGUARDANDO RETIRADA
-# -------------------------------
-with t_correios:
-    render_df(df_correios, "Nenhum pedido aguardando retirada.")
+    with t_correios:
+        render_df(df_correios, "Nenhum pedido aguardando retirada.")
 
-# -------------------------------
-# ✅ ENTREGUE
-# -------------------------------
-with t_entregue:
-    a, e = st.tabs(["🛒 AliExpress", "📦 Estoque"])
-
-    with a:
-        render_df(df_entregue_ali, "Nenhum AliExpress entregue.")
-
-    with e:
-        render_df(df_entregue_est, "Nenhum estoque entregue.")
+    with t_entregue:
+        a, e = st.tabs(["🛒 AliExpress", "📦 Estoque"])
+        with a:
+            render_df(df_entregue_ali, "Nenhum AliExpress entregue.")
+        with e:
+            render_df(df_entregue_est, "Nenhum estoque entregue.")
