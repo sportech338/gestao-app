@@ -5072,11 +5072,131 @@ with aba3:
         render_df(df_aguardando, "Nenhum pedido aguardando.")
 
     with t_transito:
-        a, e = st.tabs(["🛒 AliExpress", "📦 Estoque"])
-        with a:
-            render_df(df_transito_ali, "Nenhum AliExpress em trânsito.")
-        with e:
-            render_df(df_transito_est, "Nenhum estoque em trânsito.")
+
+    # =====================================================
+    # 🧠 CLASSIFICAÇÃO DE ATRASO (SLA DIFERENTE)
+    # =====================================================
+    def classificar_atraso(df):
+        if df is None or df.empty:
+            return df
+
+        df = df.copy()
+
+        # Data de envio = coluna A
+        df.iloc[:, 0] = pd.to_datetime(df.iloc[:, 0], errors="coerce")
+        hoje = datetime.now(APP_TZ).date()
+
+        df["Dias em trânsito"] = df.iloc[:, 0].dt.date.apply(
+            lambda x: (hoje - x).days if pd.notna(x) else None
+        )
+
+        # Origem
+        df["Origem"] = np.where(
+            df["RASTREIO"].astype(str).str.startswith("888", na=False),
+            "📦 Estoque",
+            "🛒 AliExpress"
+        )
+
+        def status(row):
+            d = row["Dias em trânsito"]
+            origem = row["Origem"]
+
+            if d is None:
+                return "⚪ Sem data"
+
+            # 📦 ESTOQUE
+            if origem == "📦 Estoque":
+                if d <= 5:
+                    return "🟢 OK"
+                elif 6 <= d <= 10:
+                    return "🟡 Risco"
+                else:
+                    return "🔴 Atrasado"
+
+            # 🛒 ALIEXPRESS
+            if d <= 12:
+                return "🟢 OK"
+            elif 13 <= d <= 18:
+                return "🟡 Risco"
+            else:
+                return "🔴 Atrasado"
+
+        df["Status logístico"] = df.apply(status, axis=1)
+
+        return df
+
+    # =====================================================
+    # 🔄 APLICA CLASSIFICAÇÃO
+    # =====================================================
+    df_transito = classificar_atraso(df_transito)
+
+    # =====================================================
+    # 📦 SEPARA ORIGEM
+    # =====================================================
+    df_transito_ali, df_transito_est = separar_origem(df_transito)
+
+    # =====================================================
+    # 📊 KPIs
+    # =====================================================
+    total = len(df_transito)
+    ok = len(df_transito[df_transito["Status logístico"] == "🟢 OK"])
+    risco = len(df_transito[df_transito["Status logístico"] == "🟡 Risco"])
+    atrasado = len(df_transito[df_transito["Status logístico"] == "🔴 Atrasado"])
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("📦 Total", total)
+    c2.metric("🟢 OK", ok)
+    c3.metric("🟡 Risco", risco)
+    c4.metric("🔴 Atrasados", atrasado)
+
+    # =====================================================
+    # 🧾 TABELA NORMAL (ALI / ESTOQUE)
+    # =====================================================
+    a, e = st.tabs(["🛒 AliExpress", "📦 Estoque"])
+
+    with a:
+        render_df(df_transito_ali, "Nenhum AliExpress em trânsito.")
+
+    with e:
+        render_df(df_transito_est, "Nenhum pedido de estoque em trânsito.")
+
+    # =====================================================
+    # 🔴 PEDIDOS ATRASADOS (VISÃO SEPARADA)
+    # =====================================================
+    st.markdown("## 🔴 Pedidos atrasados")
+
+    df_atrasados = df_transito[df_transito["Status logístico"] == "🔴 Atrasado"]
+
+    if df_atrasados.empty:
+        st.success("✅ Nenhum pedido atrasado.")
+    else:
+        st.error(f"🚨 {len(df_atrasados)} pedido(s) atrasado(s).")
+
+        st.dataframe(
+            df_atrasados[
+                ["PEDIDO", "Origem", "RASTREIO", "Dias em trânsito"]
+            ],
+            use_container_width=True
+        )
+
+    # =====================================================
+    # 🟡 PEDIDOS EM RISCO (VISÃO SEPARADA)
+    # =====================================================
+    st.markdown("## 🟡 Pedidos em risco")
+
+    df_risco = df_transito[df_transito["Status logístico"] == "🟡 Risco"]
+
+    if df_risco.empty:
+        st.success("✅ Nenhum pedido em risco.")
+    else:
+        st.warning(f"⚠️ {len(df_risco)} pedido(s) em risco.")
+
+        st.dataframe(
+            df_risco[
+                ["PEDIDO", "Origem", "RASTREIO", "Dias em trânsito"]
+            ],
+            use_container_width=True
+        )
 
     with t_importacao:
         render_df(df_importacao, "Nenhum pedido em importação.")
