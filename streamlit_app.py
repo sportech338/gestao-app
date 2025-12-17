@@ -5231,7 +5231,7 @@ with aba3:
 # 📈 ABA 4 — KPIs
 # =====================================================
 with aba4:
-import plotly.express as px
+        import plotly.express as px
 
 st.divider()
 st.subheader("🗺️ Distribuição de Pedidos no Brasil")
