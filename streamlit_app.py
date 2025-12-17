@@ -5338,3 +5338,105 @@ with aba4:
         )
     else:
         st.info("Receita zerada no período.")
+            # =====================================================
+    # 🚚 KPIs LOGÍSTICOS
+    # =====================================================
+    st.divider()
+    st.subheader("🚚 KPIs Logísticos")
+
+    # -------------------------------------------------
+    # 📥 Carregar abas logísticas (Sheets)
+    # -------------------------------------------------
+    @st.cache_data(ttl=300)
+    def carregar_aba_kpi(nome):
+        ws = get_gsheet_client().open_by_key(
+            st.secrets["sheets"]["spreadsheet_id"]
+        ).worksheet(nome)
+        df = pd.DataFrame(ws.get_all_records())
+        df.columns = df.columns.astype(str).str.strip()
+        return df
+
+    df_transito = carregar_aba_kpi("Em trânsito")
+    df_entregue = carregar_aba_kpi("Entrega realizada")
+    df_importacao = carregar_aba_kpi("Falha na importação")
+
+    # -------------------------------------------------
+    # 🧠 Preparação básica
+    # -------------------------------------------------
+    hoje = datetime.now(APP_TZ).date()
+
+    def preparar(df, date_col=0):
+        if df.empty:
+            return df
+        df = df.copy()
+        df["_data"] = pd.to_datetime(df.iloc[:, date_col], errors="coerce")
+        df["Dias"] = (hoje - df["_data"].dt.date).dt.days
+        df["Origem"] = np.where(
+            df["RASTREIO"].astype(str).str.startswith("888", na=False),
+            "Estoque",
+            "AliExpress"
+        )
+        return df
+
+    df_transito = preparar(df_transito, 0)
+    df_entregue = preparar(df_entregue, 0)
+
+    total_enviados = len(df_transito) + len(df_entregue)
+
+    # -------------------------------------------------
+    # ⛔ % Importação não autorizada
+    # -------------------------------------------------
+    pct_importacao = (
+        (len(df_importacao) / total_enviados) * 100
+        if total_enviados > 0 else 0
+    )
+
+    # -------------------------------------------------
+    # 🟡 Risco / 🔴 Atrasados
+    # -------------------------------------------------
+    risco = df_transito[
+        ((df_transito["Origem"] == "Estoque") & (df_transito["Dias"].between(6, 10))) |
+        ((df_transito["Origem"] == "AliExpress") & (df_transito["Dias"].between(13, 18)))
+    ]
+
+    atrasados = df_transito[
+        ((df_transito["Origem"] == "Estoque") & (df_transito["Dias"] > 10)) |
+        ((df_transito["Origem"] == "AliExpress") & (df_transito["Dias"] > 18))
+    ]
+
+    pct_risco = (len(risco) / total_enviados) * 100 if total_enviados > 0 else 0
+    pct_atrasado = (len(atrasados) / total_enviados) * 100 if total_enviados > 0 else 0
+
+    # -------------------------------------------------
+    # 📦 OTD — On Time Delivery
+    # -------------------------------------------------
+    def dentro_sla(row):
+        if row["Origem"] == "Estoque":
+            return row["Dias"] <= 5
+        return row["Dias"] <= 12
+
+    df_entregue["OTD_OK"] = df_entregue.apply(dentro_sla, axis=1)
+
+    otd = (
+        (df_entregue["OTD_OK"].sum() / len(df_entregue)) * 100
+        if not df_entregue.empty else 0
+    )
+
+    # -------------------------------------------------
+    # ⏱ Lead time / Prazo de entrega
+    # -------------------------------------------------
+    lead_time = df_entregue["Dias"].mean() if not df_entregue.empty else 0
+    prazo_p90 = df_entregue["Dias"].quantile(0.90) if not df_entregue.empty else 0
+
+    # -------------------------------------------------
+    # 📊 EXIBIÇÃO FINAL
+    # -------------------------------------------------
+    c1, c2, c3, c4, c5, c6 = st.columns(6)
+
+    c1.metric("📦 OTD", f"{otd:.1f}%")
+    c2.metric("⛔ Importação", f"{pct_importacao:.1f}%")
+    c3.metric("🟡 Em risco", f"{pct_risco:.1f}%")
+    c4.metric("🔴 Atrasados", f"{pct_atrasado:.1f}%")
+    c5.metric("⏱ Lead Time médio", f"{lead_time:.1f} dias")
+    c6.metric("📬 Prazo (P90)", f"{prazo_p90:.1f} dias")
+
