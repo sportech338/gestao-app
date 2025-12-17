@@ -2,6 +2,9 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import requests, json, time
+import plotly.express as px
+import json
+import requests
 from datetime import date, timedelta, datetime
 from zoneinfo import ZoneInfo
 APP_TZ = ZoneInfo("America/Sao_Paulo")
@@ -5231,65 +5234,66 @@ with aba3:
 # 📈 ABA 4 — KPIs
 # =====================================================
 with aba4:
-        import plotly.express as px
-
-import plotly.express as px
-
-st.divider()
+     st.divider()
 st.subheader("🗺️ Distribuição de Pedidos no Brasil")
 
+# =====================================================
+# 🔢 BASE DE DADOS
+# =====================================================
 if "pedidos" not in st.session_state or st.session_state["pedidos"].empty:
     st.warning("⚠️ Nenhum dado disponível para o mapa.")
-else:
-    df_map = st.session_state["pedidos"].copy()
+    st.stop()
 
-    # Normaliza estado
-    df_map["estado"] = (
-        df_map.get("estado", "")
-        .astype(str)
-        .str.upper()
-        .str.strip()
-    )
+df_map = st.session_state["pedidos"].copy()
 
-    # Mantém apenas siglas válidas
-    df_map = df_map[df_map["estado"].str.len() == 2]
+df_map["estado"] = (
+    df_map.get("estado", "")
+    .astype(str)
+    .str.upper()
+    .str.strip()
+)
 
-    # 🔑 CONVERSÃO CORRETA PARA ISO-3166-2
-    df_map["estado_iso"] = "BR-" + df_map["estado"]
+df_map = df_map[df_map["estado"].str.len() == 2]
 
-    # Agrupa pedidos únicos por estado
-    mapa_estado = (
-        df_map
-        .groupby("estado_iso")
-        .agg(pedidos=("order_id", "nunique"))
-        .reset_index()
-    )
+mapa_estado = (
+    df_map
+    .groupby("estado")
+    .agg(pedidos=("order_id", "nunique"))
+    .reset_index()
+)
 
-    # 🗺️ MAPA
-    fig = px.choropleth(
-        mapa_estado,
-        locations="estado_iso",
-        locationmode="ISO-3166-2",
-        color="pedidos",
-        scope="south america",
-        color_continuous_scale="Blues",
-        labels={"pedidos": "Pedidos"},
-        title="Pedidos por Estado"
-    )
+# =====================================================
+# 🌎 GEOJSON DO BRASIL (ESTADOS)
+# =====================================================
+@st.cache_data(ttl=86400)
+def carregar_geojson_brasil():
+    url = "https://raw.githubusercontent.com/codeforamerica/click_that_hood/master/public/data/brazil-states.geojson"
+    return requests.get(url).json()
 
-    fig.update_geos(
-        fitbounds="locations",
-        visible=False
-    )
+geojson_br = carregar_geojson_brasil()
 
-    fig.update_layout(
-        height=520,
-        margin=dict(l=0, r=0, t=50, b=0),
-        geo=dict(
-            center=dict(lat=-14.235, lon=-51.925),
-            projection_scale=2.6
-        )
-    )
+# =====================================================
+# 🗺️ MAPA
+# =====================================================
+fig = px.choropleth(
+    mapa_estado,
+    geojson=geojson_br,
+    locations="estado",
+    featureidkey="properties.sigla",
+    color="pedidos",
+    color_continuous_scale="Blues",
+    labels={"pedidos": "Pedidos"},
+    title="Pedidos por Estado"
+)
 
-    st.plotly_chart(fig, use_container_width=True)
+fig.update_geos(
+    fitbounds="locations",
+    visible=False
+)
 
+fig.update_layout(
+    height=550,
+    margin=dict(l=0, r=0, t=50, b=0)
+)
+
+st.plotly_chart(fig, use_container_width=True)
