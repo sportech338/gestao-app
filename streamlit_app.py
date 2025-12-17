@@ -5227,87 +5227,114 @@ with aba3:
             render_df(df_entregue_ali, "Nenhum AliExpress entregue.")
         with e:
             render_df(df_entregue_est, "Nenhum estoque entregue.")
-    # =====================================================
-    # 🚚 KPIs LOGÍSTICOS AVANÇADOS
-    # =====================================================
+            # =====================================================
+# 📈 ABA 4 — KPIs
+# =====================================================
+with aba4:
+
+    st.title("📈 KPIs Operacionais")
+    st.caption("Indicadores-chave de performance da operação")
+
+    # -------------------------------------------------
+    # 🔢 Base de dados
+    # -------------------------------------------------
+    if "pedidos" not in st.session_state or st.session_state["pedidos"].empty:
+        st.warning("⚠️ Nenhum dado carregado para calcular KPIs.")
+        st.stop()
+
+    df_kpi = st.session_state["pedidos"].copy()
+
+    # Conversões seguras
+    df_kpi["quantity"] = pd.to_numeric(
+        df_kpi.get("quantity", 0), errors="coerce"
+    ).fillna(0)
+
+    df_kpi["line_revenue"] = pd.to_numeric(
+        df_kpi.get("line_revenue", 0), errors="coerce"
+    ).fillna(0)
+
+    # -------------------------------------------------
+    # 📊 KPIs GERAIS
+    # -------------------------------------------------
+    total_pedidos = df_kpi["order_id"].nunique()
+    total_itens = int(df_kpi["quantity"].sum())
+    faturamento = df_kpi["line_revenue"].sum()
+    ticket_medio = faturamento / total_pedidos if total_pedidos > 0 else 0
+
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("🧾 Pedidos", total_pedidos)
+    col2.metric("📦 Itens vendidos", total_itens)
+    col3.metric("💰 Faturamento", formatar_moeda(faturamento))
+    col4.metric("💸 Ticket médio", formatar_moeda(ticket_medio))
+
+    # -------------------------------------------------
+    # 🚚 KPIs DE PROCESSAMENTO
+    # -------------------------------------------------
     st.divider()
-    st.subheader("🚚 KPIs Logísticos")
+    st.subheader("🚚 Processamento de Pedidos")
 
-    # -------------------------------
-    # Bases de segurança
-    # -------------------------------
-    total_enviados = len(df_transito) + len(df_entregue)
-    total_importacao = len(df_importacao)
+    processados = df_kpi[
+        df_kpi["fulfillment_status"].isin(["fulfilled", "shipped", "complete"])
+    ]
 
-    # -------------------------------
-    # % Importação não autorizada
-    # -------------------------------
-    pct_importacao = (
-        (total_importacao / total_enviados) * 100
-        if total_enviados > 0 else 0
+    pendentes = df_kpi[
+        ~df_kpi["fulfillment_status"].isin(["fulfilled", "shipped", "complete"])
+    ]
+
+    col1, col2, col3 = st.columns(3)
+
+    col1.metric("✅ Processados", processados["order_id"].nunique())
+    col2.metric("🟡 Pendentes", pendentes["order_id"].nunique())
+
+    taxa_proc = (
+        (processados["order_id"].nunique() / total_pedidos) * 100
+        if total_pedidos > 0 else 0
     )
 
-    # -------------------------------
-    # % Em risco / % Atrasados
-    # -------------------------------
-    risco = df_transito[df_transito["Status logístico"] == "🟡 Risco"]
-    atrasados = df_transito[df_transito["Status logístico"] == "🔴 Atrasado"]
+    col3.metric("📈 Taxa de processamento", f"{taxa_proc:.1f}%")
 
-    pct_risco = (len(risco) / total_enviados) * 100 if total_enviados > 0 else 0
-    pct_atrasado = (len(atrasados) / total_enviados) * 100 if total_enviados > 0 else 0
+    # -------------------------------------------------
+    # 📦 KPIs POR PRODUTO
+    # -------------------------------------------------
+    st.divider()
+    st.subheader("📦 Performance por Produto")
 
-    # -------------------------------
-    # OTD — On Time Delivery
-    # -------------------------------
-    entregues_ok = df_entregue.copy()
-
-    def dentro_sla(row):
-        dias = pd.to_numeric(row.get("Dias em trânsito", None), errors="coerce")
-        if pd.isna(dias):
-            return False
-
-        origem = (
-            "📦 Estoque"
-            if str(row.get("RASTREIO", "")).startswith("888")
-            else "🛒 AliExpress"
+    kpi_produto = (
+        df_kpi
+        .groupby("product_title", dropna=False)
+        .agg(
+            pedidos=("order_id", "nunique"),
+            unidades=("quantity", "sum"),
+            receita=("line_revenue", "sum")
         )
-
-        if origem == "📦 Estoque":
-            return dias <= 5
-        return dias <= 12
-
-    if "Dias em trânsito" not in entregues_ok.columns:
-        entregues_ok["Dias em trânsito"] = pd.to_numeric(
-            entregues_ok.iloc[:, 0], errors="coerce"
-        )
-
-    entregues_ok["OTD_OK"] = entregues_ok.apply(dentro_sla, axis=1)
-
-    otd = (
-        (entregues_ok["OTD_OK"].sum() / len(entregues_ok)) * 100
-        if len(entregues_ok) > 0 else 0
+        .reset_index()
+        .sort_values("receita", ascending=False)
     )
 
-    # -------------------------------
-    # Lead Time e Prazo de entrega
-    # -------------------------------
-    lead_times = pd.to_numeric(
-        entregues_ok["Dias em trânsito"], errors="coerce"
-    ).dropna()
+    if not kpi_produto.empty:
+        st.dataframe(
+            kpi_produto.assign(
+                receita=kpi_produto["receita"].apply(formatar_moeda)
+            ),
+            use_container_width=True
+        )
+    else:
+        st.info("Nenhum dado de produto disponível.")
 
-    lead_time_medio = lead_times.mean() if not lead_times.empty else 0
-    prazo_p90 = lead_times.quantile(0.90) if not lead_times.empty else 0
+    # -------------------------------------------------
+    # 📊 KPI DE CONCENTRAÇÃO
+    # -------------------------------------------------
+    st.divider()
+    st.subheader("🎯 Concentração de Receita")
 
-    # =====================================================
-    # 📊 EXIBIÇÃO DOS KPIs
-    # =====================================================
-    c1, c2, c3, c4, c5, c6 = st.columns(6)
+    if faturamento > 0:
+        top_prod = kpi_produto.iloc[0]
+        pct_top = (top_prod["receita"] / faturamento) * 100
 
-    c1.metric("📦 OTD", f"{otd:.1f}%")
-    c2.metric("⛔ Importação", f"{pct_importacao:.1f}%")
-    c3.metric("🟡 Em risco", f"{pct_risco:.1f}%")
-    c4.metric("🔴 Atrasados", f"{pct_atrasado:.1f}%")
-    c5.metric("⏱ Lead Time médio", f"{lead_time_medio:.1f} dias")
-    c6.metric("📬 Prazo (P90)", f"{prazo_p90:.1f} dias")
-
-
+        st.metric(
+            "📌 % da receita no produto líder",
+            f"{pct_top:.1f}%",
+            help=f"Produto líder: {top_prod['product_title']}"
+        )
+    else:
+        st.info("Receita zerada no período.")
