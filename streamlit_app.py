@@ -5248,7 +5248,7 @@ with aba4:
     df_kpi["line_revenue"] = pd.to_numeric(df_kpi.get("line_revenue", 0), errors="coerce").fillna(0)
 
     # =====================================================
-    # 📊 KPIs GERAIS (VENDAS)
+    # 📊 KPIs GERAIS
     # =====================================================
     total_pedidos = df_kpi["order_id"].nunique()
     total_itens = int(df_kpi["quantity"].sum())
@@ -5283,22 +5283,26 @@ with aba4:
     df_entregue = carregar_aba_kpi("Entrega realizada")
     df_importacao = carregar_aba_kpi("Falha na importação")
 
-    hoje = datetime.now(APP_TZ).date()
-
-    # -------------------------------------------------
-    # 🧠 FUNÇÃO CORRETA (SEM ERRO .dt)
-    # -------------------------------------------------
+    # =====================================================
+    # 🧠 FUNÇÃO À PROVA DE ERRO DE DATA
+    # =====================================================
     def preparar(df, date_col=0):
         if df is None or df.empty:
             return pd.DataFrame()
 
         df = df.copy()
 
-        # Data de envio / evento
-        df["_data"] = pd.to_datetime(df.iloc[:, date_col], errors="coerce")
+        # Converte a coluna de data → datetime64[ns] SEM timezone
+        datas = pd.to_datetime(df.iloc[:, date_col], errors="coerce", utc=True)
+        datas = datas.dt.tz_convert(None)
 
-        # Dias corridos (FORMA CORRETA)
-        df["Dias"] = (pd.Timestamp(hoje) - df["_data"]).dt.days
+        df["_data"] = datas
+
+        # Data atual como datetime Pandas (compatível)
+        hoje_ts = pd.Timestamp.now().normalize()
+
+        # Cálculo seguro
+        df["Dias"] = (hoje_ts - df["_data"]).dt.days
 
         # Origem
         df["Origem"] = np.where(
@@ -5356,7 +5360,7 @@ with aba4:
     )
 
     # -------------------------------------------------
-    # ⏱ LEAD TIME / PRAZO DE ENTREGA
+    # ⏱ LEAD TIME / PRAZO
     # -------------------------------------------------
     lead_time_medio = df_entregue["Dias"].mean() if not df_entregue.empty else 0
     prazo_p90 = df_entregue["Dias"].quantile(0.90) if not df_entregue.empty else 0
@@ -5372,5 +5376,6 @@ with aba4:
     c4.metric("🔴 Atrasados", f"{pct_atrasado:.1f}%")
     c5.metric("⏱ Lead Time médio", f"{lead_time_medio:.1f} dias")
     c6.metric("📬 Prazo (P90)", f"{prazo_p90:.1f} dias")
+
 
 
