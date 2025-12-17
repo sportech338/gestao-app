@@ -5102,69 +5102,77 @@ with t_importacao:
     st.subheader("⛔ Importação não autorizada")
 
     st.caption(
-        "Marque pedidos para automação. "
-        "O script externo roda quando a coluna A recebe 'x'."
+        "Clique no botão do pedido para enviar para automação. "
+        "A coluna A (REGISTRO) receberá 'x'."
     )
 
-    # 📝 TABELA EDITÁVEL
-    df_importacao_edit = st.data_editor(
-        df_importacao,
-        use_container_width=True,
-        num_rows="dynamic",
-        key="importacao_editor",
-        hide_index=True
-    )
+    if df_importacao.empty:
+        st.info("Nenhum pedido em importação.")
+        st.stop()
 
-    # 🛑 BOTÃO — MARCAR 'X' NA COLUNA A
-    if st.button("🛑 Enviar para automação (marcar X)"):
-        try:
-            client = get_gsheet_client()
-            ws = client.open_by_key(
-                st.secrets["sheets"]["spreadsheet_id"]
-            ).worksheet("Falha na importação")
+    # =====================================================
+    # 🔁 RENDERIZA UM BLOCO POR PEDIDO
+    # =====================================================
+    for idx, row in df_importacao.iterrows():
 
-            # 🔹 Lê toda a aba (com cabeçalho)
-            sheet_values = ws.get_all_values()
+        pedido = str(row.get("PEDIDO", "")).strip()
+        cliente = str(row.get("CLIENTE", "")).strip()
+        data = row.iloc[1]  # DATA está na coluna B
+        produto = str(row.get("PRODUTO", "")).strip()
 
-            if len(sheet_values) < 2:
-                st.warning("⚠️ Nenhum dado encontrado na planilha.")
-                st.stop()
+        with st.container(border=True):
+            col1, col2 = st.columns([4, 1])
 
-            header = sheet_values[0]
-            rows = sheet_values[1:]
+            with col1:
+                st.markdown(
+                    f"""
+                    **Pedido:** {pedido}  
+                    **Cliente:** {cliente}  
+                    **Produto:** {produto}  
+                    **Data:** {data}
+                    """
+                )
 
-            df_sheet = pd.DataFrame(rows, columns=header)
+            with col2:
+                btn_key = f"importacao_btn_{pedido}_{idx}"
 
-            if "PEDIDO" not in df_sheet.columns:
-                st.error("❌ Coluna 'PEDIDO' não encontrada na planilha.")
-                st.stop()
+                if st.button("🛑 Enviar", key=btn_key):
 
-            # 🔹 Pedidos visíveis no dashboard
-            pedidos_dashboard = set(
-                df_importacao_edit["PEDIDO"].astype(str).str.strip()
-            )
+                    try:
+                        client = get_gsheet_client()
+                        ws = client.open_by_key(
+                            st.secrets["sheets"]["spreadsheet_id"]
+                        ).worksheet("Falha na importação")
 
-            pedido_col_idx = df_sheet.columns.get_loc("PEDIDO")
+                        sheet_values = ws.get_all_values()
+                        header = sheet_values[0]
+                        rows = sheet_values[1:]
 
-            updates = []
-            for idx, row in df_sheet.iterrows():
-                pedido_planilha = str(row.iloc[pedido_col_idx]).strip()
-                if pedido_planilha in pedidos_dashboard:
-                    updates.append(f"A{idx + 2}")  # +2 por causa do header
+                        df_sheet = pd.DataFrame(rows, columns=header)
 
-            if not updates:
-                st.warning("⚠️ Nenhum pedido correspondente encontrado para marcar.")
-                st.stop()
+                        if "PEDIDO" not in df_sheet.columns:
+                            st.error("❌ Coluna 'PEDIDO' não encontrada na planilha.")
+                            st.stop()
 
-            for cell in updates:
-                ws.update(cell, "x")
+                        pedido_col_idx = df_sheet.columns.get_loc("PEDIDO")
 
-            st.success(f"✅ {len(updates)} pedido(s) enviados para automação.")
-            st.cache_data.clear()
-            st.rerun()
+                        marcado = False
+                        for i, r in df_sheet.iterrows():
+                            if str(r.iloc[pedido_col_idx]).strip() == pedido:
+                                ws.update(f"A{i+2}", [["x"]])
+                                marcado = True
+                                break
 
-        except Exception as e:
-            st.error(f"❌ Erro ao marcar pedidos: {e}")
+                        if marcado:
+                            st.success(f"✅ Pedido {pedido} enviado para automação.")
+                            st.cache_data.clear()
+                            st.rerun()
+                        else:
+                            st.warning("⚠️ Pedido não encontrado na planilha.")
+
+                    except Exception as e:
+                        st.error(f"❌ Erro ao marcar pedido {pedido}: {e}")
+
 
 # -------------------------------
 # 🔁 REENVIO
