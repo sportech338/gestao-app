@@ -5086,8 +5086,83 @@ with aba3:
         with e:
             render_df(df_transito_est, "Nenhum estoque em trânsito.")
 
-    with t_importacao:
-        render_df(df_importacao, "Nenhum pedido em importação.")
+  with t_importacao:
+
+    st.subheader("⛔ Importação não autorizada")
+
+    st.caption(
+        "Marque pedidos para automação. "
+        "O script externo roda quando a coluna A recebe 'x'."
+    )
+
+    # =====================================================
+    # 📝 TABELA EDITÁVEL
+    # =====================================================
+    df_importacao_edit = st.data_editor(
+        df_importacao,
+        use_container_width=True,
+        num_rows="dynamic",
+        key="importacao_editor",
+        hide_index=True
+    )
+
+    # =====================================================
+    # 🛑 BOTÃO — MARCAR 'X' NA COLUNA A
+    # =====================================================
+    if st.button("🛑 Enviar para automação (marcar X)"):
+        try:
+            client = get_gsheet_client()
+            ws = client.open_by_key(
+                st.secrets["sheets"]["spreadsheet_id"]
+            ).worksheet("Falha na importação")
+
+            # 🔹 Lê toda a aba (com cabeçalho)
+            sheet_values = ws.get_all_values()
+
+            if len(sheet_values) < 2:
+                st.warning("⚠️ Nenhum dado encontrado na planilha.")
+                st.stop()
+
+            header = sheet_values[0]
+            rows = sheet_values[1:]
+
+            df_sheet = pd.DataFrame(rows, columns=header)
+
+            if "PEDIDO" not in df_sheet.columns:
+                st.error("❌ Coluna 'PEDIDO' não encontrada na planilha.")
+                st.stop()
+
+            # 🔹 Pedidos visíveis no dashboard
+            pedidos_dashboard = set(
+                df_importacao_edit["PEDIDO"].astype(str).str.strip()
+            )
+
+            # 🔹 Descobre índice da coluna PEDIDO
+            pedido_col_idx = df_sheet.columns.get_loc("PEDIDO")
+
+            # 🔹 Marca X na COLUNA A
+            updates = []
+            for idx, row in df_sheet.iterrows():
+                pedido_planilha = str(row.iloc[pedido_col_idx]).strip()
+
+                if pedido_planilha in pedidos_dashboard:
+                    # Linha real no Sheets = idx + 2 (1 header + index base 0)
+                    updates.append(f"A{idx + 2}")
+
+            if not updates:
+                st.warning("⚠️ Nenhum pedido correspondente encontrado para marcar.")
+                st.stop()
+
+            for cell in updates:
+                ws.update(cell, "x")
+
+            st.success(f"✅ {len(updates)} pedido(s) enviados para automação.")
+            st.cache_data.clear()
+            st.rerun()
+
+        except Exception as e:
+            st.error(f"❌ Erro ao marcar pedidos: {e}")
+
 
     with t_reenvio:
         render_df(df_reenvio, "Nenhum pedido em reenvio.")
