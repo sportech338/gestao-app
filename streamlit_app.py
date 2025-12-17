@@ -5246,6 +5246,7 @@ if "pedidos" not in st.session_state or st.session_state["pedidos"].empty:
 
 df_map = st.session_state["pedidos"].copy()
 
+# Normaliza estado (SIGLA)
 df_map["estado"] = (
     df_map.get("estado", "")
     .astype(str)
@@ -5255,15 +5256,53 @@ df_map["estado"] = (
 
 df_map = df_map[df_map["estado"].str.len() == 2]
 
+# =====================================================
+# 🔁 MAPA SIGLA → NOME COMPLETO
+# =====================================================
+MAPA_ESTADOS = {
+    "AC": "Acre",
+    "AL": "Alagoas",
+    "AP": "Amapá",
+    "AM": "Amazonas",
+    "BA": "Bahia",
+    "CE": "Ceará",
+    "DF": "Distrito Federal",
+    "ES": "Espírito Santo",
+    "GO": "Goiás",
+    "MA": "Maranhão",
+    "MT": "Mato Grosso",
+    "MS": "Mato Grosso do Sul",
+    "MG": "Minas Gerais",
+    "PA": "Pará",
+    "PB": "Paraíba",
+    "PR": "Paraná",
+    "PE": "Pernambuco",
+    "PI": "Piauí",
+    "RJ": "Rio de Janeiro",
+    "RN": "Rio Grande do Norte",
+    "RS": "Rio Grande do Sul",
+    "RO": "Rondônia",
+    "RR": "Roraima",
+    "SC": "Santa Catarina",
+    "SP": "São Paulo",
+    "SE": "Sergipe",
+    "TO": "Tocantins",
+}
+
+df_map["estado_nome"] = df_map["estado"].map(MAPA_ESTADOS)
+
+df_map = df_map.dropna(subset=["estado_nome"])
+
+# Agrupa pedidos
 mapa_estado = (
     df_map
-    .groupby("estado")
+    .groupby("estado_nome")
     .agg(pedidos=("order_id", "nunique"))
     .reset_index()
 )
 
 # =====================================================
-# 🌎 GEOJSON DO BRASIL (ESTADOS)
+# 🌎 GEOJSON (ESTADOS DO BRASIL)
 # =====================================================
 @st.cache_data(ttl=86400)
 def carregar_geojson_brasil():
@@ -5278,8 +5317,8 @@ geojson_br = carregar_geojson_brasil()
 fig = px.choropleth(
     mapa_estado,
     geojson=geojson_br,
-    locations="estado",
-    featureidkey="properties.sigla",
+    locations="estado_nome",
+    featureidkey="properties.name",
     color="pedidos",
     color_continuous_scale="Blues",
     labels={"pedidos": "Pedidos"},
