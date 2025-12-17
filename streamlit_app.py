@@ -5056,7 +5056,7 @@ with aba3:
     c4.metric("🔁 Reenvio", contar(df_reenvio))
     c5.metric("✅ Entregue", contar(df_entregue))
 
-    # =====================================================
+       # =====================================================
     # 🧭 ABAS
     # =====================================================
     t_aguardando, t_transito, t_importacao, t_reenvio, t_correios, t_entregue = st.tabs([
@@ -5072,6 +5072,9 @@ with aba3:
         render_df(df_aguardando, "Nenhum pedido aguardando.")
 
     with t_transito:
+        
+        pass
+
 
     # =====================================================
     # 🧠 CLASSIFICAÇÃO DE ATRASO (SLA DIFERENTE)
