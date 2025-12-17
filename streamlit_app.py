@@ -4917,9 +4917,8 @@ def render_df(df: pd.DataFrame, empty_msg: str):
 
     st.dataframe(df, use_container_width=True)
 
-
 # =====================================================
-# 🚚 ABA 3 — ENTREGAS (DATA SEMPRE NA COLUNA A)
+# 🚚 ABA 3 — ENTREGAS (COM FILTRO DE DATA POR COLUNA)
 # =====================================================
 with aba3:
 
@@ -4939,7 +4938,7 @@ with aba3:
             return pd.DataFrame()
 
     # =====================================================
-    # 🗺️ MAPA DAS ABAS REAIS
+    # 🗺️ MAPA REAL DAS ABAS DA PLANILHA
     # =====================================================
     ABAS_LOGISTICA = {
         "aguardando": "Aguardando",
@@ -4967,7 +4966,6 @@ with aba3:
         if df is None or df.empty:
             return df
         if "PEDIDO" in df.columns:
-            # DATA está sempre na COLUNA A
             df.iloc[:, 0] = pd.to_datetime(df.iloc[:, 0], errors="coerce")
             df = df.sort_values(df.columns[0], ascending=False)
             df = df.drop_duplicates(subset=["PEDIDO"], keep="first")
@@ -4981,7 +4979,7 @@ with aba3:
     df_entregue = dedup(df_entregue)
 
     # =====================================================
-    # 📅 FILTRO GLOBAL DE DATA (COLUNA A)
+    # 📅 FILTRO GLOBAL DE DATA
     # =====================================================
     st.markdown("### 📅 Filtro por data (Entregas)")
 
@@ -5004,25 +5002,36 @@ with aba3:
             key="aba3_data_fim"
         )
 
-    def aplicar_filtro_data(df):
+    # =====================================================
+    # 🧠 FILTRO DE DATA (COLUNA A / B POR ABA)
+    # =====================================================
+    def aplicar_filtro_data(df, aba_nome):
         if df is None or df.empty:
             return df
 
-        # 📌 DATA SEMPRE NA COLUNA A
+        # Falha na importação → DATA na coluna B
+        data_col_index = 1 if aba_nome == "Falha na importação" else 0
+
+        if df.shape[1] <= data_col_index:
+            return df
+
         df = df.copy()
-        df.iloc[:, 0] = pd.to_datetime(df.iloc[:, 0], errors="coerce").dt.date
+        df.iloc[:, data_col_index] = pd.to_datetime(
+            df.iloc[:, data_col_index],
+            errors="coerce"
+        ).dt.date
 
         return df[
-            (df.iloc[:, 0] >= data_inicio) &
-            (df.iloc[:, 0] <= data_fim)
+            (df.iloc[:, data_col_index] >= data_inicio) &
+            (df.iloc[:, data_col_index] <= data_fim)
         ]
 
-    df_aguardando = aplicar_filtro_data(df_aguardando)
-    df_transito = aplicar_filtro_data(df_transito)
-    df_importacao = aplicar_filtro_data(df_importacao)
-    df_reenvio = aplicar_filtro_data(df_reenvio)
-    df_correios = aplicar_filtro_data(df_correios)
-    df_entregue = aplicar_filtro_data(df_entregue)
+    df_aguardando = aplicar_filtro_data(df_aguardando, "Aguardando")
+    df_transito = aplicar_filtro_data(df_transito, "Em trânsito")
+    df_importacao = aplicar_filtro_data(df_importacao, "Falha na importação")
+    df_reenvio = aplicar_filtro_data(df_reenvio, "Reenvio")
+    df_correios = aplicar_filtro_data(df_correios, "Aguardando retirada")
+    df_entregue = aplicar_filtro_data(df_entregue, "Entrega realizada")
 
     st.caption(
         f"Exibindo pedidos de {data_inicio.strftime('%d/%m/%Y')} "
@@ -5056,7 +5065,7 @@ with aba3:
     c5.metric("✅ Entregue", contar(df_entregue))
 
     # =====================================================
-    # 🧭 ABAS
+    # 🧭 ABAS DO DASHBOARD
     # =====================================================
     t_aguardando, t_transito, t_importacao, t_reenvio, t_correios, t_entregue = st.tabs([
         "🟡 Aguardando",
@@ -5092,3 +5101,4 @@ with aba3:
             render_df(df_entregue_ali, "Nenhum AliExpress entregue.")
         with e:
             render_df(df_entregue_est, "Nenhum estoque entregue.")
+
