@@ -5071,7 +5071,7 @@ with aba3:
     with t_aguardando:
         render_df(df_aguardando, "Nenhum pedido aguardando.")
 
-    with t_transito:
+   with t_transito:
 
     # =====================================================
     # 🧠 CLASSIFICAÇÃO DE ATRASO (SLA DIFERENTE)
